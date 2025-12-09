@@ -7,9 +7,69 @@ import WorkLogSection from '../../components/sections/WorkLogSection';
 import ExpenseSection from '../../components/sections/ExpenseSection';
 import ConsumablesSection from '../../components/sections/ConsumablesSection';
 import FileUploadSection from '../../components/sections/FileUploadSection';
+import TimelineSummarySection from '../../components/sections/TimelineSummarySection';
+import { useWorkReportStore } from '../../store/workReportStore';
 
 export default function CreationPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { 
+    author, vessel, engine, subject, workers, workLogEntries, expenses, materials 
+  } = useWorkReportStore();
+
+  // 제출 핸들러
+  const handleSubmit = () => {
+    // 필수 항목 체크
+    if (!author || !vessel || !engine || !subject) {
+      alert('기본정보(작성자/호선/엔진/목적)는 필수입니다.');
+      return;
+    }
+    if (workers.length === 0) {
+      alert('작업자를 선택해주세요.');
+      return;
+    }
+    if (workLogEntries.length === 0) {
+      alert('출장 업무 일지를 1개 이상 작성해주세요.');
+      return;
+    }
+
+    if (!confirm('제출하시겠습니까?')) return;
+
+    // 실제 서버 연동 시 여기에 API 호출
+    const payload = {
+      basic: {
+        author,
+        vessel,
+        engine,
+        subject,
+        workers,
+      },
+      entries: workLogEntries,
+      expenses,
+      materials,
+    };
+
+    console.log('제출 데이터:', payload);
+    alert('제출 완료! (콘솔에서 데이터 확인)');
+  };
+
+  // 임시저장 핸들러
+  const handleDraftSave = () => {
+    const payload = {
+      basic: {
+        author,
+        vessel,
+        engine,
+        subject,
+        workers,
+      },
+      entries: workLogEntries,
+      expenses,
+      materials,
+    };
+
+    console.log('임시저장 데이터:', payload);
+    alert('임시저장 완료! (콘솔에서 데이터 확인)');
+  };
 
   return (
     <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
@@ -59,16 +119,14 @@ export default function CreationPage() {
             {/* 첨부파일 업로드 */}
             <FileUploadSection />
             
-            {/* 결재 */}
-            <div className="bg-white border border-[#e5e7eb] rounded-2xl p-4 md:p-7 overflow-hidden">
-              <p className="text-[18px] md:text-[22px] font-semibold text-[#364153] leading-[1.364] tracking-[-0.43px]">
-                결재
-              </p>
-            </div>
+            {/* 타임라인 요약 */}
+            <TimelineSummarySection 
+              onDraftSave={handleDraftSave}
+              onSubmit={handleSubmit}
+            />
           </div>
         </div>
       </div>
     </div>
   );
 }
-

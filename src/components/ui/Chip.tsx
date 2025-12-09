@@ -1,10 +1,14 @@
+import React from 'react';
+
 interface ChipProps {
   children: React.ReactNode;
-  variant?: 'default' | 'selected' | 'gray' | 'tag';
+  variant?: 'default' | 'selected' | 'gray' | 'tag' | 'region-bc' | 'region-ul' | 'region-jy' | 'region-gj';
   size?: 'sm' | 'md' | 'lg';
   onClick?: () => void;
   onRemove?: () => void;
   className?: string;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
 }
 
 export default function Chip({ 
@@ -13,15 +17,21 @@ export default function Chip({
   size = 'md', 
   onClick, 
   onRemove,
-  className = '' 
+  className = '',
+  draggable = false,
+  onDragStart,
 }: ChipProps) {
-  const baseClasses = 'flex gap-1 items-center justify-center rounded-[10px] transition-colors';
+  const baseClasses = 'flex gap-1 items-center justify-center rounded-[10px] transition-colors cursor-pointer';
   
-  const variantClasses = {
-    default: 'bg-white border border-[#e5e7eb] text-[#364153]',
+  const variantClasses: Record<string, string> = {
+    default: 'bg-white border border-[#e5e7eb] text-[#364153] hover:bg-[#f3f4f6]',
     selected: 'bg-[#2b7fff] text-white',
-    gray: 'bg-[#f3f4f6] text-[#4a5565]',
+    gray: 'bg-[#f3f4f6] text-[#4a5565] hover:bg-[#e5e7eb]',
     tag: 'bg-[#eff6ff] text-[#2b7fff] rounded-full',
+    'region-bc': 'bg-[#2563eb] text-white hover:bg-[#1d4ed8]',
+    'region-ul': 'bg-[#10b981] text-white hover:bg-[#059669]',
+    'region-jy': 'bg-[#f59e0b] text-white hover:bg-[#d97706]',
+    'region-gj': 'bg-[#8b5cf6] text-white hover:bg-[#7c3aed]',
   };
 
   const sizeClasses = {
@@ -32,14 +42,20 @@ export default function Chip({
 
   return (
     <button
+      type="button"
       onClick={onClick}
+      draggable={draggable}
+      onDragStart={onDragStart}
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
     >
       <span className="font-medium leading-[1.467] text-center whitespace-nowrap">
         {children}
       </span>
       {onRemove && (
-        <span onClick={(e) => { e.stopPropagation(); onRemove(); }} className="ml-1">
+        <span 
+          onClick={(e) => { e.stopPropagation(); onRemove(); }} 
+          className="ml-1 hover:opacity-70"
+        >
           <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
             <path d="M8.25 2.75L2.75 8.25M2.75 2.75L8.25 8.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
@@ -48,4 +64,3 @@ export default function Chip({
     </button>
   );
 }
-
