@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 // 아이콘 컴포넌트들
 const IconHome = () => (
@@ -62,25 +63,33 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ onClose, activeMenu = '출장 보고서', activeSubMenu }: SidebarProps) {
+  const navigate = useNavigate();
   const [activeItem, setActiveItem] = useState(activeMenu);
   const [expenseOpen, setExpenseOpen] = useState(activeMenu === '지출 관리');
+  const [reportOpen, setReportOpen] = useState(activeMenu === '출장 보고서');
   const [activeSubItem, setActiveSubItem] = useState(activeSubMenu || '');
 
   useEffect(() => {
     if (activeMenu === '지출 관리') {
       setExpenseOpen(true);
     }
+    if (activeMenu === '출장 보고서') {
+      setReportOpen(true);
+    }
   }, [activeMenu]);
 
   const mainMenuItems = [
     { icon: <IconHome />, label: '대시보드' },
-    { icon: <IconDescription />, label: '출장 보고서' },
     { icon: <IconAssessment />, label: '워크로드' },
   ];
 
   const expenseSubMenuItems = [
     { label: '구성원 지출 관리' },
     { label: '개인 지출 기록' },
+  ];
+  const reportSubMenuItems = [
+    { label: '보고서 작성' },
+    { label: '보고서 목록' },
   ];
 
   const bottomMenuItems = [
@@ -142,6 +151,9 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
               onClick={() => {
                 setActiveItem(item.label);
                 setExpenseOpen(false);
+                setReportOpen(false);
+                if (item.label === '대시보드') navigate('/'); 
+                if (item.label === '워크로드') navigate('/workload');
               }}
               className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
                 activeItem === item.label && activeMenu !== '지출 관리'
@@ -162,6 +174,7 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
               onClick={() => {
                 setExpenseOpen(!expenseOpen);
                 setActiveItem('지출 관리');
+                navigate('/expense');
               }}
               className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${
                 activeMenu === '지출 관리'
@@ -196,6 +209,47 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
             )}
           </div>
 
+          {/* 출장 보고서 with Dropdown */}
+          <div>
+            <button
+              onClick={() => {
+                setReportOpen(!reportOpen);
+                setActiveItem('출장 보고서');
+                navigate('/report/list');
+              }}
+              className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${
+                activeMenu === '출장 보고서'
+                  ? 'bg-[#364153] text-white'
+                  : 'text-[#101828] hover:bg-[#e5e7eb]'
+              }`}
+            >
+              <div className="flex gap-3 items-center w-[162px]">
+                <IconDescription />
+                <p className="font-medium text-[16px] leading-[1.5]">출장 보고서</p>
+              </div>
+            </button>
+
+            {/* Submenu */}
+            {reportOpen && (
+              <div className="ml-4 mt-1 flex flex-col gap-1">
+                {reportSubMenuItems.map((subItem) => (
+                  <button
+                    key={subItem.label}
+                    onClick={() => setActiveSubItem(subItem.label)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
+                      activeSubItem === subItem.label
+                        ? 'text-blue-600 font-medium'
+                        : 'text-[#6a7282] hover:text-[#101828] hover:bg-[#e5e7eb]'
+                    }`}
+                  >
+                    <span className="text-gray-400">ㄴ</span>
+                    <p className="text-[14px]">{subItem.label}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Bottom Menu Items */}
           {bottomMenuItems.map((item) => (
             <button
@@ -203,6 +257,7 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
               onClick={() => {
                 setActiveItem(item.label);
                 setExpenseOpen(false);
+                if (item.label === '휴가 관리') navigate('/vacation');
               }}
               className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
                 activeItem === item.label && activeMenu !== '지출 관리'
