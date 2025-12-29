@@ -299,6 +299,10 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
               onClick={() => {
                 setActiveItem(item.label);
                 setExpenseOpen(false);
+                setActiveSubItem('');
+                setReportActiveSubItem('');
+                const path = routeMap[item.label];
+                if (path) navigate(path);
               }}
               className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
                 activeItem === item.label && activeMenu !== '지출 관리'
