@@ -65,7 +65,9 @@ interface SidebarProps {
 export default function Sidebar({ onClose, activeMenu = '출장 보고서', activeSubMenu }: SidebarProps) {
   const [activeItem, setActiveItem] = useState(activeMenu);
   const [expenseOpen, setExpenseOpen] = useState(activeMenu === '지출 관리');
+  const [reportOpen, setReportOpen] = useState(activeMenu === '출장 보고서');
   const [activeSubItem, setActiveSubItem] = useState(activeSubMenu || '');
+  const [reportActiveSubItem, setReportActiveSubItem] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -84,6 +86,10 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
   const expenseSubMenuItems = [
     { label: '구성원 지출 관리' },
     { label: '개인 지출' },
+  ];
+  const reportSubMenuItems = [
+    { label: '보고서 작성', path: '/reportcreate' },
+    { label: '보고서 목록', path: '/report' },
   ];
 
   const routeMap: Record<string, string> = {
@@ -115,6 +121,19 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
       setActiveItem('지출 관리');
       setExpenseOpen(true);
       setActiveSubItem('개인 지출');
+    }
+  }, [location.pathname]);
+
+  // Ensure /report routes highlight subitems under 출장 보고서
+  useEffect(() => {
+    if (location.pathname.startsWith('/reportcreate')) {
+      setActiveItem('출장 보고서');
+      setReportOpen(true);
+      setReportActiveSubItem('보고서 작성');
+    } else if (location.pathname.startsWith('/report')) {
+      setActiveItem('출장 보고서');
+      setReportOpen(true);
+      setReportActiveSubItem('보고서 목록');
     }
   }, [location.pathname]);
 
@@ -175,6 +194,13 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
             <button
               key={item.label}
               onClick={() => {
+                // Toggle report submenu for '출장 보고서'
+                if (item.label === '출장 보고서') {
+                  setReportOpen(!reportOpen);
+                  setActiveItem('출장 보고서');
+                  setExpenseOpen(false);
+                  return;
+                }
                 setActiveItem(item.label);
                 setExpenseOpen(false);
                 const path = routeMap[item.label];
@@ -228,6 +254,30 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
                     }}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
                       activeSubItem === subItem.label
+                        ? 'text-blue-600 font-medium'
+                        : 'text-[#6a7282] hover:text-[#101828] hover:bg-[#e5e7eb]'
+                    }`}
+                  >
+                    <span className="text-gray-400">ㄴ</span>
+                    <p className="text-[14px]">{subItem.label}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* 출장 보고서 Submenu */}
+            {reportOpen && (
+              <div className="ml-4 mt-1 flex flex-col gap-1">
+                {reportSubMenuItems.map((subItem) => (
+                  <button
+                    key={subItem.label}
+                    onClick={() => {
+                      setReportActiveSubItem(subItem.label);
+                      setActiveItem('출장 보고서');
+                      setExpenseOpen(false);
+                      if (subItem.path) navigate(subItem.path);
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
+                      reportActiveSubItem === subItem.label
                         ? 'text-blue-600 font-medium'
                         : 'text-[#6a7282] hover:text-[#101828] hover:bg-[#e5e7eb]'
                     }`}
