@@ -68,6 +68,7 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
   const [reportOpen, setReportOpen] = useState(activeMenu === '출장 보고서');
   const [activeSubItem, setActiveSubItem] = useState(activeSubMenu || '');
   const [reportActiveSubItem, setReportActiveSubItem] = useState('');
+  const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -176,11 +177,64 @@ export default function Sidebar({ onClose, activeMenu = '출장 보고서', acti
           </div>
           
           {/* Notifications */}
-          <div className="flex gap-6 items-center p-3">
-            <div className="flex gap-3 items-center w-[162px] text-[#101828]">
-              <IconNotifications />
-              <p className="font-medium text-[16px] leading-[1.5]">알림</p>
-            </div>
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications((v) => !v)}
+              className={`flex gap-6 items-center p-3 rounded-lg transition-colors w-full text-left ${
+                showNotifications ? 'bg-[#f1f5f9]' : 'text-[#101828] hover:bg-[#e5e7eb]'
+              }`}
+            >
+              <div className="flex gap-3 items-center w-[162px]">
+                <IconNotifications />
+                <p className="font-medium text-[16px] leading-[1.5]">알림</p>
+              </div>
+              <div className="ml-auto">
+                <span className="inline-flex items-center justify-center bg-[#ff3b30] text-white text-[12px] w-6 h-6 rounded-full">8</span>
+              </div>
+            </button>
+            {showNotifications && (
+              // Lazy load popup component visually placed to the right of the sidebar
+              <div>
+                {/* Import is lazy to avoid SSR issues in some setups; local component used */}
+                <div className="absolute left-[239px] top-0 -translate-y-2 -translate-x-[16px] z-50">
+                  {/* Reuse inline structure to avoid circular imports */}
+                  <div className="w-[360px] bg-white rounded-xl shadow-lg border border-[#e6eef5] p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-[16px] font-semibold text-[#101828]">알림</h4>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            /* mark all read - for now just close popup */
+                            setShowNotifications(false);
+                          }}
+                          className="text-sm text-[#6b7280] hover:text-[#101828]"
+                        >
+                          모두 읽음
+                        </button>
+                        <button
+                          onClick={() => setShowNotifications(false)}
+                          className="p-1 rounded hover:bg-[#f3f4f6]"
+                        >
+                          <IconClose />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 max-h-[320px] overflow-auto pr-1">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="flex flex-col gap-1 bg-[#fbfdff] rounded-lg p-3 border border-[#eef4f8]">
+                          <div className="flex items-start justify-between">
+                            <p className="text-[13px] font-medium text-[#0f1724]">캡션</p>
+                          </div>
+                          <p className="text-[13px] text-[#475569]">알림의 내용이 들어갑니다. 내용이 길어지면 다음 줄로 넘어가요.</p>
+                          <p className="text-[12px] text-[#9aa4b2]">날짜 또는 부가 정보</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
