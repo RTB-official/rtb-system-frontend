@@ -8,6 +8,7 @@ import ReportListPage from './pages/Report/ReportListPage'
 import DashboardPage from './pages/Dashboard/DashboardPage'
 import PersonalExpensePage from './pages/Expense/PersonalExpensePage'
 import VacationPage from './pages/Vacation/VacationPage'
+import MembersPage from "./pages/Members/MembersPage";
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="/expense" element={<PersonalExpensePage />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="/members" element={<MembersPage />} />
       </Routes>
     </BrowserRouter>
   )
