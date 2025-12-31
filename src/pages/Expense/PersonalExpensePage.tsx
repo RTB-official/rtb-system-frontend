@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import ExpenseHeader from "./ExpenseHeader";
@@ -78,7 +78,11 @@ export default function PersonalExpensePage() {
           }
         `}
             >
-                <Sidebar onClose={() => setSidebarOpen(false)} />
+                <Sidebar
+                    onClose={() => setSidebarOpen(false)}
+                    activeMenu="지출 관리"
+                    activeSubMenu="개인 지출"
+                />
             </div>
 
             {/* ✅ Main Content (모바일에서는 ml 제거, 데스크탑에서만 Sidebar 만큼 밀기) */}

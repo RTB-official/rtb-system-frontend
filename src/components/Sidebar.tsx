@@ -166,8 +166,8 @@ export default function Sidebar({
     ];
 
     const expenseSubMenuItems = [
-        { label: "구성원 지출 관리", path: "/expense/member" },
         { label: "개인 지출", path: "/expense" },
+        { label: "구성원 지출 관리", path: "/expense/member" },
     ];
     const reportSubMenuItems = [
         { label: "보고서 작성", path: "/reportcreate" },
@@ -204,10 +204,12 @@ export default function Sidebar({
         if (location.pathname.startsWith("/expense/member")) {
             setActiveItem("지출 관리");
             setExpenseOpen(true);
+            setReportOpen(false);
             setActiveSubItem("구성원 지출 관리");
         } else if (location.pathname.startsWith("/expense")) {
             setActiveItem("지출 관리");
             setExpenseOpen(true);
+            setReportOpen(false);
             setActiveSubItem("개인 지출");
         }
     }, [location.pathname]);
@@ -217,10 +219,12 @@ export default function Sidebar({
         if (location.pathname.startsWith("/reportcreate")) {
             setActiveItem("출장 보고서");
             setReportOpen(true);
+            setExpenseOpen(false);
             setReportActiveSubItem("보고서 작성");
         } else if (location.pathname.startsWith("/report")) {
             setActiveItem("출장 보고서");
             setReportOpen(true);
+            setExpenseOpen(false);
             setReportActiveSubItem("보고서 목록");
         }
     }, [location.pathname]);
@@ -284,11 +288,13 @@ export default function Sidebar({
                         <div key={item.label}>
                             <button
                                 onClick={() => {
-                                    // Toggle report submenu for '출장 보고서'
+                                    // 출장 보고서 클릭 시 첫 번째 하위 메뉴(보고서 작성)로 이동
                                     if (item.label === "출장 보고서") {
-                                        setReportOpen(!reportOpen);
+                                        setReportOpen(true);
                                         setActiveItem("출장 보고서");
                                         setExpenseOpen(false);
+                                        setReportActiveSubItem("보고서 작성");
+                                        navigate("/reportcreate");
                                         return;
                                     }
                                     setActiveItem(item.label);
@@ -349,8 +355,11 @@ export default function Sidebar({
                     <div>
                         <button
                             onClick={() => {
-                                setExpenseOpen(!expenseOpen);
+                                setExpenseOpen(true);
+                                setReportOpen(false);
                                 setActiveItem("지출 관리");
+                                setActiveSubItem("개인 지출");
+                                navigate("/expense");
                             }}
                             className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${
                                 activeMenu === "지출 관리"
@@ -375,6 +384,7 @@ export default function Sidebar({
                                         onClick={() => {
                                             setActiveSubItem(subItem.label);
                                             setActiveItem("지출 관리");
+                                            setReportOpen(false);
                                             if (subItem.path) {
                                                 navigate(subItem.path);
                                             }

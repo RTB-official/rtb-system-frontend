@@ -42,8 +42,10 @@ export default function Table<T = any>({
     };
 
     return (
-        <div className={`overflow-auto border border-gray-200 rounded-xl`}>
-            <table className={`min-w-full text-sm text-gray-800 ${className}`}>
+        <div
+            className={`overflow-auto border border-gray-200 rounded-xl w-full`}
+        >
+            <table className={`w-full text-sm text-gray-800 ${className}`}>
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                         {columns.map((column) => (

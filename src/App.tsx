@@ -9,7 +9,6 @@ import DashboardPage from "./pages/Dashboard/DashboardPage";
 import PersonalExpensePage from "./pages/Expense/PersonalExpensePage";
 import MemberExpensePage from "./pages/Expense/MemberExpensePage";
 import VacationPage from "./pages/Vacation/VacationPage";
-import MemberManagementPage from "./pages/Member/MemberManagementPage";
 
 function App() {
     return (
@@ -30,7 +29,6 @@ function App() {
                 <Route path="/expense/member" element={<MemberExpensePage />} />
                 <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="*" element={<Navigate to="/login" replace />} />
-                <Route path="/members" element={<MemberManagementPage />} />
             </Routes>
         </BrowserRouter>
     );
