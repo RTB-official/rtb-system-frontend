@@ -1,3 +1,4 @@
+//Sidebar.tsx
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, matchPath } from "react-router-dom";
 
@@ -64,7 +65,10 @@ const IconNotifications = () => (
 
 const IconClose = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z" fill="currentColor" />
+    <path
+      d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"
+      fill="currentColor"
+    />
   </svg>
 );
 
@@ -84,7 +88,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
       reportList: "/report",
       reportCreate: "/reportcreate",
       workload: "/workload",
-      expense: "/expense",
+  
+      expenseTeam: "/expense/team",
+      expensePersonal: "/expense/personal",
+  
       vacation: "/Vacation", // 기존이 대문자면 유지
       members: "/members",
     }),
@@ -94,7 +101,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const isMatch = (pattern: string) => !!matchPath({ path: pattern, end: false }, location.pathname);
 
   const isReportRoute = isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate);
-  const isExpenseRoute = isMatch(PATHS.expense);
+  const isExpenseRoute = isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
 
   // ✅ “펼침/선택”만 해도 강조되게 하는 포커스 상태
   const [menuFocus, setMenuFocus] = useState<MenuFocus>(null);
@@ -102,6 +109,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
   // ✅ 서브메뉴 open
   const [reportOpen, setReportOpen] = useState(isReportRoute);
   const [expenseOpen, setExpenseOpen] = useState(isExpenseRoute);
+
+  // ✅ notification 브랜치 기능 이식: 알림 패널 토글
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // 라우트 변경 시: 해당 라우트의 메뉴는 자동으로 열림 + 포커스 자동 정렬
   useEffect(() => {
@@ -114,18 +124,15 @@ export default function Sidebar({ onClose }: SidebarProps) {
       setMenuFocus("EXPENSE");
     }
 
-    // 보고서/지출 라우트가 아니면, open은 닫되
-    // menuFocus는 "사용자가 헤더만 눌러서 펼친 상태"를 유지하고 싶으면 여기서 강제 해제하지 않음.
-    // 단, 라우트 기반 active만 원하면 아래 두 줄 주석 해제:
-    // if (!isReportRoute && menuFocus === "REPORT") setMenuFocus(null);
-    // if (!isExpenseRoute && menuFocus === "EXPENSE") setMenuFocus(null);
-
     if (!isReportRoute) setReportOpen(false);
     if (!isExpenseRoute) setExpenseOpen(false);
+
+    // 라우트 이동 시 알림 팝업은 닫아두는 게 UX 안전
+    setShowNotifications(false);
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ✅ menuFocus가 있으면 다른 메뉴는 “강제로 비활성” 처리(워크로드 강조 잔상 제거)
-  const shouldForceInactive = (label: "DASH" | "WORKLOAD" | "VACATION" | "MEMBERS") => {
+  const shouldForceInactive = (_kind: "DASH" | "WORKLOAD" | "VACATION" | "MEMBERS") => {
     if (!menuFocus) return false;
     // report/expense 포커스일 때는 다른 링크의 isActive를 무시
     return true;
@@ -151,7 +158,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
         setMenuFocus(null); // 다른 메뉴 클릭하면 포커스 해제
         setReportOpen(false);
         setExpenseOpen(false);
+        setShowNotifications(false);
         onClick?.();
+
+        // 모바일에서는 네비 후 사이드바 닫기(원래 props 유지)
+        onClose?.();
       }}
       className={({ isActive }) => {
         const forcedInactive = shouldForceInactive(kind);
@@ -172,8 +183,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
   const SubLink = ({ to, label, focus }: { to: string; label: string; focus: MenuFocus }) => (
     <NavLink
       to={to}
-      end={false}
-      onClick={() => setMenuFocus(focus)}
+      end={true} 
+      onClick={() => {
+        setMenuFocus(focus);
+        setShowNotifications(false);
+        // 모바일에서는 네비 후 사이드바 닫기
+        onClose?.();
+      }}
       className={({ isActive }) =>
         `flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
           isActive ? "text-blue-600 font-medium" : "text-[#6a7282] hover:text-[#101828] hover:bg-[#e5e7eb]"
@@ -194,9 +210,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
   ];
 
   const expenseSubMenuItems = [
-    { label: "구성원 지출 관리", to: PATHS.expense }, // 실제 경로 있으면 변경
-    { label: "개인 지출", to: PATHS.expense },
+    { label: "구성원 지출 관리", to: PATHS.expenseTeam },
+    { label: "개인 지출", to: PATHS.expensePersonal },
   ];
+  
 
   return (
     <aside className="w-[239px] h-full bg-[#f9fafb] border-r border-[#e5e7eb] flex flex-col">
@@ -220,11 +237,56 @@ export default function Sidebar({ onClose }: SidebarProps) {
           </div>
 
           {/* Notifications */}
-          <div className="flex gap-6 items-center p-3">
-            <div className="flex gap-3 items-center w-[162px] text-[#101828]">
-              <IconNotifications />
-              <p className="font-medium text-[16px] leading-[1.5]">알림</p>
-            </div>
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications((v) => !v)}
+              className={`flex gap-6 items-center p-3 rounded-lg transition-colors w-full text-left ${
+                showNotifications ? "bg-[#f1f5f9]" : "text-[#101828] hover:bg-[#e5e7eb]"
+              }`}
+            >
+              <div className="flex gap-3 items-center w-[162px]">
+                <IconNotifications />
+                <p className="font-medium text-[16px] leading-[1.5]">알림</p>
+              </div>
+              <div className="ml-auto">
+                <span className="inline-flex items-center justify-center bg-[#ff3b30] text-white text-[12px] w-6 h-6 rounded-full">
+                  8
+                </span>
+              </div>
+            </button>
+
+            {showNotifications && (
+              <div className="absolute left-[239px] top-0 -translate-y-2 -translate-x-[16px] z-50">
+                <div className="w-[360px] bg-white rounded-xl shadow-lg border border-[#e6eef5] p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-[16px] font-semibold text-[#101828]">알림</h4>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowNotifications(false)}
+                        className="text-sm text-[#6b7280] hover:text-[#101828]"
+                      >
+                        모두 읽음
+                      </button>
+                      <button onClick={() => setShowNotifications(false)} className="p-1 rounded hover:bg-[#f3f4f6]">
+                        <IconClose />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 max-h-[320px] overflow-auto pr-1">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="flex flex-col gap-1 bg-[#fbfdff] rounded-lg p-3 border border-[#eef4f8]">
+                        <div className="flex items-start justify-between">
+                          <p className="text-[13px] font-medium text-[#0f1724]">캡션</p>
+                        </div>
+                        <p className="text-[13px] text-[#475569]">알림의 내용이 들어갑니다. 내용이 길어지면 다음 줄로 넘어가요.</p>
+                        <p className="text-[12px] text-[#9aa4b2]">날짜 또는 부가 정보</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -237,6 +299,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
           {/* 출장 보고서 (헤더 버튼) */}
           <button
             onClick={() => {
+              setShowNotifications(false);
               setMenuFocus("REPORT");
               setReportOpen((prev) => !prev);
               setExpenseOpen(false);
@@ -265,6 +328,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
           {/* 지출 관리 (헤더 버튼) */}
           <button
             onClick={() => {
+              setShowNotifications(false);
               setMenuFocus("EXPENSE");
               setExpenseOpen((prev) => !prev);
               setReportOpen(false);

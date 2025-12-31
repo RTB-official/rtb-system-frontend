@@ -1,6 +1,7 @@
 // DashboardPage.tsx
 import React, { useMemo, useState, useEffect } from 'react'
 import Sidebar from '../../components/Sidebar'
+import AppHeader from '../../layout/headers/AppHeader'
 import CalendarMenu from '../../components/CalendarMenu'
 import EventModal from '../../components/EventModal'
 
@@ -144,23 +145,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* ✅ 모바일 상단 바: "메뉴" 텍스트 제거 → 햄버거 버튼 */}
-        <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            aria-label="사이드바 열기"
-            className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors text-[#101828]"
-          >
-            <IconHamburger />
-          </button>
-
-          <div className="text-sm font-semibold text-gray-800">대시보드</div>
-
-          {/* 오른쪽 균형 맞추기용(필요 없으면 삭제 가능) */}
-          <div className="w-10" />
+        <div className="sticky top-0 z-10 flex-shrink-0">
+          <AppHeader title="대시보드" onMenuClick={() => setSidebarOpen(true)} />
         </div>
 
-        <main className="flex-1 overflow-auto px-4 lg:px-8 py-6 lg:py-10 pt-0">
+        <main className="flex-1 overflow-auto px-4 lg:px-8 py-6 lg:py-10">
+
           <div>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-3xl font-extrabold">

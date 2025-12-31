@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import Sidebar from '../../components/Sidebar';
-import CreationHeader from '../../components/CreationHeader';
+  //  CreationPage.tsx
+  import { useState } from 'react';
+  import Sidebar from '../../components/Sidebar';
+  import AppHeader from '../../layout/headers/AppHeader';
 import BasicInfoSection from '../../components/sections/BasicInfoSection';
 import WorkerSection from '../../components/sections/WorkerSection';
 import WorkLogSection from '../../components/sections/WorkLogSection';
@@ -95,8 +96,34 @@ export default function CreationPage() {
       <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
         {/* Header - 고정 */}
         <div className="sticky top-0 z-10 flex-shrink-0">
-          <CreationHeader onMenuClick={() => setSidebarOpen(true)} />
+          <AppHeader
+            title="출장보고서 작성"
+            onMenuClick={() => setSidebarOpen(true)}
+            actions={
+              <>
+                <button
+                  onClick={handleDraftSave}
+                  className="
+                    h-9 px-3 rounded-lg
+                    bg-[#f2f4f7] text-[#344054] text-[13px] font-medium
+                    hover:bg-[#e4e7ec]
+                    active:bg-[#d0d5dd]
+                    transition-colors
+                  "
+                >
+                  임시 저장
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  className="h-9 px-3 rounded-lg bg-[#364153] text-white text-[13px] font-medium hover:opacity-90 transition"
+                >
+                  제출하기
+                </button>
+              </>
+            }
+          />
         </div>
+
         
         {/* Content Area - 스크롤 가능 */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-12 lg:px-24 xl:px-48 py-6 md:py-9">

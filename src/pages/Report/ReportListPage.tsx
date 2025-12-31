@@ -1,6 +1,8 @@
+//ReportListPage.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../../components/Sidebar';
+import AppHeader from '../../layout/headers/AppHeader';
 
 type ReportStatus = 'submitted' | 'pending' | 'not_submitted';
 
@@ -84,26 +86,22 @@ export default function ReportListPage() {
       </div>
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
-        <div className="sticky top-0 z-10 flex-shrink-0 bg-white border-b border-gray-200 px-4 lg:px-10 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-700"
-              aria-label="메뉴 열기"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 6H20M4 12H20M4 18H20" />
-              </svg>
-            </button>
-            <h1 className="text-[16px] font-semibold text-gray-800">출장 보고서</h1>
-          </div>
-          <button
-            onClick={() => navigate('/reportcreate')}
-            className="px-4 py-2 rounded-lg bg-[#364153] text-white text-sm font-medium hover:bg-[#2d3445] transition-colors"
-          >
-            새 보고서 작성
-          </button>
+        <div className="sticky top-0 z-10 flex-shrink-0">
+          <AppHeader
+            title="출장 보고서"
+            onMenuClick={() => setSidebarOpen(true)}
+            actions={
+              <button
+                onClick={() => navigate('/reportcreate')}
+                className="h-9 px-3 rounded-lg bg-[#364153] text-white text-[13px] font-medium hover:opacity-90 transition inline-flex items-center gap-2"
+              >
+                <span className="text-[18px] leading-none">+</span>
+                새 보고서 작성
+              </button>
+            }
+          />
         </div>
+
 
         <div className="flex-1 overflow-y-auto px-4 lg:px-12 py-6">
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 lg:p-6 flex flex-col gap-4">

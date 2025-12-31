@@ -1,7 +1,8 @@
+//PersonalExpensePage.tsx
 import React, { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import Sidebar from '../../components/Sidebar'
-import ExpenseHeader from './ExpenseHeader'
+import AppHeader from '../../layout/headers/AppHeader'
 import MileageCard from './components/MileageCard'
 import ExpenseFormCard from './components/ExpenseFormCard'
 import ExpenseListItem from './components/ExpenseListItem'
@@ -56,25 +57,15 @@ export default function PersonalExpensePage() {
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
-      {/* ✅ Main Content (모바일에서는 ml 제거, 데스크탑에서만 Sidebar 만큼 밀기) */}
-      <div className="flex-1 min-w-0 overflow-hidden lg:ml-[239px]">
-        {/* ✅ 모바일 상단바(햄버거 + 타이틀) */}
-        <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            aria-label="사이드바 열기"
-            className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors text-[#101828]"
-          >
-            <IconHamburger />
-          </button>
-          <div className="text-sm font-semibold text-gray-800">개인 지출</div>
-          <div className="w-10" />
+      {/* ✅ Main Content */}
+      <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="sticky top-0 z-10 flex-shrink-0">
+          <AppHeader title="개인 지출 기록" onMenuClick={() => setSidebarOpen(true)} />
         </div>
 
         {/* ✅ 스크롤 영역 */}
         <div className="h-full overflow-y-auto p-3">
           <div className="w-full px-6">
-            <ExpenseHeader year="2025년" month="11월" />
 
             <div className="mb-4">
               <div className="flex items-center gap-3">

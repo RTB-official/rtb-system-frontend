@@ -1,5 +1,7 @@
+//MembersPage.tsx
 import { useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar";
+import AppHeader from "../../layout/headers/AppHeader";
 import AddMemberModal from "../../components/modals/AddMemberModal";
 import MemberActionMenu from "../../components/modals/MemberActionMenu";
 
@@ -108,6 +110,7 @@ function Tabs({
 export default function MembersPage() {
   const [activeTab, setActiveTab] = useState<"ALL" | "ADMIN" | "STAFF">("ALL");
   const [page, setPage] = useState(1);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Add Member Modal
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -133,15 +136,45 @@ export default function MembersPage() {
 
   return (
     <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
-      {/* Sidebar: 모바일에서는 숨김, 데스크탑(lg+)만 표시 */}
-      <div className="hidden lg:block w-[239px] h-screen flex-shrink-0">
-        <Sidebar activeMenu="구성원 관리" />
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - 데스크탑 고정, 모바일 슬라이드 */}
+      <div
+        className={`
+          fixed lg:static inset-y-0 left-0 z-30
+          w-[239px] h-screen flex-shrink-0
+          transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+        `}
+      >
+        <Sidebar onClose={() => setSidebarOpen(false)} activeMenu="구성원 관리" />
       </div>
+
 
       {/* Main */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
-        <Header onAdd={handleAdd} />
+        <div className="sticky top-0 z-10 flex-shrink-0">
+          <AppHeader
+            title="구성원 관리"
+            onMenuClick={() => setSidebarOpen(true)}
+            actions={
+              <button
+                onClick={handleAdd}
+                className="h-9 px-3 rounded-lg bg-[#364153] text-white text-[13px] font-medium hover:opacity-90 transition inline-flex items-center gap-2"
+              >
+                <span className="text-[18px] leading-none">+</span>
+                구성원 추가
+              </button>
+            }
+          />
+        </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">

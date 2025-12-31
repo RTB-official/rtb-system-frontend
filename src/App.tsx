@@ -1,3 +1,4 @@
+//App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/Login/LoginPage'
 import HomePage from './pages/Home/HomePage'
@@ -22,7 +23,7 @@ function App() {
         <Route path="/reportcreate" element={<CreationPage />} />
         <Route path="/report" element={<ReportListPage />} />
         <Route path="/Vacation" element={<VacationPage />} />
-        <Route path="/expense" element={<PersonalExpensePage />} />
+        <Route path="/expense/personal" element={<PersonalExpensePage />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
         <Route path="/members" element={<MembersPage />} />

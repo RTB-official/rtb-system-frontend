@@ -1,3 +1,4 @@
+//WorkloadPage.tsx
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -10,6 +11,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import Sidebar from '../../components/Sidebar';
+import AppHeader from '../../layout/headers/AppHeader';
 
 // 아이콘 컴포넌트
 const IconChevronDown = () => (
@@ -129,17 +131,10 @@ export default function WorkloadPage() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-6 lg:px-9 py-3 flex items-center gap-5">
-          <button 
-            onClick={() => setSidebarOpen(true)}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg text-gray-700"
-          >
-            <IconMenu />
-          </button>
-          <h1 className="font-bold text-[22px] text-gray-700">
-            워크로드
-          </h1>
-        </header>
+        <div className="sticky top-0 z-10 flex-shrink-0">
+          <AppHeader title="워크로드" onMenuClick={() => setSidebarOpen(true)} />
+        </div>
+
 
         {/* Content */}
         <main className="flex-1 overflow-auto px-6 lg:px-12 pt-9 pb-24">

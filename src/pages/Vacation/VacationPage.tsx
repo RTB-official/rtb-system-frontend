@@ -1,6 +1,7 @@
+//VacationPage.tsx
 import { useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar";
-import VacationHeader from "../../components/VacationHeader";
+import AppHeader from "../../layout/headers/AppHeader";        <div className="sticky top-0 z-10 flex-shrink-0"></div>
 import VacationManagementSection from "../../components/sections/VacationManagementSection";
 import VacationRequestModal from "../../components/ui/VacationRequestModal";
 
@@ -103,12 +104,21 @@ export default function VacationPage() {
       <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
         {/* Header */}
         <div className="sticky top-0 z-10 flex-shrink-0">
-          <VacationHeader
+          <AppHeader
             title="휴가 관리"
             onMenuClick={() => setSidebarOpen(true)}
-            onRegisterClick={handleRegister}
+            actions={
+              <button
+                onClick={handleRegister}
+                className="h-9 px-3 rounded-lg bg-[#364153] text-white text-[13px] font-medium hover:opacity-90 transition inline-flex items-center gap-2"
+              >
+                <span className="text-[18px] leading-none">+</span>
+                휴가등록
+              </button>
+            }
           />
         </div>
+
 
         {/* Content */}
          <div className="flex-1 overflow-y-auto px-6 md:px-8 lg:px-10 py-6 md:py-9">
