@@ -11,6 +11,7 @@ interface Props {
     leaveType: LeaveType;
     reason: string;
   }) => void;
+  initialDate?: string;
 }
 
 function pad2(n: number) {
@@ -30,6 +31,7 @@ export default function VacationRequestModal({
   onClose,
   availableDays,
   onSubmit,
+  initialDate,
 }: Props) {
   const todayISO = useMemo(() => {
     const now = new Date();
@@ -40,14 +42,14 @@ export default function VacationRequestModal({
   const [leaveType, setLeaveType] = useState<LeaveType>("FULL");
   const [reason, setReason] = useState("개인 사유");
 
-  // 열릴 때 기본값 세팅(원하면 유지로 바꿔도 됨)
+  // 열릴 때 기본값 세팅(초기 날짜가 있으면 우선 사용)
   useEffect(() => {
     if (isOpen) {
-      setDateISO(todayISO);
+      setDateISO(initialDate ?? todayISO);
       setLeaveType("FULL");
       setReason("개인 사유");
     }
-  }, [isOpen, todayISO]);
+  }, [isOpen, initialDate, todayISO]);
 
   // ESC 닫기
   useEffect(() => {

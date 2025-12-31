@@ -92,7 +92,16 @@ export default function CalendarMenu({ onClose, style, selectedDate }: Props) {
       data-node-id="995:12291"
     >
       <MenuItem ref={(el)=> (refs.current['일정 추가']=el)} icon={<IconCalendar className="w-5 h-5" />} label="일정 추가" onClick={() => openPanel('일정 추가')} />
-      <MenuItem ref={(el)=> (refs.current['휴가 등록']=el)} icon={<IconUpload className="w-5 h-5" />} label="휴가 등록" onClick={() => openPanel('휴가 등록')} />
+      <MenuItem
+        ref={(el) => (refs.current['휴가 등록'] = el)}
+        icon={<IconUpload className="w-5 h-5" />}
+        label="휴가 등록"
+        onClick={() => {
+          const q = selectedDate ? `?date=${encodeURIComponent(selectedDate)}&open=1` : '?open=1'
+          navigate(`/vacation${q}`)
+          onClose && onClose()
+        }}
+      />
       <MenuItem
         ref={(el)=> (refs.current['개인 지출']=el)}
         icon={
@@ -158,6 +167,7 @@ function SmallPanel({ label, onClose }: { label: string; onClose: () => void }) 
     </div>
   )
 }
+
 
 
 

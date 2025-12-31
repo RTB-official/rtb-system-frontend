@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import VacationHeader from "../../components/VacationHeader";
 import VacationManagementSection from "../../components/sections/VacationManagementSection";
@@ -25,6 +26,20 @@ export default function VacationPage() {
   const [page, setPage] = useState(1);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const open = params.get("open")
+    const date = params.get("date")
+    if (open === "1" || date) {
+      setModalOpen(true)
+    }
+  }, [location.search])
+
+  // extract initial date if provided in query
+  const queryParams = new URLSearchParams(location.search)
+  const initialDateFromQuery = queryParams.get("date") ?? undefined
 
 
   // 스샷과 유사한 mock
@@ -130,6 +145,7 @@ export default function VacationPage() {
               isOpen={modalOpen}
               onClose={() => setModalOpen(false)}
               availableDays={summary.myAnnual} // 지금은 11일, 원하면 12로
+              initialDate={initialDateFromQuery}
               onSubmit={(payload) => {
                 console.log("휴가 신청 payload:", payload);
                 alert("휴가 신청이 추가되었습니다. (콘솔 확인)");
