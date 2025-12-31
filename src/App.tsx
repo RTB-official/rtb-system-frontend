@@ -9,6 +9,7 @@ import DashboardPage from "./pages/Dashboard/DashboardPage";
 import PersonalExpensePage from "./pages/Expense/PersonalExpensePage";
 import MemberExpensePage from "./pages/Expense/MemberExpensePage";
 import VacationPage from "./pages/Vacation/VacationPage";
+import MembersPage from "./pages/Members/MembersPage";
 
 function App() {
     return (
@@ -27,6 +28,7 @@ function App() {
                 <Route path="/Vacation" element={<VacationPage />} />
                 <Route path="/expense" element={<PersonalExpensePage />} />
                 <Route path="/expense/member" element={<MemberExpensePage />} />
+                <Route path="/members" element={<MembersPage />} />
                 <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="*" element={<Navigate to="/login" replace />} />
             </Routes>

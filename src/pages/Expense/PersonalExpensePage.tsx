@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
-import ExpenseHeader from "./ExpenseHeader";
 import MileageCard from "./components/MileageCard";
 import ExpenseFormCard from "./components/ExpenseFormCard";
 import ExpenseListItem from "./components/ExpenseListItem";
@@ -105,8 +104,6 @@ export default function PersonalExpensePage() {
                 {/* ✅ 스크롤 영역 */}
                 <div className="h-full overflow-y-auto p-3">
                     <div className="w-full px-6">
-                        <ExpenseHeader year="2025년" month="11월" />
-
                         <div className="mb-4">
                             <div className="flex items-center gap-3">
                                 <span className="text-base font-semibold text-gray-700">
