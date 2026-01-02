@@ -4,6 +4,7 @@ import type {
 } from "../../pages/Vacation/VacationPage";
 import Select from "../common/Select";
 import Tabs from "../common/Tabs";
+import Button from "../common/Button";
 
 interface Summary {
     myAnnual: number; // 내 연차
@@ -42,20 +43,20 @@ interface Props {
 function StatusPill({ status }: { status: VacationStatus }) {
     if (status === "승인 완료") {
         return (
-            <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-[12px] font-extrabold text-green-700 bg-green-50">
+            <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-green-700 bg-green-50">
                 승인 완료
             </span>
         );
     }
     if (status === "대기 중") {
         return (
-            <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-[12px] font-extrabold text-slate-600 bg-slate-100">
+            <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-blue-600 bg-blue-50">
                 대기 중
             </span>
         );
     }
     return (
-        <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-[12px] font-extrabold text-red-700 bg-red-50">
+        <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-red-700 bg-red-50">
             반려
         </span>
     );
@@ -201,42 +202,49 @@ export default function VacationManagementSection({
 
             {/* pagination */}
             <div className="flex justify-center items-center gap-2 pt-1">
-                <button
-                    type="button"
-                    className="w-9 h-9 rounded-xl hover:bg-gray-100 text-gray-500 font-black"
+                <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => onPageChange(Math.max(1, page - 1))}
+                    disabled={page === 1}
+                    className="rounded-lg"
                     aria-label="prev"
                 >
-                    ‹
-                </button>
+                    &lt;
+                </Button>
 
-                {Array.from({ length: totalPages }).map((_, i) => {
-                    const p = i + 1;
-                    const active = p === page;
-                    return (
-                        <button
-                            key={p}
-                            type="button"
-                            className={`w-9 h-9 rounded-xl font-black ${
-                                active
-                                    ? "bg-gray-100 text-gray-900"
-                                    : "text-gray-500 hover:bg-gray-100"
-                            }`}
-                            onClick={() => onPageChange(p)}
-                        >
-                            {p}
-                        </button>
-                    );
-                })}
+                <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }).map((_, i) => {
+                        const p = i + 1;
+                        const active = p === page;
+                        return (
+                            <Button
+                                key={p}
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onPageChange(p)}
+                                className={`rounded-lg ${
+                                    active
+                                        ? "bg-gray-100 text-gray-900"
+                                        : "text-gray-500 hover:bg-gray-100"
+                                }`}
+                            >
+                                {p}
+                            </Button>
+                        );
+                    })}
+                </div>
 
-                <button
-                    type="button"
-                    className="w-9 h-9 rounded-xl hover:bg-gray-100 text-gray-500 font-black"
+                <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+                    disabled={page === totalPages}
+                    className="rounded-lg"
                     aria-label="next"
                 >
-                    ›
-                </button>
+                    &gt;
+                </Button>
             </div>
         </div>
     );
