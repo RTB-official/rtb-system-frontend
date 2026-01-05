@@ -396,7 +396,7 @@ export default function MemberExpensePage() {
     ];
 
     return (
-        <div className="flex h-screen bg-gray-50 overflow-hidden">
+        <div className="flex h-screen bg-white overflow-hidden">
             {/* ✅ Mobile Overlay */}
             {sidebarOpen && (
                 <div
@@ -488,7 +488,7 @@ export default function MemberExpensePage() {
                                     );
 
                                 return (
-                                    <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 lg:p-6">
                                         {/* 헤더 */}
                                         <div className="flex items-center justify-between mb-6">
                                             <div>
@@ -783,7 +783,7 @@ export default function MemberExpensePage() {
                                             );
 
                                         return (
-                                            <div className="p-4 lg:p-6">
+                                            <div className="p-4 lg:p-6 bg-gray-50">
                                                 {/* 헤더 */}
                                                 <div className="flex items-center justify-between mb-6">
                                                     <div>
