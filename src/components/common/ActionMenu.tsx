@@ -6,6 +6,7 @@ interface ActionMenuProps {
     onClose: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onResetPassword?: () => void;
     onDownload?: () => void;
     downloadLabel?: string;
 }
@@ -54,12 +55,27 @@ const IconDownload = () => (
     </svg>
 );
 
+const IconLock = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+    >
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0110 0v4" />
+    </svg>
+);
+
 export default function ActionMenu({
     isOpen,
     anchorEl,
     onClose,
     onEdit,
     onDelete,
+    onResetPassword,
     onDownload,
     downloadLabel = "PDF 다운로드",
 }: ActionMenuProps) {
@@ -114,6 +130,18 @@ export default function ActionMenu({
                     <IconEdit />
                     수정
                 </button>
+                {onResetPassword && (
+                    <button
+                        className="w-full px-4 py-3 text-left text-[13px] hover:bg-gray-50 text-gray-800 flex items-center gap-3"
+                        onClick={() => {
+                            onResetPassword();
+                            onClose();
+                        }}
+                    >
+                        <IconLock />
+                        비밀번호 재설정
+                    </button>
+                )}
                 <button
                     className="w-full px-4 py-3 text-left text-[13px] hover:bg-gray-50 text-gray-800 flex items-center gap-3"
                     onClick={() => {

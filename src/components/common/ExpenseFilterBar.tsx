@@ -1,4 +1,3 @@
-import React from "react";
 import Select from "./Select";
 
 interface ExpenseFilterBarProps {
@@ -46,9 +45,8 @@ export default function ExpenseFilterBar({
   const userOpts = userOptions ?? [{ value: "전체", label: "전체" }];
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-[18px] font-semibold text-gray-700 ml-4">
+        <span className="text-[20px] font-semibold text-gray-700">
           조회 기간
         </span>
         <Select
@@ -63,7 +61,7 @@ export default function ExpenseFilterBar({
           options={monthOpts}
           className="w-auto min-w-[140px]"
         />
-        <span className="text-[18px] font-semibold text-gray-700 ml-4">
+        <span className="text-[20px] font-semibold text-gray-700 ml-4">
           사용자
         </span>
         <Select
@@ -73,8 +71,5 @@ export default function ExpenseFilterBar({
           className="w-auto min-w-[140px]"
         />
       </div>
-    </div>
   );
 }
-
-

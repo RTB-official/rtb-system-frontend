@@ -125,9 +125,9 @@ export default function VacationManagementSection({
             </div>
 
             {/* filter */}
-            <div className="flex items-center gap-3">
-                <div className="text-[18px] font-semibold text-gray-900">
-                    조회기간
+            <div className="flex items-center gap-4">
+                <div className="text-[24px] font-semibold text-gray-900">
+                    조회 기간
                 </div>
                 <Select
                     options={[

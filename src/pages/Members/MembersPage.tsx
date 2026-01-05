@@ -6,6 +6,7 @@ import Button from "../../components/common/Button";
 import Tabs from "../../components/common/Tabs";
 import ActionMenu from "../../components/common/ActionMenu";
 import AddMemberModal from "../../components/modals/AddMemberModal";
+import ResetPasswordModal from "../../components/modals/ResetPasswordModal";
 import Table from "../../components/common/Table";
 
 type Member = {
@@ -77,6 +78,9 @@ export default function MembersPage() {
     // Add Member Modal
     const [addModalOpen, setAddModalOpen] = useState(false);
 
+    // Reset Password Modal
+    const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
+
     // ... Action Menu
     const [actionOpen, setActionOpen] = useState(false);
     const [actionAnchor, setActionAnchor] = useState<HTMLElement | null>(null);
@@ -97,6 +101,12 @@ export default function MembersPage() {
     const pageCount = 3;
 
     const handleAdd = () => setAddModalOpen(true);
+
+    const selectedMember = members.find((m) => m.id === selectedMemberId);
+
+    const handleResetPassword = () => {
+        setResetPasswordModalOpen(true);
+    };
 
     return (
         <div className="flex h-screen bg-white overflow-hidden">
@@ -157,8 +167,8 @@ export default function MembersPage() {
                 />
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto mx-9">
-                    <div className="px-6 py-9">
+                <div className="flex-1 overflow-y-auto px-10">
+                    <div className="py-9">
                         {/* Tabs row */}
                         <div className="mb-4">
                             <Tabs
@@ -317,7 +327,7 @@ export default function MembersPage() {
                 }}
             />
 
-            {/* Action Menu (수정/삭제) */}
+            {/* Action Menu (수정/삭제/비밀번호 재설정) */}
             <ActionMenu
                 isOpen={actionOpen}
                 anchorEl={actionAnchor}
@@ -330,12 +340,27 @@ export default function MembersPage() {
                     alert(`수정: ${selectedMemberId}`);
                     // TODO: 수정 모달 열기(예: EditMemberModal)
                 }}
+                onResetPassword={handleResetPassword}
                 onDelete={() => {
                     console.log("삭제:", selectedMemberId);
                     if (confirm("정말 삭제하시겠습니까?")) {
                         alert(`삭제 완료: ${selectedMemberId}`);
                         // TODO: 삭제 API 호출 및 목록 갱신
                     }
+                }}
+            />
+
+            {/* Reset Password Modal */}
+            <ResetPasswordModal
+                isOpen={resetPasswordModalOpen}
+                memberName={selectedMember?.name}
+                onClose={() => setResetPasswordModalOpen(false)}
+                onSubmit={(payload) => {
+                    console.log("비밀번호 재설정:", selectedMemberId, payload);
+                    // TODO: 여기서 API 호출
+                    alert(
+                        `${selectedMember?.name}님의 비밀번호가 재설정되었습니다.`
+                    );
                 }}
             />
         </div>
