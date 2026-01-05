@@ -197,9 +197,9 @@ export default function WorkloadPage() {
                     <div className="flex flex-col gap-6 max-w-[1200px]">
                         {/* 조회 기간 */}
                         <div className="flex flex-wrap items-center gap-5">
-                            <h1 className="text-[28px] font-bold text-gray-700 tracking-tight">
+                            <h2 className="text-[26px] font-bold text-gray-700 tracking-tight">
                                 조회 기간
-                            </h1>
+                            </h2>
                             <YearMonthSelector
                                 year={selectedYear}
                                 month={selectedMonth}

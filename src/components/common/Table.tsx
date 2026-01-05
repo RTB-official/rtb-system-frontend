@@ -51,10 +51,10 @@ export default function Table<T = any>({
     return (
         <div className="flex flex-col">
             <div
-                className={`overflow-auto border border-gray-100 rounded-xl w-full`}
+                className={`overflow-auto border border-gray-100 rounded-2xl w-full`}
             >
                 <table className={`w-full text-sm text-gray-800 ${className}`}>
-                    <thead className="bg-gray-50 border-b border-gray-200">
+                    <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
                             {columns.map((column) => (
                                 <th
@@ -94,10 +94,14 @@ export default function Table<T = any>({
                                 return (
                                     <React.Fragment key={key}>
                                         <tr
-                                            className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                                                onRowClick ? "cursor-pointer" : ""
+                                            className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${
+                                                onRowClick
+                                                    ? "cursor-pointer"
+                                                    : ""
                                             }`}
-                                            onClick={() => onRowClick?.(row, index)}
+                                            onClick={() =>
+                                                onRowClick?.(row, index)
+                                            }
                                         >
                                             {columns.map((column) => (
                                                 <td
@@ -119,7 +123,9 @@ export default function Table<T = any>({
                                                               row,
                                                               index
                                                           )
-                                                        : (row as any)[column.key]}
+                                                        : (row as any)[
+                                                              column.key
+                                                          ]}
                                                 </td>
                                             ))}
                                         </tr>

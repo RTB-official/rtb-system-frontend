@@ -1,5 +1,7 @@
 // DashboardPage.tsx
 import React, { useMemo, useState, useEffect } from "react";
+import MonthNavigator from "../../components/common/MonthNavigator";
+import ScheduleModal from "../../components/common/ScheduleModal";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import CalendarMenu from "../../components/CalendarMenu";
@@ -121,6 +123,27 @@ export default function DashboardPage() {
         setMonth(today.getMonth());
     };
 
+    // Schedule modal state
+    const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+    const [selectedDateForModal, setSelectedDateForModal] =
+        useState<string>("");
+    // calendar events stored per date as { "YYYY-MM-DD": [{ title, color }] }
+    const [calendarEvents, setCalendarEvents] = useState<any>({});
+    // Initialize with sample events
+    useEffect(() => {
+        // If existing, merge sample events into calendarEvents
+        // for simplicity, preload a couple of events for today
+        const todayKey = `${today.getFullYear()}-${String(
+            today.getMonth() + 1
+        ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        setCalendarEvents((prev: any) => ({
+            ...prev,
+            [todayKey]: prev[todayKey] || [
+                { title: "휴가 - 현재", color: "#60a5fa" },
+            ],
+        }));
+    }, []);
+
     return (
         <div className="flex h-screen bg-[#f4f5f7] overflow-hidden font-pretendard">
             {/* Mobile Overlay */}
@@ -135,7 +158,7 @@ export default function DashboardPage() {
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen flex-shrink-0
+          w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
           ${
               sidebarOpen
@@ -160,24 +183,11 @@ export default function DashboardPage() {
                                 {year}년 {month + 1}월
                             </h2>
                             <div className="flex items-center gap-2">
-                                <button
-                                    onClick={prevMonth}
-                                    className="px-3 py-1 rounded-md border text-sm bg-white"
-                                >
-                                    ‹
-                                </button>
-                                <button
-                                    onClick={goToday}
-                                    className="px-3 py-1 rounded-md border text-sm bg-white"
-                                >
-                                    오늘
-                                </button>
-                                <button
-                                    onClick={nextMonth}
-                                    className="px-3 py-1 rounded-md border text-sm bg-white"
-                                >
-                                    ›
-                                </button>
+                                <MonthNavigator
+                                    onPrev={prevMonth}
+                                    onToday={goToday}
+                                    onNext={nextMonth}
+                                />
                             </div>
                         </div>
 
@@ -439,6 +449,15 @@ export default function DashboardPage() {
             {eventModalOpen && (
                 <EventModal onClose={() => setEventModalOpen(false)} />
             )}
+            {/* Schedule modal (담당: 재사용 컴포넌트) */}
+            <ScheduleModal
+                isOpen={scheduleModalOpen}
+                onClose={() => setScheduleModalOpen(false)}
+                onSave={(payload) => {
+                    console.log("새 일정:", payload);
+                    setScheduleModalOpen(false);
+                }}
+            />
         </div>
     );
 }

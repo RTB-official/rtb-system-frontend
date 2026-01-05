@@ -4,6 +4,7 @@ import DatePickerPanel from "../../../components/DatePickerPanel";
 import Input from "../../../components/common/Input";
 import Button from "../../../components/common/Button";
 import Chip from "../../../components/ui/Chip";
+import SectionCard from "../../../components/ui/SectionCard";
 
 export default function MileageCard({
     onAdd,
@@ -27,7 +28,12 @@ export default function MileageCard({
     const wrapperRef = React.useRef<HTMLDivElement | null>(null);
     const costPerKm = 250;
     const cost = Number(distance || 0) * costPerKm;
-    const formattedCost = cost.toLocaleString("ko-KR") + "원";
+    const numericCost = cost.toLocaleString("ko-KR");
+    const formattedCost = (
+        <span className="text-[22px] font-extrabold text-gray-900">
+            {numericCost}원
+        </span>
+    );
 
     const handleAdd = () => {
         if (onAdd) {
@@ -47,16 +53,17 @@ export default function MileageCard({
     };
 
     return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm h-full flex flex-col min-h-[500px]">
-            <div className="flex items-center gap-3 mb-3">
-                <IconCar className="w-8 h-8" />
-                <h4 className="font-semibold text-gray-800 text-lg">
+        <SectionCard
+            title={
+                <span className="flex items-center gap-2 text-gray-900">
+                    <IconCar />
                     개인 차량 마일리지
-                </h4>
-            </div>
-
-            <div className="flex-1 flex flex-col justify-between">
-                <div className="flex-[2] space-y-4">
+                </span>
+            }
+            className="h-full shadow-[0_24px_60px_rgba(15,23,42,0.08)] border-gray-100"
+        >
+            <div className="flex-1 flex flex-col justify-between gap-6">
+                <div className="space-y-4">
                     <div>
                         <Input
                             label="날짜"
@@ -105,7 +112,9 @@ export default function MileageCard({
                                     <Chip
                                         key={c}
                                         onClick={() => setFrom(c)}
-                                        variant={from === c ? "selected" : "default"}
+                                        variant={
+                                            from === c ? "selected" : "default"
+                                        }
                                         size="md"
                                     >
                                         {c}
@@ -123,7 +132,9 @@ export default function MileageCard({
                                     <Chip
                                         key={c}
                                         onClick={() => setTo(c)}
-                                        variant={to === c ? "selected" : "default"}
+                                        variant={
+                                            to === c ? "selected" : "default"
+                                        }
                                         size="md"
                                     >
                                         {c}
@@ -178,7 +189,7 @@ export default function MileageCard({
                     </div>
                 </div>
 
-                <div className="flex-[1] space-y-3">
+                <div className="space-y-3">
                     <div>
                         <Input
                             label="상세내용"
@@ -190,7 +201,7 @@ export default function MileageCard({
                 </div>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-2">
                 <div className="flex items-center justify-between mb-2">
                     <div className="text-base text-gray-500">마일리지</div>
                     <div className="text-base font-semibold">
@@ -206,6 +217,6 @@ export default function MileageCard({
                     추가
                 </Button>
             </div>
-        </div>
+        </SectionCard>
     );
 }

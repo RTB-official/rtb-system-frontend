@@ -8,6 +8,7 @@ import DatePickerPanel from "../../../components/DatePickerPanel";
 import Input from "../../../components/common/Input";
 import Select from "../../../components/common/Select";
 import Button from "../../../components/common/Button";
+import SectionCard from "../../../components/ui/SectionCard";
 
 export default function ExpenseFormCard({
     onAdd,
@@ -26,7 +27,6 @@ export default function ExpenseFormCard({
     const [type, setType] = React.useState("");
     const [amount, setAmount] = React.useState("");
     const [detail, setDetail] = React.useState("");
-    const [file, setFile] = React.useState<File | null>(null);
     const [preview, setPreview] = React.useState<string | null>(null);
     const fileRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -44,22 +44,22 @@ export default function ExpenseFormCard({
             setType("");
             setAmount("");
             setDetail("");
-            setFile(null);
             setPreview(null);
         }
     };
 
     return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm h-full flex flex-col min-h-[500px]">
-            <div className="flex items-center gap-3 mb-3">
-                <IconCardAlt className="w-8 h-8" />
-                <h4 className="font-semibold text-gray-800 text-lg">
+        <SectionCard
+            title={
+                <span className="flex items-center gap-2 text-gray-900">
+                    <IconCardAlt />
                     개인 카드/현금 지출내역
-                </h4>
-            </div>
-
-            <div className="flex-1 flex flex-col justify-between">
-                <div className="flex-[2] space-y-6">
+                </span>
+            }
+            className="h-full shadow-[0_24px_60px_rgba(15,23,42,0.08)] border-gray-100"
+        >
+            <div className="flex-1 flex flex-col justify-between gap-6">
+                <div className="space-y-6">
                     <div>
                         <Input
                             label="날짜"
@@ -123,7 +123,7 @@ export default function ExpenseFormCard({
                     </div>
                 </div>
 
-                <div className="flex-[1] space-y-6">
+                <div className="space-y-6">
                     <div>
                         <Input
                             label="상세내역"
@@ -166,7 +166,6 @@ export default function ExpenseFormCard({
                             className="hidden"
                             onChange={(e) => {
                                 const f = e.target.files?.[0] ?? null;
-                                setFile(f);
                                 if (f) {
                                     const url = URL.createObjectURL(f);
                                     setPreview(url);
@@ -179,7 +178,7 @@ export default function ExpenseFormCard({
                 </div>
             </div>
 
-            <div className="mt-4">
+            <div>
                 <Button
                     variant="secondary"
                     size="md"
@@ -189,6 +188,6 @@ export default function ExpenseFormCard({
                     추가
                 </Button>
             </div>
-        </div>
+        </SectionCard>
     );
 }
