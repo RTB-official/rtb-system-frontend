@@ -14,7 +14,7 @@ export default function Header({
     rightContent,
 }: HeaderProps) {
     return (
-        <div className="sticky top-0 z-10 flex-shrink-0 bg-white border-b border-gray-200 px-4 lg:px-10 h-18 flex items-center justify-between">
+        <div className="sticky top-0 z-10 shrink-0 bg-white border-b border-gray-200 px-4 lg:px-10 h-18 flex items-center justify-between">
             <div className="flex items-center gap-3">
                 {onMenuClick && (
                     <button

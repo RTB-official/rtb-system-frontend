@@ -12,52 +12,7 @@ import {
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
-
-// 아이콘 컴포넌트
-const IconChevronDown = () => (
-    <svg
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M7.41 8.59L12 13.17L16.59 8.59L18 10L12 16L6 10L7.41 8.59Z"
-            fill="currentColor"
-        />
-    </svg>
-);
-
-const IconChevronLeft = () => (
-    <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M15.41 7.41L14 6L8 12L14 18L15.41 16.59L10.83 12L15.41 7.41Z"
-            fill="currentColor"
-        />
-    </svg>
-);
-
-const IconChevronRight = () => (
-    <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M8.59 16.59L10 18L16 12L10 6L8.59 7.41L13.17 12L8.59 16.59Z"
-            fill="currentColor"
-        />
-    </svg>
-);
+import YearMonthSelector from "../../components/common/YearMonthSelector";
 
 // 샘플 차트 데이터
 const chartData = [
@@ -203,7 +158,6 @@ export default function WorkloadPage() {
     const [selectedYear, setSelectedYear] = useState("2025년");
     const [selectedMonth, setSelectedMonth] = useState("11월");
     const [currentPage, setCurrentPage] = useState(1);
-    const [hoveredRow, setHoveredRow] = useState<number | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const totalPages = 3;
@@ -228,10 +182,7 @@ export default function WorkloadPage() {
         transition-transform duration-300 ease-in-out
       `}
             >
-                <Sidebar
-                    onClose={() => setSidebarOpen(false)}
-                    activeMenu="워크로드"
-                />
+                <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
 
             {/* Main Content */}
@@ -246,25 +197,15 @@ export default function WorkloadPage() {
                     <div className="flex flex-col gap-6 max-w-[1200px]">
                         {/* 조회 기간 */}
                         <div className="flex flex-wrap items-center gap-5">
-                            <h1 className="text-[28px] font-bold text-gray-700 tracking-tight">
+                            <h2 className="text-[26px] font-bold text-gray-700 tracking-tight">
                                 조회 기간
-                            </h1>
-                            <div className="flex gap-2">
-                                {/* 년도 선택 */}
-                                <div className="relative">
-                                    <button className="flex items-center gap-1 px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-800 font-semibold">
-                                        {selectedYear}
-                                        <IconChevronDown />
-                                    </button>
-                                </div>
-                                {/* 월 선택 */}
-                                <div className="relative">
-                                    <button className="flex items-center gap-1 px-4 py-3 bg-white border border-gray-200 rounded-xl text-gray-800 font-semibold">
-                                        {selectedMonth}
-                                        <IconChevronDown />
-                                    </button>
-                                </div>
-                            </div>
+                            </h2>
+                            <YearMonthSelector
+                                year={selectedYear}
+                                month={selectedMonth}
+                                onYearChange={setSelectedYear}
+                                onMonthChange={setSelectedMonth}
+                            />
                         </div>
 
                         {/* 인원별 작업시간 차트 */}
@@ -396,47 +337,12 @@ export default function WorkloadPage() {
                                 ]}
                                 data={tableData}
                                 rowKey="id"
+                                pagination={{
+                                    currentPage,
+                                    totalPages,
+                                    onPageChange: setCurrentPage,
+                                }}
                             />
-
-                            {/* 페이지네이션 */}
-                            <div className="flex items-center justify-center gap-1 mt-4">
-                                <button
-                                    onClick={() =>
-                                        setCurrentPage(
-                                            Math.max(1, currentPage - 1)
-                                        )
-                                    }
-                                    className="w-[30px] h-[30px] flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
-                                >
-                                    <IconChevronLeft />
-                                </button>
-                                {[1, 2, 3].map((page) => (
-                                    <button
-                                        key={page}
-                                        onClick={() => setCurrentPage(page)}
-                                        className={`w-[30px] h-[30px] flex items-center justify-center rounded-full text-sm font-medium transition-colors ${
-                                            currentPage === page
-                                                ? "bg-gray-100 text-gray-900"
-                                                : "text-gray-500 hover:bg-gray-50"
-                                        }`}
-                                    >
-                                        {page}
-                                    </button>
-                                ))}
-                                <button
-                                    onClick={() =>
-                                        setCurrentPage(
-                                            Math.min(
-                                                totalPages,
-                                                currentPage + 1
-                                            )
-                                        )
-                                    }
-                                    className="w-[30px] h-[30px] flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500"
-                                >
-                                    <IconChevronRight />
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </main>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
+import Button from "../../components/common/Button";
 import BasicInfoSection from "../../components/sections/BasicInfoSection";
 import WorkerSection from "../../components/sections/WorkerSection";
 import WorkLogSection from "../../components/sections/WorkLogSection";
@@ -94,7 +95,7 @@ export default function CreationPage() {
             <div
                 className={`
         fixed lg:static inset-y-0 left-0 z-30
-        w-[239px] h-screen flex-shrink-0
+        w-[239px] h-screen shrink-0
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}
@@ -132,34 +133,36 @@ export default function CreationPage() {
                     }
                     rightContent={
                         <>
-                            <button
+                            <Button
+                                variant="outline"
+                                size="md"
                                 onClick={handleDraftSave}
-                                className="h-9 md:h-10 px-3 md:px-4 py-2 bg-gray-100 rounded-xl flex gap-1 items-center justify-center hover:bg-gray-200 transition-colors"
                             >
-                                <span className="font-medium text-[12px] md:text-[14px] text-gray-600 text-center leading-[1.5]">
-                                    임시 저장
-                                </span>
-                            </button>
-                            <button
+                                임시 저장
+                            </Button>
+                            <Button
+                                variant="primary"
+                                size="md"
                                 onClick={handleSubmit}
-                                className="h-9 md:h-10 px-3 md:px-4 py-2 bg-[#364153] rounded-xl flex gap-1 items-center justify-center hover:bg-[#1f2937] transition-colors"
+                                icon={
+                                    <svg
+                                        width="16"
+                                        height="16"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                        <path
+                                            d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM16 18H8V16H16V18ZM16 14H8V12H16V14ZM13 9V3.5L18.5 9H13Z"
+                                            fill="currentColor"
+                                        />
+                                    </svg>
+                                }
                             >
-                                <svg
-                                    width="24"
-                                    height="24"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                    <path
-                                        d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM16 18H8V16H16V18ZM16 14H8V12H16V14ZM13 9V3.5L18.5 9H13Z"
-                                        fill="white"
-                                    />
-                                </svg>
-                                <span className="hidden sm:inline font-medium text-[12px] md:text-[14px] text-white text-center leading-[1.5]">
+                                <span className="hidden sm:inline">
                                     제출하기
                                 </span>
-                            </button>
+                            </Button>
                         </>
                     }
                 />

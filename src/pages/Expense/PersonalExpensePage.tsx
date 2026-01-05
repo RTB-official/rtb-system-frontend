@@ -1,39 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
+import Header from "../../components/common/Header";
 import MileageCard from "./components/MileageCard";
 import ExpenseFormCard from "./components/ExpenseFormCard";
-import ExpenseListItem from "./components/ExpenseListItem";
-
-// ✅ 햄버거 아이콘 (가로줄 3개)
-const IconHamburger = () => (
-    <svg
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        aria-hidden="true"
-    >
-        <path
-            d="M4 6h16"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-        />
-        <path
-            d="M4 12h16"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-        />
-        <path
-            d="M4 18h16"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-        />
-    </svg>
-);
+import ExpenseHistorySection, {
+    ExpenseHistoryItem,
+} from "./components/ExpenseHistorySection";
+import YearMonthSelector from "../../components/common/YearMonthSelector";
+import Button from "../../components/common/Button";
 
 export default function PersonalExpensePage() {
     const location = useLocation();
@@ -43,10 +18,11 @@ export default function PersonalExpensePage() {
     const [leftItems, setLeftItems] = useState<any[]>([]);
     const [rightItems, setRightItems] = useState<any[]>([]);
 
-    // ✅ 모바일 사이드바 토글 상태
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [year, setYear] = useState("2025년");
+    const [month, setMonth] = useState("11월");
+    const [submittedIds, setSubmittedIds] = useState<number[]>([]);
 
-    // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금(선택)
     useEffect(() => {
         document.body.style.overflow = sidebarOpen ? "hidden" : "";
         return () => {
@@ -54,9 +30,60 @@ export default function PersonalExpensePage() {
         };
     }, [sidebarOpen]);
 
+    const yearOptions = useMemo(() => {
+        const currentYear = new Date().getFullYear();
+        return Array.from({ length: 5 }, (_, i) => currentYear - 2 + i).map(
+            (y) => ({ value: `${y}년`, label: `${y}년` })
+        );
+    }, []);
+
+    const monthOptions = useMemo(() => {
+        return Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+            value: `${m}월`,
+            label: `${m}월`,
+        }));
+    }, []);
+
+    const handleRemoveLeftItem = (id: number) => {
+        setLeftItems((prev) => prev.filter((item) => item.id !== id));
+        setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
+    };
+
+    const handleRemoveRightItem = (id: number) => {
+        setRightItems((prev) => prev.filter((item) => item.id !== id));
+        setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
+    };
+
+    const mileageHistory = useMemo<ExpenseHistoryItem[]>(
+        () =>
+            leftItems.map((it) => ({
+                id: it.id,
+                variant: "mileage" as const,
+                date: it.date || "",
+                amount: `${(it.cost || 0).toLocaleString("ko-KR")}원`,
+                routeLabel: `${it.from || "출발지"} → ${it.to || "도착지"}`,
+                distanceLabel: `${it.distance || 0}km`,
+                desc: it.note || "",
+            })),
+        [leftItems]
+    );
+
+    const cardHistory = useMemo<ExpenseHistoryItem[]>(
+        () =>
+            rightItems.map((it) => ({
+                id: it.id,
+                variant: "card" as const,
+                date: it.date || "",
+                amount: `${Number(it.amount || 0).toLocaleString("ko-KR")}원`,
+                tag: it.type || "기타",
+                desc: it.detail || "",
+                img: it.img || null,
+            })),
+        [rightItems]
+    );
+
     return (
-        <div className="flex h-screen bg-[#f4f5f7] overflow-hidden">
-            {/* ✅ Mobile Overlay */}
+        <div className="flex h-screen bg-[#f5f7fb] overflow-hidden">
             {sidebarOpen && (
                 <div
                     className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -64,11 +91,10 @@ export default function PersonalExpensePage() {
                 />
             )}
 
-            {/* ✅ Sidebar - 데스크탑 고정, 모바일 슬라이드 */}
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen flex-shrink-0
+          w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
           ${
               sidebarOpen
@@ -77,130 +103,88 @@ export default function PersonalExpensePage() {
           }
         `}
             >
-                <Sidebar
-                    onClose={() => setSidebarOpen(false)}
-                    activeMenu="지출 관리"
-                    activeSubMenu="개인 지출"
-                />
+                <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
 
-            {/* ✅ Main Content (모바일에서는 ml 제거, 데스크탑에서만 Sidebar 만큼 밀기) */}
-            <div className="flex-1 min-w-0 overflow-hidden lg:ml-[239px]">
-                {/* ✅ 모바일 상단바(햄버거 + 타이틀) */}
-                <div className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
-                    <button
-                        onClick={() => setSidebarOpen(true)}
-                        aria-label="사이드바 열기"
-                        className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors text-[#101828]"
-                    >
-                        <IconHamburger />
-                    </button>
-                    <div className="text-sm font-semibold text-gray-800">
-                        개인 지출
-                    </div>
-                    <div className="w-10" />
-                </div>
+            <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
+                <Header
+                    title="개인 지출 기록"
+                    onMenuClick={() => setSidebarOpen(true)}
+                />
 
-                {/* ✅ 스크롤 영역 */}
-                <div className="h-full overflow-y-auto p-3">
-                    <div className="w-full px-6">
-                        <div className="mb-4">
-                            <div className="flex items-center gap-3">
-                                <span className="text-base font-semibold text-gray-700">
-                                    조회 기간
-                                </span>
-                                <select className="border rounded-md px-4 py-2 text-base bg-white">
-                                    <option>2025년</option>
-                                </select>
-                                <select className="border rounded-md px-4 py-2 text-base bg-white">
-                                    <option>11월</option>
-                                </select>
-                            </div>
+                <div className="flex-1 overflow-y-auto p-4 lg:p-9">
+                    <div className="max-w-7xl mx-auto">
+                        {/* 조회 기간 */}
+                        <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-[0px_12px_35px_rgba(15,23,42,0.06)] mb-8 flex flex-wrap items-center gap-4">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                조회 기간
+                            </h2>
+                            <YearMonthSelector
+                                year={year}
+                                month={month}
+                                onYearChange={setYear}
+                                onMonthChange={setMonth}
+                                yearOptions={yearOptions}
+                                monthOptions={monthOptions}
+                            />
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
-                            <div>
-                                <MileageCard
-                                    initialDate={preselectedDate || undefined}
-                                    onAdd={(item) =>
-                                        setLeftItems((prev) => [item, ...prev])
-                                    }
-                                />
-                            </div>
-                            <div>
-                                <ExpenseFormCard
-                                    initialDate={preselectedDate || undefined}
-                                    onAdd={(item) =>
-                                        setRightItems((prev) => [item, ...prev])
-                                    }
-                                />
-                            </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 items-stretch">
+                            <MileageCard
+                                initialDate={preselectedDate || undefined}
+                                onAdd={(item) =>
+                                    setLeftItems((prev) => [item, ...prev])
+                                }
+                            />
+                            <ExpenseFormCard
+                                initialDate={preselectedDate || undefined}
+                                onAdd={(item) =>
+                                    setRightItems((prev) => [item, ...prev])
+                                }
+                            />
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                            <div>
-                                {leftItems.length === 0 ? (
-                                    <div className="text-gray-400 py-8 text-center rounded border border-dashed border-gray-100">
-                                        등록된 마일리지 내역이 없습니다.
-                                    </div>
-                                ) : (
-                                    leftItems.map((it) => (
-                                        <ExpenseListItem
-                                            key={it.id}
-                                            date={it.date || ""}
-                                            tag={"개인"}
-                                            desc={it.note || ""}
-                                            amount={`${it.distance || 0}km`}
-                                            tagColor="#3b82f6"
-                                        />
-                                    ))
-                                )}
-                            </div>
-
-                            <div>
-                                {rightItems.length === 0 ? (
-                                    <div className="text-gray-400 py-8 text-center rounded border border-dashed border-gray-100">
-                                        등록된 지출 내역이 없습니다.
-                                    </div>
-                                ) : (
-                                    rightItems.map((it) => (
-                                        <ExpenseListItem
-                                            key={it.id}
-                                            date={it.date || ""}
-                                            tag={it.type || "기타"}
-                                            desc={it.detail || ""}
-                                            amount={`${it.amount || "0"}원`}
-                                            tagColor={
-                                                it.type === "교통비"
-                                                    ? "#fb923c"
-                                                    : "#94a3b8"
-                                            }
-                                            img={it.img}
-                                        />
-                                    ))
-                                )}
-                            </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                            <ExpenseHistorySection
+                                title="개인 차량 마일리지 내역"
+                                items={mileageHistory}
+                                emptyMessage="등록된 마일리지 내역이 없습니다."
+                                submittedIds={submittedIds}
+                                onRemove={handleRemoveLeftItem}
+                            />
+                            <ExpenseHistorySection
+                                title="개인 카드/현금 지출내역"
+                                items={cardHistory}
+                                emptyMessage="등록된 지출 내역이 없습니다."
+                                submittedIds={submittedIds}
+                                onRemove={handleRemoveRightItem}
+                            />
                         </div>
 
-                        {/* ✅ submit bar (데스크탑에서는 Sidebar만큼 왼쪽 여백, 모바일에서는 전체폭) */}
                         <div className="fixed bottom-6 left-6 right-6 lg:left-[239px]">
-                            <button
-                                onClick={() =>
+                            <Button
+                                variant="primary"
+                                size="lg"
+                                fullWidth
+                                onClick={() => {
                                     alert(
                                         "제출 처리: " +
                                             (leftItems.length +
                                                 rightItems.length) +
                                             "개"
-                                    )
-                                }
-                                className="w-full bg-[#364153] text-white rounded-full py-3 text-center font-medium"
+                                    );
+                                    const allIds = [
+                                        ...leftItems.map((i) => i.id),
+                                        ...rightItems.map((i) => i.id),
+                                    ];
+                                    setSubmittedIds(allIds);
+                                }}
                             >
                                 모두 제출 (
                                 {leftItems.length + rightItems.length}개)
-                            </button>
+                            </Button>
                         </div>
 
-                        {/* fixed submit bar 때문에 내용 가려지지 않도록 여백 */}
                         <div className="h-24" />
                     </div>
                 </div>

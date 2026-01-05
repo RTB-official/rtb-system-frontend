@@ -23,11 +23,7 @@ export default function ReportCreatePage() {
         transition-transform duration-300 ease-in-out
       `}
             >
-                <Sidebar
-                    onClose={() => setSidebarOpen(false)}
-                    activeMenu="출장 보고서"
-                    activeSubMenu="보고서 작성"
-                />
+                <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

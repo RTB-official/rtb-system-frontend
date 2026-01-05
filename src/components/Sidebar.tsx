@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { NavLink, useLocation, matchPath, useNavigate } from "react-router-dom";
+import NotificationPopup from "./ui/NotificationPopup";
 
 // 아이콘 컴포넌트들
 const IconHome = () => (
@@ -122,116 +123,165 @@ const IconClose = () => (
     </svg>
 );
 
-const IconSubdirectory = () => (
-    <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path d="M19 15L13 21V18H4V10H6V16H13V13L19 15Z" fill="currentColor" />
-    </svg>
-);
-
 interface SidebarProps {
     onClose?: () => void;
-    activeMenu?: string;
-    activeSubMenu?: string;
 }
 
-export default function Sidebar({
-    onClose,
-    activeMenu = "출장 보고서",
-    activeSubMenu,
-}: SidebarProps) {
-    const [activeItem, setActiveItem] = useState(activeMenu);
-    const [expenseOpen, setExpenseOpen] = useState(activeMenu === "지출 관리");
-    const [reportOpen, setReportOpen] = useState(activeMenu === "출장 보고서");
-    const [activeSubItem, setActiveSubItem] = useState(activeSubMenu || "");
-    const [reportActiveSubItem, setReportActiveSubItem] = useState("");
-    const navigate = useNavigate();
+type MenuFocus = "REPORT" | "EXPENSE" | null;
+
+export default function Sidebar({ onClose }: SidebarProps) {
     const location = useLocation();
+    const navigate = useNavigate();
 
+    // ✅ 프로젝트 라우터와 100% 동일해야 함 (대/소문자 포함)
+    const PATHS = useMemo(
+        () => ({
+            dashboard: "/dashboard",
+            reportList: "/report",
+            reportCreate: "/reportcreate",
+            workload: "/workload",
+
+            expenseTeam: "/expense/member",
+            expensePersonal: "/expense", // Changed to /expense
+            // expensePersonal: "/expense/personal", // Original
+
+            vacation: "/Vacation",
+            members: "/members",
+        }),
+        []
+    );
+
+    const isMatch = (pattern: string) =>
+        !!matchPath({ path: pattern, end: false }, location.pathname);
+
+    const isReportRoute =
+        isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate);
+    const isExpenseRoute =
+        isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
+
+    // ✅ "펼침/선택"만 해도 강조되게 하는 포커스 상태
+    const [menuFocus, setMenuFocus] = useState<MenuFocus>(null);
+
+    // ✅ 서브메뉴 open
+    const [reportOpen, setReportOpen] = useState(isReportRoute);
+    const [expenseOpen, setExpenseOpen] = useState(isExpenseRoute);
+
+    // ✅ notification 브랜치 기능 이식: 알림 패널 토글
+    const [showNotifications, setShowNotifications] = useState(false);
+
+    // 라우트 변경 시: 해당 라우트의 메뉴는 자동으로 열림 + 포커스 자동 정렬
     useEffect(() => {
-        if (activeMenu === "지출 관리") {
-            setExpenseOpen(true);
+        if (isReportRoute) {
+            setReportOpen(true);
+            setMenuFocus("REPORT");
         }
-    }, [activeMenu]);
+        if (isExpenseRoute) {
+            setExpenseOpen(true);
+            setMenuFocus("EXPENSE");
+        }
 
-    const mainMenuItems = [
-        { icon: <IconHome />, label: "대시보드" },
-        { icon: <IconDescription />, label: "출장 보고서" },
-        { icon: <IconAssessment />, label: "워크로드" },
+        if (!isReportRoute) setReportOpen(false);
+        if (!isExpenseRoute) setExpenseOpen(false);
+
+        // 라우트 이동 시 알림 팝업은 닫아두는 게 UX 안전
+        setShowNotifications(false);
+    }, [location.pathname, isReportRoute, isExpenseRoute]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ✅ menuFocus가 있으면 다른 메뉴는 "강제로 비활성" 처리(워크로드 강조 잔상 제거)
+    const shouldForceInactive = (
+        _kind: "DASH" | "WORKLOAD" | "VACATION" | "MEMBERS"
+    ) => {
+        if (!menuFocus) return false;
+        // report/expense 포커스일 때는 다른 링크의 isActive를 무시
+        return true;
+    };
+
+    const MainLink = ({
+        to,
+        icon,
+        label,
+        kind,
+        onClick,
+    }: {
+        to: string;
+        icon: React.ReactNode;
+        label: string;
+        kind: "DASH" | "WORKLOAD" | "VACATION" | "MEMBERS";
+        onClick?: () => void;
+    }) => (
+        <NavLink
+            to={to}
+            end={false}
+            onClick={() => {
+                setMenuFocus(null); // 다른 메뉴 클릭하면 포커스 해제
+                setReportOpen(false);
+                setExpenseOpen(false);
+                setShowNotifications(false);
+                onClick?.();
+
+                // 모바일에서는 네비 후 사이드바 닫기(원래 props 유지)
+                onClose?.();
+            }}
+            className={({ isActive }) => {
+                const forcedInactive = shouldForceInactive(kind);
+                const active = forcedInactive ? false : isActive;
+
+                return `flex gap-6 items-center p-3 rounded-xl transition-colors ${
+                    active
+                        ? "bg-[#364153] text-white"
+                        : "text-[#101828] hover:bg-[#e5e7eb]"
+                }`;
+            }}
+        >
+            <div className="flex gap-3 items-center w-[162px]">
+                {icon}
+                <p className="font-medium text-[16px] leading-[1.5]">{label}</p>
+            </div>
+        </NavLink>
+    );
+
+    const SubLink = ({
+        to,
+        label,
+        focus,
+    }: {
+        to: string;
+        label: string;
+        focus: MenuFocus;
+    }) => (
+        <NavLink
+            to={to}
+            end={true}
+            onClick={() => {
+                setMenuFocus(focus);
+                setShowNotifications(false);
+                // 모바일에서는 네비 후 사이드바 닫기
+                onClose?.();
+            }}
+            className={({ isActive }) =>
+                `flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
+                    isActive
+                        ? "text-blue-600 font-medium"
+                        : "text-[#6a7282] hover:text-[#101828] hover:bg-[#e5e7eb]"
+                }`
+            }
+        >
+            <span className="text-gray-400">ㄴ</span>
+            <p className="text-[14px]">{label}</p>
+        </NavLink>
+    );
+
+    const reportActive = isReportRoute || menuFocus === "REPORT";
+    const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
+
+    const reportSubMenuItems = [
+        { label: "보고서 작성", to: PATHS.reportCreate },
+        { label: "보고서 목록", to: PATHS.reportList },
     ];
 
     const expenseSubMenuItems = [
-        { label: "개인 지출", path: "/expense" },
-        { label: "구성원 지출 관리", path: "/expense/member" },
-    ];
-    const reportSubMenuItems = [
-        { label: "보고서 작성", path: "/reportcreate" },
-        { label: "보고서 목록", path: "/report" },
-    ];
-
-    const routeMap: Record<string, string> = {
-        대시보드: "/dashboard",
-        "출장 보고서": "/report",
-        워크로드: "/workload",
-        "지출 관리": "/reportcreate",
-        "휴가 관리": "/Vacation",
-        "구성원 관리": "/members",
-    };
-
-    // inverse map: path -> label (first match)
-    const getLabelFromPath = (path: string) => {
-        const entry = Object.entries(routeMap).find(([, p]) =>
-            path.startsWith(p)
-        );
-        return entry ? entry[0] : "";
-    };
-
-    // Sync active item with current route so hover/active state reflects navigation
-    useEffect(() => {
-        const label = getLabelFromPath(location.pathname);
-        if (label) {
-            setActiveItem(label);
-            setExpenseOpen(label === "지출 관리");
-        }
-    }, [location.pathname]);
-    // Ensure /expense route highlights appropriate submenu under 지출 관리
-    useEffect(() => {
-        if (location.pathname.startsWith("/expense/member")) {
-            setActiveItem("지출 관리");
-            setExpenseOpen(true);
-            setReportOpen(false);
-            setActiveSubItem("구성원 지출 관리");
-        } else if (location.pathname.startsWith("/expense")) {
-            setActiveItem("지출 관리");
-            setExpenseOpen(true);
-            setReportOpen(false);
-            setActiveSubItem("개인 지출");
-        }
-    }, [location.pathname]);
-
-    // Ensure /report routes highlight subitems under 출장 보고서
-    useEffect(() => {
-        if (location.pathname.startsWith("/reportcreate")) {
-            setActiveItem("출장 보고서");
-            setReportOpen(true);
-            setExpenseOpen(false);
-            setReportActiveSubItem("보고서 작성");
-        } else if (location.pathname.startsWith("/report")) {
-            setActiveItem("출장 보고서");
-            setReportOpen(true);
-            setExpenseOpen(false);
-            setReportActiveSubItem("보고서 목록");
-        }
-    }, [location.pathname]);
-
-    const bottomMenuItems = [
-        { icon: <IconBeachAccess />, label: "휴가 관리" },
-        { icon: <IconPeople />, label: "구성원 관리" },
+        { label: "개인 지출", to: PATHS.expensePersonal },
+        { label: "구성원 지출 관리", to: PATHS.expenseTeam },
     ];
 
     return (
@@ -243,13 +293,12 @@ export default function Sidebar({
                         <img
                             src="/images/RTBlogo.png"
                             alt="RTB 로고"
-                            className="h-10 w-auto object-contain flex-shrink-0"
+                            className="h-10 w-auto object-contain shrink-0"
                         />
                         <p className="font-semibold text-[13px] text-[#101828] leading-[1.5] whitespace-nowrap">
                             RTB 통합 관리 시스템
                         </p>
                     </div>
-                    {/* 모바일 닫기 버튼 */}
                     <button
                         onClick={onClose}
                         className="lg:hidden p-1 hover:bg-[#e5e7eb] rounded-lg transition-colors text-[#101828]"
@@ -268,101 +317,101 @@ export default function Sidebar({
                     </div>
 
                     {/* Notifications */}
-                    <div className="flex gap-6 items-center p-3">
-                        <div className="flex gap-3 items-center w-[162px] text-[#101828]">
-                            <IconNotifications />
-                            <p className="font-medium text-[16px] leading-[1.5]">
-                                알림
-                            </p>
-                        </div>
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowNotifications((v) => !v)}
+                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors w-full text-left ${
+                                showNotifications
+                                    ? "bg-[#f1f5f9]"
+                                    : "text-[#101828] hover:bg-[#e5e7eb]"
+                            }`}
+                        >
+                            <div className="flex gap-3 items-center w-[162px]">
+                                <IconNotifications />
+                                <p className="font-medium text-[16px] leading-[1.5]">
+                                    알림
+                                </p>
+                            </div>
+                            <div className="ml-auto">
+                                <span className="inline-flex items-center justify-center bg-[#ff3b30] text-white text-[12px] w-6 h-6 rounded-full">
+                                    8
+                                </span>
+                            </div>
+                        </button>
+
+                        {showNotifications && (
+                            <NotificationPopup
+                                onClose={() => setShowNotifications(false)}
+                            />
+                        )}
                     </div>
-                </div>
 
-                {/* Divider */}
-                <div className="h-px bg-[#e5e7eb] rounded-full" />
+                    <div className="h-px bg-[#e5e7eb] rounded-full" />
 
-                {/* Menu Items */}
-                <nav className="flex flex-col gap-2">
-                    {/* Main Menu Items */}
-                    {mainMenuItems.map((item) => (
-                        <div key={item.label}>
-                            <button
-                                onClick={() => {
-                                    // 출장 보고서 클릭 시 첫 번째 하위 메뉴(보고서 작성)로 이동
-                                    if (item.label === "출장 보고서") {
-                                        setReportOpen(true);
-                                        setActiveItem("출장 보고서");
-                                        setExpenseOpen(false);
-                                        setReportActiveSubItem("보고서 작성");
-                                        navigate("/reportcreate");
-                                        return;
-                                    }
-                                    setActiveItem(item.label);
-                                    setExpenseOpen(false);
-                                    const path = routeMap[item.label];
-                                    if (path) navigate(path);
-                                }}
-                                className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
-                                    activeItem === item.label &&
-                                    activeMenu !== "지출 관리"
-                                        ? "bg-[#364153] text-white"
-                                        : "text-[#101828] hover:bg-[#e5e7eb]"
-                                }`}
-                            >
-                                <div className="flex gap-3 items-center w-[162px]">
-                                    {item.icon}
-                                    <p className="font-medium text-[16px] leading-[1.5]">
-                                        {item.label}
-                                    </p>
-                                </div>
-                            </button>
-                            {/* Report submenu directly under '출장 보고서' */}
-                            {item.label === "출장 보고서" && reportOpen && (
-                                <div className="ml-4 mt-1 flex flex-col gap-1">
-                                    {reportSubMenuItems.map((subItem) => (
-                                        <button
-                                            key={subItem.label}
-                                            onClick={() => {
-                                                setReportActiveSubItem(
-                                                    subItem.label
-                                                );
-                                                setActiveItem("출장 보고서");
-                                                setExpenseOpen(false);
-                                                if (subItem.path)
-                                                    navigate(subItem.path);
-                                            }}
-                                            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
-                                                reportActiveSubItem ===
-                                                subItem.label
-                                                    ? "text-blue-600 font-medium"
-                                                    : "text-[#6a7282] hover:text-[#101828] hover:bg-[#e5e7eb]"
-                                            }`}
-                                        >
-                                            <span className="text-gray-400">
-                                                ㄴ
-                                            </span>
-                                            <p className="text-[14px]">
-                                                {subItem.label}
-                                            </p>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                    <nav className="flex flex-col gap-2">
+                        {/* 대시보드 */}
+                        <MainLink
+                            to={PATHS.dashboard}
+                            icon={<IconHome />}
+                            label="대시보드"
+                            kind="DASH"
+                        />
 
-                    {/* 지출 관리 with Dropdown */}
-                    <div>
+                        {/* 출장 보고서 (헤더 버튼) */}
                         <button
                             onClick={() => {
+                                setShowNotifications(false);
+                                setMenuFocus("REPORT");
+                                setReportOpen(true);
+                                setExpenseOpen(false);
+                                navigate(PATHS.reportCreate);
+                            }}
+                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
+                                reportActive
+                                    ? "bg-[#364153] text-white"
+                                    : "text-[#101828] hover:bg-[#e5e7eb]"
+                            }`}
+                        >
+                            <div className="flex gap-3 items-center w-[162px]">
+                                <IconDescription />
+                                <p className="font-medium text-[16px] leading-[1.5]">
+                                    출장 보고서
+                                </p>
+                            </div>
+                        </button>
+
+                        {reportOpen && (
+                            <div className="ml-4 mt-1 flex flex-col gap-1">
+                                {reportSubMenuItems.map((s) => (
+                                    <SubLink
+                                        key={s.label}
+                                        to={s.to}
+                                        label={s.label}
+                                        focus="REPORT"
+                                    />
+                                ))}
+                            </div>
+                        )}
+
+                        {/* 워크로드 */}
+                        <MainLink
+                            to={PATHS.workload}
+                            icon={<IconAssessment />}
+                            label="워크로드"
+                            kind="WORKLOAD"
+                        />
+
+                        {/* 지출 관리 (헤더 버튼) */}
+                        <button
+                            onClick={() => {
+                                setShowNotifications(false);
+                                setMenuFocus("EXPENSE");
                                 setExpenseOpen(true);
                                 setReportOpen(false);
-                                setActiveItem("지출 관리");
-                                setActiveSubItem("개인 지출");
-                                navigate("/expense");
+                                navigate(PATHS.expensePersonal);
                             }}
                             className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${
-                                activeMenu === "지출 관리"
+                                expenseActive
                                     ? "bg-[#364153] text-white"
                                     : "text-[#101828] hover:bg-[#e5e7eb]"
                             }`}
@@ -375,67 +424,36 @@ export default function Sidebar({
                             </div>
                         </button>
 
-                        {/* Submenu */}
                         {expenseOpen && (
                             <div className="ml-4 mt-1 flex flex-col gap-1">
-                                {expenseSubMenuItems.map((subItem) => (
-                                    <button
-                                        key={subItem.label}
-                                        onClick={() => {
-                                            setActiveSubItem(subItem.label);
-                                            setActiveItem("지출 관리");
-                                            setReportOpen(false);
-                                            if (subItem.path) {
-                                                navigate(subItem.path);
-                                            }
-                                        }}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
-                                            activeSubItem === subItem.label
-                                                ? "text-blue-600 font-medium"
-                                                : "text-[#6a7282] hover:text-[#101828] hover:bg-[#e5e7eb]"
-                                        }`}
-                                    >
-                                        <span className="text-gray-400">
-                                            ㄴ
-                                        </span>
-                                        <p className="text-[14px]">
-                                            {subItem.label}
-                                        </p>
-                                    </button>
+                                {expenseSubMenuItems.map((s) => (
+                                    <SubLink
+                                        key={s.label}
+                                        to={s.to}
+                                        label={s.label}
+                                        focus="EXPENSE"
+                                    />
                                 ))}
                             </div>
                         )}
-                        {/* report submenu removed from here - rendered inline under main menu item */}
-                    </div>
 
-                    {/* Bottom Menu Items */}
-                    {bottomMenuItems.map((item) => (
-                        <button
-                            key={item.label}
-                            onClick={() => {
-                                setActiveItem(item.label);
-                                setExpenseOpen(false);
-                                setActiveSubItem("");
-                                setReportActiveSubItem("");
-                                const path = routeMap[item.label];
-                                if (path) navigate(path);
-                            }}
-                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
-                                activeItem === item.label &&
-                                activeMenu !== "지출 관리"
-                                    ? "bg-[#364153] text-white"
-                                    : "text-[#101828] hover:bg-[#e5e7eb]"
-                            }`}
-                        >
-                            <div className="flex gap-3 items-center w-[162px]">
-                                {item.icon}
-                                <p className="font-medium text-[16px] leading-[1.5]">
-                                    {item.label}
-                                </p>
-                            </div>
-                        </button>
-                    ))}
-                </nav>
+                        {/* 휴가 관리 */}
+                        <MainLink
+                            to={PATHS.vacation}
+                            icon={<IconBeachAccess />}
+                            label="휴가 관리"
+                            kind="VACATION"
+                        />
+
+                        {/* 구성원 관리 */}
+                        <MainLink
+                            to={PATHS.members}
+                            icon={<IconPeople />}
+                            label="구성원 관리"
+                            kind="MEMBERS"
+                        />
+                    </nav>
+                </div>
             </div>
         </aside>
     );
