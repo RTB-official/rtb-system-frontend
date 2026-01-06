@@ -3,11 +3,20 @@ import EventForm from './EventForm'
 import BaseModal from './ui/BaseModal'
 import Button from './common/Button'
 
+interface CalendarEvent {
+  id: string
+  title: string
+  color: string
+  startDate: string
+  endDate: string
+}
+
 interface EventModalProps {
   isOpen: boolean
   onClose: () => void
   initialDate?: string
   initialEndDate?: string
+  editingEvent?: CalendarEvent | null
   onSave?: (data: {
     title: string
     startDate: string
@@ -18,15 +27,15 @@ interface EventModalProps {
   }) => void
 }
 
-export default function EventModal({ isOpen, onClose, initialDate, initialEndDate, onSave }: EventModalProps) {
+export default function EventModal({ isOpen, onClose, initialDate, initialEndDate, editingEvent, onSave }: EventModalProps) {
   return (
     <BaseModal
       isOpen={isOpen}
       onClose={onClose}
-      title="일정 추가"
+      title={editingEvent ? "일정 수정" : "일정 추가"}
       maxWidth="max-w-[640px]"
     >
-      <EventForm onClose={onClose} initialDate={initialDate} initialEndDate={initialEndDate} onSave={onSave} />
+      <EventForm onClose={onClose} initialDate={initialDate} initialEndDate={initialEndDate} editingEvent={editingEvent} onSave={onSave} />
     </BaseModal>
   )
 }

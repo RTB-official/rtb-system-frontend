@@ -6,10 +6,19 @@ import Button from "./common/Button";
 import Input from "./common/Input";
 import Select from "./common/Select";
 
+interface CalendarEvent {
+    id: string;
+    title: string;
+    color: string;
+    startDate: string;
+    endDate: string;
+}
+
 interface EventFormProps {
     onClose?: () => void;
     initialDate?: string;
     initialEndDate?: string;
+    editingEvent?: CalendarEvent | null;
     onSave?: (data: {
         title: string;
         startDate: string;
@@ -24,9 +33,10 @@ export default function EventForm({
     onClose,
     initialDate,
     initialEndDate,
+    editingEvent,
     onSave,
 }: EventFormProps) {
-    const [title, setTitle] = useState("");
+    const [title, setTitle] = useState(editingEvent?.title || "");
     const [allDay, setAllDay] = useState(false);
 
     const pad = (n: number) => (n < 10 ? "0" + n : String(n));
@@ -116,6 +126,14 @@ export default function EventForm({
         }
     }, [initialEndDate]);
 
+    React.useEffect(() => {
+        if (editingEvent) {
+            setTitle(editingEvent.title);
+            setStartDate(formatDateForInput(editingEvent.startDate));
+            setEndDate(formatDateForInput(editingEvent.endDate));
+        }
+    }, [editingEvent]);
+
     return (
         <div className="space-y-4">
             <Input
@@ -126,15 +144,20 @@ export default function EventForm({
                 required
             />
 
-            <div>
-                <Button
-                    variant={allDay ? "primary" : "outline"}
-                    size="md"
-                    onClick={() => setAllDay(!allDay)}
-                    className={allDay ? "bg-gray-900 text-white" : ""}
+            <div className="flex items-center">
+                <input
+                    type="checkbox"
+                    id="allDay"
+                    checked={allDay}
+                    onChange={(e) => setAllDay(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                />
+                <label
+                    htmlFor="allDay"
+                    className="ml-2 text-sm text-gray-700 cursor-pointer select-none"
                 >
                     하루종일
-                </Button>
+                </label>
             </div>
 
             <div className="space-y-4">
