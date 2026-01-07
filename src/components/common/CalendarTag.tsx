@@ -51,8 +51,8 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                 backgroundColor: isHoliday
                     ? undefined
                     : isHovered
-                    ? `${color}33` // hover 시 20% 투명도 (진해짐)
-                    : `${color}15`, // 기본 8% 투명도
+                    ? `${color}40`
+                    : `${color}20`,
             }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
