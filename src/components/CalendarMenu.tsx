@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import ActionMenu from "./common/ActionMenu";
-import { IconCalendar, IconUpload, IconCard } from "./icons/Icons";
+import { IconCalendar, IconVacation, IconCard } from "./icons/Icons";
 
 interface Props {
     isOpen: boolean;
@@ -39,9 +39,7 @@ export default function CalendarMenu({
                     onClose();
                 }}
             >
-                <div className="text-gray-500">
-                    <IconCalendar className="w-5 h-5" />
-                </div>
+                <IconCalendar className="w-6 h-6 text-gray-700" />
                 일정 추가
             </button>
 
@@ -52,9 +50,7 @@ export default function CalendarMenu({
                     onClose();
                 }}
             >
-                <div className="text-gray-500">
-                    <IconUpload className="w-5 h-5" />
-                </div>
+                <IconVacation className="w-6 h-6 text-gray-700" />
                 휴가 등록
             </button>
 
@@ -68,9 +64,7 @@ export default function CalendarMenu({
                     onClose();
                 }}
             >
-                <div className="text-gray-500">
-                    <IconCard className="w-5 h-5" />
-                </div>
+                <IconCard className="w-6 h-6 text-gray-700" />
                 개인 지출
             </button>
         </ActionMenu>

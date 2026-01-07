@@ -6,7 +6,7 @@ import Button from "./common/Button";
 import Input from "./common/Input";
 import Select from "./common/Select";
 import Chip from "./ui/Chip";
-import { CalendarEvent } from "../pages/Dashboard/DashboardPage";
+import { CalendarEvent } from "../types";
 
 const dummyMembers = [
     "강민지",
@@ -163,7 +163,7 @@ export default function EventForm({
         );
     };
 
-  return (
+    return (
         <div className="space-y-4">
             <Input
                 label="일정 제목"
@@ -186,11 +186,11 @@ export default function EventForm({
                     className="ml-2 text-sm text-gray-700 cursor-pointer select-none"
                 >
                     하루종일
-        </label>
-      </div>
+                </label>
+            </div>
 
             <div className="space-y-4">
-        <div>
+                <div>
                     <label className="text-sm font-medium text-gray-700 mb-2 block">
                         시작
                     </label>
@@ -228,8 +228,8 @@ export default function EventForm({
                                 </div>
                             )}
                         </div>
-            {!allDay && (
-              <div className="flex gap-1 items-center">
+                        {!allDay && (
+                            <div className="flex gap-1 items-center">
                                 <Select
                                     value={startHour}
                                     onChange={setStartHour}
@@ -250,12 +250,12 @@ export default function EventForm({
                                     className="w-[80px]"
                                 />
                                 <IconClock className="w-4 h-4 text-gray-400 ml-1" />
-              </div>
-            )}
-          </div>
-        </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-        <div>
+                <div>
                     <label className="text-sm font-medium text-gray-700 mb-2 block">
                         종료
                     </label>
@@ -286,8 +286,8 @@ export default function EventForm({
                                 </div>
                             )}
                         </div>
-            {!allDay && (
-              <div className="flex gap-1 items-center">
+                        {!allDay && (
+                            <div className="flex gap-1 items-center">
                                 <Select
                                     value={endHour}
                                     onChange={setEndHour}
@@ -308,10 +308,10 @@ export default function EventForm({
                                     className="w-[80px]"
                                 />
                                 <IconClock className="w-4 h-4 text-gray-400 ml-1" />
-              </div>
-            )}
-          </div>
-        </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
             <div className="space-y-2">
@@ -340,7 +340,11 @@ export default function EventForm({
                             }}
                             onFocus={() => setShowResults(true)}
                         />
-                        <Button type="button" variant="primary" onClick={() => handleAddAttendee()}>
+                        <Button
+                            type="button"
+                            variant="primary"
+                            onClick={() => handleAddAttendee()}
+                        >
                             추가
                         </Button>
                     </div>

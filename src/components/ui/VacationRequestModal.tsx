@@ -27,7 +27,7 @@ export default function VacationRequestModal({
 }: Props) {
   const todayISO = useMemo(() => {
     const now = new Date();
-    return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   }, []);
 
   const [dateISO, setDateISO] = useState(todayISO);

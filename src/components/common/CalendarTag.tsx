@@ -10,6 +10,7 @@ interface CalendarTagProps {
     isEnd?: boolean;
     width?: string;
     left?: string;
+    top?: string;
     onEdit?: () => void;
     onDelete?: () => void;
     onClick?: (e: React.MouseEvent) => void;
@@ -25,6 +26,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
     isEnd = true,
     width = "100%",
     left = "0%",
+    top,
     onEdit,
     onDelete,
     onClick,
@@ -39,17 +41,18 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
         <div
             className={`absolute h-6 flex items-center truncate pointer-events-auto group z-10 cursor-pointer transition-all
                 ${isHoliday ? "bg-red-100 hover:bg-red-200" : "text-gray-900"} 
-                ${isStart ? "ml-3 rounded-l-sm" : "rounded-l-none"}
-                ${isEnd ? "mr-3 rounded-r-sm" : "rounded-r-none"}
+                ${isStart ? "ml-2 rounded-l-sm" : "rounded-l-none"}
+                ${isEnd ? "mr-2 rounded-r-sm" : "rounded-r-none"}
             `}
             style={{
                 left,
                 width,
-                backgroundColor: isHoliday 
-                    ? undefined 
-                    : isHovered 
-                        ? `${color}33` // hover 시 20% 투명도 (진해짐)
-                        : `${color}15`, // 기본 8% 투명도
+                top,
+                backgroundColor: isHoliday
+                    ? undefined
+                    : isHovered
+                    ? `${color}33` // hover 시 20% 투명도 (진해짐)
+                    : `${color}15`, // 기본 8% 투명도
             }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -62,12 +65,14 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
         >
             <div
                 className={`flex items-center w-full h-full
-                    ${!isStart && isFirstInRow ? "pl-9" : "pl-1.5"}
-                    ${isEnd ? "pr-1.5" : "pr-0"}
+                    ${!isStart && isFirstInRow ? "pl-9" : "pl-1"}
+                    ${isEnd ? "pr-1" : "pr-0"}
                 `}
             >
                 {isHoliday ? (
-                    <IconStar className="w-3.5 h-3.5 text-red-500 mr-1.5 shrink-0" />
+                    <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center mr-1.5 shrink-0">
+                        <IconStar className="w-3.5 h-3.5 text-red-500" />
+                    </div>
                 ) : (
                     <div
                         className="w-1 h-5 rounded-full shrink-0 mr-2"
@@ -76,7 +81,13 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                         }}
                     />
                 )}
-                <span className={`text-[15px] truncate leading-none ${isHoliday ? "font-medium text-red-600" : "font-medium text-gray-800"}`}>
+                <span
+                    className={`text-[15px] truncate leading-none ${
+                        isHoliday
+                            ? "font-medium text-red-600"
+                            : "font-medium text-gray-800"
+                    }`}
+                >
                     {title}
                 </span>
             </div>
@@ -116,4 +127,3 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
 };
 
 export default CalendarTag;
-

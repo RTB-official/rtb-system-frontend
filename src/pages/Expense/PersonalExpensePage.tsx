@@ -24,6 +24,16 @@ export default function PersonalExpensePage() {
     const [month, setMonth] = useState(`${currentDate.getMonth() + 1}월`);
     const [submittedIds, setSubmittedIds] = useState<number[]>([]);
 
+    const allItemsToSubmitCount = useMemo(() => {
+        const unsubmittedLeftItems = leftItems.filter(
+            (item) => !submittedIds.includes(item.id)
+        );
+        const unsubmittedRightItems = rightItems.filter(
+            (item) => !submittedIds.includes(item.id)
+        );
+        return unsubmittedLeftItems.length + unsubmittedRightItems.length;
+    }, [leftItems, rightItems, submittedIds]);
+
     useEffect(() => {
         document.body.style.overflow = sidebarOpen ? "hidden" : "";
         return () => {
@@ -187,27 +197,60 @@ export default function PersonalExpensePage() {
                         />
                     </div>
 
-                    <div className="fixed bottom-6 left-6 right-6 lg:left-[239px] mx-9">
-                        <Button
-                            variant="primary"
-                            size="lg"
-                            fullWidth
-                            onClick={() => {
-                                alert(
-                                    "제출 처리: " +
-                                        (leftItems.length + rightItems.length) +
-                                        "개"
-                                );
-                                const allIds = [
-                                    ...leftItems.map((i) => i.id),
-                                    ...rightItems.map((i) => i.id),
-                                ];
-                                setSubmittedIds(allIds);
-                            }}
-                        >
-                            모두 제출 ({leftItems.length + rightItems.length}개)
-                        </Button>
-                    </div>
+                    {allItemsToSubmitCount > 0 && (
+                        <div className="fixed bottom-6 left-6 right-6 lg:left-[239px] mx-9">
+                            <Button
+                                variant="primary"
+                                size="lg"
+                                fullWidth
+                                onClick={() => {
+                                    const itemsToSubmitLeft = leftItems.filter(
+                                        (item) =>
+                                            !submittedIds.includes(item.id)
+                                    );
+                                    const itemsToSubmitRight =
+                                        rightItems.filter(
+                                            (item) =>
+                                                !submittedIds.includes(item.id)
+                                        );
+
+                                    const currentItemsToSubmitCount =
+                                        itemsToSubmitLeft.length +
+                                        itemsToSubmitRight.length;
+
+                                    if (currentItemsToSubmitCount === 0) {
+                                        alert("제출할 항목이 없습니다.");
+                                        return;
+                                    }
+
+                                    const confirmSubmit = window.confirm(
+                                        `총 ${currentItemsToSubmitCount}개의 항목을 제출하시겠습니까?`
+                                    );
+                                    if (!confirmSubmit) return;
+
+                                    const allIdsToSubmit = [
+                                        ...itemsToSubmitLeft.map((i) => i.id),
+                                        ...itemsToSubmitRight.map((i) => i.id),
+                                    ];
+                                    console.log(
+                                        "제출할 항목 ID: ",
+                                        allIdsToSubmit
+                                    );
+                                    alert(
+                                        `총 ${allIdsToSubmit.length}개의 항목이 제출되었습니다.`
+                                    );
+
+                                    // 제출 완료 후 submittedIds 업데이트
+                                    setSubmittedIds((prev) => [
+                                        ...prev,
+                                        ...allIdsToSubmit,
+                                    ]);
+                                }}
+                            >
+                                모두 제출 ({allItemsToSubmitCount}개)
+                            </Button>
+                        </div>
+                    )}
 
                     <div className="h-24" />
                 </div>
