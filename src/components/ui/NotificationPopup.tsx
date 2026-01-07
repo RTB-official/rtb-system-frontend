@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 interface NotificationItem {
     id: string;
     title: string;
@@ -29,6 +31,27 @@ export default function NotificationPopup({
     onClose,
     items,
 }: NotificationPopupProps) {
+    const popupRef = useRef<HTMLDivElement>(null);
+
+    // 바깥 클릭 닫기
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                popupRef.current &&
+                !popupRef.current.contains(e.target as Node)
+            ) {
+                onClose();
+            }
+        };
+
+        // mousedown 대신 click을 사용하면 버튼 클릭 시의 상태와 충돌할 수 있으므로
+        // 약간의 지연을 주거나 mousedown을 사용합니다.
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [onClose]);
+
     const sampleItems: NotificationItem[] = items ?? [
         {
             id: "1",
@@ -54,40 +77,43 @@ export default function NotificationPopup({
     ];
 
     return (
-        <div className="absolute left-[239px] top-0 -translate-y-2 -translate-x-[16px] w-[360px] bg-white rounded-xl shadow-lg border border-[#e6eef5] p-3 z-50">
-            <div className="flex items-center justify-between mb-2">
-                <h4 className="text-[16px] font-semibold text-[#101828]">
-                    알림
-                </h4>
-                <div className="flex items-center gap-2">
-                    <button className="text-sm text-[#6b7280] hover:text-[#101828]">
-                        모두 읽음
-                    </button>
-                    <button
-                        onClick={onClose}
-                        className="p-1 rounded hover:bg-[#f3f4f6]"
-                    >
-                        <IconClose />
-                    </button>
-                </div>
+        <div
+            ref={popupRef}
+            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200"
+        >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50">
+                <h4 className="text-[20px] font-bold text-[#1e293b]">알림</h4>
+                <button className="text-[14px] text-gray-400 hover:text-gray-600 font-medium transition-colors">
+                    모두 읽음
+                </button>
             </div>
 
-            <div className="flex flex-col gap-3 max-h-[320px] overflow-auto pr-1">
+            {/* Notification List */}
+            <div className="max-h-[480px] overflow-y-auto custom-scrollbar">
                 {sampleItems.map((it) => (
                     <div
                         key={it.id}
-                        className="flex flex-col gap-1 bg-[#fbfdff] rounded-lg p-3 border border-[#eef4f8]"
+                        className="flex flex-col gap-1 px-5 py-4 bg-white hover:bg-[#f0f7ff] transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0"
                     >
                         <div className="flex items-start justify-between">
-                            <p className="text-[13px] font-medium text-[#0f1724]">
+                            <p className="text-[14px] font-semibold text-[#475569]">
                                 {it.title}
                             </p>
+                            <button
+                                className="text-gray-400 hover:text-gray-600 p-0.5 transition-colors"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                }}
+                            >
+                                <IconClose />
+                            </button>
                         </div>
-                        <p className="text-[13px] text-[#475569]">
+                        <p className="text-[14px] text-[#64748b] leading-relaxed pr-6">
                             {it.message}
                         </p>
                         {it.meta && (
-                            <p className="text-[12px] text-[#9aa4b2]">
+                            <p className="text-[13px] text-gray-400 mt-1">
                                 {it.meta}
                             </p>
                         )}

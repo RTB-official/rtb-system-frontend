@@ -1,23 +1,35 @@
 import React from 'react'
 import EventForm from './EventForm'
+import BaseModal from './ui/BaseModal'
+import Button from './common/Button'
+import { CalendarEvent } from '../types'
 
-export default function EventModal({ onClose }: { onClose: () => void }) {
+interface EventModalProps {
+  isOpen: boolean
+  onClose: () => void
+  initialDate?: string
+  initialEndDate?: string
+  editingEvent?: CalendarEvent | null
+  onSave?: (data: {
+    title: string
+    startDate: string
+    startTime?: string
+    endDate: string
+    endTime?: string
+    allDay: boolean
+  }) => void
+}
+
+export default function EventModal({ isOpen, onClose, initialDate, initialEndDate, editingEvent, onSave }: EventModalProps) {
   return (
-    <div
-      className="fixed inset-0 z-70 flex items-center justify-center"
-      aria-modal="true"
-      role="dialog"
+    <BaseModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={editingEvent ? "일정 수정" : "일정 추가"}
+      maxWidth="max-w-[640px]"
     >
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-lg w-[540px] max-w-full p-6 z-80">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">일정 추가</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">닫기</button>
-        </div>
-
-        <EventForm onClose={onClose} />
-      </div>
-    </div>
+      <EventForm onClose={onClose} initialDate={initialDate} initialEndDate={initialEndDate} editingEvent={editingEvent} onSave={onSave} />
+    </BaseModal>
   )
 }
 

@@ -1,4 +1,5 @@
 import React from "react";
+import { IconMenu } from "../icons/Icons";
 
 interface HeaderProps {
     title: string;
@@ -22,16 +23,7 @@ export default function Header({
                         className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-700"
                         aria-label="메뉴 열기"
                     >
-                        <svg
-                            width="20"
-                            height="20"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                        >
-                            <path d="M4 6H20M4 12H20M4 18H20" />
-                        </svg>
+                        <IconMenu />
                     </button>
                 )}
                 {leftContent && <div>{leftContent}</div>}

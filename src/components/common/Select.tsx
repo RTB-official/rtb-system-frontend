@@ -9,6 +9,7 @@ interface SelectProps
     placeholder?: string;
     onChange?: (value: string) => void;
     disabled?: boolean;
+    labelClassName?: string;
 }
 
 export default function Select({
@@ -19,6 +20,7 @@ export default function Select({
     placeholder,
     onChange,
     disabled = false,
+    labelClassName = "",
     className = "",
     ...props
 }: SelectProps) {
@@ -74,7 +76,7 @@ export default function Select({
     return (
         <div className={`flex flex-col gap-2 ${widthClass} ${otherClasses}`}>
             <div className="flex gap-2 items-center">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className={`block text-sm font-medium text-gray-700 ${labelClassName}`}>
                     {label}
                 </label>
                 {required && <span className="text-red-600 text-sm">*</span>}

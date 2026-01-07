@@ -11,6 +11,7 @@ import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
+import { IconArrowBack } from "../../components/icons/Icons";
 
 export default function CreationPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -111,24 +112,10 @@ export default function CreationPage() {
                     leftContent={
                         <button
                             onClick={() => navigate(-1)}
-                            className="hidden sm:block hover:bg-gray-100 rounded-lg transition-colors p-1"
-                            aria-label="뒤로가기"
+                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                            title="목록으로 돌아가기"
                         >
-                            <svg
-                                width="36"
-                                height="36"
-                                viewBox="0 0 36 36"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <path
-                                    d="M22.5 9L13.5 18L22.5 27"
-                                    stroke="#d1d5dc"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                />
-                            </svg>
+                            <IconArrowBack />
                         </button>
                     }
                     rightContent={

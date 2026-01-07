@@ -4,23 +4,7 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
-
-// 아이콘 컴포넌트 제거: 현재 페이지의 요약 카드 UI는 아이콘 없이 텍스트 기반으로 표시됩니다.
-
-const IconArrowBack = () => (
-    <svg
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-            fill="currentColor"
-        />
-    </svg>
-);
+import { IconArrowBack } from "../../components/icons/Icons";
 const IconWork = () => (
     <svg
         width="24"
@@ -92,116 +76,106 @@ const userData: Record<
 };
 
 // 샘플 테이블 데이터
-const detailTableData = [
+interface WorkloadDetailRow {
+    id: number;
+    date: string;
+    vesselName: string;
+    workTime: string;
+    timeRange: string;
+    travelTime: string;
+    waitTime: string;
+}
+
+const detailTableData: WorkloadDetailRow[] = [
     {
         id: 1,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.01",
+        vesselName: "SH8218",
+        workTime: "8시간",
+        timeRange: "09:00-17:00",
+        travelTime: "1시간 30분",
+        waitTime: "0시간",
     },
     {
         id: 2,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.02",
+        vesselName: "SH8218",
+        workTime: "7시간 30분",
+        timeRange: "08:30-16:00",
+        travelTime: "2시간",
+        waitTime: "30분",
     },
     {
         id: 3,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.03",
+        vesselName: "SH8219",
+        workTime: "9시간",
+        timeRange: "09:00-18:00",
+        travelTime: "1시간",
+        waitTime: "0시간",
     },
     {
         id: 4,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.04",
+        vesselName: "SH8218",
+        workTime: "8시간",
+        timeRange: "09:00-17:00",
+        travelTime: "1시간 30분",
+        waitTime: "0시간",
     },
     {
         id: 5,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.05",
+        vesselName: "SH8220",
+        workTime: "7시간",
+        timeRange: "10:00-17:00",
+        travelTime: "2시간 30분",
+        waitTime: "1시간",
     },
     {
         id: 6,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.06",
+        vesselName: "SH8218",
+        workTime: "8시간 30분",
+        timeRange: "08:30-17:00",
+        travelTime: "1시간",
+        waitTime: "0시간",
     },
     {
         id: 7,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.07",
+        vesselName: "SH8219",
+        workTime: "9시간",
+        timeRange: "09:00-18:00",
+        travelTime: "1시간 30분",
+        waitTime: "30분",
     },
     {
         id: 8,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.08",
+        vesselName: "SH8218",
+        workTime: "8시간",
+        timeRange: "09:00-17:00",
+        travelTime: "2시간",
+        waitTime: "0시간",
     },
     {
         id: 9,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.09",
+        vesselName: "SH8220",
+        workTime: "7시간 30분",
+        timeRange: "09:30-17:00",
+        travelTime: "1시간 30분",
+        waitTime: "0시간",
     },
     {
         id: 10,
-        col1: "Text",
-        col2: "Text",
-        col3: "Text",
-        col4: "Text",
-        col5: "Text",
-        col6: "Text",
-        col7: "Text",
-        col8: "Text",
+        date: "2025.11.10",
+        vesselName: "SH8218",
+        workTime: "8시간",
+        timeRange: "09:00-17:00",
+        travelTime: "1시간",
+        waitTime: "0시간",
     },
 ];
 
@@ -242,7 +216,7 @@ export default function WorkloadDetailPage() {
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <Header
-                    title="워크로드"
+                    title={`${user.name} 작업자 워크로드`}
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         <button
@@ -256,8 +230,8 @@ export default function WorkloadDetailPage() {
                 />
 
                 {/* Content */}
-                <main className="flex-1 overflow-auto px-6 lg:px-12 pt-6 pb-24">
-                    <div className="flex flex-col gap-6 max-w-[1200px]">
+                <main className="flex-1 overflow-auto pt-6 pb-24 px-9">
+                    <div className="flex flex-col gap-6 w-full">
                         {/* 요약 카드 (Icon 기반) */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {[
@@ -304,7 +278,7 @@ export default function WorkloadDetailPage() {
 
                         {/* 조회 기간 */}
                         <div className="flex flex-wrap items-center gap-5">
-                            <h2 className="text-[26px] font-bold text-gray-700 tracking-tight">
+                            <h2 className="text-[24px] font-semibold text-gray-900">
                                 조회 기간
                             </h2>
                             <YearMonthSelector
@@ -323,14 +297,12 @@ export default function WorkloadDetailPage() {
 
                             <Table
                                 columns={[
-                                    { key: "col1", label: "제목" },
-                                    { key: "col2", label: "제목" },
-                                    { key: "col3", label: "제목" },
-                                    { key: "col4", label: "제목" },
-                                    { key: "col5", label: "제목" },
-                                    { key: "col6", label: "제목" },
-                                    { key: "col7", label: "제목" },
-                                    { key: "col8", label: "제목" },
+                                    { key: "date", label: "날짜" },
+                                    { key: "vesselName", label: "호선명" },
+                                    { key: "workTime", label: "작업시간" },
+                                    { key: "timeRange", label: "시간대" },
+                                    { key: "travelTime", label: "이동시간" },
+                                    { key: "waitTime", label: "대기시간" },
                                 ]}
                                 data={detailTableData}
                                 rowKey="id"

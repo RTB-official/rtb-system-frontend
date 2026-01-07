@@ -3,6 +3,40 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table, { TableColumn } from "../../components/common/Table";
 import ExpenseFilterBar from "../../components/common/ExpenseFilterBar";
+import Button from "../../components/common/Button";
+
+// 다운로드 아이콘 컴포넌트
+const IconDownload = () => (
+    <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+        <path
+            d="M7 10l5 5 5-5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+        <path
+            d="M12 15V3"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+    </svg>
+);
 
 interface EmployeeExpenseSummary {
     id: number;
@@ -47,93 +81,93 @@ const MOCK_DATA: EmployeeExpenseSummary[] = [
     },
     {
         id: 2,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "홍길동",
+        initials: "HG",
+        mileage: 120000,
+        distance: 480,
+        cardExpense: 80000,
+        total: 200000,
+        count: 5,
     },
     {
         id: 3,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "김철수",
+        initials: "KC",
+        mileage: 180000,
+        distance: 720,
+        cardExpense: 45000,
+        total: 225000,
+        count: 8,
     },
     {
         id: 4,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "이영희",
+        initials: "LY",
+        mileage: 90000,
+        distance: 360,
+        cardExpense: 100000,
+        total: 190000,
+        count: 4,
     },
     {
         id: 5,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "박민수",
+        initials: "PM",
+        mileage: 200000,
+        distance: 800,
+        cardExpense: 70000,
+        total: 270000,
+        count: 10,
     },
     {
         id: 6,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "정수진",
+        initials: "JS",
+        mileage: 110000,
+        distance: 440,
+        cardExpense: 55000,
+        total: 165000,
+        count: 7,
     },
     {
         id: 7,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "최동현",
+        initials: "CD",
+        mileage: 160000,
+        distance: 640,
+        cardExpense: 90000,
+        total: 250000,
+        count: 9,
     },
     {
         id: 8,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "한지은",
+        initials: "HJ",
+        mileage: 95000,
+        distance: 380,
+        cardExpense: 65000,
+        total: 160000,
+        count: 5,
     },
     {
         id: 9,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
+        name: "윤태호",
+        initials: "YT",
+        mileage: 140000,
+        distance: 560,
+        cardExpense: 75000,
+        total: 215000,
         count: 6,
     },
     {
         id: 10,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
+        name: "장미라",
+        initials: "JM",
+        mileage: 130000,
+        distance: 520,
+        cardExpense: 85000,
+        total: 215000,
+        count: 7,
     },
 ];
 
@@ -164,6 +198,90 @@ const MOCK_MILEAGE_DETAILS: Record<number, MileageDetail[]> = {
             amount: 20120,
             details: "SH8218 승선작업통행료포함",
         },
+        {
+            id: 4,
+            date: "12월 29일 (월)",
+            route: "공장 → 자택",
+            distance: 30,
+            amount: 20120,
+            details: "SH8218 승선 작업 통행료 포함",
+        },
+        {
+            id: 5,
+            date: "12월 29일 (월)",
+            route: "공장 → 자택",
+            distance: 30,
+            amount: 20120,
+            details: "SH8218 승선 작업 통행료 포함",
+        },
+        {
+            id: 6,
+            date: "12월 29일 (월)",
+            route: "공장 → 자택",
+            distance: 30,
+            amount: 20120,
+            details: "SH8218 승선 작업 통행료 포함",
+        },
+        {
+            id: 7,
+            date: "12월 29일 (월)",
+            route: "공장 → 자택",
+            distance: 30,
+            amount: 20120,
+            details: "SH8218 승선 작업 통행료 포함",
+        },
+        {
+            id: 8,
+            date: "12월 29일 (월)",
+            route: "공장 → 자택",
+            distance: 30,
+            amount: 20120,
+            details: "SH8218 승선 작업 통행료 포함",
+        },
+        {
+            id: 9,
+            date: "12월 29일 (월)",
+            route: "공장 → 자택",
+            distance: 30,
+            amount: 20120,
+            details: "SH8218 승선 작업 통행료 포함",
+        },
+        {
+            id: 10,
+            date: "12월 29일 (월)",
+            route: "공장 → 자택",
+            distance: 30,
+            amount: 20120,
+            details: "SH8218 승선 작업 통행료 포함",
+        },
+    ],
+    2: [
+        {
+            id: 1,
+            date: "12월 28일 (일)",
+            route: "회사 → 고객사",
+            distance: 45,
+            amount: 30180,
+            details: "출장 통행료 포함",
+        },
+        {
+            id: 2,
+            date: "12월 27일 (토)",
+            route: "자택 → 회사",
+            distance: 25,
+            amount: 16760,
+            details: "주말 근무",
+        },
+    ],
+    3: [
+        {
+            id: 1,
+            date: "12월 29일 (월)",
+            route: "공장 → 현장",
+            distance: 50,
+            amount: 33520,
+            details: "현장 점검",
+        },
     ],
 };
 
@@ -185,6 +303,26 @@ const MOCK_CARD_DETAILS: Record<number, CardExpenseDetail[]> = {
             amount: 45000,
             category: "교통비",
             details: "주유",
+        },
+    ],
+    2: [
+        {
+            id: 1,
+            date: "12월 28일 (일)",
+            merchant: "맥도날드",
+            amount: 12000,
+            category: "식비",
+            details: "점심 식사",
+        },
+    ],
+    3: [
+        {
+            id: 1,
+            date: "12월 29일 (월)",
+            merchant: "CU",
+            amount: 8000,
+            category: "식비",
+            details: "간식",
         },
     ],
 };
@@ -209,16 +347,96 @@ export default function MemberExpensePage() {
         };
     }, [sidebarOpen]);
 
+    // 사용자 필터링
+    const filteredData =
+        user === "전체"
+            ? MOCK_DATA
+            : MOCK_DATA.filter((emp) => {
+                  // 이름에서 이니셜 제거 후 비교
+                  const nameWithoutInitials = emp.name.replace(
+                      /^[A-Z]{2,3} /,
+                      ""
+                  );
+                  return nameWithoutInitials === user || emp.name === user;
+              });
+
     // 페이지네이션 계산
-    const totalPages = Math.ceil(MOCK_DATA.length / itemsPerPage);
+    const totalPages = Math.ceil(filteredData.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const currentData = MOCK_DATA.slice(startIndex, endIndex);
+    const currentData = filteredData.slice(startIndex, endIndex);
+
+    // 사용자 옵션 생성 (중복 제거)
+    const userOptions = [
+        { value: "전체", label: "전체" },
+        ...Array.from(
+            new Set(
+                MOCK_DATA.map((emp) => {
+                    const nameWithoutInitials = emp.name.replace(
+                        /^[A-Z]{2,3} /,
+                        ""
+                    );
+                    return nameWithoutInitials;
+                })
+            )
+        ).map((name) => ({ value: name, label: name })),
+    ];
 
     // 금액 포맷팅
     const formatCurrency = (amount: number) => {
         return amount.toLocaleString("ko-KR") + "원";
     };
+
+    // 마일리지 내역 테이블 컬럼
+    const mileageColumns: TableColumn<MileageDetail>[] = [
+        {
+            key: "date",
+            label: "날짜",
+        },
+        {
+            key: "route",
+            label: "경로",
+        },
+        {
+            key: "distance",
+            label: "거리",
+            render: (value) => `${value}km`,
+        },
+        {
+            key: "amount",
+            label: "금액",
+            render: (value) => formatCurrency(value),
+        },
+        {
+            key: "details",
+            label: "상세 내용",
+        },
+    ];
+
+    // 카드 지출 내역 테이블 컬럼
+    const cardColumns: TableColumn<CardExpenseDetail>[] = [
+        {
+            key: "date",
+            label: "날짜",
+        },
+        {
+            key: "merchant",
+            label: "가맹점",
+        },
+        {
+            key: "category",
+            label: "카테고리",
+        },
+        {
+            key: "amount",
+            label: "금액",
+            render: (value) => formatCurrency(value),
+        },
+        {
+            key: "details",
+            label: "상세 내용",
+        },
+    ];
 
     const columns: TableColumn<EmployeeExpenseSummary>[] = [
         {
@@ -263,7 +481,7 @@ export default function MemberExpensePage() {
     ];
 
     return (
-        <div className="flex h-screen bg-[#f4f5f7] overflow-hidden">
+        <div className="flex h-screen bg-white overflow-hidden">
             {/* ✅ Mobile Overlay */}
             {sidebarOpen && (
                 <div
@@ -295,7 +513,7 @@ export default function MemberExpensePage() {
                     onMenuClick={() => setSidebarOpen(true)}
                 />
 
-                <div className="flex-1 overflow-y-auto mx-9 px-4 lg:px-12 py-6">
+                <div className="flex-1 overflow-y-auto px-9 py-6">
                     <div className="flex flex-col gap-4">
                         <ExpenseFilterBar
                             year={year}
@@ -303,329 +521,352 @@ export default function MemberExpensePage() {
                             user={user}
                             onYearChange={setYear}
                             onMonthChange={setMonth}
-                            onUserChange={setUser}
+                            onUserChange={(selectedUser) => {
+                                setUser(selectedUser);
+                                setCurrentPage(1); // 사용자 변경 시 첫 페이지로
+                                // 사용자 선택 시 해당 사용자 ID 찾기
+                                if (selectedUser !== "전체") {
+                                    const selectedEmp = MOCK_DATA.find(
+                                        (emp) => {
+                                            const nameWithoutInitials =
+                                                emp.name.replace(
+                                                    /^[A-Z]{2,3} /,
+                                                    ""
+                                                );
+                                            return (
+                                                nameWithoutInitials ===
+                                                    selectedUser ||
+                                                emp.name === selectedUser
+                                            );
+                                        }
+                                    );
+                                    if (selectedEmp) {
+                                        setSelectedEmployeeId(selectedEmp.id);
+                                        setActiveTab("mileage");
+                                    }
+                                } else {
+                                    setSelectedEmployeeId(null);
+                                }
+                            }}
+                            userOptions={userOptions}
                         />
 
-                        {/* 직원별 집계 섹션 */}
-                        <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
-                            <h2 className="text-lg font-semibold text-gray-800 mb-1">
-                                직원별 집계
-                            </h2>
-                            <p className="text-sm text-gray-500 mb-4">
-                                클릭하여 상세 내역을 확인하세요
-                            </p>
+                        {/* 사용자 한 명 선택 시 상세 내역 표시 */}
+                        {user !== "전체" && selectedEmployeeId ? (
+                            (() => {
+                                const selectedEmployee = MOCK_DATA.find(
+                                    (emp) => emp.id === selectedEmployeeId
+                                );
+                                if (!selectedEmployee) return null;
 
-                            {/* 테이블 */}
-                            <Table
-                                columns={columns}
-                                data={currentData}
-                                rowKey="id"
-                                onRowClick={(row) => {
-                                    setSelectedEmployeeId(
-                                        selectedEmployeeId === row.id
-                                            ? null
-                                            : row.id
+                                const mileageDetails =
+                                    MOCK_MILEAGE_DETAILS[selectedEmployeeId] ||
+                                    [];
+                                const cardDetails =
+                                    MOCK_CARD_DETAILS[selectedEmployeeId] || [];
+
+                                // 이름에서 "MK " 제거
+                                const displayName =
+                                    selectedEmployee.name.replace(
+                                        /^[A-Z]{2,3} /,
+                                        ""
                                     );
-                                    setActiveTab("mileage");
-                                }}
-                                expandedRowKeys={
-                                    selectedEmployeeId
-                                        ? [selectedEmployeeId]
-                                        : []
-                                }
-                                expandableRowRender={(row) => {
-                                    if (selectedEmployeeId !== row.id)
-                                        return null;
 
-                                    const selectedEmployee = MOCK_DATA.find(
-                                        (emp) => emp.id === selectedEmployeeId
-                                    );
-                                    if (!selectedEmployee) return null;
-
-                                    const mileageDetails =
-                                        MOCK_MILEAGE_DETAILS[
-                                            selectedEmployeeId
-                                        ] || [];
-                                    const cardDetails =
-                                        MOCK_CARD_DETAILS[selectedEmployeeId] ||
-                                        [];
-
-                                    // 이름에서 "MK " 제거
-                                    const displayName =
-                                        selectedEmployee.name.replace(
-                                            /^[A-Z]{2,3} /,
-                                            ""
-                                        );
-
-                                    return (
-                                        <div className="p-4 lg:p-6">
-                                            {/* 헤더 */}
-                                            <div className="flex items-center justify-between mb-6">
-                                                <div>
-                                                    <h2 className="text-lg font-semibold text-gray-800">
-                                                        {displayName}님의 청구서
-                                                    </h2>
-                                                    <p className="text-sm text-gray-500 mt-1">
-                                                        {year} {month}
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        alert("PDF 다운로드");
-                                                    }}
-                                                    className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
-                                                >
-                                                    PDF 다운로드
-                                                </button>
+                                return (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                        {/* 헤더 */}
+                                        <div className="flex items-center justify-between mb-6">
+                                            <div>
+                                                <h2 className="text-lg font-semibold text-gray-800">
+                                                    {displayName}님의 청구서
+                                                </h2>
+                                                <p className="text-sm text-gray-500 mt-1">
+                                                    {year} {month}
+                                                </p>
                                             </div>
-
-                                            {/* 탭 */}
-                                            <div className="flex gap-1 border-b border-gray-200 mb-6">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveTab("mileage");
-                                                    }}
-                                                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                        activeTab === "mileage"
-                                                            ? "text-gray-900 border-b-2 border-gray-900"
-                                                            : "text-gray-500 hover:text-gray-700"
-                                                    }`}
-                                                >
-                                                    마일리지 내역
-                                                </button>
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setActiveTab("card");
-                                                    }}
-                                                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                        activeTab === "card"
-                                                            ? "text-gray-900 border-b-2 border-gray-900"
-                                                            : "text-gray-500 hover:text-gray-700"
-                                                    }`}
-                                                >
-                                                    카드 지출 내역
-                                                </button>
-                                            </div>
-
-                                            {/* 마일리지 내역 테이블 */}
-                                            {activeTab === "mileage" && (
-                                                <div className="overflow-auto border border-gray-200 rounded-xl">
-                                                    <table className="min-w-full text-sm text-gray-800">
-                                                        <thead className="bg-gray-50 border-b border-gray-200">
-                                                            <tr>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    날짜
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    경로
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    거리
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    금액
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    상세 내용
-                                                                </th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {mileageDetails.length >
-                                                            0 ? (
-                                                                mileageDetails.map(
-                                                                    (
-                                                                        detail
-                                                                    ) => (
-                                                                        <tr
-                                                                            key={
-                                                                                detail.id
-                                                                            }
-                                                                            className="border-b border-gray-100"
-                                                                        >
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.date
-                                                                                }
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.route
-                                                                                }
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.distance
-                                                                                }
-                                                                                km
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {formatCurrency(
-                                                                                    detail.amount
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.details
-                                                                                }
-                                                                            </td>
-                                                                        </tr>
-                                                                    )
-                                                                )
-                                                            ) : (
-                                                                <tr>
-                                                                    <td
-                                                                        colSpan={
-                                                                            5
-                                                                        }
-                                                                        className="px-4 py-10 text-center text-gray-500"
-                                                                    >
-                                                                        마일리지
-                                                                        내역이
-                                                                        없습니다.
-                                                                    </td>
-                                                                </tr>
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            )}
-
-                                            {/* 카드 지출 내역 테이블 */}
-                                            {activeTab === "card" && (
-                                                <div className="overflow-auto border border-gray-200 rounded-xl">
-                                                    <table className="min-w-full text-sm text-gray-800">
-                                                        <thead className="bg-gray-50 border-b border-gray-200">
-                                                            <tr>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    날짜
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    가맹점
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    카테고리
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    금액
-                                                                </th>
-                                                                <th className="px-4 py-3 font-semibold text-gray-600 text-left">
-                                                                    상세 내용
-                                                                </th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {cardDetails.length >
-                                                            0 ? (
-                                                                cardDetails.map(
-                                                                    (
-                                                                        detail
-                                                                    ) => (
-                                                                        <tr
-                                                                            key={
-                                                                                detail.id
-                                                                            }
-                                                                            className="border-b border-gray-100"
-                                                                        >
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.date
-                                                                                }
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.merchant
-                                                                                }
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.category
-                                                                                }
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {formatCurrency(
-                                                                                    detail.amount
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="px-4 py-3 text-gray-900">
-                                                                                {
-                                                                                    detail.details
-                                                                                }
-                                                                            </td>
-                                                                        </tr>
-                                                                    )
-                                                                )
-                                                            ) : (
-                                                                <tr>
-                                                                    <td
-                                                                        colSpan={
-                                                                            5
-                                                                        }
-                                                                        className="px-4 py-10 text-center text-gray-500"
-                                                                    >
-                                                                        카드
-                                                                        지출
-                                                                        내역이
-                                                                        없습니다.
-                                                                    </td>
-                                                                </tr>
-                                                            )}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            )}
+                                            <Button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    alert("PDF 다운로드");
+                                                }}
+                                                variant="primary"
+                                                size="sm"
+                                                icon={<IconDownload />}
+                                                className="bg-gray-800 hover:bg-gray-900"
+                                            >
+                                                PDF 다운로드
+                                            </Button>
                                         </div>
-                                    );
-                                }}
-                            />
 
-                            {/* 페이지네이션 */}
-                            <div className="flex items-center justify-center gap-2 mt-4 text-sm text-gray-600">
-                                <button
-                                    onClick={() =>
-                                        setCurrentPage((prev) =>
-                                            Math.max(1, prev - 1)
-                                        )
+                                        {/* 탭 */}
+                                        <div className="flex gap-1 border-b border-gray-200 mb-6">
+                                            <button
+                                                onClick={() =>
+                                                    setActiveTab("mileage")
+                                                }
+                                                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                                                    activeTab === "mileage"
+                                                        ? "text-gray-900 border-b-2 border-gray-900"
+                                                        : "text-gray-500 hover:text-gray-700"
+                                                }`}
+                                            >
+                                                마일리지 내역
+                                            </button>
+                                            <button
+                                                onClick={() =>
+                                                    setActiveTab("card")
+                                                }
+                                                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                                                    activeTab === "card"
+                                                        ? "text-gray-900 border-b-2 border-gray-900"
+                                                        : "text-gray-500 hover:text-gray-700"
+                                                }`}
+                                            >
+                                                카드 지출 내역
+                                            </button>
+                                        </div>
+
+                                        {/* 마일리지 내역 테이블 */}
+                                        {activeTab === "mileage" && (
+                                            <Table
+                                                columns={mileageColumns}
+                                                data={mileageDetails}
+                                                rowKey="id"
+                                                emptyText="마일리지 내역이 없습니다."
+                                                className="border-gray-200"
+                                            />
+                                        )}
+
+                                        {/* 카드 지출 내역 테이블 */}
+                                        {activeTab === "card" && (
+                                            <Table
+                                                columns={cardColumns}
+                                                data={cardDetails}
+                                                rowKey="id"
+                                                emptyText="카드 지출 내역이 없습니다."
+                                                className="border-gray-200"
+                                            />
+                                        )}
+                                    </div>
+                                );
+                            })()
+                        ) : (
+                            /* 전체 선택 시 직원별 집계 테이블 표시 */
+                            <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                <h2 className="text-lg font-semibold text-gray-800 mb-1">
+                                    직원별 집계
+                                </h2>
+                                <p className="text-sm text-gray-500 mb-4">
+                                    클릭하여 상세 내역을 확인하세요
+                                </p>
+
+                                {/* 테이블 */}
+                                <Table
+                                    columns={columns}
+                                    data={currentData}
+                                    rowKey="id"
+                                    onRowClick={(row) => {
+                                        setSelectedEmployeeId(
+                                            selectedEmployeeId === row.id
+                                                ? null
+                                                : row.id
+                                        );
+                                        setActiveTab("mileage");
+                                    }}
+                                    expandedRowKeys={
+                                        selectedEmployeeId
+                                            ? [selectedEmployeeId]
+                                            : []
                                     }
-                                    disabled={currentPage === 1}
-                                    className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    &lt;
-                                </button>
-                                <div className="flex items-center gap-1">
-                                    {Array.from(
-                                        { length: totalPages },
-                                        (_, i) => i + 1
-                                    ).map((page) => (
-                                        <button
-                                            key={page}
-                                            onClick={() => setCurrentPage(page)}
-                                            className={`w-8 h-8 flex items-center justify-center rounded-full font-medium ${
-                                                currentPage === page
-                                                    ? "bg-gray-100 text-gray-800"
-                                                    : "hover:bg-gray-100"
-                                            }`}
-                                        >
-                                            {page}
-                                        </button>
-                                    ))}
+                                    expandableRowRender={(row) => {
+                                        if (selectedEmployeeId !== row.id)
+                                            return null;
+
+                                        const selectedEmployee = MOCK_DATA.find(
+                                            (emp) =>
+                                                emp.id === selectedEmployeeId
+                                        );
+                                        if (!selectedEmployee) return null;
+
+                                        const mileageDetails =
+                                            MOCK_MILEAGE_DETAILS[
+                                                selectedEmployeeId
+                                            ] || [];
+                                        const cardDetails =
+                                            MOCK_CARD_DETAILS[
+                                                selectedEmployeeId
+                                            ] || [];
+
+                                        // 이름에서 "MK " 제거
+                                        const displayName =
+                                            selectedEmployee.name.replace(
+                                                /^[A-Z]{2,3} /,
+                                                ""
+                                            );
+
+                                        return (
+                                            <div className="p-4 lg:p-6 bg-gray-50">
+                                                {/* 헤더 */}
+                                                <div className="flex items-center justify-between mb-6">
+                                                    <div>
+                                                        <h2 className="text-lg font-semibold text-gray-800">
+                                                            {displayName}님의
+                                                            청구서
+                                                        </h2>
+                                                        <p className="text-sm text-gray-500 mt-1">
+                                                            {year} {month}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            alert(
+                                                                "PDF 다운로드"
+                                                            );
+                                                        }}
+                                                        className="px-4 py-2 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"
+                                                    >
+                                                        <svg
+                                                            width="16"
+                                                            height="16"
+                                                            viewBox="0 0 24 24"
+                                                            fill="none"
+                                                            xmlns="http://www.w3.org/2000/svg"
+                                                        >
+                                                            <path
+                                                                d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"
+                                                                stroke="currentColor"
+                                                                strokeWidth="1.5"
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                            />
+                                                            <path
+                                                                d="M7 10l5 5 5-5"
+                                                                stroke="currentColor"
+                                                                strokeWidth="1.5"
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                            />
+                                                            <path
+                                                                d="M12 15V3"
+                                                                stroke="currentColor"
+                                                                strokeWidth="1.5"
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                            />
+                                                        </svg>
+                                                        PDF 다운로드
+                                                    </button>
+                                                </div>
+
+                                                {/* 탭 */}
+                                                <div className="flex gap-1 border-b border-gray-200 mb-6">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveTab(
+                                                                "mileage"
+                                                            );
+                                                        }}
+                                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
+                                                            activeTab ===
+                                                            "mileage"
+                                                                ? "text-gray-900 border-b-2 border-gray-900"
+                                                                : "text-gray-500 hover:text-gray-700"
+                                                        }`}
+                                                    >
+                                                        마일리지 내역
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActiveTab(
+                                                                "card"
+                                                            );
+                                                        }}
+                                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
+                                                            activeTab === "card"
+                                                                ? "text-gray-900 border-b-2 border-gray-900"
+                                                                : "text-gray-500 hover:text-gray-700"
+                                                        }`}
+                                                    >
+                                                        카드 지출 내역
+                                                    </button>
+                                                </div>
+
+                                                {/* 마일리지 내역 테이블 */}
+                                                {activeTab === "mileage" && (
+                                                    <Table
+                                                        columns={mileageColumns}
+                                                        data={mileageDetails}
+                                                        rowKey="id"
+                                                        emptyText="마일리지 내역이 없습니다."
+                                                        className="border-gray-200"
+                                                    />
+                                                )}
+
+                                                {/* 카드 지출 내역 테이블 */}
+                                                {activeTab === "card" && (
+                                                    <Table
+                                                        columns={cardColumns}
+                                                        data={cardDetails}
+                                                        rowKey="id"
+                                                        emptyText="카드 지출 내역이 없습니다."
+                                                        className="border-gray-200"
+                                                    />
+                                                )}
+                                            </div>
+                                        );
+                                    }}
+                                />
+
+                                {/* 페이지네이션 */}
+                                <div className="flex items-center justify-center gap-2 mt-4 text-sm text-gray-600">
+                                    <button
+                                        onClick={() =>
+                                            setCurrentPage((prev) =>
+                                                Math.max(1, prev - 1)
+                                            )
+                                        }
+                                        disabled={currentPage === 1}
+                                        className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        &lt;
+                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        {Array.from(
+                                            { length: totalPages },
+                                            (_, i) => i + 1
+                                        ).map((page) => (
+                                            <button
+                                                key={page}
+                                                onClick={() =>
+                                                    setCurrentPage(page)
+                                                }
+                                                className={`w-8 h-8 flex items-center justify-center rounded-full font-medium ${
+                                                    currentPage === page
+                                                        ? "bg-gray-100 text-gray-800"
+                                                        : "hover:bg-gray-100"
+                                                }`}
+                                            >
+                                                {page}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() =>
+                                            setCurrentPage((prev) =>
+                                                Math.min(totalPages, prev + 1)
+                                            )
+                                        }
+                                        disabled={currentPage === totalPages}
+                                        className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        &gt;
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() =>
-                                        setCurrentPage((prev) =>
-                                            Math.min(totalPages, prev + 1)
-                                        )
-                                    }
-                                    disabled={currentPage === totalPages}
-                                    className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    &gt;
-                                </button>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             </div>

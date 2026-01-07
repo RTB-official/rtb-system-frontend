@@ -51,10 +51,10 @@ export default function Table<T = any>({
     return (
         <div className="flex flex-col">
             <div
-                className={`overflow-auto border border-gray-100 rounded-2xl w-full`}
+                className={`overflow-auto border border-gray-200 rounded-2xl w-full`}
             >
-                <table className={`w-full text-sm text-gray-800 ${className}`}>
-                    <thead className="bg-gray-50 border-b border-gray-100">
+                <table className={`w-full text-[14px] text-gray-00 ${className}`}>
+                    <thead className="bg-gray-100 border-b border-gray-200">
                         <tr>
                             {columns.map((column) => (
                                 <th
@@ -79,10 +79,10 @@ export default function Table<T = any>({
                     </thead>
                     <tbody>
                         {data.length === 0 ? (
-                            <tr>
+                            <tr className="bg-white">
                                 <td
                                     colSpan={columns.length}
-                                    className="px-4 py-10 text-center text-gray-500"
+                                    className="px-4 py-10 text-center text-gray-500 bg-white"
                                 >
                                     {emptyText}
                                 </td>
@@ -94,7 +94,7 @@ export default function Table<T = any>({
                                 return (
                                     <React.Fragment key={key}>
                                         <tr
-                                            className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${
+                                            className={`border-b border-gray-100 bg-white hover:bg-white transition-colors ${
                                                 onRowClick
                                                     ? "cursor-pointer"
                                                     : ""
@@ -106,7 +106,7 @@ export default function Table<T = any>({
                                             {columns.map((column) => (
                                                 <td
                                                     key={column.key}
-                                                    className={`px-4 py-3 text-gray-900 ${
+                                                    className={`px-4 py-3 text-gray-900 bg-white ${
                                                         column.align === "right"
                                                             ? "text-right"
                                                             : column.align ===

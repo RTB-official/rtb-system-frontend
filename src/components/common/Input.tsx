@@ -10,6 +10,7 @@ interface InputProps
     onChange?: (value: string) => void;
     onClick?: () => void;
     uppercase?: boolean;
+    labelClassName?: string;
 }
 
 export default function Input({
@@ -21,6 +22,7 @@ export default function Input({
     onChange,
     onClick,
     uppercase = false,
+    labelClassName = "",
     className = "",
     ...props
 }: InputProps) {
@@ -43,7 +45,7 @@ export default function Input({
         <div className={`flex flex-col gap-2 w-full ${className}`}>
             {label && (
                 <div className="flex gap-1 items-center">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label className={`block text-sm font-medium text-gray-700 ${labelClassName}`}>
                         {label}
                     </label>
                     {required && (

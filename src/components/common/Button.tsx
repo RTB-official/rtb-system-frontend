@@ -17,7 +17,7 @@ export default function Button({
     ...props
 }: ButtonProps) {
     const baseStyles =
-        "inline-flex items-center justify-center font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+        "inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
     const variantStyles = {
         primary:
@@ -32,7 +32,7 @@ export default function Button({
     const sizeStyles = {
         sm: "h-10 px-3 text-sm rounded-lg",
         md: "h-12 px-4 text-base rounded-xl",
-        lg: "h-14 px-6 text-lg rounded-xl",
+        lg: "h-14 px-6 text-lg rounded-2xl",
     };
 
     const widthStyle = fullWidth ? "w-full" : "";

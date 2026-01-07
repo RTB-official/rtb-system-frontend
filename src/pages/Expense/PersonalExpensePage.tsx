@@ -19,9 +19,20 @@ export default function PersonalExpensePage() {
     const [rightItems, setRightItems] = useState<any[]>([]);
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [year, setYear] = useState("2025년");
-    const [month, setMonth] = useState("11월");
+    const currentDate = new Date();
+    const [year, setYear] = useState(`${currentDate.getFullYear()}년`);
+    const [month, setMonth] = useState(`${currentDate.getMonth() + 1}월`);
     const [submittedIds, setSubmittedIds] = useState<number[]>([]);
+
+    const allItemsToSubmitCount = useMemo(() => {
+        const unsubmittedLeftItems = leftItems.filter(
+            (item) => !submittedIds.includes(item.id)
+        );
+        const unsubmittedRightItems = rightItems.filter(
+            (item) => !submittedIds.includes(item.id)
+        );
+        return unsubmittedLeftItems.length + unsubmittedRightItems.length;
+    }, [leftItems, rightItems, submittedIds]);
 
     useEffect(() => {
         document.body.style.overflow = sidebarOpen ? "hidden" : "";
@@ -44,6 +55,26 @@ export default function PersonalExpensePage() {
         }));
     }, []);
 
+    // 날짜 필터링 함수
+    const matchesFilter = (dateStr: string) => {
+        if (!dateStr) return false;
+        try {
+            const date = new Date(dateStr);
+            // Invalid date 체크
+            if (isNaN(date.getTime())) return false;
+
+            const selectedYear = parseInt(year.replace("년", ""));
+            const selectedMonth = parseInt(month.replace("월", ""));
+
+            return (
+                date.getFullYear() === selectedYear &&
+                date.getMonth() + 1 === selectedMonth
+            );
+        } catch (e) {
+            return false;
+        }
+    };
+
     const handleRemoveLeftItem = (id: number) => {
         setLeftItems((prev) => prev.filter((item) => item.id !== id));
         setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
@@ -56,34 +87,40 @@ export default function PersonalExpensePage() {
 
     const mileageHistory = useMemo<ExpenseHistoryItem[]>(
         () =>
-            leftItems.map((it) => ({
-                id: it.id,
-                variant: "mileage" as const,
-                date: it.date || "",
-                amount: `${(it.cost || 0).toLocaleString("ko-KR")}원`,
-                routeLabel: `${it.from || "출발지"} → ${it.to || "도착지"}`,
-                distanceLabel: `${it.distance || 0}km`,
-                desc: it.note || "",
-            })),
-        [leftItems]
+            leftItems
+                .filter((it) => matchesFilter(it.date || ""))
+                .map((it) => ({
+                    id: it.id,
+                    variant: "mileage" as const,
+                    date: it.date || "",
+                    amount: `${(it.cost || 0).toLocaleString("ko-KR")}원`,
+                    routeLabel: `${it.from || "출발지"} → ${it.to || "도착지"}`,
+                    distanceLabel: `${it.distance || 0}km`,
+                    desc: it.note || "",
+                })),
+        [leftItems, year, month]
     );
 
     const cardHistory = useMemo<ExpenseHistoryItem[]>(
         () =>
-            rightItems.map((it) => ({
-                id: it.id,
-                variant: "card" as const,
-                date: it.date || "",
-                amount: `${Number(it.amount || 0).toLocaleString("ko-KR")}원`,
-                tag: it.type || "기타",
-                desc: it.detail || "",
-                img: it.img || null,
-            })),
-        [rightItems]
+            rightItems
+                .filter((it) => matchesFilter(it.date || ""))
+                .map((it) => ({
+                    id: it.id,
+                    variant: "card" as const,
+                    date: it.date || "",
+                    amount: `${Number(it.amount || 0).toLocaleString(
+                        "ko-KR"
+                    )}원`,
+                    tag: it.type || "기타",
+                    desc: it.detail || "",
+                    img: it.img || null,
+                })),
+        [rightItems, year, month]
     );
 
     return (
-        <div className="flex h-screen bg-[#f5f7fb] overflow-hidden">
+        <div className="flex h-screen bg-white overflow-hidden">
             {sidebarOpen && (
                 <div
                     className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -112,81 +149,110 @@ export default function PersonalExpensePage() {
                     onMenuClick={() => setSidebarOpen(true)}
                 />
 
-                <div className="flex-1 overflow-y-auto p-4 lg:p-9">
-                    <div className="max-w-7xl mx-auto">
-                        {/* 조회 기간 */}
-                        <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-[0px_12px_35px_rgba(15,23,42,0.06)] mb-8 flex flex-wrap items-center gap-4">
-                            <h2 className="text-lg font-semibold text-gray-900">
-                                조회 기간
-                            </h2>
-                            <YearMonthSelector
-                                year={year}
-                                month={month}
-                                onYearChange={setYear}
-                                onMonthChange={setMonth}
-                                yearOptions={yearOptions}
-                                monthOptions={monthOptions}
-                            />
-                        </div>
+                <div className="flex-1 overflow-y-auto py-4 lg:py-9 px-9">
+                    {/* 조회 기간 */}
+                    <div className="mb-8 flex flex-wrap items-center gap-4">
+                        <h2 className="text-[24px] font-semibold text-gray-900">
+                            조회 기간
+                        </h2>
+                        <YearMonthSelector
+                            year={year}
+                            month={month}
+                            onYearChange={setYear}
+                            onMonthChange={setMonth}
+                            yearOptions={yearOptions}
+                            monthOptions={monthOptions}
+                        />
+                    </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 items-stretch">
-                            <MileageCard
-                                initialDate={preselectedDate || undefined}
-                                onAdd={(item) =>
-                                    setLeftItems((prev) => [item, ...prev])
-                                }
-                            />
-                            <ExpenseFormCard
-                                initialDate={preselectedDate || undefined}
-                                onAdd={(item) =>
-                                    setRightItems((prev) => [item, ...prev])
-                                }
-                            />
-                        </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 items-stretch w-full">
+                        <MileageCard
+                            initialDate={preselectedDate || undefined}
+                            onAdd={(item) =>
+                                setLeftItems((prev) => [item, ...prev])
+                            }
+                        />
+                        <ExpenseFormCard
+                            initialDate={preselectedDate || undefined}
+                            onAdd={(item) =>
+                                setRightItems((prev) => [item, ...prev])
+                            }
+                        />
+                    </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                            <ExpenseHistorySection
-                                title="개인 차량 마일리지 내역"
-                                items={mileageHistory}
-                                emptyMessage="등록된 마일리지 내역이 없습니다."
-                                submittedIds={submittedIds}
-                                onRemove={handleRemoveLeftItem}
-                            />
-                            <ExpenseHistorySection
-                                title="개인 카드/현금 지출내역"
-                                items={cardHistory}
-                                emptyMessage="등록된 지출 내역이 없습니다."
-                                submittedIds={submittedIds}
-                                onRemove={handleRemoveRightItem}
-                            />
-                        </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start w-full">
+                        <ExpenseHistorySection
+                            title="개인 차량 마일리지 내역"
+                            items={mileageHistory}
+                            emptyMessage="등록된 마일리지 내역이 없습니다."
+                            submittedIds={submittedIds}
+                            onRemove={handleRemoveLeftItem}
+                        />
+                        <ExpenseHistorySection
+                            title="개인 카드/현금 지출내역"
+                            items={cardHistory}
+                            emptyMessage="등록된 지출 내역이 없습니다."
+                            submittedIds={submittedIds}
+                            onRemove={handleRemoveRightItem}
+                        />
+                    </div>
 
-                        <div className="fixed bottom-6 left-6 right-6 lg:left-[239px]">
+                    {allItemsToSubmitCount > 0 && (
+                        <div className="fixed bottom-6 left-6 right-6 lg:left-[239px] mx-9">
                             <Button
                                 variant="primary"
                                 size="lg"
                                 fullWidth
                                 onClick={() => {
-                                    alert(
-                                        "제출 처리: " +
-                                            (leftItems.length +
-                                                rightItems.length) +
-                                            "개"
+                                    const itemsToSubmitLeft = leftItems.filter(
+                                        (item) =>
+                                            !submittedIds.includes(item.id)
                                     );
-                                    const allIds = [
-                                        ...leftItems.map((i) => i.id),
-                                        ...rightItems.map((i) => i.id),
+                                    const itemsToSubmitRight =
+                                        rightItems.filter(
+                                            (item) =>
+                                                !submittedIds.includes(item.id)
+                                        );
+
+                                    const currentItemsToSubmitCount =
+                                        itemsToSubmitLeft.length +
+                                        itemsToSubmitRight.length;
+
+                                    if (currentItemsToSubmitCount === 0) {
+                                        alert("제출할 항목이 없습니다.");
+                                        return;
+                                    }
+
+                                    const confirmSubmit = window.confirm(
+                                        `총 ${currentItemsToSubmitCount}개의 항목을 제출하시겠습니까?`
+                                    );
+                                    if (!confirmSubmit) return;
+
+                                    const allIdsToSubmit = [
+                                        ...itemsToSubmitLeft.map((i) => i.id),
+                                        ...itemsToSubmitRight.map((i) => i.id),
                                     ];
-                                    setSubmittedIds(allIds);
+                                    console.log(
+                                        "제출할 항목 ID: ",
+                                        allIdsToSubmit
+                                    );
+                                    alert(
+                                        `총 ${allIdsToSubmit.length}개의 항목이 제출되었습니다.`
+                                    );
+
+                                    // 제출 완료 후 submittedIds 업데이트
+                                    setSubmittedIds((prev) => [
+                                        ...prev,
+                                        ...allIdsToSubmit,
+                                    ]);
                                 }}
                             >
-                                모두 제출 (
-                                {leftItems.length + rightItems.length}개)
+                                모두 제출 ({allItemsToSubmitCount}개)
                             </Button>
                         </div>
+                    )}
 
-                        <div className="h-24" />
-                    </div>
+                    <div className="h-24" />
                 </div>
             </div>
         </div>
