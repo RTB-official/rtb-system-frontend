@@ -30,9 +30,9 @@ export default function Button({
     };
 
     const sizeStyles = {
-        sm: "h-10 px-3 text-sm rounded-lg",
-        md: "h-12 px-4 text-base rounded-xl",
-        lg: "h-14 px-6 text-lg rounded-2xl",
+        sm: "h-[30px] px-2 text-[13px] rounded-[8px]",
+        md: "h-9 px-2.5 text-[15px] rounded-[10px]",
+        lg: "h-12 px-4 text-base rounded-xl",
     };
 
     const widthStyle = fullWidth ? "w-full" : "";
@@ -42,7 +42,7 @@ export default function Button({
             className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyle} ${className}`}
             {...props}
         >
-            {icon && <span className={children ? "mr-2" : ""}>{icon}</span>}
+            {icon && <span className={children ? "mr-1" : ""}>{icon}</span>}
             {children}
         </button>
     );

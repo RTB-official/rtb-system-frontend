@@ -189,7 +189,7 @@ export default function PersonalExpensePage() {
                             onRemove={handleRemoveLeftItem}
                         />
                         <ExpenseHistorySection
-                            title="개인 카드/현금 지출내역"
+                            title="개인 카드/현금 지출 내역"
                             items={cardHistory}
                             emptyMessage="등록된 지출 내역이 없습니다."
                             submittedIds={submittedIds}

@@ -2,12 +2,13 @@
 import { useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
-import Button from "../../components/common/Button";
 import Tabs from "../../components/common/Tabs";
 import ActionMenu from "../../components/common/ActionMenu";
 import AddMemberModal from "../../components/modals/AddMemberModal";
 import ResetPasswordModal from "../../components/modals/ResetPasswordModal";
 import Table from "../../components/common/Table";
+import Chip from "../../components/ui/Chip";
+import { IconMore } from "../../components/icons/Icons";
 
 type Member = {
     id: string;
@@ -19,6 +20,10 @@ type Member = {
     address2: string;
     joinDate: string; // yymmdd or yyyymmdd 형태
     birth: string; // yymmdd
+    passportNo: string;
+    passportLastName: string;
+    passportFirstName: string;
+    passportExpiry: string; // YYMMDD
     etc: string; // 예: M12234567 / KANG MINJI
 };
 
@@ -33,6 +38,10 @@ const mockMembers: Member[] = [
         address2: "빌딩 301호 (한강로3가)",
         joinDate: "211220",
         birth: "990312",
+        passportNo: "M12234567",
+        passportLastName: "KANG",
+        passportFirstName: "MINJI",
+        passportExpiry: "251227",
         etc: "M12234567\nKANG MINJI",
     },
     ...Array.from({ length: 9 }).map((_, i) => ({
@@ -56,6 +65,10 @@ const mockMembers: Member[] = [
         address2: "빌딩 301호 (한강로3가)",
         joinDate: "211220",
         birth: "990312",
+        passportNo: "M12234567",
+        passportLastName: "KANG",
+        passportFirstName: "MINJI",
+        passportExpiry: "251227",
         etc: "M12234567\nKANG MINJI",
     })),
 ];
@@ -75,8 +88,8 @@ export default function MembersPage() {
     const [page, setPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
-    // Add Member Modal
-    const [addModalOpen, setAddModalOpen] = useState(false);
+    // Edit Member Modal
+    const [editModalOpen, setEditModalOpen] = useState(false);
 
     // Reset Password Modal
     const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
@@ -99,8 +112,6 @@ export default function MembersPage() {
     const staffCount = 16;
 
     const pageCount = 3;
-
-    const handleAdd = () => setAddModalOpen(true);
 
     const selectedMember = members.find((m) => m.id === selectedMemberId);
 
@@ -139,31 +150,6 @@ export default function MembersPage() {
                 <Header
                     title="구성원 관리"
                     onMenuClick={() => setSidebarOpen(true)}
-                    rightContent={
-                        <Button
-                            variant="primary"
-                            size="md"
-                            onClick={handleAdd}
-                            icon={
-                                <svg
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                    <path
-                                        d="M12 5V19M5 12H19"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                    />
-                                </svg>
-                            }
-                        >
-                            구성원 추가
-                        </Button>
-                    }
                 />
 
                 {/* Content */}
@@ -204,16 +190,16 @@ export default function MembersPage() {
                                         {
                                             key: "name",
                                             label: "이름",
-                                            render: (value, row) => (
+                                            render: (_, row) => (
                                                 <div className="flex items-center gap-3">
                                                     <BadgeAvatar
                                                         name={row.name}
                                                     />
                                                     <div className="leading-tight">
-                                                        <div className="text-[14px] font-semibold text-[#101828]">
+                                                        <div className="text-[14px] font-semibold text-gray-900">
                                                             {row.name}
                                                         </div>
-                                                        <div className="text-[12px] text-[#6a7282]">
+                                                        <div className="text-[12px] text-gray-500">
                                                             {row.username}
                                                         </div>
                                                     </div>
@@ -224,7 +210,7 @@ export default function MembersPage() {
                                             key: "role",
                                             label: "직급",
                                             render: (value) => (
-                                                <div className="text-[14px] text-[#101828]">
+                                                <div className="text-[14px] text-gray-900">
                                                     {value}
                                                 </div>
                                             ),
@@ -233,7 +219,7 @@ export default function MembersPage() {
                                             key: "phone",
                                             label: "전화번호",
                                             render: (value) => (
-                                                <div className="text-[14px] text-[#101828]">
+                                                <div className="text-[14px] text-gray-900">
                                                     {value}
                                                 </div>
                                             ),
@@ -241,10 +227,10 @@ export default function MembersPage() {
                                         {
                                             key: "address",
                                             label: "주소",
-                                            render: (value, row) => (
-                                                <div className="text-[14px] text-[#101828] min-w-0">
+                                            render: (_, row) => (
+                                                <div className="text-[14px] text-gray-900 min-w-0">
                                                     <div>{row.address1}</div>
-                                                    <div className="text-[12px] text-[#6a7282] mt-1">
+                                                    <div className="text-[12px] text-gray-500 mt-1">
                                                         {row.address2}
                                                     </div>
                                                 </div>
@@ -254,7 +240,7 @@ export default function MembersPage() {
                                             key: "joinDate",
                                             label: "입사일",
                                             render: (value) => (
-                                                <div className="text-[14px] text-[#101828]">
+                                                <div className="text-[14px] text-gray-900">
                                                     {value}
                                                 </div>
                                             ),
@@ -263,7 +249,7 @@ export default function MembersPage() {
                                             key: "birth",
                                             label: "생년월일",
                                             render: (value) => (
-                                                <div className="text-[14px] text-[#101828]">
+                                                <div className="text-[14px] text-gray-900">
                                                     {value}
                                                 </div>
                                             ),
@@ -271,33 +257,80 @@ export default function MembersPage() {
                                         {
                                             key: "etc",
                                             label: "여권정보",
-                                            render: (value, row) => (
-                                                <div className="flex items-start pr-2">
-                                                    <div className="flex-1 min-w-0 whitespace-pre-line text-[12px] text-[#6a7282]">
-                                                        {row.etc}
+                                            render: (_, row) => {
+                                                // 251227 -> 25년 12월 만료 형식으로 변환 (YYMMDD)
+                                                let formattedExpiry = "";
+                                                if (
+                                                    row.passportExpiry &&
+                                                    row.passportExpiry
+                                                        .length === 6
+                                                ) {
+                                                    const year =
+                                                        row.passportExpiry.slice(
+                                                            0,
+                                                            2
+                                                        );
+                                                    const month = parseInt(
+                                                        row.passportExpiry.slice(
+                                                            2,
+                                                            4
+                                                        ),
+                                                        10
+                                                    );
+                                                    formattedExpiry = `${year}년 ${month}월 만료`;
+                                                }
+
+                                                return (
+                                                    <div className="flex items-start pr-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="text-[14px] font-semibold text-gray-900">
+                                                                    {row.passportNo ||
+                                                                        "-"}
+                                                                </span>
+                                                                {formattedExpiry && (
+                                                                    <Chip
+                                                                        color="red-600"
+                                                                        variant="solid"
+                                                                        size="sm"
+                                                                    >
+                                                                        {
+                                                                            formattedExpiry
+                                                                        }
+                                                                    </Chip>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-[12px] text-gray-500 uppercase tracking-tight -mt-1">
+                                                                {
+                                                                    row.passportLastName
+                                                                }{" "}
+                                                                {
+                                                                    row.passportFirstName
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSelectedMemberId(
+                                                                    row.id
+                                                                );
+                                                                setActionAnchor(
+                                                                    e.currentTarget
+                                                                );
+                                                                setActionOpen(
+                                                                    (prev) =>
+                                                                        !prev
+                                                                );
+                                                            }}
+                                                            aria-label="more"
+                                                        >
+                                                            <IconMore className="w-5 h-5" />
+                                                        </button>
                                                     </div>
-                                                    <button
-                                                        className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-[#f2f4f7] transition flex items-center justify-center text-[#6a7282]"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setSelectedMemberId(
-                                                                row.id
-                                                            );
-                                                            setActionAnchor(
-                                                                e.currentTarget
-                                                            );
-                                                            setActionOpen(
-                                                                (prev) => !prev
-                                                            );
-                                                        }}
-                                                        aria-label="more"
-                                                    >
-                                                        <span className="text-[18px] leading-none">
-                                                            ···
-                                                        </span>
-                                                    </button>
-                                                </div>
-                                            ),
+                                                );
+                                            },
                                         },
                                     ]}
                                     data={members}
@@ -317,12 +350,13 @@ export default function MembersPage() {
                 </div>
             </div>
 
-            {/* Add Member Modal */}
+            {/* Edit Member Modal */}
             <AddMemberModal
-                isOpen={addModalOpen}
-                onClose={() => setAddModalOpen(false)}
+                isOpen={editModalOpen}
+                onClose={() => setEditModalOpen(false)}
+                member={selectedMember}
                 onSubmit={(payload) => {
-                    console.log("추가 payload:", payload);
+                    console.log("수정 payload:", payload);
                     // TODO: 여기서 API 호출 또는 멤버 리스트 state 업데이트
                 }}
             />
@@ -336,9 +370,7 @@ export default function MembersPage() {
                     setActionAnchor(null);
                 }}
                 onEdit={() => {
-                    console.log("수정:", selectedMemberId);
-                    alert(`수정: ${selectedMemberId}`);
-                    // TODO: 수정 모달 열기(예: EditMemberModal)
+                    setEditModalOpen(true);
                 }}
                 onResetPassword={handleResetPassword}
                 onDelete={() => {

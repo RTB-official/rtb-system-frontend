@@ -312,7 +312,7 @@ export default function WorkloadPage() {
                                         render: (_, row) => (
                                             <Link
                                                 to={`/workload/detail/${row.id}`}
-                                                className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                                className="text-blue-500 hover:text-blue-700 hover:underline font-medium"
                                             >
                                                 {row.name}
                                             </Link>

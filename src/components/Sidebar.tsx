@@ -67,6 +67,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
     const usernameRef = useRef<HTMLDivElement>(null);
+    const notificationRef = useRef<HTMLDivElement>(null);
 
     // 임시 사용자 정보 (실제 앱에서는 인증 컨텍스트 등에서 가져와야 합니다)
     const currentUser = {
@@ -182,8 +183,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
 
     const reportSubMenuItems = [
-        { label: "보고서 작성", to: PATHS.reportCreate },
         { label: "보고서 목록", to: PATHS.reportList },
+        { label: "보고서 작성", to: PATHS.reportCreate },
     ];
 
     const expenseSubMenuItems = [
@@ -196,13 +197,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
             <div className="flex flex-col gap-6 px-4 py-5">
                 {/* Logo & Close Button */}
                 <div className="flex gap-2 items-center justify-between p-2">
-                    <div className="flex gap-2 items-center">
+                    <div className="flex gap-2.5 items-center">
                         <img
                             src="/images/RTBlogo.png"
                             alt="RTB 로고"
-                            className="h-10 w-auto object-contain shrink-0"
+                            className="h-9 w-auto object-contain shrink-0"
                         />
-                        <p className="font-semibold text-[13px] text-gray-900 leading-normal whitespace-nowrap">
+                        <p className="font-medium text-[14px] text-gray-900 whitespace-nowrap">
                             RTB 통합 관리 시스템
                         </p>
                     </div>
@@ -218,8 +219,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 <div className="flex flex-col gap-3">
                     <div
                         ref={usernameRef}
-                        className="flex gap-2 items-center p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
-                        onClick={() => setUserMenuOpen(true)}
+                        className="flex gap-3 items-center p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
+                        onClick={() => {
+                            setUserMenuOpen(!userMenuOpen);
+                            setShowNotifications(false);
+                        }}
                     >
                         <div className="w-7 h-7 rounded-full bg-gray-900" />
                         <p className="font-semibold text-[16px] text-gray-900 leading-normal">
@@ -298,9 +302,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     </BaseModal>
 
                     {/* Notifications */}
-                    <div className="relative">
+                    <div className="relative" ref={notificationRef}>
                         <button
-                            onClick={() => setShowNotifications((v) => !v)}
+                            onClick={() => {
+                                setShowNotifications(!showNotifications);
+                                setUserMenuOpen(false);
+                            }}
                             className={`flex gap-6 items-center p-3 rounded-xl transition-colors w-full text-left ${
                                 showNotifications
                                     ? "bg-gray-100"
@@ -323,6 +330,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         {showNotifications && (
                             <NotificationPopup
                                 onClose={() => setShowNotifications(false)}
+                                anchorEl={notificationRef.current}
                             />
                         )}
                     </div>
@@ -345,7 +353,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 setMenuFocus("REPORT");
                                 setReportOpen(true);
                                 setExpenseOpen(false);
-                                navigate(PATHS.reportCreate);
+                                navigate(PATHS.reportList);
                             }}
                             className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
                                 reportActive

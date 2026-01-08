@@ -620,20 +620,20 @@ export default function DashboardPage() {
                             <div className="flex items-center gap-1 pr-9">
                                 <Button
                                     variant="outline"
-                                    size="sm"
+                                    size="md"
                                     onClick={prevMonth}
                                     icon={<IconChevronLeft />}
                                 />
                                 <Button
                                     variant="outline"
-                                    size="sm"
+                                    size="md"
                                     onClick={goToday}
                                 >
                                     오늘
                                 </Button>
                                 <Button
                                     variant="outline"
-                                    size="sm"
+                                    size="md"
                                     onClick={nextMonth}
                                     icon={<IconChevronRight />}
                                 />

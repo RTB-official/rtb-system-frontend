@@ -376,6 +376,20 @@ export const IconClose = (props: { className?: string }) => (
     </svg>
 );
 
+export const IconCheck = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-4 h-4"}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+    >
+        <path d="M20 6L9 17l-5-5" />
+    </svg>
+);
+
 export const IconArrowBack = (props: { className?: string }) => (
     <svg
         className={props.className || "w-6 h-6"}
@@ -385,6 +399,41 @@ export const IconArrowBack = (props: { className?: string }) => (
     >
         <path
             d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
+            fill="currentColor"
+        />
+    </svg>
+);
+
+export const IconPlus = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-6 h-6"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <g clipPath="url(#clip0_plus)">
+            <path
+                d="M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+                fill="currentColor"
+            />
+        </g>
+        <defs>
+            <clipPath id="clip0_plus">
+                <rect width="24" height="24" fill="white" />
+            </clipPath>
+        </defs>
+    </svg>
+);
+
+export const IconMore = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M6 10C4.9 10 4 10.9 4 12C4 13.1 4.9 14 6 14C7.1 14 8 13.1 8 12C8 10.9 7.1 10 6 10ZM18 10C16.9 10 16 10.9 16 12C16 13.1 16.9 14 18 14C19.1 14 20 13.1 20 12C20 10.9 19.1 10 18 10ZM12 10C10.9 10 10 10.9 10 12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12C14 10.9 13.1 10 12 10Z"
             fill="currentColor"
         />
     </svg>

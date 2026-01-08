@@ -105,7 +105,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                                     e.stopPropagation();
                                     onEdit();
                                 }}
-                                className="flex-1 px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                className="flex-1 px-3 py-2 text-sm font-medium text-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                             >
                                 수정
                             </button>

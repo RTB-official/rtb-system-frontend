@@ -70,7 +70,7 @@ export default function ResetPasswordModal({
             isOpen={isOpen}
             onClose={handleClose}
             title="비밀번호 재설정"
-            maxWidth="max-w-lg"
+            maxWidth="max-w-md"
             footer={
                 <div className="flex gap-3 w-full">
                     <Button

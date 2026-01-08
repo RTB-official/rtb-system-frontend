@@ -1,72 +1,14 @@
 import { useState, useMemo, useRef } from "react";
 import SectionCard from "../ui/SectionCard";
-import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
-import Chip from "../ui/Chip";
 import DatePicker from "../ui/DatePicker";
+import Button from "../common/Button";
 import {
     useWorkReportStore,
     calcDurationHours,
     toKoreanTime,
-    REGION_GROUPS,
 } from "../../store/workReportStore";
-
-const IconCalendar = () => (
-    <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M19 4H18V2H16V4H8V2H6V4H5C3.89 4 3.01 4.9 3.01 6L3 20C3 21.1 3.89 22 5 22H19C20.1 22 21 21.1 21 20V6C21 4.9 20.1 4 19 4ZM19 20H5V10H19V20ZM19 8H5V6H19V8ZM9 14H7V12H9V14ZM13 14H11V12H13V14ZM17 14H15V12H17V14ZM9 18H7V16H9V18ZM13 18H11V16H13V18ZM17 18H15V16H17V18Z"
-            fill="#6a7282"
-        />
-    </svg>
-);
-
-const IconEdit = () => (
-    <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M3 17.25V21H6.75L17.81 9.94L14.06 6.19L3 17.25ZM20.71 7.04C21.1 6.65 21.1 6.02 20.71 5.63L18.37 3.29C17.98 2.9 17.35 2.9 16.96 3.29L15.13 5.12L18.88 8.87L20.71 7.04Z"
-            fill="#99a1af"
-        />
-    </svg>
-);
-
-const IconDelete = () => (
-    <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M6 19C6 20.1 6.9 21 8 21H16C17.1 21 18 20.1 18 19V7H6V19ZM19 4H15.5L14.5 3H9.5L8.5 4H5V6H19V4Z"
-            fill="#99a1af"
-        />
-    </svg>
-);
-
-const IconChevron = ({ expanded }: { expanded: boolean }) => (
-    <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        className={`transition-transform ${expanded ? "" : "-rotate-90"}`}
-    >
-        <path d="M7 10L12 15L17 10H7Z" fill="#6a7282" />
-    </svg>
-);
+import { IconEdit, IconTrash, IconClose } from "../icons/Icons";
 
 // 시간 선택 옵션
 const hourOptions = Array.from({ length: 25 }, (_, i) => ({
@@ -217,15 +159,15 @@ export default function WorkLogSection() {
         <SectionCard title="출장 업무 일지">
             <div className="flex flex-col gap-5">
                 {/* 입력 폼 */}
-                <div ref={formRef} className="flex flex-col gap-5 scroll-mt-24">
+                <div ref={formRef} className="flex flex-col gap-5 scroll-mt-20">
                     {/* 시작/종료 시간 */}
-                    <div className="rounded-xl overflow-hidden shadow-sm">
+                    <div className="rounded-xl overflow-hidden border border-gray-200">
                         <div className="flex flex-col md:flex-row">
                             {/* 시작 */}
-                            <div className="flex-1 p-4 bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200">
+                            <div className="flex-1 p-4 bg-gray-50">
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                    <p className="font-semibold text-[14px] text-slate-700">
+                                    <div className="w-3 h-3 rounded-[4px] bg-green-500"></div>
+                                    <p className="font-semibold text-[14px] text-gray-800">
                                         시작
                                     </p>
                                 </div>
@@ -243,60 +185,43 @@ export default function WorkLogSection() {
                                         placeholder="날짜 선택"
                                     />
                                     <div className="flex gap-2">
-                                        <select
+                                        <Select
                                             value={timeFromHour || ""}
-                                            onChange={(e) =>
+                                            onChange={(val) =>
                                                 handleTimeChange(
                                                     "from",
                                                     "hour",
-                                                    e.target.value
+                                                    val
                                                 )
                                             }
-                                            className="flex-1 h-10 px-3 border border-slate-300 rounded-lg text-[14px] bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none transition-all"
-                                        >
-                                            <option value="">시</option>
-                                            {hourOptions.map((opt) => (
-                                                <option
-                                                    key={opt.value}
-                                                    value={opt.value}
-                                                >
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <select
+                                            options={hourOptions}
+                                            placeholder="시"
+                                            className="flex-1"
+                                            size="sm"
+                                        />
+                                        <Select
                                             value={timeFromMin || "00"}
-                                            onChange={(e) =>
+                                            onChange={(val) =>
                                                 handleTimeChange(
                                                     "from",
                                                     "min",
-                                                    e.target.value
+                                                    val
                                                 )
                                             }
-                                            className="flex-1 h-10 px-3 border border-slate-300 rounded-lg text-[14px] bg-white focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 outline-none transition-all"
-                                        >
-                                            {minuteOptions.map((opt) => (
-                                                <option
-                                                    key={opt.value}
-                                                    value={opt.value}
-                                                >
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            options={minuteOptions}
+                                            className="flex-1"
+                                            size="sm"
+                                        />
                                     </div>
                                 </div>
                             </div>
-
-                            {/* 구분선 */}
-                            <div className="w-px bg-slate-300 hidden md:block" />
-                            <div className="h-px bg-slate-300 md:hidden" />
-
+                                        <div className="w-px bg-gray-200 hidden md:block" />
+                                        <div className="h-px bg-gray-200 md:hidden" />
                             {/* 종료 */}
-                            <div className="flex-1 p-4 bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-200">
+                            <div className="flex-1 p-4 bg-gray-50">
                                 <div className="flex items-center gap-2 mb-3">
-                                    <div className="w-2 h-2 rounded-full bg-rose-500"></div>
-                                    <p className="font-semibold text-[14px] text-slate-700">
+                                <div className="w-3 h-3 rounded-[4px] bg-red-500"></div>
+                                    <p className="font-semibold text-[14px] text-gray-800">
                                         종료
                                     </p>
                                 </div>
@@ -309,47 +234,33 @@ export default function WorkLogSection() {
                                         placeholder="날짜 선택"
                                     />
                                     <div className="flex gap-2">
-                                        <select
+                                        <Select
                                             value={timeToHour || ""}
-                                            onChange={(e) =>
+                                            onChange={(val) =>
                                                 handleTimeChange(
                                                     "to",
                                                     "hour",
-                                                    e.target.value
+                                                    val
                                                 )
                                             }
-                                            className="flex-1 h-10 px-3 border border-slate-300 rounded-lg text-[14px] bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none transition-all"
-                                        >
-                                            <option value="">시</option>
-                                            {hourOptions.map((opt) => (
-                                                <option
-                                                    key={opt.value}
-                                                    value={opt.value}
-                                                >
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <select
+                                            options={hourOptions}
+                                            placeholder="시"
+                                            className="flex-1"
+                                            size="sm"
+                                        />
+                                        <Select
                                             value={timeToMin || "00"}
-                                            onChange={(e) =>
+                                            onChange={(val) =>
                                                 handleTimeChange(
                                                     "to",
                                                     "min",
-                                                    e.target.value
+                                                    val
                                                 )
                                             }
-                                            className="flex-1 h-10 px-3 border border-slate-300 rounded-lg text-[14px] bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none transition-all"
-                                        >
-                                            {minuteOptions.map((opt) => (
-                                                <option
-                                                    key={opt.value}
-                                                    value={opt.value}
-                                                >
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            options={minuteOptions}
+                                            className="flex-1"
+                                            size="sm"
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -375,7 +286,6 @@ export default function WorkLogSection() {
                             }
                         />
                     </div>
-
                     {/* 이동일 때 From/To 선택 */}
                     {currentEntry.descType === "이동" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -390,13 +300,14 @@ export default function WorkLogSection() {
                                                 ? siteName || "출장지"
                                                 : place;
                                         return (
-                                            <Chip
+                                            <Button
                                                 key={place}
+                                                size="sm"
                                                 variant={
                                                     currentEntry.moveFrom ===
                                                     resolvedPlace
-                                                        ? "selected"
-                                                        : "default"
+                                                        ? "primary"
+                                                        : "outline"
                                                 }
                                                 onClick={() =>
                                                     handleMovePlace(
@@ -404,12 +315,11 @@ export default function WorkLogSection() {
                                                         place
                                                     )
                                                 }
-                                                size="sm"
                                             >
                                                 {place === "출장지"
                                                     ? siteName || "출장지"
                                                     : place}
-                                            </Chip>
+                                            </Button>
                                         );
                                     })}
                                 </div>
@@ -425,34 +335,34 @@ export default function WorkLogSection() {
                                                 ? siteName || "출장지"
                                                 : place;
                                         return (
-                                            <Chip
+                                            <Button
                                                 key={place}
+                                                size="lg"
                                                 variant={
                                                     currentEntry.moveTo ===
                                                     resolvedPlace
-                                                        ? "selected"
-                                                        : "default"
+                                                        ? "primary"
+                                                        : "outline"
                                                 }
                                                 onClick={() =>
                                                     handleMovePlace("to", place)
                                                 }
-                                                size="sm"
                                             >
                                                 {place === "출장지"
                                                     ? siteName || "출장지"
                                                     : place}
-                                            </Chip>
+                                            </Button>
                                         );
                                     })}
-                                    <Chip
+                                    <Button
+                                        size="lg"
                                         variant={
-                                            hasDetour ? "region-jy" : "default"
+                                            hasDetour ? "primary" : "outline"
                                         }
                                         onClick={handleDetourToggle}
-                                        size="sm"
                                     >
                                         강동동 공장 경유
-                                    </Chip>
+                                    </Button>
                                 </div>
                             </div>
                         </div>
@@ -491,15 +401,16 @@ export default function WorkLogSection() {
                                     </p>
                                 ) : (
                                     availableWorkers.map((worker) => (
-                                        <Chip
+                                        <Button
                                             key={worker}
-                                            variant="default"
+                                            size="md"
+                                            variant="outline"
                                             onClick={() =>
                                                 addCurrentEntryPerson(worker)
                                             }
                                         >
                                             {worker}
-                                        </Chip>
+                                        </Button>
                                     ))
                                 )}
                             </div>
@@ -507,46 +418,46 @@ export default function WorkLogSection() {
 
                         {/* 빠른 추가 버튼들 */}
                         <div className="flex flex-wrap gap-2">
-                            <Chip
-                                variant="gray"
-                                onClick={addAllCurrentEntryPersons}
+                            <Button
+                                variant="outline"
                                 size="sm"
+                                onClick={addAllCurrentEntryPersons}
                             >
                                 모두 추가
-                            </Chip>
-                            <Chip
-                                variant="region-bc"
-                                onClick={() => addRegionPersonsToEntry("BC")}
+                            </Button>
+                            <Button
+                                variant="outline"
                                 size="sm"
+                                onClick={() => addRegionPersonsToEntry("BC")}
                             >
                                 부산/창원
-                            </Chip>
-                            <Chip
-                                variant="region-ul"
-                                onClick={() => addRegionPersonsToEntry("UL")}
+                            </Button>
+                            <Button
+                                variant="outline"
                                 size="sm"
+                                onClick={() => addRegionPersonsToEntry("UL")}
                             >
                                 울산
-                            </Chip>
-                            <Chip
-                                variant="region-jy"
-                                onClick={() => addRegionPersonsToEntry("JY")}
+                            </Button>
+                            <Button
+                                variant="outline"
                                 size="sm"
+                                onClick={() => addRegionPersonsToEntry("JY")}
                             >
                                 정관/양산
-                            </Chip>
-                            <Chip
-                                variant="region-gj"
-                                onClick={() => addRegionPersonsToEntry("GJ")}
+                            </Button>
+                            <Button
+                                variant="outline"
                                 size="sm"
+                                onClick={() => addRegionPersonsToEntry("GJ")}
                             >
                                 거제
-                            </Chip>
+                            </Button>
                         </div>
 
                         {/* 선택된 인원 */}
-                        <div className="border-2 border-[#2b7fff] rounded-xl p-4">
-                            <div className="flex items-center gap-2 mb-2">
+                        <div className="border-2 border-blue-300 rounded-2xl px-4 py-3">
+                            <div className="flex items-center gap-1 mb-3">
                                 <svg
                                     width="20"
                                     height="20"
@@ -572,15 +483,17 @@ export default function WorkLogSection() {
                                     </p>
                                 ) : (
                                     currentEntryPersons.map((person) => (
-                                        <Chip
+                                        <Button
                                             key={person}
-                                            variant="tag"
-                                            onRemove={() =>
+                                            variant="secondary"
+                                            size="md"
+                                            onClick={() =>
                                                 removeCurrentEntryPerson(person)
                                             }
                                         >
                                             {person}
-                                        </Chip>
+                                            <IconClose className="ml-1 w-4 h-4" />
+                                        </Button>
                                     ))
                                 )}
                             </div>
@@ -650,25 +563,27 @@ export default function WorkLogSection() {
 
                 {/* 저장 버튼 */}
                 <div className="flex gap-3">
-                    <button
+                    <Button
                         onClick={() => {
                             saveWorkLogEntry();
                             setHasDetour(false);
                         }}
-                        className="flex-1 h-12 bg-[#364153] rounded-xl flex items-center justify-center text-white font-medium text-[16px] hover:bg-[#1f2937] transition-colors"
+                        variant="primary"
+                        fullWidth
                     >
                         {editingEntryId ? "수정 저장" : "저장"}
-                    </button>
+                    </Button>
                     {editingEntryId && (
-                        <button
+                        <Button
                             onClick={() => {
                                 cancelEditEntry();
                                 setHasDetour(false);
                             }}
-                            className="h-12 px-6 border border-[#e5e7eb] rounded-xl flex items-center justify-center font-medium text-[16px] hover:bg-[#f3f4f6] transition-colors"
+                            variant="outline"
+                            className="px-6"
                         >
                             취소
-                        </button>
+                        </Button>
                     )}
                 </div>
 
@@ -880,7 +795,7 @@ export default function WorkLogSection() {
 
                                                     {/* 액션 버튼 */}
                                                     <div className="flex gap-2 pt-2">
-                                                        <button
+                                                        <Button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 editWorkLogEntry(
@@ -899,11 +814,16 @@ export default function WorkLogSection() {
                                                                     100
                                                                 );
                                                             }}
-                                                            className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-[13px] font-medium text-slate-700 transition-all"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            fullWidth
+                                                            icon={
+                                                                <IconEdit className="w-4 h-4" />
+                                                            }
                                                         >
-                                                            <IconEdit /> 수정
-                                                        </button>
-                                                        <button
+                                                            수정
+                                                        </Button>
+                                                        <Button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 if (
@@ -915,10 +835,15 @@ export default function WorkLogSection() {
                                                                         entry.id
                                                                     );
                                                             }}
-                                                            className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 bg-white rounded-xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-[13px] font-medium text-slate-700 transition-all"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            fullWidth
+                                                            icon={
+                                                                <IconTrash className="w-4 h-4" />
+                                                            }
                                                         >
-                                                            <IconDelete /> 삭제
-                                                        </button>
+                                                            삭제
+                                                        </Button>
                                                     </div>
                                                 </div>
                                             </div>

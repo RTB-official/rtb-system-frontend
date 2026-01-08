@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Input from "../common/Input";
+import Select from "../common/Select";
 import {
     IconCalendar,
     IconChevronLeft,
@@ -11,6 +12,12 @@ interface DatePickerProps {
     onChange: (value: string) => void;
     placeholder?: string;
     className?: string;
+    label?: string;
+    icon?: React.ReactNode;
+    iconPosition?: "left" | "right";
+    onClick?: () => void;
+    minYear?: number;
+    maxYear?: number;
 }
 
 interface PopupPosition {
@@ -18,26 +25,18 @@ interface PopupPosition {
     left: number;
 }
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-const MONTHS = [
-    "1월",
-    "2월",
-    "3월",
-    "4월",
-    "5월",
-    "6월",
-    "7월",
-    "8월",
-    "9월",
-    "10월",
-    "11월",
-    "12월",
-];
 
 export default function DatePicker({
     value,
     onChange,
     placeholder = "날짜 선택",
     className = "",
+    label,
+    icon,
+    iconPosition = "right",
+    onClick,
+    minYear = new Date().getFullYear() - 100,
+    maxYear = new Date().getFullYear(),
 }: DatePickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [viewDate, setViewDate] = useState(() => {
@@ -173,6 +172,28 @@ export default function DatePicker({
         );
     };
 
+    const handleYearChange = (newYear: string) => {
+        const year = parseInt(newYear.replace("년", ""));
+        setViewDate(new Date(year, viewDate.getMonth(), 1));
+    };
+
+    const handleMonthChange = (newMonth: string) => {
+        const month = parseInt(newMonth.replace("월", "")) - 1;
+        setViewDate(new Date(viewDate.getFullYear(), month, 1));
+    };
+
+    const currentYear = viewDate.getFullYear();
+    const currentMonth = viewDate.getMonth() + 1;
+
+    const yearOptions = Array.from(
+        { length: maxYear - minYear + 1 },
+        (_, i) => maxYear - i
+    ).map((y) => ({ value: `${y}년`, label: `${y}년` }));
+
+    const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1).map(
+        (m) => ({ value: `${m}월`, label: `${m}월` })
+    );
+
     const handleToday = () => {
         const today = new Date();
         const dateStr = `${today.getFullYear()}-${String(
@@ -217,12 +238,15 @@ export default function DatePicker({
             <Input
                 type="text"
                 value={formatDisplayValue()}
-                onClick={(e: React.MouseEvent) => {
-                    if (!isOpen) {
+                label={label}
+                onClick={() => {
+                    if (onClick) {
+                        onClick();
+                    }
+                    if (!isOpen && containerRef.current) {
                         // 클릭 위치를 기반으로 팝업 위치 설정
-                        const rect = (
-                            e.currentTarget as HTMLElement
-                        ).getBoundingClientRect();
+                        const rect =
+                            containerRef.current.getBoundingClientRect();
                         const popupHeight = 400;
                         const popupWidth = 320;
 
@@ -248,8 +272,10 @@ export default function DatePicker({
                     setIsOpen(!isOpen);
                 }}
                 placeholder={placeholder}
-                icon={<IconCalendar className="w-4 h-4 text-gray-400" />}
-                iconPosition="right"
+                icon={
+                    icon || <IconCalendar className="w-4 h-4 text-gray-400" />
+                }
+                iconPosition={iconPosition}
                 readOnly
                 className="w-full"
             />
@@ -258,14 +284,14 @@ export default function DatePicker({
             {isOpen && (
                 <div
                     ref={popupRef}
-                    className="fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 min-w-[320px]"
+                    className="fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 min-w-[300px]"
                     style={{
                         top: popupPosition.top,
                         left: popupPosition.left,
                     }}
                 >
                     {/* 헤더 */}
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-2">
                         <button
                             type="button"
                             onClick={handlePrevMonth}
@@ -273,13 +299,21 @@ export default function DatePicker({
                         >
                             <IconChevronLeft />
                         </button>
-                        <div className="flex items-center gap-2">
-                            <span className="font-bold text-[18px] text-gray-800">
-                                {viewDate.getFullYear()}년
-                            </span>
-                            <span className="font-bold text-[18px] text-gray-800">
-                                {MONTHS[viewDate.getMonth()]}
-                            </span>
+                        <div className="flex items-center gap-1">
+                            <Select
+                                value={`${currentYear}년`}
+                                onChange={handleYearChange}
+                                options={yearOptions}
+                                size="sm"
+                                className="w-[100px]"
+                            />
+                            <Select
+                                value={`${currentMonth}월`}
+                                onChange={handleMonthChange}
+                                options={monthOptions}
+                                size="sm"
+                                className="w-[80px]"
+                            />
                         </div>
                         <button
                             type="button"
@@ -330,12 +364,12 @@ export default function DatePicker({
                                     type="button"
                                     onClick={() => handleDateClick(day)}
                                     className={`
-                    h-10 rounded-xl text-[14px] font-medium transition-all
+                    h-8 w-8 mx-auto rounded-full text-[14px] font-medium transition-all flex items-center justify-center
                     ${
                         selected
-                            ? "bg-blue-500 text-white shadow-md shadow-blue-200"
+                            ? "bg-blue-400 text-white shadow-md shadow-blue-200"
                             : today
-                            ? "bg-blue-50 text-blue-600 font-bold"
+                            ? "bg-blue-500 text-white font-bold"
                             : dayOfWeek === 0
                             ? "text-red-500 hover:bg-red-50"
                             : dayOfWeek === 6
@@ -351,7 +385,7 @@ export default function DatePicker({
                     </div>
 
                     {/* 하단 버튼 */}
-                    <div className="flex justify-between items-center mt-4 pt-3 border-t border-gray-100">
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-200">
                         <button
                             type="button"
                             onClick={handleToday}

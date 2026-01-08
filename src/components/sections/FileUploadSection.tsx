@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useWorkReportStore, FileCategory } from '../../store/workReportStore';
+import Button from '../common/Button';
 
 // 아이콘들
 const IconBed = () => (
@@ -90,13 +91,15 @@ function FileCard({ icon, title, category, onPreview }: FileCardProps) {
       </div>
 
       {/* 파일 추가 버튼 */}
-      <button
+      <Button
         onClick={() => fileInputRef.current?.click()}
-        className="w-full h-10 bg-[#364153] hover:bg-[#1f2937] text-white rounded-lg flex items-center justify-center gap-1 transition-colors"
+        variant="primary"
+        size="md"
+        fullWidth
+        icon={<IconAdd />}
       >
-        <IconAdd />
-        <span className="text-[13px] font-medium">파일 추가</span>
-      </button>
+        파일 추가
+      </Button>
 
       <input
         ref={fileInputRef}

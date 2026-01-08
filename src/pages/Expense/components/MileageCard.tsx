@@ -1,9 +1,8 @@
 import React from "react";
 import { IconCar, IconCalendar } from "../../../components/icons/Icons";
-import DatePickerPanel from "../../../components/DatePickerPanel";
+import DatePicker from "../../../components/ui/DatePicker";
 import Input from "../../../components/common/Input";
 import Button from "../../../components/common/Button";
-import Chip from "../../../components/ui/Chip";
 import SectionCard from "../../../components/ui/SectionCard";
 
 export default function MileageCard({
@@ -23,9 +22,6 @@ export default function MileageCard({
     const [note, setNote] = React.useState("");
 
     const chips = ["자택", "공장", "출장지"];
-    const hiddenDateRef = React.useRef<HTMLInputElement | null>(null);
-    const [showPicker, setShowPicker] = React.useState(false);
-    const wrapperRef = React.useRef<HTMLDivElement | null>(null);
     const costPerKm = 250;
     const cost = Number(distance || 0) * costPerKm;
     const numericCost = cost.toLocaleString("ko-KR");
@@ -64,61 +60,33 @@ export default function MileageCard({
         >
             <div className="flex-1 flex flex-col justify-between gap-6">
                 <div className="space-y-4">
-                    <div className="relative">
-                        <Input
-                            label="날짜"
-                            value={date}
-                            onChange={setDate}
-                            placeholder="연도. 월. 일"
-                            icon={<IconCalendar className="w-6 h-6" />}
-                            iconPosition="right"
-                            onClick={() => setShowPicker((s) => !s)}
-                        />
-                        <input
-                            ref={hiddenDateRef}
-                            type="date"
-                            onChange={(e) => setDate(e.target.value)}
-                            style={{
-                                position: "absolute",
-                                left: "-9999px",
-                                width: 1,
-                                height: 1,
-                                opacity: 0,
-                            }}
-                        />
-                        {showPicker && (
-                            <div
-                                ref={wrapperRef}
-                                className="absolute z-40 top-full right-0 mt-2"
-                            >
-                                <DatePickerPanel
-                                    selected={date || null}
-                                    onSelect={(d) => {
-                                        setDate(d);
-                                        setShowPicker(false);
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
+                    <DatePicker
+                        label="날짜"
+                        value={date}
+                        onChange={setDate}
+                        placeholder="연도. 월. 일"
+                        icon={<IconCalendar className="w-6 h-6" />}
+                        iconPosition="right"
+                    />
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-xs text-gray-500 mb-2 block">
                                 출발지
                             </label>
-                            <div className="flex gap-2 flex-wrap">
+                            <div className="grid grid-cols-3 gap-2">
                                 {chips.map((c) => (
-                                    <Chip
+                                    <Button
                                         key={c}
                                         onClick={() => setFrom(c)}
                                         variant={
-                                            from === c ? "selected" : "default"
+                                            from === c ? "primary" : "outline"
                                         }
-                                        size="md"
+                                        size="lg"
+                                        fullWidth
                                     >
                                         {c}
-                                    </Chip>
+                                    </Button>
                                 ))}
                             </div>
                         </div>
@@ -127,18 +95,19 @@ export default function MileageCard({
                             <label className="text-xs text-gray-500 mb-2 block">
                                 도착지
                             </label>
-                            <div className="flex gap-2 flex-wrap">
+                            <div className="grid grid-cols-3 gap-2">
                                 {chips.map((c) => (
-                                    <Chip
+                                    <Button
                                         key={c}
                                         onClick={() => setTo(c)}
                                         variant={
-                                            to === c ? "selected" : "default"
+                                            to === c ? "primary" : "outline"
                                         }
-                                        size="md"
+                                        size="lg"
+                                        fullWidth
                                     >
                                         {c}
-                                    </Chip>
+                                    </Button>
                                 ))}
                             </div>
                         </div>
@@ -151,10 +120,10 @@ export default function MileageCard({
                             onChange={setDistance}
                             placeholder="예) 120"
                         />
-                        <div className="mt-2 flex gap-3">
+                        <div className="mt-2 flex gap-2">
                             <Button
-                                variant="ghost"
-                                size="sm"
+                                variant="outline"
+                                size="md"
                                 onClick={() =>
                                     setDistance(
                                         String(Number(distance || 0) + 1)
@@ -164,8 +133,8 @@ export default function MileageCard({
                                 +1km
                             </Button>
                             <Button
-                                variant="ghost"
-                                size="sm"
+                                variant="outline"
+                                size="md"
                                 onClick={() =>
                                     setDistance(
                                         String(Number(distance || 0) + 5)
@@ -175,8 +144,8 @@ export default function MileageCard({
                                 +5km
                             </Button>
                             <Button
-                                variant="ghost"
-                                size="sm"
+                                variant="outline"
+                                size="md"
                                 onClick={() =>
                                     setDistance(
                                         String(Number(distance || 0) + 10)
@@ -210,7 +179,7 @@ export default function MileageCard({
                 </div>
                 <Button
                     variant="secondary"
-                    size="md"
+                    size="lg"
                     fullWidth
                     onClick={handleAdd}
                 >

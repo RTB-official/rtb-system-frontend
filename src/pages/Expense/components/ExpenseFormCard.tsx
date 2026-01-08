@@ -4,7 +4,7 @@ import {
     IconUpload,
     IconCalendar,
 } from "../../../components/icons/Icons";
-import DatePickerPanel from "../../../components/DatePickerPanel";
+import DatePicker from "../../../components/ui/DatePicker";
 import Input from "../../../components/common/Input";
 import Select from "../../../components/common/Select";
 import Button from "../../../components/common/Button";
@@ -21,9 +21,6 @@ export default function ExpenseFormCard({
     React.useEffect(() => {
         if (initialDate) setDate(initialDate);
     }, [initialDate]);
-    const hiddenDateRef = React.useRef<HTMLInputElement | null>(null);
-    const [showPicker, setShowPicker] = React.useState(false);
-    const wrapperRef = React.useRef<HTMLDivElement | null>(null);
     const [type, setType] = React.useState("");
     const [amount, setAmount] = React.useState("");
     const [detail, setDetail] = React.useState("");
@@ -53,50 +50,21 @@ export default function ExpenseFormCard({
             title={
                 <span className="flex items-center gap-2 text-gray-900">
                     <IconCard />
-                    개인 카드/현금 지출내역
+                    개인 카드/현금 지출 내역
                 </span>
             }
             className="h-full border-gray-200"
         >
             <div className="flex-1 flex flex-col justify-between gap-6">
                 <div className="space-y-6">
-                    <div className="relative">
-                        <Input
-                            label="날짜"
-                            value={date}
-                            onChange={setDate}
-                            placeholder="연도. 월. 일"
-                            icon={<IconCalendar className="w-6 h-6" />}
-                            iconPosition="right"
-                            onClick={() => setShowPicker((s) => !s)}
-                        />
-                        <input
-                            ref={hiddenDateRef}
-                            type="date"
-                            onChange={(e) => setDate(e.target.value)}
-                            style={{
-                                position: "absolute",
-                                left: "-9999px",
-                                width: 1,
-                                height: 1,
-                                opacity: 0,
-                            }}
-                        />
-                        {showPicker && (
-                            <div
-                                ref={wrapperRef}
-                                className="absolute z-40 top-full right-0 mt-2"
-                            >
-                                <DatePickerPanel
-                                    selected={date || null}
-                                    onSelect={(d) => {
-                                        setDate(d);
-                                        setShowPicker(false);
-                                    }}
-                                />
-                            </div>
-                        )}
-                    </div>
+                    <DatePicker
+                        label="날짜"
+                        value={date}
+                        onChange={setDate}
+                        placeholder="연도. 월. 일"
+                        icon={<IconCalendar className="w-6 h-6" />}
+                        iconPosition="right"
+                    />
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
