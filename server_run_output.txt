@@ -1,0 +1,27 @@
+
+> my-app@0.0.0 dev C:\project\RTB-System_Frontend
+> vite "--" "--host" "0.0.0.0" "--port" "5173"
+
+
+  VITE v7.2.6  ready in 509 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+오후 3:44:43 [vite] (client) hmr update /src/App.tsx, /src/index.css
+오후 3:44:43 [vite] (client) hmr update /src/App.tsx, /src/index.css
+오후 3:44:57 [vite] (client) hmr update /src/App.tsx, /src/index.css
+오후 4:00:16 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:03:15 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:12:01 [vite] (client) hmr update /src/index.css, /src/components/VacationHeader.tsx
+오후 4:12:35 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:12:36 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:12:36 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:12:36 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:24:22 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:24:23 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:25:34 [vite] (client) hmr update /src/index.css, /src/components/sections/VacationManagementSection.tsx
+오후 4:25:34 [vite] (client) hmr update /src/index.css, /src/components/sections/VacationManagementSection.tsx
+오후 4:32:34 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:32:54 [vite] (client) hmr update /src/pages/Vacation/VacationPage.tsx, /src/index.css
+오후 4:35:00 [vite] (client) hmr update /src/index.css, /src/pages/Vacation/VacationPage.tsx
+오후 4:35:00 [vite] (client) hmr update /src/index.css, /src/components/ui/VacationRequestModal.tsx
