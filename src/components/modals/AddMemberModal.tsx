@@ -196,6 +196,7 @@ export default function AddMemberModal({
                     <div className="mb-3">
                         <Select
                             label="팀 구분"
+                            fullWidth
                             labelClassName="text-[12px] font-medium text-gray-900"
                             value={team}
                             onChange={setTeam}
@@ -215,6 +216,7 @@ export default function AddMemberModal({
                     <div className="mb-6">
                         <Select
                             label="직급"
+                            fullWidth
                             labelClassName="text-[12px] font-medium text-gray-900"
                             value={position}
                             onChange={setPosition}

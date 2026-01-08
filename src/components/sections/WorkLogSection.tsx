@@ -198,6 +198,7 @@ export default function WorkLogSection() {
                                             placeholder="시"
                                             className="flex-1"
                                             size="sm"
+                                            fullWidth
                                         />
                                         <Select
                                             value={timeFromMin || "00"}
@@ -211,6 +212,7 @@ export default function WorkLogSection() {
                                             options={minuteOptions}
                                             className="flex-1"
                                             size="sm"
+                                            fullWidth
                                         />
                                     </div>
                                 </div>
@@ -247,6 +249,7 @@ export default function WorkLogSection() {
                                             placeholder="시"
                                             className="flex-1"
                                             size="sm"
+                                            fullWidth
                                         />
                                         <Select
                                             value={timeToMin || "00"}
@@ -260,6 +263,7 @@ export default function WorkLogSection() {
                                             options={minuteOptions}
                                             className="flex-1"
                                             size="sm"
+                                            fullWidth
                                         />
                                     </div>
                                 </div>
@@ -272,7 +276,7 @@ export default function WorkLogSection() {
                         <Select
                             label="유형"
                             placeholder="선택"
-                            className="w-full sm:w-40"
+                            fullWidth
                             options={descTypeOptions}
                             value={currentEntry.descType || ""}
                             onChange={(v) =>
@@ -288,7 +292,7 @@ export default function WorkLogSection() {
                     </div>
                     {/* 이동일 때 From/To 선택 */}
                     {currentEntry.descType === "이동" && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             <div>
                                 <label className="font-medium text-[14px] text-[#101828] mb-2 block">
                                     From
@@ -815,7 +819,7 @@ export default function WorkLogSection() {
                                                                 );
                                                             }}
                                                             variant="outline"
-                                                            size="sm"
+                                                            size="lg"
                                                             fullWidth
                                                             icon={
                                                                 <IconEdit className="w-4 h-4" />

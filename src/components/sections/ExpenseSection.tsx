@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import SectionCard from "../ui/SectionCard";
-import Chip from "../ui/Chip";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
 import TextInput from "../ui/TextInput";
@@ -42,12 +41,6 @@ export default function ExpenseSection() {
         return Array.from(dates).sort();
     }, [workLogEntries]);
 
-    // 편집 모드일 때 값 채우기
-    const editingExpense = expenses.find((e) => e.id === editingExpenseId);
-
-    const currentType = type === "OTHER" ? typeCustom : type;
-    const currentAmount = parseCurrency(amount);
-
     // 합계
     const total = useMemo(() => {
         return expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -70,12 +63,12 @@ export default function ExpenseSection() {
         const finalDate = date || entryDates[0] || "";
         const finalType = type === "OTHER" ? typeCustom : type;
 
-        if (!finalDate || !finalType || !detail || currentAmount <= 0) {
+        if (!finalDate || !finalType || !detail || parseCurrency(amount) <= 0) {
             const missing = [];
             if (!finalDate) missing.push("날짜");
             if (!finalType) missing.push("분류");
             if (!detail) missing.push("상세내용");
-            if (currentAmount <= 0) missing.push("금액");
+            if (parseCurrency(amount) <= 0) missing.push("금액");
             alert("다음 항목을 확인해 주세요: " + missing.join(", "));
             return;
         }
@@ -85,14 +78,14 @@ export default function ExpenseSection() {
                 date: finalDate,
                 type: finalType,
                 detail,
-                amount: currentAmount,
+                amount: parseCurrency(amount),
             });
         } else {
             addExpense({
                 date: finalDate,
                 type: finalType,
                 detail,
-                amount: currentAmount,
+                amount: parseCurrency(amount),
             });
         }
 
@@ -131,10 +124,10 @@ export default function ExpenseSection() {
             title="지출 내역"
             headerContent={
                 <div className="flex flex-col items-end">
-                    <span className="font-medium text-[14px] text-[#99a1af]">
+                    <span className="font-medium text-[14px] text-gray-400">
                         총 {expenses.length}건
                     </span>
-                    <span className="font-semibold text-[18px] md:text-[20px] text-[#364153]">
+                    <span className="font-semibold text-[18px] md:text-[20px] text-gray-700">
                         {formatCurrency(total)}원
                     </span>
                 </div>
@@ -142,10 +135,10 @@ export default function ExpenseSection() {
         >
             <div className="flex flex-col gap-5">
                 {/* 입력 폼 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {/* 날짜 */}
                     <div className="flex flex-col gap-2">
-                        <label className="font-medium text-[14px] text-[#101828]">
+                        <label className="font-medium text-[14px] text-gray-900">
                             날짜
                         </label>
                         {entryDates.length > 0 && (
@@ -176,7 +169,7 @@ export default function ExpenseSection() {
 
                     {/* 분류 */}
                     <div className="flex flex-col gap-2">
-                        <label className="font-medium text-[14px] text-[#101828]">
+                        <label className="font-medium text-[14px] text-gray-900">
                             분류
                         </label>
                         <div className="flex flex-wrap gap-2">
@@ -229,7 +222,7 @@ export default function ExpenseSection() {
                             placeholder="0"
                             value={amount}
                             onChange={handleAmountChange}
-                            icon={<span className="text-[#6a7282]">원</span>}
+                            icon={<span className="text-gray-500">원</span>}
                         />
                     </div>
                 </div>
@@ -267,17 +260,17 @@ export default function ExpenseSection() {
                     <div className="overflow-x-auto">
                         <table className="w-full border-collapse">
                             <thead>
-                                <tr className="bg-[#f3f4f6]">
-                                    <th className="border border-[#e5e7eb] px-3 py-2 text-[13px] font-semibold">
+                                <tr className="bg-gray-100">
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
                                         날짜
                                     </th>
-                                    <th className="border border-[#e5e7eb] px-3 py-2 text-[13px] font-semibold">
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
                                         분류
                                     </th>
-                                    <th className="border border-[#e5e7eb] px-3 py-2 text-[13px] font-semibold">
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
                                         상세내용
                                     </th>
-                                    <th className="border border-[#e5e7eb] px-3 py-2 text-[13px] font-semibold">
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
                                         금액
                                     </th>
                                 </tr>
@@ -295,16 +288,16 @@ export default function ExpenseSection() {
                                                 : ""
                                         }`}
                                     >
-                                        <td className="border border-[#e5e7eb] px-3 py-2 text-[13px] text-center">
+                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
                                             {expense.date}
                                         </td>
-                                        <td className="border border-[#e5e7eb] px-3 py-2 text-[13px] text-center">
+                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
                                             {expense.type}
                                         </td>
-                                        <td className="border border-[#e5e7eb] px-3 py-2 text-[13px]">
+                                        <td className="border border-gray-200 px-3 py-2 text-[13px]">
                                             {expense.detail}
                                         </td>
-                                        <td className="border border-[#e5e7eb] px-3 py-2 text-[13px] text-center relative">
+                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
                                             {formatCurrency(expense.amount)}원
                                             <button
                                                 onClick={(e) => {
@@ -314,7 +307,7 @@ export default function ExpenseSection() {
                                                             "삭제하시겠습니까?"
                                                         )
                                                     )
-                                                        deleteExpense(
+                                                    deleteExpense(
                                                             expense.id
                                                         );
                                                 }}
@@ -330,11 +323,11 @@ export default function ExpenseSection() {
                                 <tr>
                                     <td
                                         colSpan={3}
-                                        className="border border-[#e5e7eb] px-3 py-2 text-right font-semibold text-[13px]"
+                                        className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
                                     >
                                         합계
                                     </td>
-                                    <td className="border border-[#e5e7eb] px-3 py-2 text-center font-bold text-[14px]">
+                                    <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px]">
                                         {formatCurrency(total)}원
                                     </td>
                                 </tr>

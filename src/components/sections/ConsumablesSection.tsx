@@ -72,6 +72,7 @@ export default function ConsumablesSection() {
                     <Select
                         label="자재명"
                         placeholder="선택"
+                        fullWidth
                         options={materialOptions}
                         value={selectedMaterial}
                         onChange={(v) => {

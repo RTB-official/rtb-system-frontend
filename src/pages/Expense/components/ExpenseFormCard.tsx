@@ -66,12 +66,13 @@ export default function ExpenseFormCard({
                         iconPosition="right"
                     />
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div>
                             <Select
                                 label="유형"
+                                fullWidth
+                                placeholder="유형 선택"
                                 options={[
-                                    { value: "", label: "유형 선택" },
                                     { value: "교통비", label: "교통비" },
                                     { value: "식대", label: "식대" },
                                 ]}

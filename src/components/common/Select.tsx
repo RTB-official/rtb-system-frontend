@@ -1,7 +1,10 @@
 import React from "react";
 
 interface SelectProps
-    extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "onChange"> {
+    extends Omit<
+        React.SelectHTMLAttributes<HTMLSelectElement>,
+        "onChange" | "size"
+    > {
     label?: string;
     error?: string;
     required?: boolean;
@@ -11,6 +14,7 @@ interface SelectProps
     disabled?: boolean;
     labelClassName?: string;
     size?: "sm" | "md";
+    fullWidth?: boolean;
 }
 
 export default function Select({
@@ -24,6 +28,7 @@ export default function Select({
     labelClassName = "",
     className = "",
     size = "md",
+    fullWidth = false,
     ...props
 }: SelectProps) {
     const sizeStyles = {
@@ -39,7 +44,11 @@ export default function Select({
 
     if (!label) {
         return (
-            <div className={`relative inline-block ${className}`}>
+            <div
+                className={`relative ${
+                    fullWidth ? "w-full" : "inline-block"
+                } ${className}`}
+            >
                 <select
                     className={`${baseStyles} ${
                         error
@@ -67,7 +76,11 @@ export default function Select({
     }
 
     return (
-        <div className={`flex flex-col gap-2 ${className}`}>
+        <div
+            className={`flex flex-col gap-2 ${
+                fullWidth ? "w-full" : "w-fit"
+            } ${className}`}
+        >
             <div className="flex gap-2 items-center">
                 <label
                     className={`block text-sm font-medium text-gray-700 ${labelClassName}`}

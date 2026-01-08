@@ -299,20 +299,20 @@ export default function DatePicker({
                         >
                             <IconChevronLeft />
                         </button>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-2">
                             <Select
                                 value={`${currentYear}년`}
                                 onChange={handleYearChange}
                                 options={yearOptions}
                                 size="sm"
-                                className="w-[100px]"
+                                className="w-[110px]"
                             />
                             <Select
                                 value={`${currentMonth}월`}
                                 onChange={handleMonthChange}
                                 options={monthOptions}
                                 size="sm"
-                                className="w-[80px]"
+                                className="w-[85px]"
                             />
                         </div>
                         <button

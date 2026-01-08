@@ -55,10 +55,11 @@ export default function BasicInfoSection() {
         <SectionCard title="기본 정보">
             <div className="flex flex-col gap-5 md:gap-7">
                 {/* 참관감독 선택 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:items-end">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:items-end">
                     <Select
                         label="참관감독"
                         placeholder="그룹 선택"
+                        fullWidth
                         options={orderGroupOptions}
                         value={orderGroup}
                         onChange={setOrderGroup}
@@ -72,6 +73,7 @@ export default function BasicInfoSection() {
                     ) : orderGroup ? (
                         <Select
                             placeholder="감독 선택"
+                            fullWidth
                             options={orderPersonOptions}
                             value={orderPerson}
                             onChange={setOrderPerson}
@@ -105,11 +107,12 @@ export default function BasicInfoSection() {
                 </div>
 
                 {/* 출장지, 호선명 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:items-start">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:items-start">
                     <div className="flex flex-col gap-2">
                         <Select
                             label="출장지"
                             placeholder="출장지 선택"
+                            fullWidth
                             required
                             options={locationOptions}
                             value={location}
