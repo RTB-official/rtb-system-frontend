@@ -277,7 +277,7 @@ export default function WorkloadDetailPage() {
                         </div>
 
                         {/* 조회 기간 */}
-                        <div className="flex flex-wrap items-center gap-5">
+                        <div className="flex flex-wrap items-center gap-4">
                             <h2 className="text-[24px] font-semibold text-gray-900">
                                 조회 기간
                             </h2>

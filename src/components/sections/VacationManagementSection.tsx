@@ -159,7 +159,7 @@ export default function VacationManagementSection({
                         {
                             key: "period",
                             label: "기간",
-                            width: "25%",
+                            width: "20%",
                         },
                         {
                             key: "item",
@@ -169,7 +169,7 @@ export default function VacationManagementSection({
                         {
                             key: "reason",
                             label: "사유",
-                            width: "25%",
+                            width: "24%",
                         },
                         {
                             key: "status",
@@ -182,8 +182,8 @@ export default function VacationManagementSection({
                         {
                             key: "usedDays",
                             label: "사용 일수",
-                            width: "8.33%",
-                            align: "right",
+                            width: "12%",
+                            align: "left",
                             render: (_value, row: VacationRow) => (
                                 <span
                                     className={`font-medium ${
@@ -199,8 +199,8 @@ export default function VacationManagementSection({
                         {
                             key: "remainDays",
                             label: "잔여",
-                            width: "8.33%",
-                            align: "right",
+                            width: "16%",
+                            align: "left",
                             render: (_value, row: VacationRow) => (
                                 <span className="font-medium text-gray-900">
                                     {row.remainDays}일

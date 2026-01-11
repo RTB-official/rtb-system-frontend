@@ -307,7 +307,7 @@ export default function ExpenseSection() {
                                                             "삭제하시겠습니까?"
                                                         )
                                                     )
-                                                    deleteExpense(
+                                                        deleteExpense(
                                                             expense.id
                                                         );
                                                 }}

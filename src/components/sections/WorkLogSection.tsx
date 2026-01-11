@@ -217,12 +217,12 @@ export default function WorkLogSection() {
                                     </div>
                                 </div>
                             </div>
-                                        <div className="w-px bg-gray-200 hidden md:block" />
-                                        <div className="h-px bg-gray-200 md:hidden" />
+                            <div className="w-px bg-gray-200 hidden md:block" />
+                            <div className="h-px bg-gray-200 md:hidden" />
                             {/* 종료 */}
                             <div className="flex-1 p-4 bg-gray-50">
                                 <div className="flex items-center gap-2 mb-3">
-                                <div className="w-3 h-3 rounded-[4px] bg-red-500"></div>
+                                    <div className="w-3 h-3 rounded-[4px] bg-red-500"></div>
                                     <p className="font-semibold text-[14px] text-gray-800">
                                         종료
                                     </p>

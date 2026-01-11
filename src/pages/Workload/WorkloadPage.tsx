@@ -193,10 +193,10 @@ export default function WorkloadPage() {
                 />
 
                 {/* Content */}
-                <main className="flex-1 overflow-auto pt-9 pb-24 px-9">
+                <main className="flex-1 overflow-auto pt-9 pb-20 px-9">
                     <div className="flex flex-col gap-6 w-full">
                         {/* 조회 기간 */}
-                        <div className="flex flex-wrap items-center gap-5">
+                        <div className="flex flex-wrap items-center gap-4">
                             <h2 className="text-[24px] font-semibold text-gray-900">
                                 조회 기간
                             </h2>
