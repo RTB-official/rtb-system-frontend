@@ -53,7 +53,9 @@ export default function Table<T = any>({
             <div
                 className={`overflow-auto border border-gray-200 rounded-2xl w-full`}
             >
-                <table className={`w-full text-[14px] text-gray-00 ${className}`}>
+                <table
+                    className={`w-full text-[14px] text-gray-900 ${className}`}
+                >
                     <thead className="bg-gray-100 border-b border-gray-200">
                         <tr>
                             {columns.map((column) => (
@@ -94,7 +96,7 @@ export default function Table<T = any>({
                                 return (
                                     <React.Fragment key={key}>
                                         <tr
-                                            className={`border-b border-gray-100 bg-white hover:bg-white transition-colors ${
+                                            className={`border-b border-gray-200 bg-white hover:bg-blue-50 transition-colors ${
                                                 onRowClick
                                                     ? "cursor-pointer"
                                                     : ""
@@ -106,7 +108,7 @@ export default function Table<T = any>({
                                             {columns.map((column) => (
                                                 <td
                                                     key={column.key}
-                                                    className={`px-4 py-3 text-gray-900 bg-white ${
+                                                    className={`px-4 py-3 text-gray-900 ${
                                                         column.align === "right"
                                                             ? "text-right"
                                                             : column.align ===

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 interface TabItem {
     value: string;
@@ -18,22 +18,49 @@ export default function Tabs({
     onChange,
     className = "",
 }: TabsProps) {
+    const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
+    const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+    useEffect(() => {
+        const activeIndex = items.findIndex((item) => item.value === value);
+        const activeTab = tabRefs.current[activeIndex];
+
+        if (activeTab) {
+            setIndicatorStyle({
+                left: activeTab.offsetLeft,
+                width: activeTab.offsetWidth,
+            });
+        }
+    }, [value, items]);
+
     return (
-        <div className={`flex gap-1 border-b border-gray-200 ${className}`}>
-            {items.map((item) => (
+        <div
+            className={`relative flex gap-1 border-b border-gray-200 ${className}`}
+        >
+            {items.map((item, index) => (
                 <button
                     key={item.value}
+                    ref={(el) => {
+                        tabRefs.current[index] = el;
+                    }}
                     onClick={() => onChange(item.value)}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    className={`relative z-10 px-4 py-2 text-[14px] font-medium transition-all duration-200 rounded-lg ${
                         value === item.value
-                            ? "text-gray-900 border-b-2 border-gray-900"
-                            : "text-gray-500 hover:text-gray-700"
+                            ? "text-gray-900"
+                            : "text-gray-400 hover:text-gray-500"
                     }`}
                 >
                     {item.label}
                 </button>
             ))}
+            {/* Sliding Underline Indicator */}
+            <div
+                className="absolute bottom-[-1px] h-[2.5px] bg-gray-900 transition-all duration-300 ease-out"
+                style={{
+                    left: indicatorStyle.left,
+                    width: indicatorStyle.width,
+                }}
+            />
         </div>
     );
 }
-

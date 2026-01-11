@@ -165,7 +165,7 @@ export default function PersonalExpensePage() {
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 items-stretch w-full">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3 items-stretch w-full">
                         <MileageCard
                             initialDate={preselectedDate || undefined}
                             onAdd={(item) =>
@@ -189,7 +189,7 @@ export default function PersonalExpensePage() {
                             onRemove={handleRemoveLeftItem}
                         />
                         <ExpenseHistorySection
-                            title="개인 카드/현금 지출내역"
+                            title="개인 카드/현금 지출 내역"
                             items={cardHistory}
                             emptyMessage="등록된 지출 내역이 없습니다."
                             submittedIds={submittedIds}

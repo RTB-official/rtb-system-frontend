@@ -46,13 +46,11 @@ export default function YearMonthSelector({
                 options={defaultYearOptions}
                 value={year}
                 onChange={onYearChange}
-                className="w-auto min-w-[120px]"
             />
             <Select
                 options={defaultMonthOptions}
                 value={month}
                 onChange={onMonthChange}
-                className="w-auto min-w-[100px]"
             />
         </div>
     );

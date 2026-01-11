@@ -11,7 +11,7 @@ import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
-import { IconArrowBack } from "../../components/icons/Icons";
+import { IconArrowBack, IconReport } from "../../components/icons/Icons";
 
 export default function CreationPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -122,29 +122,16 @@ export default function CreationPage() {
                         <>
                             <Button
                                 variant="outline"
-                                size="md"
+                                size="lg"
                                 onClick={handleDraftSave}
                             >
                                 임시 저장
                             </Button>
                             <Button
                                 variant="primary"
-                                size="md"
+                                size="lg"
                                 onClick={handleSubmit}
-                                icon={
-                                    <svg
-                                        width="16"
-                                        height="16"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                    >
-                                        <path
-                                            d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM16 18H8V16H16V18ZM16 14H8V12H16V14ZM13 9V3.5L18.5 9H13Z"
-                                            fill="currentColor"
-                                        />
-                                    </svg>
-                                }
+                                icon={<IconReport />}
                             >
                                 <span className="hidden sm:inline">
                                     제출하기

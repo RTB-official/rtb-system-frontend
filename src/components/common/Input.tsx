@@ -45,7 +45,9 @@ export default function Input({
         <div className={`flex flex-col gap-2 w-full ${className}`}>
             {label && (
                 <div className="flex gap-1 items-center">
-                    <label className={`block text-sm font-medium text-gray-700 ${labelClassName}`}>
+                    <label
+                        className={`block text-sm font-medium text-gray-700 ${labelClassName}`}
+                    >
                         {label}
                     </label>
                     {required && (

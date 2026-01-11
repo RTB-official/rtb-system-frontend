@@ -277,7 +277,7 @@ export default function WorkloadDetailPage() {
                         </div>
 
                         {/* 조회 기간 */}
-                        <div className="flex flex-wrap items-center gap-5">
+                        <div className="flex flex-wrap items-center gap-4">
                             <h2 className="text-[24px] font-semibold text-gray-900">
                                 조회 기간
                             </h2>
@@ -297,7 +297,49 @@ export default function WorkloadDetailPage() {
 
                             <Table
                                 columns={[
-                                    { key: "date", label: "날짜" },
+                                    {
+                                        key: "date",
+                                        label: "날짜",
+                                        render: (value: string) => {
+                                            const date = new Date(
+                                                value.replace(/\./g, "-")
+                                            );
+                                            if (isNaN(date.getTime()))
+                                                return value;
+
+                                            const days = [
+                                                "일",
+                                                "월",
+                                                "화",
+                                                "수",
+                                                "목",
+                                                "금",
+                                                "토",
+                                            ];
+                                            const dayOfWeek = date.getDay();
+                                            const dayLabel = days[dayOfWeek];
+
+                                            // 2025. 12. 18.(목) 형식
+                                            const formattedDate = `${date.getFullYear()}. ${
+                                                date.getMonth() + 1
+                                            }. ${date.getDate()}.(${dayLabel})`;
+
+                                            let colorClass = "text-gray-800";
+                                            if (dayOfWeek === 0)
+                                                colorClass =
+                                                    "text-red-600"; // 일요일
+                                            else if (dayOfWeek === 6)
+                                                colorClass = "text-blue-600"; // 토요일
+
+                                            return (
+                                                <span
+                                                    className={`font-medium ${colorClass}`}
+                                                >
+                                                    {formattedDate}
+                                                </span>
+                                            );
+                                        },
+                                    },
                                     { key: "vesselName", label: "호선명" },
                                     { key: "workTime", label: "작업시간" },
                                     { key: "timeRange", label: "시간대" },

@@ -14,6 +14,7 @@ import {
     IconMenu,
 } from "../../components/icons/Icons";
 import { CalendarEvent } from "../../types";
+import useCalendarWheelNavigation from "../../hooks/useCalendarWheelNavigation";
 
 // 공휴일 API 정보
 const HOLIDAY_API_KEY =
@@ -232,6 +233,14 @@ export default function DashboardPage() {
         setYear(today.getFullYear());
         setMonth(today.getMonth());
     };
+
+    const {
+        handleWheel: handleCalendarScroll,
+        motionStyle: calendarMotionStyle,
+    } = useCalendarWheelNavigation({
+        onPrevMonth: prevMonth,
+        onNextMonth: nextMonth,
+    });
 
     // 안전하게 날짜 키 생성
     const getSafeDateKey = (d: Date) => {
@@ -611,20 +620,20 @@ export default function DashboardPage() {
                             <div className="flex items-center gap-1 pr-9">
                                 <Button
                                     variant="outline"
-                                    size="sm"
+                                    size="md"
                                     onClick={prevMonth}
                                     icon={<IconChevronLeft />}
                                 />
                                 <Button
                                     variant="outline"
-                                    size="sm"
+                                    size="md"
                                     onClick={goToday}
                                 >
                                     오늘
                                 </Button>
                                 <Button
                                     variant="outline"
-                                    size="sm"
+                                    size="md"
                                     onClick={nextMonth}
                                     icon={<IconChevronRight />}
                                 />
@@ -659,7 +668,12 @@ export default function DashboardPage() {
                                 )}
                             </div>
 
-                            <div className="flex-1 flex flex-col min-h-0 relative">
+                            <div
+                                key={`${year}-${month}`}
+                                className="flex-1 flex flex-col min-h-0 relative transition-all duration-300 ease-out"
+                                style={calendarMotionStyle}
+                                onWheel={handleCalendarScroll}
+                            >
                                 {weeks.map((week, weekIdx) => {
                                     // 주 단위 이벤트 행 정보 가져오기
                                     const weekEventRows =
@@ -669,7 +683,7 @@ export default function DashboardPage() {
                                     const dateHeaderHeight = 48;
                                     const bottomPadding = 18;
                                     const tagHeight = 24;
-                                    const tagSpacing = 2;
+                                    const tagSpacing = 4;
 
                                     // 주의 모든 날짜 셀 중 최소 높이를 찾아서 표시 가능한 행 수 계산
                                     const pad = (n: number) =>

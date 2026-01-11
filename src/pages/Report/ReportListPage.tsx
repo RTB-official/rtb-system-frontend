@@ -8,6 +8,7 @@ import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
+import { IconMore, IconPlus } from "../../components/icons/Icons";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -20,12 +21,6 @@ interface ReportItem {
     date: string;
     status: ReportStatus;
 }
-
-const STATUS_LABEL: Record<ReportStatus, string> = {
-    submitted: "제출 완료",
-    pending: "임시저장",
-    not_submitted: "미제출",
-};
 
 const MOCK_REPORTS: ReportItem[] = [
     {
@@ -215,24 +210,9 @@ export default function ReportListPage() {
                     rightContent={
                         <Button
                             variant="primary"
-                            size="md"
+                            size="lg"
                             onClick={() => navigate("/reportcreate")}
-                            icon={
-                                <svg
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                    <path
-                                        d="M12 5V19M5 12H19"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                    />
-                                </svg>
-                            }
+                            icon={<IconPlus />}
                         >
                             새 보고서 작성
                         </Button>
@@ -406,24 +386,34 @@ export default function ReportListPage() {
                                     label: "상태",
                                     width: "112px",
                                     render: (_, row: ReportItem) => {
-                                        const statusVariantMap: Record<
+                                        const statusConfig: Record<
                                             ReportStatus,
-                                            | "submitted"
-                                            | "pending"
-                                            | "not_submitted"
+                                            { color: string; label: string }
                                         > = {
-                                            submitted: "submitted",
-                                            pending: "pending",
-                                            not_submitted: "not_submitted",
+                                            submitted: {
+                                                color: "blue-500",
+                                                label: "제출 완료",
+                                            },
+                                            pending: {
+                                                color: "green-600",
+                                                label: "임시저장",
+                                            },
+                                            not_submitted: {
+                                                color: "gray-400",
+                                                label: "미제출",
+                                            },
                                         };
+
+                                        const { color, label } =
+                                            statusConfig[row.status];
+
                                         return (
                                             <Chip
-                                                variant={
-                                                    statusVariantMap[row.status]
-                                                }
-                                                size="sm"
+                                                color={color}
+                                                variant="solid"
+                                                size="md"
                                             >
-                                                {STATUS_LABEL[row.status]}
+                                                {label}
                                             </Chip>
                                         );
                                     },
@@ -452,30 +442,7 @@ export default function ReportListPage() {
                                                 className="p-2 rounded hover:bg-gray-100 text-gray-600"
                                                 aria-label="행 메뉴"
                                             >
-                                                <svg
-                                                    width="18"
-                                                    height="18"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                >
-                                                    <circle
-                                                        cx="6"
-                                                        cy="12"
-                                                        r="1.3"
-                                                    />
-                                                    <circle
-                                                        cx="12"
-                                                        cy="12"
-                                                        r="1.3"
-                                                    />
-                                                    <circle
-                                                        cx="18"
-                                                        cy="12"
-                                                        r="1.3"
-                                                    />
-                                                </svg>
+                                                <IconMore className="w-[18px] h-[18px]" />
                                             </button>
                                             <ActionMenu
                                                 isOpen={openMenuId === row.id}
