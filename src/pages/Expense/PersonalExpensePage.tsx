@@ -9,6 +9,7 @@ import ExpenseHistorySection, {
 } from "./components/ExpenseHistorySection";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
+import PersonalExpenseSkeleton from "../../components/common/PersonalExpenseSkeleton";
 import { useAuth } from "../../store/auth";
 import {
     createPersonalExpense,
@@ -439,69 +440,69 @@ export default function PersonalExpensePage() {
                 />
 
                 <div className="flex-1 overflow-y-auto py-4 lg:py-9 px-9">
-                    {/* 조회 기간 */}
-                    <div className="mb-4 flex flex-wrap items-center gap-4">
-                        <h2 className="text-[24px] font-semibold text-gray-900">
-                            조회 기간
-                        </h2>
-                        <YearMonthSelector
-                            year={year}
-                            month={month}
-                            onYearChange={setYear}
-                            onMonthChange={setMonth}
-                            yearOptions={yearOptions}
-                            monthOptions={monthOptions}
-                        />
-                    </div>
+                    {loading ? (
+                        <PersonalExpenseSkeleton />
+                    ) : (
+                        <>
+                            {/* 조회 기간 */}
+                            <div className="mb-4 flex flex-wrap items-center gap-4">
+                                <h2 className="text-[24px] font-semibold text-gray-900">
+                                    조회 기간
+                                </h2>
+                                <YearMonthSelector
+                                    year={year}
+                                    month={month}
+                                    onYearChange={setYear}
+                                    onMonthChange={setMonth}
+                                    yearOptions={yearOptions}
+                                    monthOptions={monthOptions}
+                                />
+                            </div>
 
-                    {loading && (
-                        <div className="text-center py-8 text-gray-500">
-                            로딩 중...
-                        </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3 items-stretch w-full">
+                                <MileageCard
+                                    initialDate={preselectedDate || undefined}
+                                    onAdd={handleMileageAdd}
+                                />
+                                <ExpenseFormCard
+                                    initialDate={preselectedDate || undefined}
+                                    onAdd={handleExpenseAdd}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start w-full">
+                                <ExpenseHistorySection
+                                    title="개인 차량 마일리지 내역"
+                                    items={mileageHistory}
+                                    emptyMessage="등록된 마일리지 내역이 없습니다."
+                                    submittedIds={submittedIds}
+                                    onRemove={handleRemoveMileage}
+                                />
+                                <ExpenseHistorySection
+                                    title="개인 카드/현금 지출 내역"
+                                    items={cardHistory}
+                                    emptyMessage="등록된 지출 내역이 없습니다."
+                                    submittedIds={submittedIds}
+                                    onRemove={handleRemoveExpense}
+                                />
+                            </div>
+
+                            {allItemsToSubmitCount > 0 && (
+                                <div className="fixed bottom-6 left-6 right-6 lg:left-[239px] mx-9">
+                                    <Button
+                                        variant="primary"
+                                        size="lg"
+                                        fullWidth
+                                        onClick={handleSubmitAll}
+                                    >
+                                        모두 제출 ({allItemsToSubmitCount}개)
+                                    </Button>
+                                </div>
+                            )}
+
+                            <div className="h-24" />
+                        </>
                     )}
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3 items-stretch w-full">
-                        <MileageCard
-                            initialDate={preselectedDate || undefined}
-                            onAdd={handleMileageAdd}
-                        />
-                        <ExpenseFormCard
-                            initialDate={preselectedDate || undefined}
-                            onAdd={handleExpenseAdd}
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start w-full">
-                        <ExpenseHistorySection
-                            title="개인 차량 마일리지 내역"
-                            items={mileageHistory}
-                            emptyMessage="등록된 마일리지 내역이 없습니다."
-                            submittedIds={submittedIds}
-                            onRemove={handleRemoveMileage}
-                        />
-                        <ExpenseHistorySection
-                            title="개인 카드/현금 지출 내역"
-                            items={cardHistory}
-                            emptyMessage="등록된 지출 내역이 없습니다."
-                            submittedIds={submittedIds}
-                            onRemove={handleRemoveExpense}
-                        />
-                    </div>
-
-                    {allItemsToSubmitCount > 0 && (
-                        <div className="fixed bottom-6 left-6 right-6 lg:left-[239px] mx-9">
-                            <Button
-                                variant="primary"
-                                size="lg"
-                                fullWidth
-                                onClick={handleSubmitAll}
-                            >
-                                모두 제출 ({allItemsToSubmitCount}개)
-                            </Button>
-                        </div>
-                    )}
-
-                    <div className="h-24" />
                 </div>
             </div>
         </div>

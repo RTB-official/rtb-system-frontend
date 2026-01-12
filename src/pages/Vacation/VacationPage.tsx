@@ -5,13 +5,13 @@ import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import VacationManagementSection from "../../components/sections/VacationManagementSection";
 import VacationRequestModal from "../../components/ui/VacationRequestModal";
-import { IconMore, IconPlus } from "../../components/icons/Icons";
+import VacationSkeleton from "../../components/common/VacationSkeleton";
+import { IconPlus } from "../../components/icons/Icons";
 import { useAuth } from "../../store/auth";
 import {
     createVacation,
     getVacations,
     getVacationStats,
-    deleteVacation,
     statusToKorean,
     leaveTypeToKorean,
     formatVacationDate,
@@ -230,19 +230,17 @@ export default function VacationPage() {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto px-9 py-6 md:py-9">
                     <div className="flex flex-col gap-4 md:gap-6 w-full">
-                        {loading && (
-                            <div className="text-center py-8 text-gray-500">
-                                로딩 중...
-                            </div>
-                        )}
-
+                        {loading ? (
+                            <VacationSkeleton />
+                        ) : (
+                            <>
                         <VacationManagementSection
                             summary={summary}
                             year={year}
                             onYearChange={setYear}
                             tab={tab}
                             onTabChange={setTab}
-                            rows={paginatedRows}
+                                    rows={paginatedRows}
                             grantExpireRows={grantExpireRows}
                             page={page}
                             totalPages={totalPages}
@@ -252,9 +250,11 @@ export default function VacationPage() {
                         <VacationRequestModal
                             isOpen={modalOpen}
                             onClose={() => setModalOpen(false)}
-                            availableDays={summary.myAnnual}
-                            onSubmit={handleVacationSubmit}
-                        />
+                                    availableDays={summary.myAnnual}
+                                    onSubmit={handleVacationSubmit}
+                                />
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

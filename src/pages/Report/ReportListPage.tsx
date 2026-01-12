@@ -329,7 +329,7 @@ export default function ReportListPage() {
                                 {
                                     key: "owner",
                                     label: "작성자",
-                                    width: "96px",
+                                    width: "14%",
                                     render: (_, row: ReportItem) => {
                                         // "MK 강민지" 형식에서 "MK" 추출
                                         const initials =
@@ -355,7 +355,7 @@ export default function ReportListPage() {
                                 {
                                     key: "place",
                                     label: "출장지",
-                                    width: "112px",
+                                    width: "12%",
                                     render: (value) => (
                                         <span className="text-gray-600">
                                             {value}
@@ -365,7 +365,7 @@ export default function ReportListPage() {
                                 {
                                     key: "supervisor",
                                     label: "참관감독",
-                                    width: "96px",
+                                    width: "12%",
                                     render: (value) => {
                                         if (value && value.trim() && value !== "—") {
                                             return (
@@ -380,7 +380,7 @@ export default function ReportListPage() {
                                 {
                                     key: "date",
                                     label: "작성일",
-                                    width: "112px",
+                                    width: "12%",
                                     render: (value) => (
                                         <span className="text-gray-600">
                                             {value}
@@ -390,7 +390,7 @@ export default function ReportListPage() {
                                 {
                                     key: "status",
                                     label: "상태",
-                                    width: "112px",
+                                    width: "8%",
                                     render: (_, row: ReportItem) => {
                                         const statusConfig: Record<
                                             ReportStatus,
