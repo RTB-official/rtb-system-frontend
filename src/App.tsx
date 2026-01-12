@@ -1,3 +1,4 @@
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "./pages/Login/LoginPage";
 import WorkloadPage from "./pages/Workload/WorkloadPage";
@@ -10,28 +11,37 @@ import MemberExpensePage from "./pages/Expense/MemberExpensePage";
 import VacationPage from "./pages/Vacation/VacationPage";
 import MembersPage from "./pages/Members/MembersPage";
 
+import { AuthProvider } from "./store/auth";
+import RequireAuth from "./components/RequireAuth";
+
 function App() {
-    return (
-        <BrowserRouter>
-            <Routes>
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/workload" element={<WorkloadPage />} />
-                <Route
-                    path="/workload/detail/:id"
-                    element={<WorkloadDetailPage />}
-                />
-                <Route path="/reportcreate" element={<CreationPage />} />
-                <Route path="/report" element={<ReportListPage />} />
-                <Route path="/Vacation" element={<VacationPage />} />
-                <Route path="/expense" element={<PersonalExpensePage />} />
-                <Route path="/expense/member" element={<MemberExpensePage />} />
-                <Route path="/members" element={<MembersPage />} />
-                <Route path="/" element={<Navigate to="/login" replace />} />
-                <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-        </BrowserRouter>
-    );
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* public */}
+          <Route path="/login" element={<LoginPage />} />
+
+          {/* protected */}
+          <Route element={<RequireAuth />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/workload" element={<WorkloadPage />} />
+            <Route path="/workload/detail/:id" element={<WorkloadDetailPage />} />
+            <Route path="/reportcreate" element={<CreationPage />} />
+            <Route path="/report" element={<ReportListPage />} />
+            <Route path="/vacation" element={<VacationPage />} />
+            <Route path="/expense" element={<PersonalExpensePage />} />
+            <Route path="/expense/member" element={<MemberExpensePage />} />
+            <Route path="/members" element={<MembersPage />} />
+          </Route>
+
+          {/* default */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
 }
 
 export default App;
