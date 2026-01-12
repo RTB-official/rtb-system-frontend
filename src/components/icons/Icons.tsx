@@ -174,15 +174,15 @@ export const IconTrash = (props: { className?: string }) => (
 
 export const IconDownload = (props: { className?: string }) => (
     <svg
-        className={props.className || "w-4 h-4"}
-        viewBox="0 0 24 24"
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 20 20"
         fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
+        xmlns="http://www.w3.org/2000/svg"
     >
-        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-        <path d="M7 10l5 5 5-5" />
-        <path d="M12 15V3" />
+        <path
+            d="M5.00016 16.6663C4.54183 16.6663 4.14961 16.5033 3.8235 16.1772C3.49683 15.8505 3.3335 15.458 3.3335 14.9997V12.4997H5.00016V14.9997H15.0002V12.4997H16.6668V14.9997C16.6668 15.458 16.5038 15.8505 16.1777 16.1772C15.851 16.5033 15.4585 16.6663 15.0002 16.6663H5.00016ZM10.0002 13.333L5.8335 9.16634L7.00016 7.95801L9.16683 10.1247V3.33301H10.8335V10.1247L13.0002 7.95801L14.1668 9.16634L10.0002 13.333Z"
+            fill="currentColor"
+        />
     </svg>
 );
 

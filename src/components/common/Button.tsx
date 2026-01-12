@@ -21,7 +21,7 @@ export default function Button({
 
     const variantStyles = {
         primary:
-            "bg-[#364153] text-white hover:bg-[#2d3545] focus:ring-[#364153]",
+            "bg-gray-700 text-white hover:bg-gray-600 focus:ring-gray-600",
         secondary:
             "bg-[#eef7ff] text-[#3b82f6] hover:bg-[#dbeafe] focus:ring-[#3b82f6]",
         outline:
@@ -30,9 +30,9 @@ export default function Button({
     };
 
     const sizeStyles = {
-        sm: "h-[30px] px-2 text-[13px] rounded-[8px]",
-        md: "h-9 px-2.5 text-[15px] rounded-[10px]",
-        lg: "h-12 px-4 text-base rounded-xl",
+        sm: "h-[30px] px-2 text-[13px] rounded-[8px] gap-0.5",
+        md: "h-[36px] px-3 text-[14px] rounded-[10px] gap-0.5",
+        lg: "h-12 px-4 text-[16px] rounded-xl gap-1",
     };
 
     const widthStyle = fullWidth ? "w-full" : "";

@@ -343,7 +343,7 @@ export default function PersonalExpensePage() {
 
                 <div className="flex-1 overflow-y-auto py-4 lg:py-9 px-9">
                     {/* 조회 기간 */}
-                    <div className="mb-8 flex flex-wrap items-center gap-4">
+                    <div className="mb-4 flex flex-wrap items-center gap-4">
                         <h2 className="text-[24px] font-semibold text-gray-900">
                             조회 기간
                         </h2>

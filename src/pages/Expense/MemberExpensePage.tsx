@@ -12,39 +12,9 @@ import {
     type EmployeeMileageDetail,
     type EmployeeCardExpenseDetail,
 } from "../../lib/personalExpenseApi";
-
-// 다운로드 아이콘 컴포넌트
-const IconDownload = () => (
-    <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        />
-        <path
-            d="M7 10l5 5 5-5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        />
-        <path
-            d="M12 15V3"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        />
-    </svg>
-);
+import { TableSkeleton } from "./components/TableSkeleton";
+import { DetailSkeleton } from "./components/DetailSkeleton";
+import EmployeeDetailView from "./components/EmployeeDetailView";
 
 export default function MemberExpensePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -53,14 +23,37 @@ export default function MemberExpensePage() {
     const [month, setMonth] = useState(`${currentDate.getMonth() + 1}월`);
     const [user, setUser] = useState("전체");
     const [currentPage, setCurrentPage] = useState(1);
-    const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
+        null
+    );
     const [activeTab, setActiveTab] = useState<"mileage" | "card">("mileage");
+    const [expandedRowKeys, setExpandedRowKeys] = useState<(string | number)[]>(
+        []
+    );
+    const [expandedRowDetails, setExpandedRowDetails] = useState<
+        Map<
+            string,
+            {
+                mileage: EmployeeMileageDetail[];
+                card: EmployeeCardExpenseDetail[];
+            }
+        >
+    >(new Map());
+    const [expandedRowActiveTab, setExpandedRowActiveTab] = useState<
+        Map<string, "mileage" | "card">
+    >(new Map());
     const itemsPerPage = 10;
 
     const [loading, setLoading] = useState(false);
-    const [expenseSummary, setExpenseSummary] = useState<EmployeeExpenseSummary[]>([]);
-    const [mileageDetails, setMileageDetails] = useState<EmployeeMileageDetail[]>([]);
-    const [cardDetails, setCardDetails] = useState<EmployeeCardExpenseDetail[]>([]);
+    const [expenseSummary, setExpenseSummary] = useState<
+        EmployeeExpenseSummary[]
+    >([]);
+    const [mileageDetails, setMileageDetails] = useState<
+        EmployeeMileageDetail[]
+    >([]);
+    const [cardDetails, setCardDetails] = useState<EmployeeCardExpenseDetail[]>(
+        []
+    );
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
     useEffect(() => {
@@ -78,16 +71,22 @@ export default function MemberExpensePage() {
                 const yearNum = parseInt(year.replace("년", ""));
                 const monthNum = parseInt(month.replace("월", "")) - 1;
 
-                const filter: { year: number; month: number; userId?: string } = {
-                    year: yearNum,
-                    month: monthNum,
-                };
+                const filter: { year: number; month: number; userId?: string } =
+                    {
+                        year: yearNum,
+                        month: monthNum,
+                    };
 
                 if (user !== "전체") {
                     // 선택한 사용자 찾기
                     const selectedUser = expenseSummary.find((emp) => {
-                        const nameWithoutInitials = emp.name.replace(/^[A-Z]{2,3} /, "");
-                        return nameWithoutInitials === user || emp.name === user;
+                        const nameWithoutInitials = emp.name.replace(
+                            /^[A-Z]{2,3} /,
+                            ""
+                        );
+                        return (
+                            nameWithoutInitials === user || emp.name === user
+                        );
                     });
                     if (selectedUser) {
                         filter.userId = selectedUser.id;
@@ -149,8 +148,8 @@ export default function MemberExpensePage() {
         }
         return expenseSummary.filter((emp) => {
             const nameWithoutInitials = emp.name.replace(/^[A-Z]{2,3} /, "");
-                  return nameWithoutInitials === user || emp.name === user;
-              });
+            return nameWithoutInitials === user || emp.name === user;
+        });
     }, [expenseSummary, user]);
 
     // 페이지네이션 계산
@@ -162,16 +161,19 @@ export default function MemberExpensePage() {
     // 사용자 옵션 생성 (중복 제거)
     const userOptions = useMemo(() => {
         return [
-        { value: "전체", label: "전체" },
-        ...Array.from(
-            new Set(
+            { value: "전체", label: "전체" },
+            ...Array.from(
+                new Set(
                     expenseSummary.map((emp) => {
-                        const nameWithoutInitials = emp.name.replace(/^[A-Z]{2,3} /, "");
-                    return nameWithoutInitials;
-                })
-            )
-        ).map((name) => ({ value: name, label: name })),
-    ];
+                        const nameWithoutInitials = emp.name.replace(
+                            /^[A-Z]{2,3} /,
+                            ""
+                        );
+                        return nameWithoutInitials;
+                    })
+                )
+            ).map((name) => ({ value: name, label: name })),
+        ];
     }, [expenseSummary]);
 
     // 금액 포맷팅
@@ -230,6 +232,53 @@ export default function MemberExpensePage() {
         },
     ];
 
+    // 드롭다운 행의 상세 데이터 로드
+    const loadExpandedRowDetails = async (rowId: string) => {
+        try {
+            const yearNum = parseInt(year.replace("년", ""));
+            const monthNum = parseInt(month.replace("월", "")) - 1;
+
+            const [mileageData, cardData] = await Promise.all([
+                getUserMileageDetails(rowId, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+                getUserCardExpenseDetails(rowId, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+            ]);
+
+            setExpandedRowDetails((prev) => {
+                const newMap = new Map(prev);
+                newMap.set(rowId, { mileage: mileageData, card: cardData });
+                return newMap;
+            });
+
+            setExpandedRowActiveTab((prev) => {
+                const newMap = new Map(prev);
+                if (!newMap.has(rowId)) {
+                    newMap.set(rowId, "mileage");
+                }
+                return newMap;
+            });
+        } catch (error) {
+            console.error("드롭다운 상세 내역 로드 실패:", error);
+        }
+    };
+
+    // 행 확장/축소 토글
+    const toggleRowExpand = (rowId: string) => {
+        setExpandedRowKeys((prev) => {
+            if (prev.includes(rowId)) {
+                return prev.filter((id) => id !== rowId);
+            } else {
+                loadExpandedRowDetails(rowId);
+                return [...prev, rowId];
+            }
+        });
+    };
+
     const columns: TableColumn<EmployeeExpenseSummary>[] = [
         {
             key: "name",
@@ -239,7 +288,17 @@ export default function MemberExpensePage() {
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-100 text-[11px] text-orange-600 font-semibold">
                         {row.initials}
                     </span>
-                    <span className="text-gray-900">{row.name}</span>
+                    <span
+                        className="text-gray-900 cursor-pointer hover:text-blue-600 hover:underline"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeId(row.id);
+                            setUser(row.name.replace(/^[A-Z]{2,3} /, ""));
+                            setActiveTab("mileage");
+                        }}
+                    >
+                        {row.name}
+                    </span>
                 </div>
             ),
         },
@@ -324,16 +383,20 @@ export default function MemberExpensePage() {
                                 setCurrentPage(1); // 사용자 변경 시 첫 페이지로
                                 // 사용자 선택 시 해당 사용자 ID 찾기
                                 if (selectedUser !== "전체") {
-                                    const selectedEmp = expenseSummary.find((emp) => {
-                                        const nameWithoutInitials = emp.name.replace(
+                                    const selectedEmp = expenseSummary.find(
+                                        (emp) => {
+                                            const nameWithoutInitials =
+                                                emp.name.replace(
                                                     /^[A-Z]{2,3} /,
                                                     ""
                                                 );
                                             return (
-                                            nameWithoutInitials === selectedUser ||
+                                                nameWithoutInitials ===
+                                                    selectedUser ||
                                                 emp.name === selectedUser
                                             );
-                                    });
+                                        }
+                                    );
                                     if (selectedEmp) {
                                         setSelectedEmployeeId(selectedEmp.id);
                                         setActiveTab("mileage");
@@ -345,86 +408,40 @@ export default function MemberExpensePage() {
                             userOptions={userOptions}
                         />
 
-                        {loading && (
-                            <div className="text-center py-8 text-gray-500">
-                                로딩 중...
-                            </div>
-                        )}
-
                         {/* 사용자 한 명 선택 시 상세 내역 표시 */}
-                        {user !== "전체" && selectedEmployeeId && selectedEmployee ? (
-                                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 lg:p-6">
-                                        {/* 헤더 */}
-                                        <div className="flex items-center justify-between mb-6">
-                                            <div>
-                                                <h2 className="text-lg font-semibold text-gray-800">
-                                            {selectedEmployee.name.replace(/^[A-Z]{2,3} /, "")}님의
-                                            청구서
-                                                </h2>
-                                                <p className="text-sm text-gray-500 mt-1">
-                                                    {year} {month}
-                                                </p>
-                                            </div>
-                                            <Button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    alert("PDF 다운로드");
-                                                }}
-                                                variant="primary"
-                                                size="sm"
-                                                icon={<IconDownload />}
-                                                className="bg-gray-800 hover:bg-gray-900"
-                                            >
-                                                PDF 다운로드
-                                            </Button>
-                                        </div>
-
-                                        {/* 탭 */}
-                                        <div className="flex gap-1 border-b border-gray-200 mb-6">
-                                            <button
-                                        onClick={() => setActiveTab("mileage")}
-                                                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                    activeTab === "mileage"
-                                                        ? "text-gray-900 border-b-2 border-gray-900"
-                                                        : "text-gray-500 hover:text-gray-700"
-                                                }`}
-                                            >
-                                                마일리지 내역
-                                            </button>
-                                            <button
-                                        onClick={() => setActiveTab("card")}
-                                                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                    activeTab === "card"
-                                                        ? "text-gray-900 border-b-2 border-gray-900"
-                                                        : "text-gray-500 hover:text-gray-700"
-                                                }`}
-                                            >
-                                                카드 지출 내역
-                                            </button>
-                                        </div>
-
-                                        {/* 마일리지 내역 테이블 */}
-                                        {activeTab === "mileage" && (
-                                            <Table
-                                                columns={mileageColumns}
-                                                data={mileageDetails}
-                                                rowKey="id"
-                                                emptyText="마일리지 내역이 없습니다."
-                                                className="border-gray-200"
-                                            />
-                                        )}
-
-                                        {/* 카드 지출 내역 테이블 */}
-                                        {activeTab === "card" && (
-                                            <Table
-                                                columns={cardColumns}
-                                                data={cardDetails}
-                                                rowKey="id"
-                                                emptyText="카드 지출 내역이 없습니다."
-                                                className="border-gray-200"
-                                            />
-                                        )}
-                                    </div>
+                        {user !== "전체" &&
+                        selectedEmployeeId &&
+                        selectedEmployee ? (
+                            loading &&
+                            mileageDetails.length === 0 &&
+                            cardDetails.length === 0 ? (
+                                <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                    <DetailSkeleton />
+                                </div>
+                            ) : (
+                                <EmployeeDetailView
+                                    employeeName={selectedEmployee.name.replace(
+                                        /^[A-Z]{2,3} /,
+                                        ""
+                                    )}
+                                    year={year}
+                                    month={month}
+                                    mileageDetails={mileageDetails}
+                                    cardDetails={cardDetails}
+                                    activeTab={activeTab}
+                                    onTabChange={setActiveTab}
+                                    mileageColumns={mileageColumns}
+                                    cardColumns={cardColumns}
+                                />
+                            )
+                        ) : loading && expenseSummary.length === 0 ? (
+                            <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                <div className="animate-pulse space-y-6">
+                                    <div className="h-7 bg-gray-100 rounded w-40 mb-2"></div>
+                                    <div className="h-5 bg-gray-100 rounded w-80 mb-8"></div>
+                                    <TableSkeleton rows={5} />
+                                </div>
+                            </div>
                         ) : (
                             /* 전체 선택 시 직원별 집계 테이블 표시 */
                             <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
@@ -441,12 +458,57 @@ export default function MemberExpensePage() {
                                     data={currentData}
                                     rowKey="id"
                                     onRowClick={(row) => {
-                                        setSelectedEmployeeId(row.id);
-                                        setUser(row.name.replace(/^[A-Z]{2,3} /, ""));
-                                        setActiveTab("mileage");
+                                        toggleRowExpand(row.id);
                                     }}
+                                    expandableRowRender={(row) => {
+                                        const details = expandedRowDetails.get(
+                                            row.id
+                                        );
+                                        const rowTab =
+                                            expandedRowActiveTab.get(row.id) ||
+                                            "mileage";
+
+                                        if (!details) {
+                                            return (
+                                                <div className="p-6">
+                                                    <TableSkeleton rows={3} />
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <EmployeeDetailView
+                                                employeeName={row.name.replace(
+                                                    /^[A-Z]{2,3} /,
+                                                    ""
+                                                )}
+                                                year={year}
+                                                month={month}
+                                                mileageDetails={details.mileage}
+                                                cardDetails={details.card}
+                                                activeTab={rowTab}
+                                                onTabChange={(tab) => {
+                                                    setExpandedRowActiveTab(
+                                                        (prev) => {
+                                                            const newMap =
+                                                                new Map(prev);
+                                                            newMap.set(
+                                                                row.id,
+                                                                tab
+                                                            );
+                                                            return newMap;
+                                                        }
+                                                    );
+                                                }}
+                                                mileageColumns={mileageColumns}
+                                                cardColumns={cardColumns}
+                                                variant="dropdown"
+                                            />
+                                        );
+                                    }}
+                                    expandedRowKeys={expandedRowKeys}
                                     emptyText="데이터가 없습니다."
-                                                        className="border-gray-200"
+                                    className="border-gray-200"
                                 />
 
                                 {/* 페이지네이션 */}
@@ -455,48 +517,64 @@ export default function MemberExpensePage() {
                                         <div className="text-sm text-gray-500">
                                             총 {filteredData.length}명 중{" "}
                                             {startIndex + 1}-
-                                            {Math.min(endIndex, filteredData.length)}명 표시
+                                            {Math.min(
+                                                endIndex,
+                                                filteredData.length
+                                            )}
+                                            명 표시
                                         </div>
                                         <div className="flex gap-2">
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                        disabled={currentPage === 1}
-                                    >
+                                                onClick={() =>
+                                                    setCurrentPage((p) =>
+                                                        Math.max(1, p - 1)
+                                                    )
+                                                }
+                                                disabled={currentPage === 1}
+                                            >
                                                 이전
                                             </Button>
-                                    <div className="flex items-center gap-1">
-                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                                                    (page) => (
-                                            <button
-                                                key={page}
-                                                            onClick={() => setCurrentPage(page)}
-                                                            className={`px-3 py-1 text-sm rounded ${
-                                                    currentPage === page
-                                                                    ? "bg-gray-900 text-white"
-                                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                }`}
-                                            >
-                                                {page}
-                                            </button>
-                                                    )
-                                                )}
-                                    </div>
+                                            <div className="flex items-center gap-1">
+                                                {Array.from(
+                                                    { length: totalPages },
+                                                    (_, i) => i + 1
+                                                ).map((page) => (
+                                                    <button
+                                                        key={page}
+                                                        onClick={() =>
+                                                            setCurrentPage(page)
+                                                        }
+                                                        className={`px-3 py-1 text-sm rounded ${
+                                                            currentPage === page
+                                                                ? "bg-gray-900 text-white"
+                                                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                        }`}
+                                                    >
+                                                        {page}
+                                                    </button>
+                                                ))}
+                                            </div>
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                        onClick={() =>
+                                                onClick={() =>
                                                     setCurrentPage((p) =>
-                                                        Math.min(totalPages, p + 1)
-                                            )
-                                        }
-                                        disabled={currentPage === totalPages}
-                                    >
+                                                        Math.min(
+                                                            totalPages,
+                                                            p + 1
+                                                        )
+                                                    )
+                                                }
+                                                disabled={
+                                                    currentPage === totalPages
+                                                }
+                                            >
                                                 다음
                                             </Button>
                                         </div>
-                                </div>
+                                    </div>
                                 )}
                             </div>
                         )}

@@ -93,10 +93,13 @@ export default function Table<T = any>({
                             data.map((row, index) => {
                                 const key = getRowKey(row, index);
                                 const isExpanded = isRowExpanded(row);
+                                const isLastRow = index === data.length - 1;
                                 return (
                                     <React.Fragment key={key}>
                                         <tr
-                                            className={`border-b border-gray-200 bg-white hover:bg-blue-50 transition-colors ${
+                                            className={`${
+                                                isLastRow ? "" : "border-b border-gray-200"
+                                            } bg-white hover:bg-blue-50 transition-colors ${
                                                 onRowClick
                                                     ? "cursor-pointer"
                                                     : ""
