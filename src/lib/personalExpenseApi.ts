@@ -401,6 +401,7 @@ export interface EmployeeCardExpenseDetail {
   amount: number;
   category: string;
   details: string;
+  receipt_path?: string | null;
 }
 
 /**
@@ -602,7 +603,7 @@ export async function getUserCardExpenseDetails(
 ): Promise<EmployeeCardExpenseDetail[]> {
   let query = supabase
     .from('personal_expenses')
-    .select('id, expense_date, expense_type, amount, detail')
+    .select('id, expense_date, expense_type, amount, detail, receipt_path')
     .eq('user_id', userId)
     .order('expense_date', { ascending: false })
     .order('created_at', { ascending: false });
@@ -633,6 +634,7 @@ export async function getUserCardExpenseDetails(
     amount: e.amount || 0,
     category: e.expense_type || '기타',
     details: e.detail || '',
+    receipt_path: e.receipt_path || null,
   }));
 }
 

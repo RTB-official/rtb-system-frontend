@@ -15,6 +15,7 @@ import {
 import { TableSkeleton } from "./components/TableSkeleton";
 import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
+import BaseModal from "../../components/ui/BaseModal";
 
 export default function MemberExpensePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -54,6 +55,7 @@ export default function MemberExpensePage() {
     const [cardDetails, setCardDetails] = useState<EmployeeCardExpenseDetail[]>(
         []
     );
+    const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
     useEffect(() => {
@@ -80,10 +82,10 @@ export default function MemberExpensePage() {
                 if (user !== "전체") {
                     // 선택한 사용자 찾기
                     const selectedUser = expenseSummary.find((emp) => {
-                        const nameWithoutInitials = emp.name.replace(
-                            /^[A-Z]{2,3} /,
-                            ""
-                        );
+                  const nameWithoutInitials = emp.name.replace(
+                      /^[A-Z]{2,3} /,
+                      ""
+                  );
                         return (
                             nameWithoutInitials === user || emp.name === user
                         );
@@ -148,8 +150,8 @@ export default function MemberExpensePage() {
         }
         return expenseSummary.filter((emp) => {
             const nameWithoutInitials = emp.name.replace(/^[A-Z]{2,3} /, "");
-            return nameWithoutInitials === user || emp.name === user;
-        });
+                  return nameWithoutInitials === user || emp.name === user;
+              });
     }, [expenseSummary, user]);
 
     // 페이지네이션 계산
@@ -161,19 +163,19 @@ export default function MemberExpensePage() {
     // 사용자 옵션 생성 (중복 제거)
     const userOptions = useMemo(() => {
         return [
-            { value: "전체", label: "전체" },
-            ...Array.from(
-                new Set(
+        { value: "전체", label: "전체" },
+        ...Array.from(
+            new Set(
                     expenseSummary.map((emp) => {
-                        const nameWithoutInitials = emp.name.replace(
-                            /^[A-Z]{2,3} /,
-                            ""
-                        );
-                        return nameWithoutInitials;
-                    })
-                )
-            ).map((name) => ({ value: name, label: name })),
-        ];
+                    const nameWithoutInitials = emp.name.replace(
+                        /^[A-Z]{2,3} /,
+                        ""
+                    );
+                    return nameWithoutInitials;
+                })
+            )
+        ).map((name) => ({ value: name, label: name })),
+    ];
     }, [expenseSummary]);
 
     // 금액 포맷팅
@@ -214,10 +216,6 @@ export default function MemberExpensePage() {
             label: "날짜",
         },
         {
-            key: "merchant",
-            label: "가맹점",
-        },
-        {
             key: "category",
             label: "카테고리",
         },
@@ -229,6 +227,26 @@ export default function MemberExpensePage() {
         {
             key: "details",
             label: "상세 내용",
+        },
+        {
+            key: "receipt_path",
+            label: "영수증",
+            render: (value, row) => {
+                if (row.receipt_path) {
+                    return (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedReceipt(row.receipt_path || null);
+                            }}
+                            className="text-blue-600 underline cursor-pointer hover:text-blue-800"
+                        >
+                            영수증보기
+                        </button>
+                    );
+                }
+                return <span className="text-gray-400">-</span>;
+            },
         },
     ];
 
@@ -441,7 +459,7 @@ export default function MemberExpensePage() {
                                     <div className="h-5 bg-gray-100 rounded w-80 mb-8"></div>
                                     <TableSkeleton rows={5} />
                                 </div>
-                            </div>
+                                    </div>
                         ) : (
                             /* 전체 선택 시 직원별 집계 테이블 표시 */
                             <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
@@ -527,39 +545,39 @@ export default function MemberExpensePage() {
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={() =>
+                                        onClick={() =>
                                                     setCurrentPage((p) =>
                                                         Math.max(1, p - 1)
-                                                    )
-                                                }
-                                                disabled={currentPage === 1}
-                                            >
+                                            )
+                                        }
+                                        disabled={currentPage === 1}
+                                    >
                                                 이전
                                             </Button>
-                                            <div className="flex items-center gap-1">
-                                                {Array.from(
-                                                    { length: totalPages },
-                                                    (_, i) => i + 1
-                                                ).map((page) => (
-                                                    <button
-                                                        key={page}
-                                                        onClick={() =>
-                                                            setCurrentPage(page)
-                                                        }
+                                    <div className="flex items-center gap-1">
+                                        {Array.from(
+                                            { length: totalPages },
+                                            (_, i) => i + 1
+                                        ).map((page) => (
+                                            <button
+                                                key={page}
+                                                onClick={() =>
+                                                    setCurrentPage(page)
+                                                }
                                                         className={`px-3 py-1 text-sm rounded ${
-                                                            currentPage === page
+                                                    currentPage === page
                                                                 ? "bg-gray-900 text-white"
                                                                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                        }`}
-                                                    >
-                                                        {page}
-                                                    </button>
-                                                ))}
-                                            </div>
+                                                }`}
+                                            >
+                                                {page}
+                                            </button>
+                                        ))}
+                                    </div>
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={() =>
+                                        onClick={() =>
                                                     setCurrentPage((p) =>
                                                         Math.min(
                                                             totalPages,
@@ -574,13 +592,31 @@ export default function MemberExpensePage() {
                                                 다음
                                             </Button>
                                         </div>
-                                    </div>
+                                </div>
                                 )}
                             </div>
                         )}
                     </div>
                 </div>
             </div>
+
+            {/* 영수증 모달 */}
+            {selectedReceipt && (
+                <BaseModal
+                    isOpen={!!selectedReceipt}
+                    onClose={() => setSelectedReceipt(null)}
+                    title="영수증 원본"
+                    maxWidth="max-w-[90vw]"
+                >
+                    <div className="flex justify-center bg-gray-50 rounded-xl overflow-hidden mb-2">
+                        <img
+                            src={selectedReceipt}
+                            alt="receipt full"
+                            className="max-w-full h-auto max-h-[70vh] object-contain"
+                        />
+                    </div>
+                </BaseModal>
+            )}
         </div>
     );
 }
