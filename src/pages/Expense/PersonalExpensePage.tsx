@@ -291,7 +291,14 @@ export default function PersonalExpensePage() {
                 distanceLabel: `${Number(it.distance_km || 0)}km`,
                 desc: it.detail || "",
                 isSubmitted: it.is_submitted,
-            }));
+            }))
+            .sort((a, b) => {
+                // 제출 전 항목이 먼저 오도록 정렬
+                if (a.isSubmitted !== b.isSubmitted) {
+                    return a.isSubmitted ? 1 : -1;
+                }
+                return 0;
+            });
     }, [mileages, year, month]);
 
     // 지출 히스토리 변환
@@ -307,7 +314,14 @@ export default function PersonalExpensePage() {
                 desc: it.detail || "",
                 img: it.receipt_path || null,
                 isSubmitted: it.is_submitted,
-            }));
+            }))
+            .sort((a, b) => {
+                // 제출 전 항목이 먼저 오도록 정렬
+                if (a.isSubmitted !== b.isSubmitted) {
+                    return a.isSubmitted ? 1 : -1;
+                }
+                return 0;
+            });
     }, [expenses, year, month]);
 
     // 모두 제출 핸들러
