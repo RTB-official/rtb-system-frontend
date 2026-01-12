@@ -98,7 +98,9 @@ export default function Table<T = any>({
                                     <React.Fragment key={key}>
                                         <tr
                                             className={`${
-                                                isLastRow ? "" : "border-b border-gray-200"
+                                                isLastRow
+                                                    ? ""
+                                                    : "border-b border-gray-200"
                                             } bg-white hover:bg-blue-50 transition-colors ${
                                                 onRowClick
                                                     ? "cursor-pointer"

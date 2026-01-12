@@ -53,27 +53,8 @@ export default function ExpenseListItem({
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                                {tag && (
-                                    <Chip
-                                        color={
-                                            tag === "주유"
-                                                ? "orange-500"
-                                                : tag === "통행료"
-                                                ? "blue-500"
-                                                : tag === "식비"
-                                                ? "green-500"
-                                                : tag === "자재구매"
-                                                ? "purple-500"
-                                                : "gray-500"
-                                        }
-                                        variant="filled"
-                                        size="sm"
-                                    >
-                                        {tag}
-                                    </Chip>
-                                )}
                                 <span className="text-[15px] text-gray-400">
-                                    {date}
+                                    {tag ? `${date} · ${tag}` : date}
                                 </span>
                             </div>
                             <div className="flex-1 min-w-0">

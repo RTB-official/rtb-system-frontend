@@ -142,7 +142,7 @@ export default function PersonalExpensePage() {
                 from_text: item.from,
                 to_text: item.to,
                 distance_km: distanceNum,
-                detail: item.note || null,
+                detail: item.note || undefined,
                 amount_won: calculatedCost,
             });
 
@@ -185,9 +185,9 @@ export default function PersonalExpensePage() {
                 user_id: user.id,
                 expense_date: item.date,
                 expense_type: item.type,
-                detail: item.detail || null,
+                detail: item.detail || undefined,
                 amount: amountNum,
-                receipt_path: item.img || null, // 추후 파일 업로드 구현 시 수정
+                receipt_path: item.img || undefined, // 추후 파일 업로드 구현 시 수정
             });
 
             // 목록 새로고침
@@ -242,6 +242,20 @@ export default function PersonalExpensePage() {
         }
     };
 
+    // 날짜 포맷팅 함수
+    const formatDate = (dateStr: string): string => {
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return dateStr;
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            return `${year}년 ${month}월 ${day}일`;
+        } catch (e) {
+            return dateStr;
+        }
+    };
+
     // 마일리지 히스토리 변환
     const mileageHistory = useMemo<ExpenseHistoryItem[]>(() => {
         return mileages
@@ -249,7 +263,7 @@ export default function PersonalExpensePage() {
             .map((it) => ({
                 id: it.id,
                 variant: "mileage" as const,
-                date: it.m_date,
+                date: formatDate(it.m_date),
                 amount: `${(it.amount_won || 0).toLocaleString("ko-KR")}원`,
                 routeLabel: `${it.from_text || "출발지"} → ${it.to_text || "도착지"}`,
                 distanceLabel: `${Number(it.distance_km || 0)}km`,
@@ -264,7 +278,7 @@ export default function PersonalExpensePage() {
             .map((it) => ({
                 id: it.id,
                 variant: "card" as const,
-                date: it.expense_date,
+                date: formatDate(it.expense_date),
                 amount: `${Number(it.amount || 0).toLocaleString("ko-KR")}원`,
                 tag: it.expense_type || "기타",
                 desc: it.detail || "",
