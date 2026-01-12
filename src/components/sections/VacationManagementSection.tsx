@@ -93,7 +93,7 @@ export default function VacationManagementSection({
         },
         {
             label: "사용",
-            value: `-${summary.used}일`,
+            value: `- ${summary.used}일`,
             color: "text-gray-900",
         },
         {
