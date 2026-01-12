@@ -90,7 +90,7 @@ export default function BaseModal({
 
                     {/* Footer */}
                     {footer && (
-                        <div className="flex justify-end gap-3 px-6 py-4">
+                        <div className="flex justify-center gap-2 px-6 py-3">
                             {footer}
                         </div>
                     )}

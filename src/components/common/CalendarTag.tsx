@@ -51,8 +51,8 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                 backgroundColor: isHoliday
                     ? undefined
                     : isHovered
-                    ? `${color}33` // hover 시 20% 투명도 (진해짐)
-                    : `${color}15`, // 기본 8% 투명도
+                    ? `${color}40`
+                    : `${color}20`,
             }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -74,12 +74,14 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                         <IconStar className="w-3.5 h-3.5 text-red-500" />
                     </div>
                 ) : (
-                    <div
-                        className="w-1 h-5 rounded-full shrink-0 mr-2"
-                        style={{
-                            backgroundColor: color,
-                        }}
-                    />
+                    isStart && (
+                        <div
+                            className="w-1 h-5 rounded-full shrink-0 mr-2"
+                            style={{
+                                backgroundColor: color,
+                            }}
+                        />
+                    )
                 )}
                 <span
                     className={`text-[15px] truncate leading-none ${
@@ -103,7 +105,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                                     e.stopPropagation();
                                     onEdit();
                                 }}
-                                className="flex-1 px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                                className="flex-1 px-3 py-2 text-sm font-medium text-blue-500 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                             >
                                 수정
                             </button>

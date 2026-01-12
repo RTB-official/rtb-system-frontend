@@ -193,10 +193,10 @@ export default function WorkloadPage() {
                 />
 
                 {/* Content */}
-                <main className="flex-1 overflow-auto pt-9 pb-24 px-9">
+                <main className="flex-1 overflow-auto pt-9 pb-20 px-9">
                     <div className="flex flex-col gap-6 w-full">
                         {/* 조회 기간 */}
-                        <div className="flex flex-wrap items-center gap-5">
+                        <div className="flex flex-wrap items-center gap-4">
                             <h2 className="text-[24px] font-semibold text-gray-900">
                                 조회 기간
                             </h2>
@@ -312,7 +312,7 @@ export default function WorkloadPage() {
                                         render: (_, row) => (
                                             <Link
                                                 to={`/workload/detail/${row.id}`}
-                                                className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                                className="text-blue-500 hover:text-blue-700 hover:underline font-medium"
                                             >
                                                 {row.name}
                                             </Link>

@@ -10,6 +10,7 @@ interface NotificationItem {
 interface NotificationPopupProps {
     onClose: () => void;
     items?: NotificationItem[];
+    anchorEl?: HTMLElement | null;
 }
 
 const IconClose = () => (
@@ -30,15 +31,18 @@ const IconClose = () => (
 export default function NotificationPopup({
     onClose,
     items,
+    anchorEl,
 }: NotificationPopupProps) {
     const popupRef = useRef<HTMLDivElement>(null);
 
     // 바깥 클릭 닫기
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node;
             if (
                 popupRef.current &&
-                !popupRef.current.contains(e.target as Node)
+                !popupRef.current.contains(target) &&
+                (!anchorEl || !anchorEl.contains(target))
             ) {
                 onClose();
             }

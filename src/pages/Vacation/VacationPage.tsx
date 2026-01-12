@@ -5,6 +5,7 @@ import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import VacationManagementSection from "../../components/sections/VacationManagementSection";
 import VacationRequestModal from "../../components/ui/VacationRequestModal";
+import { IconMore, IconPlus } from "../../components/icons/Icons";
 
 export type VacationStatus = "대기 중" | "승인 완료" | "반려";
 
@@ -272,23 +273,9 @@ export default function VacationPage() {
                     rightContent={
                         <Button
                             variant="primary"
-                            size="md"
+                            size="lg"
                             onClick={handleRegister}
-                            icon={
-                                <svg
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                    <path
-                                        d="M12 5V19M5 12H19"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                    />
-                                </svg>
+                            icon={ <IconPlus />
                             }
                         >
                             휴가 등록

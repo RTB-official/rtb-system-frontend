@@ -45,30 +45,27 @@ export default function ExpenseFilterBar({
     const userOpts = userOptions ?? [{ value: "전체", label: "전체" }];
 
     return (
-        <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[24px] font-semibold text-gray-900">
+        <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[24px] font-semibold text-gray-900 mr-2">
                 조회 기간
             </span>
             <Select
                 value={year}
                 onChange={onYearChange}
                 options={yearOpts}
-                className="w-auto min-w-[140px]"
             />
             <Select
                 value={month}
                 onChange={onMonthChange}
                 options={monthOpts}
-                className="w-auto min-w-[140px]"
             />
-            <span className="text-[20px] font-semibold text-gray-700 ml-4">
+            <span className="text-[20px] font-semibold text-gray-700 ml-5 mr-2">
                 사용자
             </span>
             <Select
                 value={user}
                 onChange={onUserChange}
                 options={userOpts}
-                className="w-auto min-w-[140px]"
             />
         </div>
     );

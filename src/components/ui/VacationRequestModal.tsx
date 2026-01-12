@@ -73,7 +73,6 @@ export default function VacationRequestModal({
         <div>
           <DatePicker
             label="날짜"
-            labelClassName="text-sm font-medium text-gray-700"
             value={dateISO}
             onChange={setDateISO}
             placeholder="년도. 월. 일."
@@ -89,21 +88,21 @@ export default function VacationRequestModal({
           <div className="grid grid-cols-3 gap-3">
             <Button
               variant={leaveType === "FULL" ? "primary" : "outline"}
-              size="md"
+              size="lg"
               onClick={() => setLeaveType("FULL")}
             >
               하루 종일
             </Button>
             <Button
               variant={leaveType === "AM" ? "primary" : "outline"}
-              size="md"
+              size="lg"
               onClick={() => setLeaveType("AM")}
             >
               오전 반차
             </Button>
             <Button
               variant={leaveType === "PM" ? "primary" : "outline"}
-              size="md"
+              size="lg"
               onClick={() => setLeaveType("PM")}
             >
               오후 반차
@@ -122,7 +121,7 @@ export default function VacationRequestModal({
 
         {/* 제출 버튼 */}
         <div className="pt-2">
-          <Button variant="primary" size="md" fullWidth onClick={handleAdd}>
+          <Button variant="primary" size="lg" fullWidth onClick={handleAdd}>
             추가
           </Button>
         </div>

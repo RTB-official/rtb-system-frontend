@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import { IconCalendar } from "./icons/Icons";
 import { IconClock } from "./icons/Icons";
-import DatePickerPanel from "./DatePickerPanel";
+import DatePicker from "./ui/DatePicker";
 import Button from "./common/Button";
 import Input from "./common/Input";
 import Select from "./common/Select";
@@ -73,22 +73,11 @@ export default function EventForm({
         )}`;
     };
 
-    const formatDateForDisplay = (dateStr: string) => {
-        if (!dateStr) return "";
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return dateStr;
-        return `${date.getFullYear()}. ${pad(date.getMonth() + 1)}. ${pad(
-            date.getDate()
-        )}.`;
-    };
-
     const [startDate, setStartDate] = useState<string>(
         initialDate ? formatDateForInput(initialDate) : ""
     );
     const [startHour, setStartHour] = useState<string>("09");
     const [startMinute, setStartMinute] = useState<string>("00");
-    const [startDatePickerOpen, setStartDatePickerOpen] = useState(false);
-    const startDatePickerRef = useRef<HTMLDivElement>(null);
 
     const [endDate, setEndDate] = useState<string>(
         initialEndDate
@@ -99,34 +88,6 @@ export default function EventForm({
     );
     const [endHour, setEndHour] = useState<string>("18");
     const [endMinute, setEndMinute] = useState<string>("00");
-    const [endDatePickerOpen, setEndDatePickerOpen] = useState(false);
-    const endDatePickerRef = useRef<HTMLDivElement>(null);
-
-    // 외부 클릭 시 날짜 선택 패널 닫기
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                startDatePickerRef.current &&
-                !startDatePickerRef.current.contains(event.target as Node)
-            ) {
-                setStartDatePickerOpen(false);
-            }
-            if (
-                endDatePickerRef.current &&
-                !endDatePickerRef.current.contains(event.target as Node)
-            ) {
-                setEndDatePickerOpen(false);
-            }
-        };
-
-        if (startDatePickerOpen || endDatePickerOpen) {
-            document.addEventListener("mousedown", handleClickOutside);
-        }
-
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, [startDatePickerOpen, endDatePickerOpen]);
 
     // initialDate가 변경되면 시작일과 종료일 업데이트
     React.useEffect(() => {
@@ -179,7 +140,7 @@ export default function EventForm({
                     id="allDay"
                     checked={allDay}
                     onChange={(e) => setAllDay(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                    className="w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400 cursor-pointer"
                 />
                 <label
                     htmlFor="allDay"
@@ -195,38 +156,16 @@ export default function EventForm({
                         시작
                     </label>
                     <div className="flex gap-2 items-center">
-                        <div
-                            className="relative flex-1"
-                            ref={startDatePickerRef}
-                        >
-                            <Input
-                                value={
-                                    startDate
-                                        ? formatDateForDisplay(startDate)
-                                        : ""
-                                }
-                                onClick={() => {
-                                    setEndDatePickerOpen(false);
-                                    setStartDatePickerOpen(
-                                        !startDatePickerOpen
-                                    );
+                        <div className="flex-1">
+                            <DatePicker
+                                value={startDate}
+                                onChange={(date) => {
+                                    setStartDate(formatDateForInput(date));
                                 }}
                                 placeholder="연도. 월. 일."
                                 icon={<IconCalendar className="w-4 h-4" />}
                                 iconPosition="right"
-                                readOnly
                             />
-                            {startDatePickerOpen && (
-                                <div className="absolute z-50 top-full left-0 mt-1">
-                                    <DatePickerPanel
-                                        selected={startDate}
-                                        onSelect={(date) => {
-                                            setStartDate(date);
-                                            setStartDatePickerOpen(false);
-                                        }}
-                                    />
-                                </div>
-                            )}
                         </div>
                         {!allDay && (
                             <div className="flex gap-1 items-center">
@@ -260,31 +199,16 @@ export default function EventForm({
                         종료
                     </label>
                     <div className="flex gap-2 items-center">
-                        <div className="relative flex-1" ref={endDatePickerRef}>
-                            <Input
-                                value={
-                                    endDate ? formatDateForDisplay(endDate) : ""
-                                }
-                                onClick={() => {
-                                    setStartDatePickerOpen(false);
-                                    setEndDatePickerOpen(!endDatePickerOpen);
+                        <div className="flex-1">
+                            <DatePicker
+                                value={endDate}
+                                onChange={(date) => {
+                                    setEndDate(formatDateForInput(date));
                                 }}
                                 placeholder="연도. 월. 일."
                                 icon={<IconCalendar className="w-4 h-4" />}
                                 iconPosition="right"
-                                readOnly
                             />
-                            {endDatePickerOpen && (
-                                <div className="absolute z-50 top-full left-0 mt-1">
-                                    <DatePickerPanel
-                                        selected={endDate}
-                                        onSelect={(date) => {
-                                            setEndDate(date);
-                                            setEndDatePickerOpen(false);
-                                        }}
-                                    />
-                                </div>
-                            )}
                         </div>
                         {!allDay && (
                             <div className="flex gap-1 items-center">
@@ -343,6 +267,7 @@ export default function EventForm({
                         <Button
                             type="button"
                             variant="primary"
+                            size="lg"
                             onClick={() => handleAddAttendee()}
                         >
                             추가
@@ -377,12 +302,13 @@ export default function EventForm({
             </div>
 
             <div className="flex justify-end gap-3 w-full pt-2">
-                <Button variant="outline" fullWidth onClick={onClose}>
+                <Button variant="outline" fullWidth size="lg" onClick={onClose}>
                     취소
                 </Button>
                 <Button
                     variant="primary"
                     fullWidth
+                    size="lg"
                     onClick={() => {
                         if (!title || !startDate || !endDate) {
                             alert("일정 제목, 시작일, 종료일을 입력해주세요.");

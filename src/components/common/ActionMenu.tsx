@@ -132,7 +132,7 @@ export default function ActionMenu({
     return createPortal(
         <div
             ref={menuRef}
-            className={`fixed ${width} rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999`}
+            className={`fixed ${width} rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999`}
             style={{
                 top,
                 left,
@@ -153,7 +153,7 @@ export default function ActionMenu({
                         )}
                         {!userDisplayName && !userEmail && headerContent}
                     </div>
-                    <div className="h-px bg-gray-300 mx-2 mb-2" />
+                    <div className="h-px bg-gray-200 mx-2 mb-2" />
                 </>
             )}
             {children}
@@ -215,7 +215,7 @@ export default function ActionMenu({
             )}
             {showLogout && onLogout && (
                 <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 border-t border-gray-100 rounded-none rounded-b-lg cursor-pointer"
+                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg cursor-pointer"
                     onClick={() => {
                         onLogout();
                         onClose();

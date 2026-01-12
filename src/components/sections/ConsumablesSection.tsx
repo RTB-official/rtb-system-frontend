@@ -2,11 +2,14 @@ import { useState } from "react";
 import SectionCard from "../ui/SectionCard";
 import Select from "../common/Select";
 import Chip from "../ui/Chip";
+import Button from "../common/Button";
+import TextInput from "../ui/TextInput";
 import {
     useWorkReportStore,
     MATERIALS,
     MATERIAL_UNITS,
 } from "../../store/workReportStore";
+import { IconClose } from "../icons/Icons";
 
 export default function ConsumablesSection() {
     const { materials, addMaterial, removeMaterial } = useWorkReportStore();
@@ -69,6 +72,7 @@ export default function ConsumablesSection() {
                     <Select
                         label="자재명"
                         placeholder="선택"
+                        fullWidth
                         options={materialOptions}
                         value={selectedMaterial}
                         onChange={(v) => {
@@ -77,65 +81,64 @@ export default function ConsumablesSection() {
                         }}
                     />
                     {selectedMaterial === "OTHER" && (
-                        <input
-                            type="text"
+                        <TextInput
                             placeholder="자재명을 직접 입력"
                             value={customMaterial}
-                            onChange={(e) => setCustomMaterial(e.target.value)}
-                            className="h-12 px-4 border border-[#e5e7eb] rounded-xl text-[16px]"
+                            onChange={setCustomMaterial}
                         />
                     )}
                 </div>
 
                 {/* 수량 */}
                 <div className="flex flex-col gap-2">
-                    <label className="font-medium text-[14px] text-[#101828]">
-                        수량
-                    </label>
-                    <div className="relative">
-                        <input
-                            type="number"
-                            min="1"
-                            value={quantity}
-                            onChange={(e) => setQuantity(e.target.value)}
-                            className="w-full h-12 px-4 pr-16 border border-[#e5e7eb] rounded-xl text-[16px]"
-                        />
-                        {unit && (
-                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[14px] text-[#6a7282] bg-[#f9fafb] px-2 py-1 rounded-lg border border-[#e5e7eb]">
-                                {unit}
-                            </span>
-                        )}
-                    </div>
+                    <TextInput
+                        label="수량"
+                        type="number"
+                        value={quantity}
+                        onChange={setQuantity}
+                        className="relative"
+                        icon={
+                            unit ? (
+                                <span className="text-[14px] text-[#6a7282] bg-[#f9fafb] px-2 py-1 rounded-lg border border-[#e5e7eb]">
+                                    {unit}
+                                </span>
+                            ) : undefined
+                        }
+                    />
                 </div>
 
                 {/* 추가 버튼 */}
-                <button
+                <Button
                     onClick={handleAdd}
-                    className="h-12 bg-[#364153] rounded-xl flex items-center justify-center text-white font-medium text-[16px] hover:bg-[#1f2937] transition-colors"
+                    variant="primary"
+                    size="lg"
+                    fullWidth
                 >
                     추가
-                </button>
+                </Button>
 
                 {/* 추가된 자재 목록 */}
                 {materials.length > 0 && (
                     <div className="flex flex-col gap-3">
-                        <div className="h-px bg-[#e5e7eb]" />
                         <div className="flex flex-wrap gap-2 p-4 border border-dashed border-[#e5e7eb] rounded-xl min-h-[60px]">
                             {materials.map((item) => (
-                                <Chip
+                                <Button
                                     key={item.id}
-                                    variant="tag"
-                                    onRemove={() => {
+                                    variant="secondary"
+                                    size="md"
+                                    onClick={() => {
                                         if (confirm("삭제하시겠습니까?"))
                                             removeMaterial(item.id);
                                     }}
+                                    className="text-[15px] font-semibold"
                                 >
                                     {formatLabel(
                                         item.name,
                                         item.qty,
                                         item.unit
                                     )}
-                                </Chip>
+                                    <IconClose className="ml-1 w-4 h-4" />
+                                </Button>
                             ))}
                         </div>
                     </div>
