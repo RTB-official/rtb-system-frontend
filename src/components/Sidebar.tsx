@@ -301,7 +301,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     ];
 
     const expenseSubMenuItems = [
-        { label: "개인 지출", to: PATHS.expensePersonal },
+        { label: "개인 지출 기록", to: PATHS.expensePersonal },
         { label: "구성원 지출 관리", to: PATHS.expenseTeam },
     ];
 

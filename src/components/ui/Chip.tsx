@@ -4,8 +4,8 @@ interface ChipProps {
     children: React.ReactNode;
     /** 컬러 이름 (예: blue-500, red-600, gray-400) */
     color?: string;
-    /** 스타일 종류: 솔리드(배경색 있음), 아웃라인(테두리만 있음) */
-    variant?: "solid" | "outline";
+    /** 스타일 종류: outline(흰색 배경+컬러 텍스트), solid(10% 컬러 배경+컬러 텍스트), filled(컬러 배경+흰색 텍스트) */
+    variant?: "outline" | "solid" | "filled";
     /** 사이즈: sm(11px), md(12px), lg(13px) */
     size?: "sm" | "md" | "lg";
     icon?: React.ReactNode;
@@ -34,21 +34,114 @@ export default function Chip({
         .replace("text-", "")
         .replace("border-", "");
 
-    // Tailwind v4의 CSS 변수를 활용한 동적 스타일 계산
-    // 배경은 투명도 20%, 테두리는 아웃라인일 때 30% 적용
-    const colorVar = `var(--color-${baseColor})`;
+    // 색상 클래스 매핑 (Tailwind 클래스 사용, 500 또는 600)
+    const getColorClasses = () => {
+        // 400 색상을 500으로 변환
+        const colorMap: Record<
+            string,
+            { text: string; bg: string; border: string; borderOutline: string }
+        > = {
+            "orange-400": {
+                text: "text-orange-500",
+                bg: "bg-orange-500/10",
+                border: "border-orange-500",
+                borderOutline: "border-orange-500",
+            },
+            "orange-500": {
+                text: "text-orange-500",
+                bg: "bg-orange-500/10",
+                border: "border-orange-500",
+                borderOutline: "border-orange-500",
+            },
+            "blue-400": {
+                text: "text-blue-500",
+                bg: "bg-blue-500/10",
+                border: "border-blue-500",
+                borderOutline: "border-blue-500",
+            },
+            "blue-500": {
+                text: "text-blue-500",
+                bg: "bg-blue-500/10",
+                border: "border-blue-500",
+                borderOutline: "border-blue-500",
+            },
+            "green-400": {
+                text: "text-green-500",
+                bg: "bg-green-500/10",
+                border: "border-green-500",
+                borderOutline: "border-green-500",
+            },
+            "green-500": {
+                text: "text-green-500",
+                bg: "bg-green-500/10",
+                border: "border-green-500",
+                borderOutline: "border-green-500",
+            },
+            "purple-400": {
+                text: "text-purple-500",
+                bg: "bg-purple-500/10",
+                border: "border-purple-500",
+                borderOutline: "border-purple-500",
+            },
+            "purple-500": {
+                text: "text-purple-500",
+                bg: "bg-purple-500/10",
+                border: "border-purple-500",
+                borderOutline: "border-purple-500",
+            },
+            "gray-400": {
+                text: "text-gray-500",
+                bg: "bg-gray-500/10",
+                border: "border-gray-500",
+                borderOutline: "border-gray-500",
+            },
+            "gray-500": {
+                text: "text-gray-500",
+                bg: "bg-gray-500/10",
+                border: "border-gray-500",
+                borderOutline: "border-gray-500",
+            },
+            "red-600": {
+                text: "text-red-600",
+                bg: "bg-red-600/10",
+                border: "border-red-600",
+                borderOutline: "border-red-600",
+            },
+        };
 
-    const dynamicStyle: React.CSSProperties = {
-        color: colorVar,
-        backgroundColor:
-            variant === "solid"
-                ? `color-mix(in srgb, ${colorVar} 10%, transparent)`
-                : "transparent",
-        borderColor:
-            variant === "outline"
-                ? `color-mix(in srgb, ${colorVar} 30%, transparent)`
-                : "transparent",
+        const colors = colorMap[baseColor] || colorMap["gray-500"];
+
+        if (variant === "outline") {
+            return {
+                text: colors.text,
+                bg: "bg-white",
+                border: colors.borderOutline,
+            };
+        } else if (variant === "solid") {
+            return {
+                text: colors.text,
+                bg: colors.bg,
+                border: "border-transparent",
+            };
+        } else {
+            // filled variant - 컬러 배경 + 흰색 텍스트
+            const filledBgMap: Record<string, string> = {
+                "text-orange-500": "bg-orange-500",
+                "text-blue-500": "bg-blue-500",
+                "text-green-500": "bg-green-500",
+                "text-purple-500": "bg-purple-500",
+                "text-gray-500": "bg-gray-500",
+                "text-red-600": "bg-red-600",
+            };
+            return {
+                text: "text-white",
+                bg: filledBgMap[colors.text] || "bg-gray-500",
+                border: "border-transparent",
+            };
+        }
     };
+
+    const colorClasses = getColorClasses();
 
     // 사이즈별 스타일 정의 (피그마 수치 적용)
     const sizeStyles = {
@@ -61,12 +154,14 @@ export default function Chip({
         "inline-flex items-center justify-center font-medium transition-all whitespace-nowrap border";
 
     const combinedClasses = `${baseClasses} ${sizeStyles[size]} ${
+        colorClasses.text
+    } ${colorClasses.bg} ${colorClasses.border} ${
         onClick ? "cursor-pointer hover:opacity-80" : "cursor-default"
     } ${className}`;
 
     if (!onClick) {
         return (
-            <span className={combinedClasses} style={dynamicStyle}>
+            <span className={combinedClasses}>
                 {icon && <span className="mr-1 flex items-center">{icon}</span>}
                 {children}
             </span>
@@ -80,7 +175,6 @@ export default function Chip({
             draggable={draggable}
             onDragStart={onDragStart}
             className={combinedClasses}
-            style={dynamicStyle}
         >
             {icon && <span className="mr-1 flex items-center">{icon}</span>}
             <span>{children}</span>

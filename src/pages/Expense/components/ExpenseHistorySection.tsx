@@ -11,13 +11,14 @@ export interface ExpenseHistoryItem {
     tag?: string;
     desc?: string;
     img?: string | null;
+    isSubmitted?: boolean;
 }
 
 interface ExpenseHistorySectionProps {
     title: string;
     items: ExpenseHistoryItem[];
     emptyMessage: string;
-    submittedIds: number[];
+    submittedIds?: number[]; // deprecated, isSubmitted 사용
     onRemove?: (id: number) => void;
 }
 
@@ -47,7 +48,7 @@ export default function ExpenseHistorySection({
                             tag={item.tag}
                             desc={item.desc}
                             img={item.img}
-                            submitted={submittedIds.includes(item.id)}
+                            submitted={item.isSubmitted ?? submittedIds?.includes(item.id) ?? false}
                             onRemove={
                                 onRemove ? () => onRemove(item.id) : undefined
                             }

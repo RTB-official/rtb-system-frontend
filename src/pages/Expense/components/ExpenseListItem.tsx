@@ -53,13 +53,8 @@ export default function ExpenseListItem({
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                                {tag && (
-                                    <span className="inline-flex items-center px-2 py-1 rounded-lg text-[13px] font-medium text-orange-500 border border-orange-200">
-                                        {tag}
-                                    </span>
-                                )}
-                                <span className="text-[15px] text-gray-400">
-                                    {date}
+                                <span className="text-[14px] text-gray-400">
+                                    {tag ? `${date} · ${tag}` : date}
                                 </span>
                                 {submitted ? (
                                     <Chip
@@ -81,8 +76,10 @@ export default function ExpenseListItem({
                                 )}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <div className="text-[20px] font-extrabold text-gray-900">
-                                    {amount}
+                                <div className="flex items-center gap-2">
+                                    <div className="text-[20px] font-extrabold text-gray-900">
+                                        {amount}
+                                    </div>
                                 </div>
                                 {desc && (
                                     <div className="text-sm text-gray-500 mt-1 wrap-break-word">
@@ -141,7 +138,7 @@ export default function ExpenseListItem({
         <div className="bg-white border border-gray-200 rounded-2xl p-4">
             <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
-                    <div className="text-[15px] text-gray-400">{date}</div>
+                    <div className="text-[14px] text-gray-400">{date}</div>
                     {submitted ? (
                         <Chip
                             color="blue-500"
@@ -184,12 +181,19 @@ export default function ExpenseListItem({
 
             <div className="flex items-center justify-between">
                 <div>
-                    <div className="text-[22px] font-extrabold text-gray-900">
-                        {amount}
+                    <div className="flex items-center gap-2">
+                        <div className="text-[22px] font-extrabold text-gray-900">
+                            {amount}
+                        </div>
                     </div>
                     {routeLabel && (
                         <div className="text-sm text-gray-500 mt-1">
                             {routeLabel}
+                        </div>
+                    )}
+                    {desc && (
+                        <div className="text-sm text-gray-500 mt-1 wrap-break-word">
+                            {desc}
                         </div>
                     )}
                 </div>

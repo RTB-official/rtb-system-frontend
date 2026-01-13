@@ -26,8 +26,31 @@ export default function ExpenseFormCard({
     const [detail, setDetail] = React.useState("");
     const [preview, setPreview] = React.useState<string | null>(null);
     const fileRef = React.useRef<HTMLInputElement | null>(null);
+    const [errors, setErrors] = React.useState<{
+        date?: string;
+        type?: string;
+        amount?: string;
+    }>({});
 
     const handleAdd = () => {
+        const newErrors: typeof errors = {};
+
+        if (!date || date.trim() === "") {
+            newErrors.date = "날짜를 입력해주세요.";
+        }
+        if (!type || type.trim() === "") {
+            newErrors.type = "유형을 선택해주세요.";
+        }
+        if (!amount || amount.trim() === "" || isNaN(Number(amount)) || Number(amount) <= 0) {
+            newErrors.amount = "올바른 금액을 입력해주세요.";
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            return;
+        }
+
+        setErrors({});
         if (onAdd) {
             onAdd({
                 id: Date.now(),
@@ -38,6 +61,7 @@ export default function ExpenseFormCard({
                 img: preview,
             });
             // Reset form
+            setDate(initialDate || "");
             setType("");
             setAmount("");
             setDetail("");
@@ -57,14 +81,24 @@ export default function ExpenseFormCard({
         >
             <div className="flex-1 flex flex-col justify-between gap-6">
                 <div className="space-y-6">
+                    <div>
                     <DatePicker
                         label="날짜"
                         value={date}
-                        onChange={setDate}
+                            onChange={(value) => {
+                                setDate(value);
+                                if (errors.date) {
+                                    setErrors((prev) => ({ ...prev, date: undefined }));
+                                }
+                            }}
                         placeholder="연도. 월. 일"
                         icon={<IconCalendar className="w-6 h-6" />}
                         iconPosition="right"
                     />
+                        {errors.date && (
+                            <p className="text-red-500 text-xs mt-1">{errors.date}</p>
+                        )}
+                    </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div>
@@ -73,21 +107,40 @@ export default function ExpenseFormCard({
                                 fullWidth
                                 placeholder="유형 선택"
                                 options={[
-                                    { value: "교통비", label: "교통비" },
-                                    { value: "식대", label: "식대" },
+                                    { value: "주유", label: "주유" },
+                                    { value: "통행료", label: "통행료" },
+                                    { value: "식비", label: "식비" },
+                                    { value: "자재구매", label: "자재구매" },
+                                    { value: "기타", label: "기타" },
                                 ]}
                                 value={type}
-                                onChange={setType}
+                                onChange={(value) => {
+                                    setType(value);
+                                    if (errors.type) {
+                                        setErrors((prev) => ({ ...prev, type: undefined }));
+                                    }
+                                }}
                             />
+                            {errors.type && (
+                                <p className="text-red-500 text-xs mt-1">{errors.type}</p>
+                            )}
                         </div>
 
                         <div>
                             <Input
                                 label="금액(원)"
                                 value={amount}
-                                onChange={setAmount}
+                                onChange={(value) => {
+                                    setAmount(value);
+                                    if (errors.amount) {
+                                        setErrors((prev) => ({ ...prev, amount: undefined }));
+                                    }
+                                }}
                                 placeholder="예) 26000"
                             />
+                            {errors.amount && (
+                                <p className="text-red-500 text-xs mt-1">{errors.amount}</p>
+                            )}
                         </div>
                     </div>
                 </div>

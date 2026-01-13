@@ -9,6 +9,7 @@ import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
 import { IconMore, IconPlus } from "../../components/icons/Icons";
+import EmptyValueIndicator from "../Expense/components/EmptyValueIndicator";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -328,7 +329,7 @@ export default function ReportListPage() {
                                 {
                                     key: "owner",
                                     label: "작성자",
-                                    width: "96px",
+                                    width: "14%",
                                     render: (_, row: ReportItem) => {
                                         // "MK 강민지" 형식에서 "MK" 추출
                                         const initials =
@@ -354,7 +355,7 @@ export default function ReportListPage() {
                                 {
                                     key: "place",
                                     label: "출장지",
-                                    width: "112px",
+                                    width: "12%",
                                     render: (value) => (
                                         <span className="text-gray-600">
                                             {value}
@@ -364,17 +365,22 @@ export default function ReportListPage() {
                                 {
                                     key: "supervisor",
                                     label: "참관감독",
-                                    width: "96px",
-                                    render: (value) => (
-                                        <span className="text-gray-500">
-                                            {value}
-                                        </span>
-                                    ),
+                                    width: "12%",
+                                    render: (value) => {
+                                        if (value && value.trim() && value !== "—") {
+                                            return (
+                                                <span className="text-gray-500">
+                                                    {value}
+                                                </span>
+                                            );
+                                        }
+                                        return <EmptyValueIndicator />;
+                                    },
                                 },
                                 {
                                     key: "date",
                                     label: "작성일",
-                                    width: "112px",
+                                    width: "12%",
                                     render: (value) => (
                                         <span className="text-gray-600">
                                             {value}
@@ -384,7 +390,7 @@ export default function ReportListPage() {
                                 {
                                     key: "status",
                                     label: "상태",
-                                    width: "112px",
+                                    width: "8%",
                                     render: (_, row: ReportItem) => {
                                         const statusConfig: Record<
                                             ReportStatus,
