@@ -17,6 +17,7 @@ interface EmployeeDetailViewProps {
     mileageColumns: TableColumn<EmployeeMileageDetail>[];
     cardColumns: TableColumn<EmployeeCardExpenseDetail>[];
     variant?: "default" | "dropdown";
+    onHeaderClick?: () => void;
 }
 
 export default function EmployeeDetailView({
@@ -30,6 +31,7 @@ export default function EmployeeDetailView({
     mileageColumns,
     cardColumns,
     variant = "default",
+    onHeaderClick,
 }: EmployeeDetailViewProps) {
     const containerClass =
         variant === "dropdown"
@@ -44,7 +46,19 @@ export default function EmployeeDetailView({
                     <p className={`text-sm text-gray-500`}>
                         {year} {month}
                     </p>
-                    <h2 className="text-lg font-semibold text-gray-800">
+                    <h2
+                        className={`text-xl font-semibold text-gray-800 ${
+                            onHeaderClick && variant === "dropdown"
+                                ? "cursor-pointer transition-colors hover:text-gray-500"
+                                : ""
+                        }`}
+                        onClick={(e) => {
+                            if (onHeaderClick && variant === "dropdown") {
+                                e.stopPropagation();
+                                onHeaderClick();
+                            }
+                        }}
+                    >
                         {employeeName}님의 청구서
                     </h2>
                 </div>

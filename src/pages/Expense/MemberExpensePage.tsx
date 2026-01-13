@@ -244,7 +244,7 @@ export default function MemberExpensePage() {
         {
             key: "receipt_path",
             label: "영수증",
-            render: (value, row) => {
+            render: (_value, row) => {
                 if (row.receipt_path) {
                     return (
                         <button
@@ -319,17 +319,7 @@ export default function MemberExpensePage() {
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-100 text-[11px] text-orange-600 font-semibold">
                         {row.initials}
                     </span>
-                    <span
-                        className="text-gray-900 cursor-pointer hover:text-blue-600 hover:underline"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEmployeeId(row.id);
-                            setUser(row.name.replace(/^[A-Z]{2,3} /, ""));
-                            setActiveTab("mileage");
-                        }}
-                    >
-                        {row.name}
-                    </span>
+                    <span className="text-gray-900">{row.name}</span>
                 </div>
             ),
         },
@@ -534,6 +524,26 @@ export default function MemberExpensePage() {
                                                 mileageColumns={mileageColumns}
                                                 cardColumns={cardColumns}
                                                 variant="dropdown"
+                                                onHeaderClick={() => {
+                                                    const employeeNameWithoutInitials =
+                                                        row.name.replace(
+                                                            /^[A-Z]{2,3} /,
+                                                            ""
+                                                        );
+                                                    setSelectedEmployeeId(
+                                                        row.id
+                                                    );
+                                                    setUser(
+                                                        employeeNameWithoutInitials
+                                                    );
+                                                    setActiveTab("mileage");
+                                                    setExpandedRowKeys((prev) =>
+                                                        prev.filter(
+                                                            (id) =>
+                                                                id !== row.id
+                                                        )
+                                                    );
+                                                }}
                                             />
                                         );
                                     }}

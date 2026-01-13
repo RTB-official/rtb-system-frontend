@@ -19,7 +19,11 @@ function LoginPage() {
     const newErrors: { username?: string; password?: string; common?: string } = {};
 
     if (!username.trim()) newErrors.username = "사용자명을 입력해 주세요";
-    if (!password.trim()) newErrors.password = "비밀번호를 입력해 주세요";
+    if (!password.trim()) {
+      newErrors.password = "비밀번호를 입력해 주세요";
+    } else if (password.length < 6) {
+      newErrors.password = "비밀번호는 최소 6자 이상이어야 합니다.";
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
