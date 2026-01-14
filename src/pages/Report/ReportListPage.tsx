@@ -13,6 +13,8 @@ import EmptyValueIndicator from "../Expense/components/EmptyValueIndicator";
 import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import Avatar from "../../components/common/Avatar";
+import { supabase } from "../../lib/supabase";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -22,6 +24,8 @@ interface ReportItem {
     place: string;
     supervisor: string;
     owner: string;
+    ownerEmail?: string | null;
+    ownerPosition?: string | null;
     date: string;
     status: ReportStatus;
 }
@@ -69,7 +73,47 @@ export default function ReportListPage() {
         try {
             const workLogs = await getWorkLogs();
             const reportItems = workLogs.map(convertToReportItem);
-            setReports(reportItems);
+
+            // 작성자 이름 목록 수집
+            const ownerNames = [
+                ...new Set(
+                    reportItems.map((item) => item.owner).filter(Boolean)
+                ),
+            ];
+
+            // profiles 테이블에서 작성자 정보 조회 (이름으로)
+            const { data: profiles, error: profilesError } = await supabase
+                .from("profiles")
+                .select("name, email, position")
+                .in("name", ownerNames);
+
+            if (profilesError) {
+                console.error("프로필 조회 실패:", profilesError);
+            }
+
+            // 이름을 키로 하는 맵 생성
+            const profileMap = new Map<
+                string,
+                { email: string | null; position: string | null }
+            >();
+            (profiles || []).forEach((profile: any) => {
+                profileMap.set(profile.name, {
+                    email: profile.email || null,
+                    position: profile.position || null,
+                });
+            });
+
+            // ReportItem에 프로필 정보 추가
+            const reportsWithProfiles = reportItems.map((item) => {
+                const profile = profileMap.get(item.owner);
+                return {
+                    ...item,
+                    ownerEmail: profile?.email || null,
+                    ownerPosition: profile?.position || null,
+                };
+            });
+
+            setReports(reportsWithProfiles);
         } catch (error) {
             console.error("Error loading reports:", error);
             showError("보고서 목록을 불러오는 중 오류가 발생했습니다.");
@@ -266,15 +310,18 @@ export default function ReportListPage() {
                                     label: "작성자",
                                     width: "12%",
                                     render: (_, row: ReportItem) => {
-                                        // "MK 강민지" 형식에서 "MK" 추출
-                                        const initials =
-                                            row.owner.split(" ")[0] ||
-                                            row.owner.slice(0, 2);
                                         return (
                                             <div className="flex items-center gap-2">
-                                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-100 text-[11px] text-orange-600 font-semibold">
-                                                    {initials}
-                                                </span>
+                                                <Avatar
+                                                    email={
+                                                        row.ownerEmail || null
+                                                    }
+                                                    size={24}
+                                                    position={
+                                                        row.ownerPosition ||
+                                                        null
+                                                    }
+                                                />
                                                 <span className="text-gray-900">
                                                     {row.owner}
                                                 </span>
