@@ -369,193 +369,194 @@ export default function MembersPage() {
                             <MembersSkeleton />
                         ) : (
                             <div className="overflow-x-auto">
-                            <div className="min-w-[980px]">
-                                <Table
-                                    columns={[
-                                        {
-                                            key: "name",
-                                            label: "이름",
-                                            width: "10%",
-                                            render: (_, row) => (
-                                                <div className="flex items-center gap-3">
-                                                    <Avatar
-                                                        email={row.email}
-                                                        size={24}
-                                                        position={row.role}
-                                                    />
-                                                    <div className="leading-tight">
-                                                        <div className="text-[14px] font-semibold text-gray-900">
-                                                            {row.name}
-                                                        </div>
-                                                        <div className="text-[12px] text-gray-500">
-                                                            {row.username}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ),
-                                        },
-                                        {
-                                            key: "role",
-                                            label: "직급",
-                                            render: (value) => (
-                                                <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
-                                                    {value}
-                                                </div>
-                                            ),
-                                        },
-                                        {
-                                            key: "phone",
-                                            label: "전화번호",
-                                            width: "8%",
-                                            render: (value) => (
-                                                <div className="text-[14px] text-gray-900 w-[140px] min-w-[140px]">
-                                                    {value}
-                                                </div>
-                                            ),
-                                        },
-                                        {
-                                            key: "address",
-                                            label: "주소",
-                                            width: "30%",
-                                            render: (_, row) => (
-                                                <div className="text-[14px] text-gray-900 w-[320px] min-w-[320px]">
-                                                    <div className="truncate">
-                                                        {row.address1}
-                                                    </div>
-                                                    <div className="text-[12px] text-gray-500 mt-1 truncate">
-                                                        {row.address2}
-                                                    </div>
-                                                </div>
-                                            ),
-                                        },
-                                        {
-                                            key: "joinDate",
-                                            label: "입사일",
-                                            render: (value) => (
-                                                <div className="text-[14px] text-gray-900 w-[100px] min-w-[100px]">
-                                                    {value}
-                                                </div>
-                                            ),
-                                        },
-                                        {
-                                            key: "birth",
-                                            label: "생년월일",
-                                            render: (value) => (
-                                                <div className="text-[14px] text-gray-900 w-[110px] min-w-[110px]">
-                                                    {value}
-                                                </div>
-                                            ),
-                                        },
-                                        {
-                                            key: "etc",
-                                            label: "여권정보",
-                                            render: (_, row) => {
-                                                // 251227 -> 25년 12월 만료 형식으로 변환 (YYMMDD)
-                                                let formattedExpiry = "";
-                                                if (
-                                                    row.passportExpiry &&
-                                                    row.passportExpiry
-                                                        .length === 6
-                                                ) {
-                                                    const year =
-                                                        row.passportExpiry.slice(
-                                                            0,
-                                                            2
-                                                        );
-                                                    const month = parseInt(
-                                                        row.passportExpiry.slice(
-                                                            2,
-                                                            4
-                                                        ),
-                                                        10
-                                                    );
-                                                    formattedExpiry = `${year}년 ${month}월 만료`;
-                                                }
-
-                                                // ✅ staff는 타인 여권정보 비노출(본인/관리자만 노출)
-                                                const canSeePassport =
-                                                    isAdmin ||
-                                                    row.id === myUserId;
-
-                                                return (
-                                                    <div className="flex items-start pr-2 w-[260px] min-w-[260px]">
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                <span className="text-[14px] font-semibold text-gray-900 truncate max-w-[140px]">
-                                                                    {canSeePassport
-                                                                        ? row.passportNo ||
-                                                                          "-"
-                                                                        : "-"}
-                                                                </span>
-
-                                                                {canSeePassport &&
-                                                                    formattedExpiry && (
-                                                                        <Chip
-                                                                            color="red-600"
-                                                                            variant="solid"
-                                                                            size="sm"
-                                                                        >
-                                                                            {
-                                                                                formattedExpiry
-                                                                            }
-                                                                        </Chip>
-                                                                    )}
+                                <div className="min-w-[980px]">
+                                    <Table
+                                        columns={[
+                                            {
+                                                key: "name",
+                                                label: "이름",
+                                                width: "10%",
+                                                render: (_, row) => (
+                                                    <div className="flex items-center gap-3">
+                                                        <Avatar
+                                                            email={row.email}
+                                                            size={24}
+                                                            position={row.role}
+                                                        />
+                                                        <div className="leading-tight">
+                                                            <div className="text-[14px] font-semibold text-gray-900">
+                                                                {row.name}
                                                             </div>
-
-                                                            <div className="text-[12px] text-gray-500 uppercase tracking-tight mt-1">
-                                                                {canSeePassport ? (
-                                                                    <>
-                                                                        {
-                                                                            row.passportLastName
-                                                                        }{" "}
-                                                                        {
-                                                                            row.passportFirstName
-                                                                        }
-                                                                    </>
-                                                                ) : (
-                                                                    "-"
-                                                                )}
+                                                            <div className="text-[12px] text-gray-500">
+                                                                {row.username}
                                                             </div>
                                                         </div>
-                                                        {(isAdmin ||
-                                                            row.id ===
-                                                                myUserId) && (
-                                                            <button
-                                                                className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
-                                                                onClick={(
-                                                                    e
-                                                                ) => {
-                                                                    e.stopPropagation();
-                                                                    setSelectedMemberId(
-                                                                        row.id
-                                                                    );
-                                                                    setActionAnchor(
-                                                                        e.currentTarget
-                                                                    );
-                                                                    setActionOpen(
-                                                                        true
-                                                                    );
-                                                                }}
-                                                                aria-label="more"
-                                                            >
-                                                                <IconMore className="w-5 h-5" />
-                                                            </button>
-                                                        )}
                                                     </div>
-                                                );
+                                                ),
                                             },
-                                        },
-                                    ]}
-                                    data={pagedMembers}
-                                    rowKey="id"
-                                    pagination={{
-                                        currentPage: page,
-                                        totalPages: pageCount,
-                                        onPageChange: setPage,
-                                    }}
-                                />
+                                            {
+                                                key: "role",
+                                                label: "직급",
+                                                render: (value) => (
+                                                    <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
+                                                        {value}
+                                                    </div>
+                                                ),
+                                            },
+                                            {
+                                                key: "phone",
+                                                label: "전화번호",
+                                                width: "8%",
+                                                render: (value) => (
+                                                    <div className="text-[14px] text-gray-900 w-[140px] min-w-[140px]">
+                                                        {value}
+                                                    </div>
+                                                ),
+                                            },
+                                            {
+                                                key: "address",
+                                                label: "주소",
+                                                width: "28%",
+                                                render: (_, row) => (
+                                                    <div className="text-[14px] text-gray-900 w-[320px] min-w-[320px]">
+                                                        <div className="truncate">
+                                                            {row.address1}
+                                                        </div>
+                                                        <div className="text-[12px] text-gray-500 mt-1 truncate">
+                                                            {row.address2}
+                                                        </div>
+                                                    </div>
+                                                ),
+                                            },
+                                            {
+                                                key: "joinDate",
+                                                label: "입사일",
+                                                render: (value) => (
+                                                    <div className="text-[14px] text-gray-900 w-[100px] min-w-[100px]">
+                                                        {value}
+                                                    </div>
+                                                ),
+                                            },
+                                            {
+                                                key: "birth",
+                                                label: "생년월일",
+                                                render: (value) => (
+                                                    <div className="text-[14px] text-gray-900 w-[110px] min-w-[110px]">
+                                                        {value}
+                                                    </div>
+                                                ),
+                                            },
+                                            {
+                                                key: "etc",
+                                                label: "여권정보",
+                                                width: "20%",
+                                                render: (_, row) => {
+                                                    // 251227 -> 25년 12월 만료 형식으로 변환 (YYMMDD)
+                                                    let formattedExpiry = "";
+                                                    if (
+                                                        row.passportExpiry &&
+                                                        row.passportExpiry
+                                                            .length === 6
+                                                    ) {
+                                                        const year =
+                                                            row.passportExpiry.slice(
+                                                                0,
+                                                                2
+                                                            );
+                                                        const month = parseInt(
+                                                            row.passportExpiry.slice(
+                                                                2,
+                                                                4
+                                                            ),
+                                                            10
+                                                        );
+                                                        formattedExpiry = `${year}년 ${month}월 만료`;
+                                                    }
+
+                                                    // ✅ staff는 타인 여권정보 비노출(본인/관리자만 노출)
+                                                    const canSeePassport =
+                                                        isAdmin ||
+                                                        row.id === myUserId;
+
+                                                    return (
+                                                        <div className="flex items-start pr-2 w-[260px] min-w-[260px]">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span className="text-[14px] font-semibold text-gray-900 truncate max-w-[140px]">
+                                                                        {canSeePassport
+                                                                            ? row.passportNo ||
+                                                                              "-"
+                                                                            : "-"}
+                                                                    </span>
+
+                                                                    {canSeePassport &&
+                                                                        formattedExpiry && (
+                                                                            <Chip
+                                                                                color="red-600"
+                                                                                variant="solid"
+                                                                                size="sm"
+                                                                            >
+                                                                                {
+                                                                                    formattedExpiry
+                                                                                }
+                                                                            </Chip>
+                                                                        )}
+                                                                </div>
+
+                                                                <div className="text-[12px] text-gray-500 uppercase tracking-tight mt-1">
+                                                                    {canSeePassport ? (
+                                                                        <>
+                                                                            {
+                                                                                row.passportLastName
+                                                                            }{" "}
+                                                                            {
+                                                                                row.passportFirstName
+                                                                            }
+                                                                        </>
+                                                                    ) : (
+                                                                        "-"
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            {(isAdmin ||
+                                                                row.id ===
+                                                                    myUserId) && (
+                                                                <button
+                                                                    className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
+                                                                    onClick={(
+                                                                        e
+                                                                    ) => {
+                                                                        e.stopPropagation();
+                                                                        setSelectedMemberId(
+                                                                            row.id
+                                                                        );
+                                                                        setActionAnchor(
+                                                                            e.currentTarget
+                                                                        );
+                                                                        setActionOpen(
+                                                                            true
+                                                                        );
+                                                                    }}
+                                                                    aria-label="more"
+                                                                >
+                                                                    <IconMore className="w-5 h-5" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                },
+                                            },
+                                        ]}
+                                        data={pagedMembers}
+                                        rowKey="id"
+                                        pagination={{
+                                            currentPage: page,
+                                            totalPages: pageCount,
+                                            onPageChange: setPage,
+                                        }}
+                                    />
+                                </div>
                             </div>
-                        </div>
                         )}
 
                         {/* 바닥 여백 */}
