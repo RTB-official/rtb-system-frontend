@@ -9,6 +9,7 @@ import DashboardPage from "./pages/Dashboard/DashboardPage";
 import PersonalExpensePage from "./pages/Expense/PersonalExpensePage";
 import MemberExpensePage from "./pages/Expense/MemberExpensePage";
 import VacationPage from "./pages/Vacation/VacationPage";
+import AdminVacationPage from "./pages/Vacation/AdminVacationPage";
 import MembersPage from "./pages/Members/MembersPage";
 
 import { AuthProvider } from "./store/auth";
@@ -30,6 +31,7 @@ function App() {
             <Route path="/reportcreate" element={<CreationPage />} />
             <Route path="/report" element={<ReportListPage />} />
             <Route path="/vacation" element={<VacationPage />} />
+            <Route path="/vacation/admin" element={<AdminVacationPage />} />
             <Route path="/expense" element={<PersonalExpensePage />} />
             <Route path="/expense/member" element={<MemberExpensePage />} />
             <Route path="/members" element={<MembersPage />} />
