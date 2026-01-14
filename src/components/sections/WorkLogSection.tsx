@@ -3,12 +3,14 @@ import SectionCard from "../ui/SectionCard";
 import Select from "../common/Select";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
+import RequiredIndicator from "../ui/RequiredIndicator";
 import {
     useWorkReportStore,
     calcDurationHours,
     toKoreanTime,
 } from "../../store/workReportStore";
 import { IconEdit, IconTrash, IconClose } from "../icons/Icons";
+import ConfirmDialog from "../ui/ConfirmDialog";
 
 // 시간 선택 옵션
 const hourOptions = Array.from({ length: 25 }, (_, i) => ({
@@ -58,8 +60,21 @@ export default function WorkLogSection() {
     // 경유지 상태
     const [hasDetour, setHasDetour] = useState(false);
 
+    // 삭제 확인 모달
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+
     // 폼 영역 ref (수정 시 스크롤용)
     const formRef = useRef<HTMLDivElement>(null);
+
+    // 에러 상태
+    const [errors, setErrors] = useState<{
+        dateFrom?: string;
+        timeFrom?: string;
+        dateTo?: string;
+        timeTo?: string;
+        descType?: string;
+    }>({});
 
     // 시간 분리
     const [timeFromHour, timeFromMin] = (currentEntry.timeFrom || "").split(
@@ -169,6 +184,7 @@ export default function WorkLogSection() {
                                     <div className="w-3 h-3 rounded-[4px] bg-green-500"></div>
                                     <p className="font-semibold text-[14px] text-gray-800">
                                         시작
+                                        <RequiredIndicator />
                                     </p>
                                 </div>
                                 <div className="flex flex-col gap-2">
@@ -181,39 +197,64 @@ export default function WorkLogSection() {
                                                     dateTo: val,
                                                 });
                                             }
+                                            if (errors.dateFrom) {
+                                                setErrors((prev) => ({
+                                                    ...prev,
+                                                    dateFrom: undefined,
+                                                }));
+                                            }
                                         }}
                                         placeholder="날짜 선택"
+                                        error={errors.dateFrom}
                                     />
                                     <div className="flex gap-2">
-                                        <Select
-                                            value={timeFromHour || ""}
-                                            onChange={(val) =>
-                                                handleTimeChange(
-                                                    "from",
-                                                    "hour",
-                                                    val
-                                                )
-                                            }
-                                            options={hourOptions}
-                                            placeholder="시"
-                                            className="flex-1"
-                                            size="sm"
-                                            fullWidth
-                                        />
-                                        <Select
-                                            value={timeFromMin || "00"}
-                                            onChange={(val) =>
-                                                handleTimeChange(
-                                                    "from",
-                                                    "min",
-                                                    val
-                                                )
-                                            }
-                                            options={minuteOptions}
-                                            className="flex-1"
-                                            size="sm"
-                                            fullWidth
-                                        />
+                                        <div className="flex-1 flex flex-col gap-1">
+                                            <Select
+                                                value={timeFromHour || ""}
+                                                onChange={(val) => {
+                                                    handleTimeChange(
+                                                        "from",
+                                                        "hour",
+                                                        val
+                                                    );
+                                                    if (errors.timeFrom) {
+                                                        setErrors((prev) => ({
+                                                            ...prev,
+                                                            timeFrom: undefined,
+                                                        }));
+                                                    }
+                                                }}
+                                                options={hourOptions}
+                                                placeholder="시"
+                                                className="flex-1"
+                                                size="sm"
+                                                fullWidth
+                                                error={errors.timeFrom}
+                                            />
+                                        </div>
+                                        <div className="flex-1 flex flex-col gap-1">
+                                            <Select
+                                                value={timeFromMin || "00"}
+                                                onChange={(val) => {
+                                                    handleTimeChange(
+                                                        "from",
+                                                        "min",
+                                                        val
+                                                    );
+                                                    if (errors.timeFrom) {
+                                                        setErrors((prev) => ({
+                                                            ...prev,
+                                                            timeFrom: undefined,
+                                                        }));
+                                                    }
+                                                }}
+                                                options={minuteOptions}
+                                                className="flex-1"
+                                                size="sm"
+                                                fullWidth
+                                                error={errors.timeFrom}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -225,46 +266,72 @@ export default function WorkLogSection() {
                                     <div className="w-3 h-3 rounded-[4px] bg-red-500"></div>
                                     <p className="font-semibold text-[14px] text-gray-800">
                                         종료
+                                        <RequiredIndicator />
                                     </p>
                                 </div>
                                 <div className="flex flex-col gap-2">
                                     <DatePicker
                                         value={currentEntry.dateTo || ""}
-                                        onChange={(val) =>
-                                            setCurrentEntry({ dateTo: val })
-                                        }
+                                        onChange={(val) => {
+                                            setCurrentEntry({ dateTo: val });
+                                            if (errors.dateTo) {
+                                                setErrors((prev) => ({
+                                                    ...prev,
+                                                    dateTo: undefined,
+                                                }));
+                                            }
+                                        }}
                                         placeholder="날짜 선택"
+                                        error={errors.dateTo}
                                     />
                                     <div className="flex gap-2">
-                                        <Select
-                                            value={timeToHour || ""}
-                                            onChange={(val) =>
-                                                handleTimeChange(
-                                                    "to",
-                                                    "hour",
-                                                    val
-                                                )
-                                            }
-                                            options={hourOptions}
-                                            placeholder="시"
-                                            className="flex-1"
-                                            size="sm"
-                                            fullWidth
-                                        />
-                                        <Select
-                                            value={timeToMin || "00"}
-                                            onChange={(val) =>
-                                                handleTimeChange(
-                                                    "to",
-                                                    "min",
-                                                    val
-                                                )
-                                            }
-                                            options={minuteOptions}
-                                            className="flex-1"
-                                            size="sm"
-                                            fullWidth
-                                        />
+                                        <div className="flex-1 flex flex-col gap-1">
+                                            <Select
+                                                value={timeToHour || ""}
+                                                onChange={(val) => {
+                                                    handleTimeChange(
+                                                        "to",
+                                                        "hour",
+                                                        val
+                                                    );
+                                                    if (errors.timeTo) {
+                                                        setErrors((prev) => ({
+                                                            ...prev,
+                                                            timeTo: undefined,
+                                                        }));
+                                                    }
+                                                }}
+                                                options={hourOptions}
+                                                placeholder="시"
+                                                className="flex-1"
+                                                size="sm"
+                                                fullWidth
+                                                error={errors.timeTo}
+                                            />
+                                        </div>
+                                        <div className="flex-1 flex flex-col gap-1">
+                                            <Select
+                                                value={timeToMin || "00"}
+                                                onChange={(val) => {
+                                                    handleTimeChange(
+                                                        "to",
+                                                        "min",
+                                                        val
+                                                    );
+                                                    if (errors.timeTo) {
+                                                        setErrors((prev) => ({
+                                                            ...prev,
+                                                            timeTo: undefined,
+                                                        }));
+                                                    }
+                                                }}
+                                                options={minuteOptions}
+                                                className="flex-1"
+                                                size="sm"
+                                                fullWidth
+                                                error={errors.timeTo}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -277,17 +344,25 @@ export default function WorkLogSection() {
                             label="유형"
                             placeholder="선택"
                             fullWidth
+                            required
                             options={descTypeOptions}
                             value={currentEntry.descType || ""}
-                            onChange={(v) =>
+                            onChange={(v) => {
                                 setCurrentEntry({
                                     descType: v as
                                         | ""
                                         | "작업"
                                         | "이동"
                                         | "대기",
-                                })
-                            }
+                                });
+                                if (errors.descType) {
+                                    setErrors((prev) => ({
+                                        ...prev,
+                                        descType: undefined,
+                                    }));
+                                }
+                            }}
+                            error={errors.descType}
                         />
                     </div>
                     {/* 이동일 때 From/To 선택 */}
@@ -306,7 +381,7 @@ export default function WorkLogSection() {
                                         return (
                                             <Button
                                                 key={place}
-                                                size="sm"
+                                                size="md"
                                                 variant={
                                                     currentEntry.moveFrom ===
                                                     resolvedPlace
@@ -341,7 +416,7 @@ export default function WorkLogSection() {
                                         return (
                                             <Button
                                                 key={place}
-                                                size="lg"
+                                                size="md"
                                                 variant={
                                                     currentEntry.moveTo ===
                                                     resolvedPlace
@@ -359,7 +434,7 @@ export default function WorkLogSection() {
                                         );
                                     })}
                                     <Button
-                                        size="lg"
+                                        size="md"
                                         variant={
                                             hasDetour ? "primary" : "outline"
                                         }
@@ -375,7 +450,8 @@ export default function WorkLogSection() {
                     {/* 상세내용 */}
                     <div className="flex flex-col gap-2">
                         <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
-                            상세내용
+                            상세 내용
+                            <RequiredIndicator />
                         </label>
                         <textarea
                             placeholder="수행한 업무 내용을 자세히 기록해주세요"
@@ -389,9 +465,12 @@ export default function WorkLogSection() {
 
                     {/* 참여 인원 선택 */}
                     <div className="flex flex-col gap-3">
-                        <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
-                            참여 인원 선택
-                        </label>
+                        <div className="flex items-center">
+                            <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
+                                참여 인원 선택
+                            </label>
+                            <RequiredIndicator />
+                        </div>
 
                         {/* 선택 가능한 작업자 */}
                         <div className="border border-[#e5e7eb] rounded-xl p-4">
@@ -460,7 +539,7 @@ export default function WorkLogSection() {
                         </div>
 
                         {/* 선택된 인원 */}
-                        <div className="border-2 border-blue-300 rounded-2xl px-4 py-3">
+                        <div className="border-2 border-blue-300 rounded-2xl px-4 py-3 mt-2">
                             <div className="flex items-center gap-1 mb-3">
                                 <svg
                                     width="20"
@@ -502,8 +581,6 @@ export default function WorkLogSection() {
                                 )}
                             </div>
                         </div>
-                    </div>
-
                     {/* 작업일 때 점심 체크박스 */}
                     {currentEntry.descType === "작업" && (
                         <label className="flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
@@ -515,7 +592,7 @@ export default function WorkLogSection() {
                                     setCurrentEntry({ noLunch: checked });
                                     // 특이사항에 자동 추가/제거
                                     const noLunchText =
-                                        "점심 안먹고 작업진행(12:00~13:00)";
+                                        "점심 안 먹고 작업진행(12:00~13:00)";
                                     const currentNote = currentEntry.note || "";
                                     if (checked) {
                                         if (
@@ -540,7 +617,7 @@ export default function WorkLogSection() {
                             />
                             <div className="flex flex-col">
                                 <span className="text-[14px] font-semibold text-[#92400e]">
-                                    점심 안먹고 작업진행(12:00~13:00)
+                                    점심 안 먹고 작업진행 (12:00~13:00)
                                 </span>
                                 <span className="text-[12px] text-[#b45309]">
                                     ※운항선 작업일 때 체크해주세요.
@@ -548,14 +625,16 @@ export default function WorkLogSection() {
                             </div>
                         </label>
                     )}
+                    </div>
+
 
                     {/* 특이사항 */}
                     <div className="flex flex-col gap-2">
                         <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
-                            특이사항
+                            특이 사항
                         </label>
                         <textarea
-                            placeholder="특이사항이 있으면 입력해주세요"
+                            placeholder="특이 사항이 있으면 입력해주세요"
                             value={currentEntry.note || ""}
                             onChange={(e) =>
                                 setCurrentEntry({ note: e.target.value })
@@ -566,13 +645,45 @@ export default function WorkLogSection() {
                 </div>
 
                 {/* 저장 버튼 */}
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                     <Button
                         onClick={() => {
+                            // 유효성 검사
+                            const newErrors: typeof errors = {};
+                            if (!currentEntry.dateFrom) {
+                                newErrors.dateFrom = "시작 날짜를 선택해주세요";
+                            }
+                            if (!currentEntry.timeFrom || !timeFromHour) {
+                                newErrors.timeFrom = "시작 시간을 선택해주세요";
+                            }
+                            if (!currentEntry.dateTo) {
+                                newErrors.dateTo = "종료 날짜를 선택해주세요";
+                            }
+                            if (!currentEntry.timeTo || !timeToHour) {
+                                newErrors.timeTo = "종료 시간을 선택해주세요";
+                            }
+                            if (!currentEntry.descType) {
+                                newErrors.descType = "유형을 선택해주세요";
+                            }
+
+                            if (Object.keys(newErrors).length > 0) {
+                                setErrors(newErrors);
+                                // 에러가 있는 첫 번째 필드로 스크롤
+                                if (formRef.current) {
+                                    formRef.current.scrollIntoView({
+                                        behavior: "smooth",
+                                        block: "start",
+                                    });
+                                }
+                                return;
+                            }
+
+                            setErrors({});
                             saveWorkLogEntry();
                             setHasDetour(false);
                         }}
                         variant="primary"
+                        size="lg"
                         fullWidth
                     >
                         {editingEntryId ? "수정 저장" : "저장"}
@@ -584,7 +695,8 @@ export default function WorkLogSection() {
                                 setHasDetour(false);
                             }}
                             variant="outline"
-                            className="px-6"
+                            size="lg"
+                            width={"10%"}
                         >
                             취소
                         </Button>
@@ -594,7 +706,7 @@ export default function WorkLogSection() {
                 {/* 저장된 일지 목록 */}
                 {sortedEntries.length > 0 && (
                     <div className="flex flex-col gap-3">
-                        <div className="h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
+                        <div className="h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
                         {sortedEntries.map((entry, index) => {
                             const hours = calcDurationHours(
                                 entry.dateFrom,
@@ -681,13 +793,13 @@ export default function WorkLogSection() {
                                                     </div>
 
                                                     {/* 시간 정보 */}
-                                                    <div className="flex items-center gap-2 text-[13px] text-slate-600 mb-2">
+                                                    <div className="flex items-center gap-2 text-[13px] text-gray-600 mb-2">
                                                         <svg
                                                             width="16"
                                                             height="16"
                                                             viewBox="0 0 24 24"
                                                             fill="currentColor"
-                                                            className="text-slate-400"
+                                                            className="text-gray-400"
                                                         >
                                                             <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                         </svg>
@@ -697,7 +809,7 @@ export default function WorkLogSection() {
                                                                 entry.timeFrom
                                                             )}
                                                         </span>
-                                                        <span className="text-slate-400">
+                                                        <span className="text-gray-400">
                                                             →
                                                         </span>
                                                         <span>
@@ -709,13 +821,13 @@ export default function WorkLogSection() {
                                                     </div>
 
                                                     {/* 인원 */}
-                                                    <div className="flex items-center gap-2 text-[13px] text-slate-600">
+                                                    <div className="flex items-center gap-2 text-[13px] text-gray-600">
                                                         <svg
                                                             width="16"
                                                             height="16"
                                                             viewBox="0 0 24 24"
                                                             fill="currentColor"
-                                                            className="text-slate-400"
+                                                            className="text-gray-400"
                                                         >
                                                             <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                                                         </svg>
@@ -726,7 +838,7 @@ export default function WorkLogSection() {
                                                             }
                                                             명
                                                         </span>
-                                                        <span className="text-slate-400">
+                                                        <span className="text-gray-400">
                                                             |
                                                         </span>
                                                         <span className="truncate max-w-[200px]">
@@ -750,7 +862,7 @@ export default function WorkLogSection() {
                                                         height="20"
                                                         viewBox="0 0 24 24"
                                                         fill="none"
-                                                        className="text-slate-500"
+                                                        className="text-gray-500"
                                                     >
                                                         <path
                                                             d="M7 10L12 15L17 10"
@@ -775,11 +887,11 @@ export default function WorkLogSection() {
                                             <div className="px-4 pb-4 border-t border-white/50">
                                                 <div className="pt-4 space-y-3">
                                                     {/* 상세내용 */}
-                                                    <div className="bg-white/60 rounded-xl p-3">
-                                                        <p className="text-[12px] text-slate-500 mb-1">
-                                                            상세내용
+                                                    <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                                        <p className="text-[13px] text-gray-500 mb-1">
+                                                            상세 내용
                                                         </p>
-                                                        <p className="text-[14px] text-slate-800">
+                                                        <p className="text-[15px] text-gray-800">
                                                             {entry.details ||
                                                                 "-"}
                                                         </p>
@@ -787,11 +899,11 @@ export default function WorkLogSection() {
 
                                                     {/* 특이사항 */}
                                                     {entry.note && (
-                                                        <div className="bg-white/60 rounded-xl p-3">
-                                                            <p className="text-[12px] text-slate-500 mb-1">
-                                                                특이사항
+                                                        <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                                            <p className="text-[13px] text-gray-500 mb-1">
+                                                                특이 사항
                                                             </p>
-                                                            <p className="text-[14px] text-slate-800">
+                                                            <p className="text-[15px] text-gray-800">
                                                                 {entry.note}
                                                             </p>
                                                         </div>
@@ -819,7 +931,7 @@ export default function WorkLogSection() {
                                                                 );
                                                             }}
                                                             variant="outline"
-                                                            size="lg"
+                                                            size="md"
                                                             fullWidth
                                                             icon={
                                                                 <IconEdit className="w-4 h-4" />
@@ -830,17 +942,11 @@ export default function WorkLogSection() {
                                                         <Button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                if (
-                                                                    confirm(
-                                                                        "삭제하시겠습니까?"
-                                                                    )
-                                                                )
-                                                                    deleteWorkLogEntry(
-                                                                        entry.id
-                                                                    );
+                                                                setDeleteTargetId(entry.id);
+                                                                setDeleteConfirmOpen(true);
                                                             }}
                                                             variant="outline"
-                                                            size="sm"
+                                                            size="md"
                                                             fullWidth
                                                             icon={
                                                                 <IconTrash className="w-4 h-4" />
@@ -859,6 +965,27 @@ export default function WorkLogSection() {
                     </div>
                 )}
             </div>
+
+            {/* 삭제 확인 다이얼로그 */}
+            <ConfirmDialog
+                isOpen={deleteConfirmOpen}
+                onClose={() => {
+                    setDeleteConfirmOpen(false);
+                    setDeleteTargetId(null);
+                }}
+                onConfirm={() => {
+                    if (deleteTargetId !== null) {
+                        deleteWorkLogEntry(deleteTargetId);
+                        setDeleteConfirmOpen(false);
+                        setDeleteTargetId(null);
+                    }
+                }}
+                title="삭제 확인"
+                message="해당 출장 업무 일지를 삭제하시겠습니까?"
+                confirmText="삭제"
+                cancelText="취소"
+                confirmVariant="danger"
+            />
         </SectionCard>
     );
 }

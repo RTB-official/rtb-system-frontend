@@ -132,6 +132,7 @@ interface WorkReportState {
   setLocation: (location: string) => void;
   setLocationCustom: (custom: string) => void;
   toggleVehicle: (vehicle: string) => void;
+  setVehicles: (vehicles: string[]) => void;
   setSubject: (subject: string) => void;
   
   // Actions - 작업자
@@ -146,6 +147,7 @@ interface WorkReportState {
   addAllCurrentEntryPersons: () => void;
   addRegionPersonsToEntry: (region: string) => void;
   saveWorkLogEntry: () => void;
+  setWorkLogEntries: (entries: WorkLogEntry[]) => void;
   deleteWorkLogEntry: (id: number) => void;
   editWorkLogEntry: (id: number) => void;
   cancelEditEntry: () => void;
@@ -217,6 +219,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       ? state.vehicles.filter((v) => v !== vehicle)
       : [...state.vehicles, vehicle],
   })),
+  setVehicles: (vehicles) => set({ vehicles }),
   setSubject: (subject) => set({ subject }),
   
   // 작업자 Actions
@@ -305,6 +308,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       currentEntryPersons: [],
     };
   }),
+  setWorkLogEntries: (entries) => set({ workLogEntries: entries }),
   deleteWorkLogEntry: (id) => set((state) => ({
     workLogEntries: state.workLogEntries.filter((e) => e.id !== id),
   })),

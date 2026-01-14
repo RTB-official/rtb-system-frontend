@@ -251,6 +251,7 @@ function Popover({ segment, position }: PopoverProps) {
     );
 }
 
+export default function TimelineSummarySection() {
 type TimelineGroup = {
     signature: string;
     persons: string[];
@@ -816,24 +817,6 @@ export default function TimelineSummarySection({
                     position={hoveredSegment.position}
                 />
             )}
-
-            {/* 하단 액션바 */}
-            <div className="mt-6 p-4 bg-[#f9fafb] border border-[#e5e7eb] rounded-xl flex justify-between items-center">
-                <Button
-                    onClick={onDraftSave}
-                    variant="outline"
-                    className="rounded-full px-6"
-                >
-                    임시저장
-                </Button>
-                <Button
-                    onClick={onSubmit}
-                    variant="primary"
-                    className="rounded-full px-8"
-                >
-                    제출하기
-                </Button>
-            </div>
         </div>
     );
 }

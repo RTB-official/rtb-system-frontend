@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -10,6 +10,9 @@ import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
 import { IconMore, IconPlus } from "../../components/icons/Icons";
 import EmptyValueIndicator from "../Expense/components/EmptyValueIndicator";
+import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
+import { useToast } from "../../components/ui/ToastProvider";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -23,117 +26,6 @@ interface ReportItem {
     status: ReportStatus;
 }
 
-const MOCK_REPORTS: ReportItem[] = [
-    {
-        id: 1,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.26.",
-        status: "pending",
-    },
-    {
-        id: 2,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.25.",
-        status: "submitted",
-    },
-    {
-        id: 3,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 4,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "pending",
-    },
-    {
-        id: 5,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 6,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 7,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 8,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 9,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 10,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 11,
-        title: "11월13일 K-2010A3 cylinder overhaul후 시운전",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-    {
-        id: 12,
-        title: "11월26일~11월27일 SH8218 Replacement of guide tool for LGI Connector Pipe, Installation of blow off Valves Leakage test",
-        place: "S-OIL 온산",
-        supervisor: "—",
-        owner: "MK 강민지",
-        date: "2025.11.24.",
-        status: "submitted",
-    },
-];
-
 export default function ReportListPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -142,8 +34,51 @@ export default function ReportListPage() {
     const [openMenuId, setOpenMenuId] = useState<number | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
+    const [reports, setReports] = useState<ReportItem[]>([]);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const itemsPerPage = 10;
     const navigate = useNavigate();
+    const { showSuccess, showError, showInfo } = useToast();
+
+    // 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}.${month}.${day}.`;
+    };
+
+    // WorkLog를 ReportItem으로 변환
+    const convertToReportItem = (workLog: WorkLog): ReportItem => {
+        return {
+            id: workLog.id,
+            title: workLog.subject || "(제목 없음)",
+            place: workLog.location || "—",
+            supervisor: workLog.order_person || "—",
+            owner: workLog.author || "(작성자 없음)",
+            date: formatDate(workLog.created_at),
+            status: workLog.is_draft ? "pending" : "submitted",
+        };
+    };
+
+    // 데이터 로드
+    const loadReports = async () => {
+        try {
+            const workLogs = await getWorkLogs();
+            const reportItems = workLogs.map(convertToReportItem);
+            setReports(reportItems);
+        } catch (error) {
+            console.error("Error loading reports:", error);
+            showError("보고서 목록을 불러오는 중 오류가 발생했습니다.");
+        }
+    };
+
+    useEffect(() => {
+        loadReports();
+    }, []);
 
     const isFilterActive = year !== "년도 전체" || month !== "월 전체";
 
@@ -154,7 +89,7 @@ export default function ReportListPage() {
     };
 
     const filtered = useMemo(() => {
-        return MOCK_REPORTS.filter((r) => {
+        return reports.filter((r) => {
             const matchSearch =
                 r.title.includes(search) ||
                 r.owner.includes(search) ||
@@ -176,7 +111,7 @@ export default function ReportListPage() {
 
             return matchSearch && matchYear && matchMonth;
         });
-    }, [search, year, month]);
+    }, [reports, search, year, month]);
 
     const totalPages = Math.ceil(filtered.length / itemsPerPage);
     const currentData = useMemo(() => {
@@ -329,7 +264,7 @@ export default function ReportListPage() {
                                 {
                                     key: "owner",
                                     label: "작성자",
-                                    width: "14%",
+                                    width: "12%",
                                     render: (_, row: ReportItem) => {
                                         // "MK 강민지" 형식에서 "MK" 추출
                                         const initials =
@@ -350,24 +285,37 @@ export default function ReportListPage() {
                                 {
                                     key: "title",
                                     label: "제목",
-                                    width: "45%",
+                                    width: "36%",
                                 },
                                 {
                                     key: "place",
                                     label: "출장지",
                                     width: "12%",
-                                    render: (value) => (
-                                        <span className="text-gray-600">
-                                            {value}
-                                        </span>
-                                    ),
+                                    render: (value) => {
+                                        if (
+                                            value &&
+                                            value.trim() &&
+                                            value !== "—"
+                                        ) {
+                                            return (
+                                                <span className="text-gray-600">
+                                                    {value}
+                                                </span>
+                                            );
+                                        }
+                                        return <EmptyValueIndicator />;
+                                    },
                                 },
                                 {
                                     key: "supervisor",
                                     label: "참관감독",
                                     width: "12%",
                                     render: (value) => {
-                                        if (value && value.trim() && value !== "—") {
+                                        if (
+                                            value &&
+                                            value.trim() &&
+                                            value !== "—"
+                                        ) {
                                             return (
                                                 <span className="text-gray-500">
                                                     {value}
@@ -390,7 +338,7 @@ export default function ReportListPage() {
                                 {
                                     key: "status",
                                     label: "상태",
-                                    width: "8%",
+                                    width: "10%",
                                     render: (_, row: ReportItem) => {
                                         const statusConfig: Record<
                                             ReportStatus,
@@ -427,7 +375,7 @@ export default function ReportListPage() {
                                 {
                                     key: "actions",
                                     label: "",
-                                    width: "40px",
+                                    width: "12%",
                                     align: "right",
                                     render: (_, row: ReportItem) => (
                                         <div className="relative inline-flex">
@@ -458,33 +406,20 @@ export default function ReportListPage() {
                                                     setMenuAnchor(null);
                                                 }}
                                                 onEdit={() => {
-                                                    console.log(
-                                                        "수정:",
-                                                        row.id
+                                                    navigate(
+                                                        `/reportcreate?id=${row.id}`
                                                     );
-                                                    alert(`수정: ${row.id}`);
                                                 }}
                                                 onDelete={() => {
-                                                    if (
-                                                        confirm(
-                                                            "정말 삭제하시겠습니까?"
-                                                        )
-                                                    ) {
-                                                        console.log(
-                                                            "삭제:",
-                                                            row.id
-                                                        );
-                                                        alert(
-                                                            `삭제 완료: ${row.id}`
-                                                        );
-                                                    }
+                                                    setDeleteTargetId(row.id);
+                                                    setDeleteConfirmOpen(true);
                                                 }}
                                                 onDownload={() => {
                                                     console.log(
                                                         "PDF 다운로드:",
                                                         row.id
                                                     );
-                                                    alert(
+                                                    showInfo(
                                                         `PDF 다운로드: ${row.id}`
                                                     );
                                                 }}
@@ -506,6 +441,42 @@ export default function ReportListPage() {
                     </div>
                 </div>
             </div>
+
+            {/* 삭제 확인 다이얼로그 */}
+            <ConfirmDialog
+                isOpen={deleteConfirmOpen}
+                onClose={() => {
+                    setDeleteConfirmOpen(false);
+                    setDeleteTargetId(null);
+                }}
+                onConfirm={async () => {
+                    if (!deleteTargetId) return;
+                    setIsDeleting(true);
+                    try {
+                        await deleteWorkLog(deleteTargetId);
+                        await loadReports();
+                        showSuccess("삭제되었습니다.");
+                        setDeleteConfirmOpen(false);
+                        setDeleteTargetId(null);
+                    } catch (error: any) {
+                        console.error("Error deleting report:", error);
+                        showError(
+                            `삭제 실패: ${
+                                error.message ||
+                                "알 수 없는 오류가 발생했습니다."
+                            }`
+                        );
+                    } finally {
+                        setIsDeleting(false);
+                    }
+                }}
+                title="삭제 확인"
+                message="정말 삭제하시겠습니까?"
+                confirmText="삭제"
+                cancelText="취소"
+                confirmVariant="danger"
+                isLoading={isDeleting}
+            />
         </div>
     );
 }

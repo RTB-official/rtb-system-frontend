@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import SectionCard from "../ui/SectionCard";
 import Chip from "../ui/Chip";
 import TextInput from "../ui/TextInput";
@@ -10,17 +10,37 @@ export default function WorkerSection() {
     const { workers, addWorker, removeWorker } = useWorkReportStore();
     const [showDirectInput, setShowDirectInput] = useState(false);
     const [inputValue, setInputValue] = useState("");
+    const [isAdding, setIsAdding] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const handleAddWorker = () => {
-        if (inputValue.trim()) {
-            addWorker(inputValue.trim());
-            setInputValue("");
+        if (isAdding) return; // 이미 추가 중이면 무시
+        const trimmed = inputValue.trim();
+        if (!trimmed) return;
+        
+        setIsAdding(true);
+        const valueToAdd = trimmed;
+        
+        // 입력 필드 즉시 비우기
+        setInputValue("");
+        if (inputRef.current) {
+            inputRef.current.value = "";
         }
+        
+        addWorker(valueToAdd);
+        // 다음 이벤트 루프에서 다시 추가 가능하도록
+        setTimeout(() => setIsAdding(false), 0);
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
             e.preventDefault();
+            e.stopPropagation();
+            // 입력 필드 즉시 비우기 (상태와 DOM 모두)
+            setInputValue("");
+            if (inputRef.current) {
+                inputRef.current.value = "";
+            }
             handleAddWorker();
         }
     };
@@ -85,6 +105,8 @@ export default function WorkerSection() {
                                 placeholder="이름 입력 후 추가 또는 Enter"
                                 value={inputValue}
                                 onChange={setInputValue}
+                                onKeyDown={handleKeyDown}
+                                inputRef={inputRef}
                             />
                         </div>
                         <Button
@@ -92,7 +114,6 @@ export default function WorkerSection() {
                             variant="primary"
                             size="lg"
                             onClick={handleAddWorker}
-                            onKeyDown={handleKeyDown}
                         >
                             추가
                         </Button>

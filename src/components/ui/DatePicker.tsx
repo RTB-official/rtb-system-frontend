@@ -18,6 +18,7 @@ interface DatePickerProps {
     onClick?: () => void;
     minYear?: number;
     maxYear?: number;
+    error?: string;
 }
 
 interface PopupPosition {
@@ -37,6 +38,7 @@ export default function DatePicker({
     onClick,
     minYear = new Date().getFullYear() - 100,
     maxYear = new Date().getFullYear(),
+    error,
 }: DatePickerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [viewDate, setViewDate] = useState(() => {
@@ -239,6 +241,7 @@ export default function DatePicker({
                 type="text"
                 value={formatDisplayValue()}
                 label={label}
+                error={error}
                 onClick={() => {
                     if (onClick) {
                         onClick();

@@ -225,7 +225,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         to: string;
         icon: React.ReactNode;
         label: string;
-        kind: "DASH" | "WORKLOAD" | "VACATION" | "MEMBERS";
+        kind: "HOME" | "WORKLOAD" | "VACATION" | "MEMBERS";
         onClick?: () => void;
     }) => (
         <NavLink
@@ -470,8 +470,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         <MainLink
                             to={PATHS.dashboard}
                             icon={<IconHome />}
-                            label="대시보드"
-                            kind="DASH"
+                            label="홈"
+                            kind="HOME"
                         />
 
                         {/* 출장 보고서 (헤더 버튼) */}
