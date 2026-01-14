@@ -90,16 +90,16 @@ const DayCell: React.FC<DayCellProps> = ({
                 </div>
             </div>
 
-            {/* 태그 개수 표시 (+N개) */}
+            {/* 태그 개수 표시 (+N개) - 태그와 겹치지 않도록 여유 공간 확보 */}
             {hiddenCount > 0 && (
                 <div
-                    className={`absolute inset-x-0 bottom-0 pointer-events-auto z-20 cursor-pointer text-center`}
+                    className={`absolute inset-x-0 bottom-0 pointer-events-auto z-20 cursor-pointer text-center pb-1`}
                     onClick={(e) => {
                         e.stopPropagation();
                         onHiddenCountClick();
                     }}
                 >
-                    <div className="text-[12px] text-gray-400 hover:text-gray-600 transition-colors">
+                    <div className="text-[12px] text-gray-400 hover:text-gray-600 transition-colors bg-white/80 px-1 rounded">
                         +{hiddenCount}개
                     </div>
                 </div>

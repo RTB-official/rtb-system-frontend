@@ -329,6 +329,20 @@ export const IconVacation = (props: { className?: string }) => (
     </svg>
 );
 
+export const IconUmbrella = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-6 h-6"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M12 2C8.13 2 5 5.13 5 9C5 11.38 6.19 13.47 8 14.74V17C8 17.55 8.45 18 9 18H15C15.55 18 16 17.55 16 17V14.74C17.81 13.47 19 11.38 19 9C19 5.13 15.87 2 12 2ZM14 13.7V16H10V13.7C8.84 13.19 8 12.2 8 11C8 9.34 9.34 8 11 8H13C14.66 8 16 9.34 16 11C16 12.2 15.16 13.19 14 13.7Z"
+            fill="currentColor"
+        />
+    </svg>
+);
+
 export const IconMembers = (props: { className?: string }) => (
     <svg
         className={props.className || "w-6 h-6"}
@@ -474,6 +488,20 @@ export const IconMore = (props: { className?: string }) => (
     >
         <path
             d="M6 10C4.9 10 4 10.9 4 12C4 13.1 4.9 14 6 14C7.1 14 8 13.1 8 12C8 10.9 7.1 10 6 10ZM18 10C16.9 10 16 10.9 16 12C16 13.1 16.9 14 18 14C19.1 14 20 13.1 20 12C20 10.9 19.1 10 18 10ZM12 10C10.9 10 10 10.9 10 12C10 13.1 10.9 14 12 14C13.1 14 14 13.1 14 12C14 10.9 13.1 10 12 10Z"
+            fill="currentColor"
+        />
+    </svg>
+);
+
+export const IconAirplane = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-4 h-4"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M21.5 12L18.5 11L13.5 6C13.5 5.17 12.83 4.5 12 4.5H11C10.17 4.5 9.5 5.17 9.5 6L9.5 9L4.5 11L2.5 12L4.5 13L9.5 15V19L7.5 21L6.5 22L12 21L17.5 22L16.5 21L14.5 19V15L19.5 13L21.5 12Z"
             fill="currentColor"
         />
     </svg>

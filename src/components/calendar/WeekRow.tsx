@@ -59,9 +59,57 @@ const WeekRow: React.FC<WeekRowProps> = ({
 }) => {
     const pad = (n: number) => (n < 10 ? "0" + n : String(n));
 
-    const visibleSegments = weekEventRows.filter(
-        (segment) => segment.rowIndex < maxVisibleRows
-    );
+    // 각 날짜별로 마지막 행 태그와 +n개 겹침 여부를 미리 계산
+    const shouldHideLastRowTag = new Map<number, boolean>();
+    week.forEach(({ date }, dayIdx) => {
+        const dateKey = `${date.getFullYear()}-${pad(
+            date.getMonth() + 1
+        )}-${pad(date.getDate())}`;
+        
+        const dayEvents = getEventsForDate(dateKey);
+        const daySegments = weekEventRows.filter(
+            (segment) =>
+                segment.startOffset <= dayIdx &&
+                dayIdx < segment.startOffset + segment.duration
+        );
+        
+        const visibleRowIndices = new Set(
+            daySegments
+                .filter((s) => s.rowIndex < maxVisibleRows)
+                .map((s) => s.rowIndex)
+        );
+        
+        const hiddenCountRaw = dayEvents.filter((event) => {
+            const segment = daySegments.find(
+                (s) => s.event.id === event.id
+            );
+            return segment && !visibleRowIndices.has(segment.rowIndex);
+        }).length;
+        
+        const hasLastRowTag = daySegments.some(
+            (s) => s.rowIndex === maxVisibleRows - 1
+        );
+        
+        // 마지막 행에 태그가 있고 숨겨진 태그가 있으면, 마지막 행 태그를 숨김
+        shouldHideLastRowTag.set(dayIdx, hasLastRowTag && hiddenCountRaw > 0);
+    });
+
+    // 태그는 maxVisibleRows까지 표시하되, 특정 날짜의 마지막 행 태그는 조건부로 숨김
+    const visibleSegments = weekEventRows.filter((segment) => {
+        if (segment.rowIndex >= maxVisibleRows) return false;
+        
+        // 마지막 행 태그인 경우, 해당 날짜에서 숨겨야 하는지 확인
+        if (segment.rowIndex === maxVisibleRows - 1) {
+            // 이 세그먼트가 포함된 모든 날짜를 확인
+            for (let dayIdx = segment.startOffset; dayIdx < segment.startOffset + segment.duration; dayIdx++) {
+                if (shouldHideLastRowTag.get(dayIdx)) {
+                    return false; // 이 날짜에서 마지막 행 태그를 숨김
+                }
+            }
+        }
+        
+        return true;
+    });
 
     return (
         <div
@@ -177,12 +225,19 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         .filter((s) => s.rowIndex < maxVisibleRows)
                         .map((s) => s.rowIndex)
                 );
-                const hiddenCount = dayEvents.filter((event) => {
+                
+                const hiddenCountRaw = dayEvents.filter((event) => {
                     const segment = daySegments.find(
                         (s) => s.event.id === event.id
                     );
                     return segment && !visibleRowIndices.has(segment.rowIndex);
                 }).length;
+                
+                // 마지막 행 태그가 숨겨져 있으면 +n개에 포함
+                const isLastRowTagHidden = shouldHideLastRowTag.get(dayIdx) || false;
+                const hiddenCount = isLastRowTagHidden 
+                    ? hiddenCountRaw + 1 
+                    : hiddenCountRaw;
 
                 return (
                     <DayCell

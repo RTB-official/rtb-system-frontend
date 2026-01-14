@@ -259,65 +259,91 @@ export default function DashboardPage() {
 
             setLoading(true);
             try {
+                // 병렬로 모든 데이터 로드
+                const [vacationsResult, workLogsResult, calendarEventsResult] =
+                    await Promise.allSettled([
+                        getVacations(undefined, { year, month }),
+                        getWorkLogsForDashboard(user.id, null, { year, month }),
+                        getCalendarEvents({ year, month }),
+                    ]);
+
                 const events: CalendarEvent[] = [];
 
-                // 1. 휴가 조회 (전체 공개)
-                try {
-                    const vacations = await getVacations(undefined, {
-                        year,
-                        month,
-                    });
-                    for (const vacation of vacations) {
-                        // 사용자 이름 가져오기 시도
-                        let userName: string | undefined;
-                        if (vacation.user_id) {
-                            try {
-                                const { data: profile } = await supabase
-                                    .from("profiles")
-                                    .select("name")
-                                    .eq("id", vacation.user_id)
-                                    .single();
-                                if (profile) {
-                                    userName = profile.name;
-                                }
-                            } catch (err) {
-                                // RLS 에러 무시
+                // 1. 휴가 처리 (프로필 배치 조회)
+                if (vacationsResult.status === "fulfilled") {
+                    const vacations = vacationsResult.value;
+
+                    // 모든 user_id 수집
+                    const userIds = [
+                        ...new Set(
+                            vacations.map((v) => v.user_id).filter(Boolean)
+                        ),
+                    ];
+
+                    // 프로필을 한 번에 조회
+                    let profileMap = new Map<string, string>();
+                    if (userIds.length > 0) {
+                        try {
+                            const { data: profiles } = await supabase
+                                .from("profiles")
+                                .select("id, name")
+                                .in("id", userIds);
+
+                            if (profiles) {
+                                profiles.forEach((profile) => {
+                                    if (profile.name) {
+                                        profileMap.set(
+                                            profile.id,
+                                            profile.name
+                                        );
+                                    }
+                                });
                             }
+                        } catch (err) {
+                            // RLS 에러 무시
                         }
+                    }
+
+                    // 휴가 이벤트 생성
+                    vacations.forEach((vacation) => {
+                        const userName = vacation.user_id
+                            ? profileMap.get(vacation.user_id)
+                            : undefined;
                         events.push(
                             vacationToCalendarEvent(vacation, userName)
                         );
-                    }
-                } catch (err) {
-                    console.error("Error loading vacations:", err);
-                }
-
-                // 2. 출장보고서 조회 (전체 공개)
-                try {
-                    // 권한 필터링 없이 모든 출장보고서 조회
-                    const workLogs = await getWorkLogsForDashboard(
-                        user.id,
-                        null, // 필터링 제거 (전체 공개)
-                        { year, month }
-                    );
-                    for (const workLog of workLogs) {
-                        events.push(workLogToCalendarEvent(workLog));
-                    }
-                } catch (err) {
-                    console.error("Error loading work logs:", err);
-                }
-
-                // 3. 일정 조회 (전체)
-                try {
-                    const calendarEvents = await getCalendarEvents({
-                        year,
-                        month,
                     });
-                    for (const event of calendarEvents) {
+                } else {
+                    console.error(
+                        "Error loading vacations:",
+                        vacationsResult.reason
+                    );
+                }
+
+                // 2. 출장보고서 처리
+                if (workLogsResult.status === "fulfilled") {
+                    const workLogs = workLogsResult.value;
+                    workLogs.forEach((workLog) => {
+                        events.push(workLogToCalendarEvent(workLog));
+                    });
+                } else {
+                    console.error(
+                        "Error loading work logs:",
+                        workLogsResult.reason
+                    );
+                }
+
+                // 3. 일정 처리
+                if (calendarEventsResult.status === "fulfilled") {
+                    const calendarEvents = calendarEventsResult.value;
+                    calendarEvents.forEach((event) => {
                         events.push(calendarEventRecordToCalendarEvent(event));
-                    }
-                } catch (err) {
-                    console.error("Error loading calendar events:", err);
+                    });
+                } else {
+                    console.error(
+                        "Error loading calendar events:",
+                        calendarEventsResult.reason
+                    );
                 }
 
                 setAllEvents(events);

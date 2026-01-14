@@ -1,6 +1,6 @@
 // CalendarTag.tsx
 import React from "react";
-import { IconStar } from "../icons/Icons";
+import { IconStar, IconVacation, IconReport } from "../icons/Icons";
 
 interface CalendarTagProps {
     title: string;
@@ -34,6 +34,9 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
     isFirstInRow = false,
 }) => {
     const isHoliday = variant === "holiday";
+    const isVacation = title.includes("휴가");
+    const isWorkLog =
+        title.startsWith("출장보고서 - ") || title.startsWith("출장 보고서 - ");
 
     const [isHovered, setIsHovered] = React.useState(false);
 
@@ -73,6 +76,10 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                     <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center mr-1.5 shrink-0">
                         <IconStar className="w-3.5 h-3.5 text-red-500" />
                     </div>
+                ) : isVacation ? (
+                    <IconVacation className="w-4 h-4 mr-1 text-blue-500" />
+                ) : isWorkLog ? (
+                    <IconReport className="w-4 h-4 mr-1 text-orange-500" />
                 ) : (
                     isStart && (
                         <div

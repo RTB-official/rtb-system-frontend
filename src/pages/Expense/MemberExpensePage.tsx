@@ -17,6 +17,8 @@ import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
 import BaseModal from "../../components/ui/BaseModal";
 import EmptyValueIndicator from "./components/EmptyValueIndicator";
+import Avatar from "../../components/common/Avatar";
+import { supabase } from "../../lib/supabase";
 
 export default function MemberExpensePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -57,6 +59,9 @@ export default function MemberExpensePage() {
         []
     );
     const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
+    const [employeeProfiles, setEmployeeProfiles] = useState<
+        Map<string, { email: string | null; position: string | null }>
+    >(new Map());
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
     useEffect(() => {
@@ -98,6 +103,29 @@ export default function MemberExpensePage() {
 
                 const summary = await getAllUsersExpenseSummary(filter);
                 setExpenseSummary(summary);
+
+                // 직원 프로필 정보 조회 (email, position)
+                const employeeNames = [...new Set(summary.map((emp) => emp.name))];
+                const { data: profiles, error: profilesError } = await supabase
+                    .from("profiles")
+                    .select("name, email, position")
+                    .in("name", employeeNames);
+
+                if (profilesError) {
+                    console.error("프로필 조회 실패:", profilesError);
+                }
+
+                const profileMap = new Map<
+                    string,
+                    { email: string | null; position: string | null }
+                >();
+                (profiles || []).forEach((profile: any) => {
+                    profileMap.set(profile.name, {
+                        email: profile.email || null,
+                        position: profile.position || null,
+                    });
+                });
+                setEmployeeProfiles(profileMap);
             } catch (error) {
                 console.error("데이터 로드 실패:", error);
                 alert("데이터를 불러오는데 실패했습니다.");
@@ -314,14 +342,19 @@ export default function MemberExpensePage() {
         {
             key: "name",
             label: "직원 명",
-            render: (_, row) => (
-                <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-100 text-[11px] text-orange-600 font-semibold">
-                        {row.initials}
-                    </span>
-                    <span className="text-gray-900">{row.name}</span>
-                </div>
-            ),
+            render: (_, row) => {
+                const profile = employeeProfiles.get(row.name);
+                return (
+                    <div className="flex items-center gap-2">
+                        <Avatar
+                            email={profile?.email || null}
+                            size={24}
+                            position={profile?.position || null}
+                        />
+                        <span className="text-gray-900">{row.name}</span>
+                    </div>
+                );
+            },
         },
         {
             key: "mileage",

@@ -581,52 +581,54 @@ export default function WorkLogSection() {
                                 )}
                             </div>
                         </div>
-                    {/* 작업일 때 점심 체크박스 */}
-                    {currentEntry.descType === "작업" && (
-                        <label className="flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
-                            <input
-                                type="checkbox"
-                                checked={currentEntry.noLunch || false}
-                                onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    setCurrentEntry({ noLunch: checked });
-                                    // 특이사항에 자동 추가/제거
-                                    const noLunchText =
-                                        "점심 안 먹고 작업진행(12:00~13:00)";
-                                    const currentNote = currentEntry.note || "";
-                                    if (checked) {
-                                        if (
-                                            !currentNote.includes(noLunchText)
-                                        ) {
+                        {/* 작업일 때 점심 체크박스 */}
+                        {currentEntry.descType === "작업" && (
+                            <label className="flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={currentEntry.noLunch || false}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setCurrentEntry({ noLunch: checked });
+                                        // 특이사항에 자동 추가/제거
+                                        const noLunchText =
+                                            "점심 안 먹고 작업진행(12:00~13:00)";
+                                        const currentNote =
+                                            currentEntry.note || "";
+                                        if (checked) {
+                                            if (
+                                                !currentNote.includes(
+                                                    noLunchText
+                                                )
+                                            ) {
+                                                setCurrentEntry({
+                                                    note: currentNote
+                                                        ? `${currentNote}\n${noLunchText}`
+                                                        : noLunchText,
+                                                });
+                                            }
+                                        } else {
                                             setCurrentEntry({
                                                 note: currentNote
-                                                    ? `${currentNote}\n${noLunchText}`
-                                                    : noLunchText,
+                                                    .replace(noLunchText, "")
+                                                    .replace(/\n{2,}/g, "\n")
+                                                    .trim(),
                                             });
                                         }
-                                    } else {
-                                        setCurrentEntry({
-                                            note: currentNote
-                                                .replace(noLunchText, "")
-                                                .replace(/\n{2,}/g, "\n")
-                                                .trim(),
-                                        });
-                                    }
-                                }}
-                                className="w-5 h-5 mt-0.5 accent-amber-500"
-                            />
-                            <div className="flex flex-col">
-                                <span className="text-[14px] font-semibold text-[#92400e]">
-                                    점심 안 먹고 작업진행 (12:00~13:00)
-                                </span>
-                                <span className="text-[12px] text-[#b45309]">
-                                    ※운항선 작업일 때 체크해주세요.
-                                </span>
-                            </div>
-                        </label>
-                    )}
+                                    }}
+                                    className="w-5 h-5 mt-0.5 accent-amber-500"
+                                />
+                                <div className="flex flex-col">
+                                    <span className="text-[14px] font-semibold text-[#92400e]">
+                                        점심 안 먹고 작업진행 (12:00~13:00)
+                                    </span>
+                                    <span className="text-[12px] text-[#b45309]">
+                                        ※운항선 작업일 때 체크해주세요.
+                                    </span>
+                                </div>
+                            </label>
+                        )}
                     </div>
-
 
                     {/* 특이사항 */}
                     <div className="flex flex-col gap-2">
@@ -942,8 +944,12 @@ export default function WorkLogSection() {
                                                         <Button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                setDeleteTargetId(entry.id);
-                                                                setDeleteConfirmOpen(true);
+                                                                setDeleteTargetId(
+                                                                    entry.id
+                                                                );
+                                                                setDeleteConfirmOpen(
+                                                                    true
+                                                                );
                                                             }}
                                                             variant="outline"
                                                             size="md"
