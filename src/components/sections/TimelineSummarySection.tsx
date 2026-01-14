@@ -1,5 +1,7 @@
+// src/components/sections/TimelineSummarySection.tsx
 import { useMemo, useState } from "react";
 import { useWorkReportStore, REGION_GROUPS } from "../../store/workReportStore";
+import Button from "../common/Button";
 
 // 분 → 시간 문자열 (0.5시간 단위)
 const toHourStr = (minutes: number): string => {
@@ -22,7 +24,7 @@ interface DaySegment {
     type: string;
     title: string;
     persons: string[];
-    totalMin: number;
+    totalMin: number; // ✅ "해당 날짜 세그먼트" 기준(점심 반영)
     entryId: number;
 }
 
@@ -54,35 +56,37 @@ const splitEntryByDay = (entry: {
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start)
         return [];
 
-    // 전체 시간 계산 (점심시간 차감 포함)
-    let totalMin = Math.round((end.getTime() - start.getTime()) / 60000);
-    if (entry.descType === "작업" && !entry.noLunch) {
-        // 점심시간 겹침 체크
-        const checkLunch = (s: Date, e: Date) => {
-            for (let d = new Date(s); d < e; d.setDate(d.getDate() + 1)) {
-                const lunchStart = new Date(
-                    d.getFullYear(),
-                    d.getMonth(),
-                    d.getDate(),
-                    12,
-                    0
-                );
-                const lunchEnd = new Date(
-                    d.getFullYear(),
-                    d.getMonth(),
-                    d.getDate(),
-                    13,
-                    0
-                );
-                if (s < lunchEnd && e > lunchStart) return true;
-            }
-            return false;
-        };
-        if (checkLunch(start, end)) totalMin = Math.max(0, totalMin - 60);
-    }
-
     const result: DaySegment[] = [];
     let cur = new Date(start);
+
+    // 한 날짜 세그먼트의 점심 겹침(12:00~13:00) 차감 계산
+    const calcLunchDeduct = (segStart: Date, segEnd: Date) => {
+        if (entry.descType !== "작업" || entry.noLunch) return 0;
+
+        const lunchStart = new Date(
+            segStart.getFullYear(),
+            segStart.getMonth(),
+            segStart.getDate(),
+            12,
+            0,
+            0
+        );
+        const lunchEnd = new Date(
+            segStart.getFullYear(),
+            segStart.getMonth(),
+            segStart.getDate(),
+            13,
+            0,
+            0
+        );
+
+        // 겹치는 분(min)
+        const overlapMs =
+            Math.min(segEnd.getTime(), lunchEnd.getTime()) -
+            Math.max(segStart.getTime(), lunchStart.getTime());
+        const overlapMin = Math.max(0, Math.round(overlapMs / 60000));
+        return Math.min(60, overlapMin); // 최대 60분
+    };
 
     while (cur < end) {
         const dayStart = new Date(
@@ -98,6 +102,7 @@ const splitEntryByDay = (entry: {
 
         const segStart = new Date(cur);
         const segEnd = end < nextDay ? new Date(end) : new Date(nextDay);
+
         const dateKey = `${segStart.getFullYear()}-${String(
             segStart.getMonth() + 1
         ).padStart(2, "0")}-${String(segStart.getDate()).padStart(2, "0")}`;
@@ -126,6 +131,11 @@ const splitEntryByDay = (entry: {
             segStart.getDate() === segEnd.getDate()
                 ? minutesFromDayStart(segEnd)
                 : 1440; // 자정까지
+
+        // ✅ 해당 날짜 세그먼트 길이(점심 반영)
+        const rawMin = Math.max(0, endMin - startMin);
+        const lunchDeduct = calcLunchDeduct(segStart, segEnd);
+        const totalMin = Math.max(0, rawMin - lunchDeduct);
 
         result.push({
             dateKey,
@@ -157,17 +167,9 @@ const aggregatePersonDayData = (entries: any[]) => {
         const segments = splitEntryByDay(entry);
         segments.forEach((seg) => {
             dates.add(seg.dateKey);
-            const minutes = seg.endMin - seg.startMin;
 
-            // 점심시간 차감
-            let adjMinutes = minutes;
-            if (seg.type === "작업" && !entry.noLunch) {
-                const lunchStart = 12 * 60;
-                const lunchEnd = 13 * 60;
-                if (seg.startMin < lunchEnd && seg.endMin > lunchStart) {
-                    adjMinutes = Math.max(0, minutes - 60);
-                }
-            }
+            // ✅ splitEntryByDay에서 이미 점심 차감된 totalMin 사용
+            const adjMinutes = seg.totalMin;
 
             seg.persons.forEach((person) => {
                 persons.add(person);
@@ -192,7 +194,7 @@ const aggregatePersonDayData = (entries: any[]) => {
     };
 };
 
-// 인원 → 지역 클래스
+// 인원 → 지역 클래스 (현재는 미사용이지만 유지)
 const getRegionClass = (name: string) => {
     for (const [key, names] of Object.entries(REGION_GROUPS)) {
         if (names.includes(name)) {
@@ -250,26 +252,146 @@ function Popover({ segment, position }: PopoverProps) {
 }
 
 export default function TimelineSummarySection() {
+type TimelineGroup = {
+    signature: string;
+    persons: string[];
+    segments: DaySegment[]; // 대표 세그먼트(그룹 공통 타임라인)
+};
+
+// ✅ "같이 움직인 사람들" 기준으로 날짜별 그룹 생성
+// - 사람별로 세그먼트를 분해
+// - 각 사람의 세그먼트 목록(시간/타입/타이틀)을 시그니처로 만들고
+// - 시그니처가 같은 사람들끼리 묶음
+type OverallTimelineGroup = {
+    signature: string;
+    persons: string[];
+    // 그룹 공통 타임라인을 날짜별로 렌더링 하기 위해
+    segmentsByDate: Map<string, DaySegment[]>;
+    sortedDates: string[];
+};
+
+// ✅ "전체 기간" 기준으로 같이 움직인 사람들 그룹화
+// - 사람별로 전체 세그먼트를 모으고(날짜 포함)
+// - (dateKey + start/end/type/title) 시퀀스가 완전히 동일한 사람들끼리만 묶음
+const buildTimelineGroupsOverall = (entries: any[]) => {
+    const personToSegs = new Map<string, DaySegment[]>();
+
+    entries.forEach((entry) => {
+        const segs = splitEntryByDay(entry);
+        segs.forEach((seg) => {
+            seg.persons.forEach((p) => {
+                const one: DaySegment = { ...seg, persons: [p] };
+                if (!personToSegs.has(p)) personToSegs.set(p, []);
+                personToSegs.get(p)!.push(one);
+            });
+        });
+    });
+
+    // signature -> group
+    const sigToGroup = new Map<string, OverallTimelineGroup>();
+
+    for (const [person, segs] of personToSegs.entries()) {
+        const sorted = [...segs].sort((a, b) => {
+            // ✅ "전체" 비교라 dateKey가 가장 중요
+            return (
+                a.dateKey.localeCompare(b.dateKey) ||
+                a.startMin - b.startMin ||
+                a.endMin - b.endMin ||
+                a.type.localeCompare(b.type) ||
+                a.title.localeCompare(b.title)
+            );
+        });
+
+        // ✅ dateKey 포함 시그니처
+        const signature = sorted
+            .map(
+                (s) =>
+                    `${s.dateKey}-${s.startMin}-${s.endMin}-${s.type}-${s.title}`
+            )
+            .join("||");
+
+        if (!sigToGroup.has(signature)) {
+            sigToGroup.set(signature, {
+                signature,
+                persons: [],
+                segmentsByDate: new Map(),
+                sortedDates: [],
+            });
+        }
+
+        sigToGroup.get(signature)!.persons.push(person);
+    }
+
+    // 그룹별로 대표 타임라인(segmentsByDate) 구성
+    // 대표 타임라인은 "그 그룹의 첫 번째 사람"의 세그먼트를 사용
+    // (어차피 시그니처가 같으면 전부 동일)
+    const groups = Array.from(sigToGroup.values()).map((g) => {
+        const personsSorted = Array.from(new Set(g.persons)).sort((a, b) =>
+            a.localeCompare(b, "ko")
+        );
+
+        // 대표 사람
+        const rep = personsSorted[0];
+        const repSegs = (personToSegs.get(rep) || []).slice();
+
+        const sortedRep = repSegs.sort((a, b) => {
+            return (
+                a.dateKey.localeCompare(b.dateKey) ||
+                a.startMin - b.startMin ||
+                a.endMin - b.endMin
+            );
+        });
+
+        const segmentsByDate = new Map<string, DaySegment[]>();
+        sortedRep.forEach((seg) => {
+            if (!segmentsByDate.has(seg.dateKey)) segmentsByDate.set(seg.dateKey, []);
+            segmentsByDate.get(seg.dateKey)!.push({
+                ...seg,
+                persons: personsSorted, // ✅ 렌더/팝오버용: 그룹 사람들
+            });
+        });
+
+        const sortedDates = Array.from(segmentsByDate.keys()).sort();
+
+        return {
+            ...g,
+            persons: personsSorted,
+            segmentsByDate,
+            sortedDates,
+        };
+    });
+
+    // 보기 좋게 그룹 정렬(인원 많은 순 -> 이름순)
+    groups.sort((a, b) => {
+        if (b.persons.length !== a.persons.length)
+            return b.persons.length - a.persons.length;
+        return a.persons.join(",").localeCompare(b.persons.join(","), "ko");
+    });
+
+    return groups;
+};
+
+
+interface TimelineSummarySectionProps {
+    onDraftSave?: () => void;
+    onSubmit?: () => void;
+}
+
+export default function TimelineSummarySection({
+    onDraftSave,
+    onSubmit,
+}: TimelineSummarySectionProps) {
     const { workLogEntries } = useWorkReportStore();
     const [hoveredSegment, setHoveredSegment] = useState<{
         segment: DaySegment;
         position: { x: number; y: number };
     } | null>(null);
 
-    // 일별 세그먼트 수집
-    const daySegments = useMemo(() => {
-        const map = new Map<string, DaySegment[]>();
-        workLogEntries.forEach((entry) => {
-            const segments = splitEntryByDay(entry);
-            segments.forEach((seg) => {
-                if (!map.has(seg.dateKey)) map.set(seg.dateKey, []);
-                map.get(seg.dateKey)!.push(seg);
-            });
-        });
-        return map;
+    // ✅ 전체 기간 기준 "같이 움직인 사람들" 그룹
+    const overallGroups = useMemo(() => {
+        return buildTimelineGroupsOverall(workLogEntries);
     }, [workLogEntries]);
 
-    const sortedDates = Array.from(daySegments.keys()).sort();
 
     // 인원별 일자별 집계 데이터
     const { dayPersonData, allDates, allPersons } = useMemo(
@@ -287,7 +409,7 @@ export default function TimelineSummarySection() {
         return map;
     }, [dayPersonData]);
 
-    if (sortedDates.length === 0) {
+    if (overallGroups.length === 0) {
         return (
             <div className="bg-white border border-[#e5e7eb] rounded-2xl p-4 md:p-7">
                 <h2 className="text-[18px] md:text-[22px] font-semibold text-[#364153] mb-4">
@@ -330,6 +452,29 @@ export default function TimelineSummarySection() {
         return labels;
     };
 
+    // 겹치는 세그먼트를 레인으로 분배
+    const assignLanes = (
+        segs: DaySegment[]
+    ): (DaySegment & { lane: number })[] => {
+        const sorted = [...segs].sort(
+            (a, b) => a.startMin - b.startMin || a.endMin - b.endMin
+        );
+        const lanes: number[] = []; // 각 레인의 종료 시간
+
+        return sorted.map((seg) => {
+            let assignedLane = lanes.findIndex(
+                (endTime) => endTime <= seg.startMin
+            );
+            if (assignedLane === -1) {
+                assignedLane = lanes.length;
+                lanes.push(seg.endMin);
+            } else {
+                lanes[assignedLane] = seg.endMin;
+            }
+            return { ...seg, lane: assignedLane };
+        });
+    };
+
     return (
         <div className="bg-white border border-[#e5e7eb] rounded-2xl p-4 md:p-7">
             {/* 타임라인 */}
@@ -353,172 +498,139 @@ export default function TimelineSummarySection() {
                 </span>
             </div>
 
-            {/* 일별 타임라인 */}
-            <div className="flex flex-col gap-6">
-                {sortedDates.map((dateKey) => {
-                    const segments = daySegments.get(dateKey) || [];
-                    const labels = renderTimeLabels(segments);
-
-                    // 겹치는 세그먼트를 레인으로 분배
-                    const assignLanes = (
-                        segs: DaySegment[]
-                    ): (DaySegment & { lane: number })[] => {
-                        const sorted = [...segs].sort(
-                            (a, b) =>
-                                a.startMin - b.startMin || a.endMin - b.endMin
-                        );
-                        const lanes: number[] = []; // 각 레인의 종료 시간
-
-                        return sorted.map((seg) => {
-                            // 사용 가능한 레인 찾기
-                            let assignedLane = lanes.findIndex(
-                                (endTime) => endTime <= seg.startMin
-                            );
-                            if (assignedLane === -1) {
-                                assignedLane = lanes.length;
-                                lanes.push(seg.endMin);
-                            } else {
-                                lanes[assignedLane] = seg.endMin;
-                            }
-                            return { ...seg, lane: assignedLane };
-                        });
-                    };
-
-                    const lanesSegments = assignLanes(segments);
-                    const laneCount = Math.max(
-                        1,
-                        ...lanesSegments.map((s) => s.lane + 1)
-                    );
-                    const trackHeight = Math.max(36, laneCount * 32 + 8);
-
-                    // 날짜 포맷팅
-                    const d = new Date(dateKey);
-                    const weekday = ["일", "월", "화", "수", "목", "금", "토"][
-                        d.getDay()
-                    ];
-                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-
+            {/* 그룹별 타임라인 (전체 기준으로 같은 사람끼리 묶임) */}
+            <div className="flex flex-col gap-8">
+                {overallGroups.map((group, groupIdx) => {
                     return (
-                        <div key={dateKey} className="flex flex-col gap-1">
-                            {/* 날짜 라벨 - 상단 좌측 */}
-                            <div className="flex items-center gap-2 mb-1">
-                                <span
-                                    className={`text-[14px] font-semibold ${
-                                        isWeekend
-                                            ? "text-rose-500"
-                                            : "text-slate-700"
-                                    }`}
-                                >
-                                    {dateKey}
-                                </span>
-                                <span
-                                    className={`text-[12px] ${
-                                        isWeekend
-                                            ? "text-rose-400"
-                                            : "text-slate-400"
-                                    }`}
-                                >
-                                    ({weekday})
-                                </span>
+                        <div
+                            key={`overall-group-${groupIdx}`}
+                            className="border border-slate-200 rounded-2xl p-4"
+                        >
+                            {/* 그룹 라벨 */}
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <div className="text-[14px] font-semibold text-slate-800">
+                                    {group.persons.join(", ")} ({group.persons.length}명)
+                                </div>
+                                <div className="text-[12px] text-slate-400">
+                                    
+                                </div>
                             </div>
 
-                            {/* 트랙 - 전체 너비 사용 */}
-                            <div
-                                className="relative border border-[#e5e7eb] rounded-xl overflow-visible w-full mt-5"
-                                style={{
-                                    height: `${trackHeight}px`,
-                                    background: `
-                    linear-gradient(90deg, rgba(17,24,39,0.04) 1px, transparent 1px) 0 0 / calc(100%/24) 100%,
-                    linear-gradient(to bottom, #f8fafc, #fff)
-                  `,
-                                }}
-                            >
-                                {/* 시간 라벨 - 카드 시작/종료 시간만 표시 */}
-                                {labels.map((label, idx) => (
-                                    <div
-                                        key={idx}
-                                        className={`absolute -top-5 text-[10px] text-slate-500 font-medium whitespace-nowrap ${
-                                            label.isStart
-                                                ? ""
-                                                : "transform -translate-x-full"
-                                        }`}
-                                        style={{ left: `${label.left}%` }}
-                                    >
-                                        {minutesToLabel(label.min)}시
-                                    </div>
-                                ))}
+                            {/* 그룹 내 날짜별 타임라인 */}
+                            <div className="flex flex-col gap-6">
+                                {group.sortedDates.map((dateKey) => {
+                                    const segments = group.segmentsByDate.get(dateKey) || [];
+                                    const labels = renderTimeLabels(segments);
 
-                                {/* 세그먼트 막대 - 레인별로 배치 */}
-                                {lanesSegments.map((seg, idx) => {
-                                    const left = (seg.startMin / 1440) * 100;
-                                    const width = Math.max(
-                                        ((seg.endMin - seg.startMin) / 1440) *
-                                            100,
-                                        0.5
+                                    const lanesSegments = assignLanes(segments);
+                                    const laneCount = Math.max(
+                                        1,
+                                        ...lanesSegments.map((s) => s.lane + 1)
                                     );
-                                    const color = getTypeColor(seg.type);
-                                    const laneHeight = 28;
-                                    const topOffset =
-                                        4 + seg.lane * (laneHeight + 4);
+                                    const trackHeight = Math.max(36, laneCount * 32 + 8);
+
+                                    // 날짜 포맷팅
+                                    const d = new Date(dateKey);
+                                    const weekday = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+                                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
 
                                     return (
                                         <div
-                                            key={`${seg.entryId}-${idx}`}
-                                            className="absolute rounded-lg cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg hover:z-10"
-                                            style={{
-                                                left: `${left}%`,
-                                                width: `${width}%`,
-                                                top: `${topOffset}px`,
-                                                height: `${laneHeight}px`,
-                                                background: `linear-gradient(135deg, ${color.bg} 0%, ${color.bgDark} 100%)`,
-                                                border: `1px solid ${color.border}`,
-                                                boxShadow:
-                                                    "0 2px 4px rgba(0,0,0,0.1)",
-                                            }}
-                                            onMouseEnter={(e) =>
-                                                setHoveredSegment({
-                                                    segment: seg,
-                                                    position: {
-                                                        x: e.clientX,
-                                                        y: e.clientY,
-                                                    },
-                                                })
-                                            }
-                                            onMouseLeave={() =>
-                                                setHoveredSegment(null)
-                                            }
-                                            onMouseMove={(e) => {
-                                                if (hoveredSegment) {
-                                                    setHoveredSegment({
-                                                        segment: seg,
-                                                        position: {
-                                                            x: e.clientX,
-                                                            y: e.clientY,
-                                                        },
-                                                    });
-                                                }
-                                            }}
+                                            key={`${groupIdx}-${dateKey}`}
+                                            className="flex items-start gap-3"
                                         >
-                                            {/* 막대 내 라벨 */}
-                                            {width > 6 && (
-                                                <div className="absolute inset-0 flex items-center justify-center px-2 overflow-hidden">
-                                                    <span className="text-[11px] font-semibold text-white truncate drop-shadow-sm">
-                                                        {seg.type}{" "}
-                                                        {toHourStr(
-                                                            seg.totalMin
-                                                        )}
-                                                        h
-                                                    </span>
+                                            {/* ✅ 날짜 (막대 왼쪽, M/D) */}
+                                            <div className="w-[44px] shrink-0 text-[14px] font-semibold text-slate-700 leading-[28px] pt-[18px]">
+                                                {d.getMonth() + 1}/{d.getDate()}
+                                            </div>
+                                    
+                                            {/* ✅ 트랙 영역 */}
+                                            <div className="flex-1">
+                                                <div
+                                                    className="relative border border-[#e5e7eb] rounded-xl overflow-visible w-full mt-5"
+                                                    style={{
+                                                        height: `${trackHeight}px`,
+                                                        background: `
+                                            linear-gradient(90deg, rgba(17,24,39,0.04) 1px, transparent 1px) 0 0 / calc(100%/24) 100%,
+                                            linear-gradient(to bottom, #f8fafc, #fff)
+                                          `,
+                                                    }}
+                                                >
+                                                    {/* 시간 라벨 */}
+                                                    {labels.map((label, idx) => (
+                                                        <div
+                                                            key={idx}
+                                                            className={`absolute -top-5 text-[10px] text-slate-500 font-medium whitespace-nowrap ${
+                                                                label.isStart ? "" : "transform -translate-x-full"
+                                                            }`}
+                                                            style={{ left: `${label.left}%` }}
+                                                        >
+                                                            {minutesToLabel(label.min)}시
+                                                        </div>
+                                                    ))}
+                                    
+                                                    {/* 세그먼트 */}
+                                                    {lanesSegments.map((seg, idx) => {
+                                                        const left = (seg.startMin / 1440) * 100;
+                                                        const width = Math.max(
+                                                            ((seg.endMin - seg.startMin) / 1440) * 100,
+                                                            0.5
+                                                        );
+                                                        const color = getTypeColor(seg.type);
+                                                        const laneHeight = 28;
+                                                        const topOffset = 4 + seg.lane * (laneHeight + 4);
+                                    
+                                                        return (
+                                                            <div
+                                                                key={`${seg.entryId}-${groupIdx}-${dateKey}-${idx}`}
+                                                                className="absolute rounded-lg cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg hover:z-10"
+                                                                style={{
+                                                                    left: `${left}%`,
+                                                                    width: `${width}%`,
+                                                                    top: `${topOffset}px`,
+                                                                    height: `${laneHeight}px`,
+                                                                    background: `linear-gradient(135deg, ${color.bg} 0%, ${color.bgDark} 100%)`,
+                                                                    border: `1px solid ${color.border}`,
+                                                                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                                                                }}
+                                                                onMouseEnter={(e) =>
+                                                                    setHoveredSegment({
+                                                                        segment: seg,
+                                                                        position: { x: e.clientX, y: e.clientY },
+                                                                    })
+                                                                }
+                                                                onMouseLeave={() => setHoveredSegment(null)}
+                                                                onMouseMove={(e) => {
+                                                                    if (hoveredSegment) {
+                                                                        setHoveredSegment({
+                                                                            segment: seg,
+                                                                            position: { x: e.clientX, y: e.clientY },
+                                                                        });
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {width > 6 && (
+                                                                    <div className="absolute inset-0 flex items-center justify-center px-2 overflow-hidden">
+                                                                        <span className="text-[11px] font-semibold text-white truncate drop-shadow-sm">
+                                                                            {seg.type} {toHourStr(seg.totalMin)}h
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
-                                            )}
+                                            </div>
                                         </div>
                                     );
+                                    
                                 })}
                             </div>
                         </div>
                     );
                 })}
             </div>
+
 
             {/* 작업자별 일자 요약 테이블 */}
             {allPersons.length > 0 && (
@@ -618,13 +730,12 @@ export default function TimelineSummarySection() {
                                             </td>
                                             {allDates.map((date, idx) => {
                                                 const key = `${date}|${person}`;
-                                                const rec = dayPersonData.get(
-                                                    key
-                                                ) || {
-                                                    작업: 0,
-                                                    이동: 0,
-                                                    대기: 0,
-                                                };
+                                                const rec =
+                                                    dayPersonData.get(key) || {
+                                                        작업: 0,
+                                                        이동: 0,
+                                                        대기: 0,
+                                                    };
                                                 const showWait =
                                                     hasWaitByDate.get(date);
                                                 const hasData =

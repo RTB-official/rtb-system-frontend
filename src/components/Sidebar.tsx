@@ -1,3 +1,4 @@
+// src/components/Sidebar.tsx
 import { useEffect, useMemo, useState, useRef } from "react";
 import { NavLink, useLocation, matchPath, useNavigate } from "react-router-dom";
 import NotificationPopup from "./ui/NotificationPopup";
@@ -5,6 +6,8 @@ import ActionMenu from "./common/ActionMenu";
 import ResetPasswordModal from "./modals/ResetPasswordModal";
 import BaseModal from "./ui/BaseModal";
 import Button from "./common/Button";
+import { supabase } from "../lib/supabase";
+import Avatar from "./common/Avatar";
 import {
     IconHome,
     IconReport,
@@ -25,6 +28,19 @@ type MenuFocus = "REPORT" | "EXPENSE" | null;
 export default function Sidebar({ onClose }: SidebarProps) {
     const location = useLocation();
     const navigate = useNavigate();
+
+    const handleLogout = async () => {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            console.error("로그아웃 실패:", error.message);
+            return;
+        }
+        localStorage.removeItem("sidebarLoginId");
+        localStorage.removeItem("sidebarEmail");
+        localStorage.removeItem("sidebarPosition");
+        navigate("/login");
+    };
+
 
     // ✅ 프로젝트 라우터와 100% 동일해야 함 (대/소문자 포함)
     const PATHS = useMemo(
@@ -68,12 +84,109 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
     const usernameRef = useRef<HTMLDivElement>(null);
     const notificationRef = useRef<HTMLDivElement>(null);
+    const [sidebarLoginId, setSidebarLoginId] = useState<string>(() => {
+        return localStorage.getItem("sidebarLoginId") || "";
+    });
 
-    // 임시 사용자 정보 (실제 앱에서는 인증 컨텍스트 등에서 가져와야 합니다)
-    const currentUser = {
-        displayName: "강민지", // 실제 사용자 이름으로 대체
-        email: "mj.kang@rtb.com", // 실제 사용자 이메일로 대체
-    };
+    const [currentUser, setCurrentUser] = useState<{
+        displayName: string;
+        email: string;
+        position?: string | null;
+    } | null>(() => {
+        const cachedEmail = localStorage.getItem("sidebarEmail") || "";
+        const cachedId = localStorage.getItem("sidebarLoginId") || "";
+        const cachedPosition = localStorage.getItem("sidebarPosition") || "";
+        if (!cachedEmail && !cachedId) return null;
+
+        return {
+            displayName: cachedId || "",
+            email: cachedEmail,
+            position: cachedPosition || null,
+        };
+    });
+
+
+
+    useEffect(() => {
+        const fetchUser = async () => {
+            const {
+                data: { user },
+                error: authError,
+            } = await supabase.auth.getUser();
+
+            if (authError || !user) {
+                console.error("유저 세션 없음:", authError?.message);
+                setCurrentUser(null);
+                return;
+            }
+
+            const sessionEmail = (user.email ?? "").toString();
+            const sessionId = sessionEmail ? sessionEmail.split("@")[0] : "";
+
+            // ✅ 새로고침 직후에도 즉시 동일하게 보이도록 캐시
+            if (sessionEmail) localStorage.setItem("sidebarEmail", sessionEmail);
+            if (sessionId) {
+                setSidebarLoginId(sessionId);
+                localStorage.setItem("sidebarLoginId", sessionId);
+            }
+
+            // ✅ DB 조회 전에 먼저 렌더링 값 확보 (깜빡임 방지)
+            setCurrentUser({
+                displayName: sessionId || "사용자",
+                email: sessionEmail,
+            });
+
+
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("name, email, username, position")
+                .eq("id", user.id)
+                .single();
+
+                if (error) {
+                    console.error("유저 정보 조회 실패:", error.message);
+    
+                    const email = (user.email ?? "").toString();
+                    const id = email ? email.split("@")[0] : "";
+    
+                    setCurrentUser({
+                        displayName: user.email ?? "사용자",
+                        email,
+                    });
+    
+                    if (id) {
+                        setSidebarLoginId(id);
+                        localStorage.setItem("sidebarLoginId", id);
+                    }
+                    return;
+                }
+
+                const email = (data.email ?? user.email ?? "").toString();
+                if (email) localStorage.setItem("sidebarEmail", email);
+                const id = email ? email.split("@")[0] : "";
+
+                const pos = (data?.position ?? "").toString();
+                if (pos) localStorage.setItem("sidebarPosition", pos);
+                else localStorage.removeItem("sidebarPosition");
+            
+
+                setCurrentUser({
+                    displayName: data?.username ?? data?.name ?? (user.email ?? "사용자"),
+                    email,
+                    position: data?.position ?? null,
+                });
+    
+
+            if (id) {
+                setSidebarLoginId(id);
+                localStorage.setItem("sidebarLoginId", id);
+            }
+
+        };
+
+        fetchUser();
+    }, []);
+
 
     // 라우트 변경 시: 해당 라우트의 메뉴는 자동으로 열림 + 포커스 자동 정렬
     useEffect(() => {
@@ -225,10 +338,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             setShowNotifications(false);
                         }}
                     >
-                        <div className="w-7 h-7 rounded-full bg-gray-900" />
+                        <Avatar email={currentUser?.email} size={28} position={currentUser?.position} />
                         <p className="font-semibold text-[16px] text-gray-900 leading-normal">
-                            {currentUser.displayName}
+                            {sidebarLoginId || currentUser?.email?.split("@")[0] || ""}
                         </p>
+
                     </div>
 
                     {/* 사용자 액션 메뉴 */}
@@ -248,20 +362,35 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         showDelete={false}
                         placement="right"
                         width="w-60"
-                        userDisplayName={currentUser.displayName}
-                        userEmail={currentUser.email}
+                        userDisplayName={
+                            currentUser?.email
+                                ? currentUser.email.split("@")[0]
+                                : undefined
+                        }
+                        userEmail={currentUser?.email}
+
                     />
 
                     {/* 비밀번호 재설정 모달 */}
                     <ResetPasswordModal
                         isOpen={resetPasswordModalOpen}
                         onClose={() => setResetPasswordModalOpen(false)}
-                        onSubmit={(payload) => {
-                            console.log("비밀번호 재설정:", payload);
-                            // 비밀번호 재설정 로직 구현
-                            setResetPasswordModalOpen(false);
+                        onSubmit={async (payload) => {
+                            const { error } = await supabase.auth.updateUser({
+                                password: payload.newPassword,
+                            });
+
+                            if (error) {
+                                console.error("비밀번호 변경 실패:", error.message);
+                                alert("비밀번호 변경에 실패했습니다. 다시 시도해주세요.");
+                                return false;
+                            }
+
+                            alert("비밀번호가 변경되었습니다.");
+                            return true;
                         }}
                     />
+
 
                     {/* 로그아웃 확인 모달 */}
                     <BaseModal
@@ -284,15 +413,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                     variant="primary"
                                     size="lg"
                                     fullWidth
-                                    onClick={() => {
-                                        console.log("로그아웃");
+                                    onClick={async () => {
                                         setLogoutConfirmModalOpen(false);
-                                        // 실제 로그아웃 로직 구현
-                                        // navigate("/login");
+                                        await handleLogout();
                                     }}
                                 >
                                     로그아웃
                                 </Button>
+
                             </div>
                         }
                     >
