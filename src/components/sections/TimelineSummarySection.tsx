@@ -647,6 +647,7 @@ export default function TimelineSummarySection({
                                                                                 {toHourStr(
                                                                                     seg.totalMin
                                                                                 )}
+
                                                                                 h
                                                                             </span>
                                                                         </div>

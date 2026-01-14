@@ -11,6 +11,7 @@ import Table from "../../components/common/Table";
 import Chip from "../../components/ui/Chip";
 import { IconMore } from "../../components/icons/Icons";
 import Avatar from "../../components/common/Avatar";
+import MembersSkeleton from "../../components/common/MembersSkeleton";
 
 type Member = {
     id: string;
@@ -34,11 +35,6 @@ type Member = {
     passportFirstName: string; // profiles.passport_first_name
     passportExpiry: string; // profiles.passport_expiry_date (YYMMDD로 보여주기)
 };
-
-
-
-
-
 
 export default function MembersPage() {
     const [activeTab, setActiveTab] = useState<"ALL" | "ADMIN" | "STAFF">(
@@ -77,7 +73,7 @@ export default function MembersPage() {
     const toYYMMDD = (iso?: string | null) => {
         if (!iso) return "";
         // iso: "2026-01-07"
-        const s = iso.slice(0, 10).replaceAll("-", ""); // YYYYMMDD
+        const s = iso.slice(0, 10).replace(/-/g, ""); // YYYYMMDD
         return s.length === 8 ? s.slice(2) : s; // YYMMDD
     };
 
@@ -141,9 +137,10 @@ export default function MembersPage() {
         setIsAdmin(data?.role === "admin");
     };
 
-    
-
-    const fetchMembers = async (opts?: { isAdmin?: boolean; myUserId?: string | null }) => {
+    const fetchMembers = async (opts?: {
+        isAdmin?: boolean;
+        myUserId?: string | null;
+    }) => {
         setLoadError(null);
         const admin = opts?.isAdmin ?? isAdmin;
         const uid = opts?.myUserId ?? myUserId;
@@ -170,7 +167,6 @@ export default function MembersPage() {
             )
             .order("created_at", { ascending: true });
 
-
         // ✅ staff도 전체 조회 (단, 화면에서 타인 여권정보는 마스킹)
         if (!uid) {
             // 로그인 정보가 없으면 최소한 안전하게 종료
@@ -179,7 +175,6 @@ export default function MembersPage() {
             return;
         }
 
-
         const { data, error } = await query;
 
         const ids = (data ?? []).map((p: any) => p.id);
@@ -187,11 +182,16 @@ export default function MembersPage() {
         // ✅ 여권정보는 분리 테이블에서 조회 (RLS로 staff는 본인만 내려옴 / admin은 전부 내려옴)
         const { data: passportsData, error: passportsError } = await supabase
             .from("profile_passports")
-            .select("user_id, passport_last_name, passport_first_name, passport_number, passport_expiry_date")
+            .select(
+                "user_id, passport_last_name, passport_first_name, passport_number, passport_expiry_date"
+            )
             .in("user_id", ids);
 
         if (passportsError) {
-            console.error("profile_passports 조회 실패:", passportsError.message);
+            console.error(
+                "profile_passports 조회 실패:",
+                passportsError.message
+            );
         }
 
         const passportsMap = new Map<string, any>();
@@ -199,14 +199,12 @@ export default function MembersPage() {
             passportsMap.set(pp.user_id, pp);
         });
 
-
         if (error) {
             console.error("profiles 조회 실패:", error.message);
             // ✅ 기존 목록 유지(캐시/이전 데이터가 있으면 그대로 보여줌)
             setLoading(false);
             return;
         }
-
 
         const mapped: Member[] = (data ?? []).map((p: any) => {
             const pp = passportsMap.get(p.id);
@@ -230,10 +228,11 @@ export default function MembersPage() {
                 passportNo: pp?.passport_number ?? "",
                 passportLastName: pp?.passport_last_name ?? "",
                 passportFirstName: pp?.passport_first_name ?? "",
-                passportExpiry: pp?.passport_expiry_date ? toYYMMDD(pp.passport_expiry_date) : "",
+                passportExpiry: pp?.passport_expiry_date
+                    ? toYYMMDD(pp.passport_expiry_date)
+                    : "",
             };
         });
-
 
         setMembers(mapped);
         try {
@@ -241,7 +240,6 @@ export default function MembersPage() {
         } catch {}
         setLoading(false);
     };
-
 
     useEffect(() => {
         const init = async () => {
@@ -268,11 +266,10 @@ export default function MembersPage() {
         init();
     }, []);
 
-
-
     const filteredMembers = useMemo(() => {
         if (activeTab === "ALL") return members;
-        if (activeTab === "ADMIN") return members.filter((m) => m.team === "공무팀");
+        if (activeTab === "ADMIN")
+            return members.filter((m) => m.team === "공무팀");
         return members.filter((m) => m.team === "공사팀");
     }, [members, activeTab]);
 
@@ -280,12 +277,14 @@ export default function MembersPage() {
     const adminCount = members.filter((m) => m.team === "공무팀").length;
     const staffCount = members.filter((m) => m.team === "공사팀").length;
 
-    const pageCount = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
+    const pageCount = Math.max(
+        1,
+        Math.ceil(filteredMembers.length / PAGE_SIZE)
+    );
     const pagedMembers = filteredMembers.slice(
         (page - 1) * PAGE_SIZE,
         page * PAGE_SIZE
     );
-
 
     const selectedMember = members.find((m) => m.id === selectedMemberId);
 
@@ -366,22 +365,24 @@ export default function MembersPage() {
                             </div>
                         )}
 
-                        {loading && members.length === 0 && (
-                            <div className="mb-3 text-sm text-gray-500">
-                                구성원 목록 불러오는 중...
-                            </div>
-                        )}
-
-                        <div className="overflow-x-auto">
+                        {loading && members.length === 0 ? (
+                            <MembersSkeleton />
+                        ) : (
+                            <div className="overflow-x-auto">
                             <div className="min-w-[980px]">
                                 <Table
                                     columns={[
                                         {
                                             key: "name",
                                             label: "이름",
+                                            width: "10%",
                                             render: (_, row) => (
-                                                <div className="flex items-center gap-3 w-[220px] min-w-[220px]">
-                                                    <Avatar email={row.email} size={24} position={row.role} />
+                                                <div className="flex items-center gap-3">
+                                                    <Avatar
+                                                        email={row.email}
+                                                        size={24}
+                                                        position={row.role}
+                                                    />
                                                     <div className="leading-tight">
                                                         <div className="text-[14px] font-semibold text-gray-900">
                                                             {row.name}
@@ -405,6 +406,7 @@ export default function MembersPage() {
                                         {
                                             key: "phone",
                                             label: "전화번호",
+                                            width: "8%",
                                             render: (value) => (
                                                 <div className="text-[14px] text-gray-900 w-[140px] min-w-[140px]">
                                                     {value}
@@ -414,9 +416,12 @@ export default function MembersPage() {
                                         {
                                             key: "address",
                                             label: "주소",
+                                            width: "30%",
                                             render: (_, row) => (
                                                 <div className="text-[14px] text-gray-900 w-[320px] min-w-[320px]">
-                                                    <div className="truncate">{row.address1}</div>
+                                                    <div className="truncate">
+                                                        {row.address1}
+                                                    </div>
                                                     <div className="text-[12px] text-gray-500 mt-1 truncate">
                                                         {row.address2}
                                                     </div>
@@ -469,58 +474,73 @@ export default function MembersPage() {
 
                                                 // ✅ staff는 타인 여권정보 비노출(본인/관리자만 노출)
                                                 const canSeePassport =
-                                                    isAdmin || row.id === myUserId;
+                                                    isAdmin ||
+                                                    row.id === myUserId;
 
                                                 return (
                                                     <div className="flex items-start pr-2 w-[260px] min-w-[260px]">
-
                                                         <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <div className="flex items-center gap-2 flex-wrap">
                                                                 <span className="text-[14px] font-semibold text-gray-900 truncate max-w-[140px]">
                                                                     {canSeePassport
-                                                                        ? (row.passportNo || "-")
+                                                                        ? row.passportNo ||
+                                                                          "-"
                                                                         : "-"}
                                                                 </span>
 
-                                                                {canSeePassport && formattedExpiry && (
-                                                                    <Chip
-                                                                        color="red-600"
-                                                                        variant="solid"
-                                                                        size="sm"
-                                                                    >
-                                                                        {formattedExpiry}
-                                                                    </Chip>
-                                                                )}
+                                                                {canSeePassport &&
+                                                                    formattedExpiry && (
+                                                                        <Chip
+                                                                            color="red-600"
+                                                                            variant="solid"
+                                                                            size="sm"
+                                                                        >
+                                                                            {
+                                                                                formattedExpiry
+                                                                            }
+                                                                        </Chip>
+                                                                    )}
                                                             </div>
 
-                                                            <div className="text-[12px] text-gray-500 uppercase tracking-tight -mt-1">
+                                                            <div className="text-[12px] text-gray-500 uppercase tracking-tight mt-1">
                                                                 {canSeePassport ? (
                                                                     <>
-                                                                        {row.passportLastName}{" "}
-                                                                        {row.passportFirstName}
+                                                                        {
+                                                                            row.passportLastName
+                                                                        }{" "}
+                                                                        {
+                                                                            row.passportFirstName
+                                                                        }
                                                                     </>
                                                                 ) : (
                                                                     "-"
                                                                 )}
                                                             </div>
-
                                                         </div>
-                                                        {(isAdmin || row.id === myUserId) && (
+                                                        {(isAdmin ||
+                                                            row.id ===
+                                                                myUserId) && (
                                                             <button
                                                                 className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
-                                                                onClick={(e) => {
+                                                                onClick={(
+                                                                    e
+                                                                ) => {
                                                                     e.stopPropagation();
-                                                                    setSelectedMemberId(row.id);
-                                                                    setActionAnchor(e.currentTarget);
-                                                                    setActionOpen(true);
+                                                                    setSelectedMemberId(
+                                                                        row.id
+                                                                    );
+                                                                    setActionAnchor(
+                                                                        e.currentTarget
+                                                                    );
+                                                                    setActionOpen(
+                                                                        true
+                                                                    );
                                                                 }}
                                                                 aria-label="more"
                                                             >
                                                                 <IconMore className="w-5 h-5" />
                                                             </button>
                                                         )}
-
-
                                                     </div>
                                                 );
                                             },
@@ -536,6 +556,7 @@ export default function MembersPage() {
                                 />
                             </div>
                         </div>
+                        )}
 
                         {/* 바닥 여백 */}
                         <div className="h-8" />
@@ -557,20 +578,24 @@ export default function MembersPage() {
                         return;
                     }
 
-// 이메일 도메인은 기존 이메일에서 유지 (없으면 기본값)
-const domain =
-    selectedMember?.email?.split("@")[1] || "rtb-kor.com";
+                    // 이메일 도메인은 기존 이메일에서 유지 (없으면 기본값)
+                    const domain =
+                        selectedMember?.email?.split("@")[1] || "rtb-kor.com";
 
-// ✅ 사용자가 '@'까지 입력해도 앞부분만 사용
-const localPart = (payload.emailPrefix || "").split("@")[0].trim();
+                    // ✅ 사용자가 '@'까지 입력해도 앞부분만 사용
+                    const localPart = (payload.emailPrefix || "")
+                        .split("@")[0]
+                        .trim();
 
-const nextEmail = localPart
-    ? `${localPart}@${domain}`
-    : selectedMember?.email || "";
+                    const nextEmail = localPart
+                        ? `${localPart}@${domain}`
+                        : selectedMember?.email || "";
 
                     const joinISO = normalizeDateToISO(payload.joinDate);
                     const birthISO = normalizeDateToISO(payload.birthDate);
-                    const passportExpiryISO = normalizeDateToISO(payload.passportExpiry);
+                    const passportExpiryISO = normalizeDateToISO(
+                        payload.passportExpiry
+                    );
 
                     const { error } = await supabase
                         .from("profiles")
@@ -594,8 +619,10 @@ const nextEmail = localPart
                             .upsert(
                                 {
                                     user_id: selectedMemberId,
-                                    passport_last_name: payload.passportLastName,
-                                    passport_first_name: payload.passportFirstName,
+                                    passport_last_name:
+                                        payload.passportLastName,
+                                    passport_first_name:
+                                        payload.passportFirstName,
                                     passport_number: payload.passportNo,
                                     passport_expiry_date: passportExpiryISO,
                                 },
@@ -603,12 +630,14 @@ const nextEmail = localPart
                             );
 
                         if (ppError) {
-                            console.error("여권정보 저장 실패:", ppError.message);
+                            console.error(
+                                "여권정보 저장 실패:",
+                                ppError.message
+                            );
                             alert("여권정보 저장에 실패했습니다.");
                             return;
                         }
                     }
-
 
                     if (error) {
                         console.error("구성원 수정 실패:", error.message);
@@ -623,7 +652,6 @@ const nextEmail = localPart
                     await fetchMembers();
                 }}
             />
-
 
             {/* Action Menu (수정/삭제/비밀번호 재설정) */}
             <ActionMenu
@@ -674,7 +702,6 @@ const nextEmail = localPart
                 width="w-44"
             />
 
-
             {/* Reset Password Modal */}
             <ResetPasswordModal
                 isOpen={resetPasswordModalOpen}
@@ -717,7 +744,10 @@ const nextEmail = localPart
                     );
 
                     if (error) {
-                        console.error("관리자 비밀번호 재설정 실패:", error.message);
+                        console.error(
+                            "관리자 비밀번호 재설정 실패:",
+                            error.message
+                        );
                         alert("비밀번호 재설정에 실패했습니다.");
                         return false;
                     }
@@ -726,7 +756,6 @@ const nextEmail = localPart
                     return true;
                 }}
             />
-
         </div>
     );
 }
