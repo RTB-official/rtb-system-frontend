@@ -486,11 +486,14 @@ export default function WorkLogSection() {
                                     availableWorkers.map((worker) => (
                                         <Button
                                             key={worker}
+                                            type="button"
                                             size="md"
                                             variant="outline"
-                                            onClick={() =>
-                                                addCurrentEntryPerson(worker)
-                                            }
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                addCurrentEntryPerson(worker);
+                                            }}
                                         >
                                             {worker}
                                         </Button>

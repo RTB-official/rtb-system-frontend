@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
+import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkeleton";
 import { IconArrowBack } from "../../components/icons/Icons";
+import {
+    getWorkerWorkloadDetail,
+    formatHours,
+    formatDetailDate,
+    formatTimeRange,
+    type WorkloadDetailEntry,
+} from "../../lib/workloadDetailApi";
 const IconWork = () => (
     <svg
         width="24"
@@ -48,147 +56,72 @@ const IconSchedule = () => (
     </svg>
 );
 
-// 이모지는 제거하고 아이콘으로 복구합니다.
-
-// 샘플 사용자 데이터
-const userData: Record<
-    string,
-    { name: string; totalWork: string; totalTravel: string; totalWait: string }
-> = {
-    "1": {
-        name: "홍길동",
-        totalWork: "101시간",
-        totalTravel: "20시간 30분",
-        totalWait: "0시간",
-    },
-    "2": {
-        name: "김철수",
-        totalWork: "95시간",
-        totalTravel: "18시간 45분",
-        totalWait: "2시간",
-    },
-    "3": {
-        name: "이영희",
-        totalWork: "110시간",
-        totalTravel: "15시간 20분",
-        totalWait: "1시간",
-    },
-};
-
-// 샘플 테이블 데이터
-interface WorkloadDetailRow {
-    id: number;
-    date: string;
-    vesselName: string;
-    workTime: string;
-    timeRange: string;
-    travelTime: string;
-    waitTime: string;
-}
-
-const detailTableData: WorkloadDetailRow[] = [
-    {
-        id: 1,
-        date: "2025.11.01",
-        vesselName: "SH8218",
-        workTime: "8시간",
-        timeRange: "09:00-17:00",
-        travelTime: "1시간 30분",
-        waitTime: "0시간",
-    },
-    {
-        id: 2,
-        date: "2025.11.02",
-        vesselName: "SH8218",
-        workTime: "7시간 30분",
-        timeRange: "08:30-16:00",
-        travelTime: "2시간",
-        waitTime: "30분",
-    },
-    {
-        id: 3,
-        date: "2025.11.03",
-        vesselName: "SH8219",
-        workTime: "9시간",
-        timeRange: "09:00-18:00",
-        travelTime: "1시간",
-        waitTime: "0시간",
-    },
-    {
-        id: 4,
-        date: "2025.11.04",
-        vesselName: "SH8218",
-        workTime: "8시간",
-        timeRange: "09:00-17:00",
-        travelTime: "1시간 30분",
-        waitTime: "0시간",
-    },
-    {
-        id: 5,
-        date: "2025.11.05",
-        vesselName: "SH8220",
-        workTime: "7시간",
-        timeRange: "10:00-17:00",
-        travelTime: "2시간 30분",
-        waitTime: "1시간",
-    },
-    {
-        id: 6,
-        date: "2025.11.06",
-        vesselName: "SH8218",
-        workTime: "8시간 30분",
-        timeRange: "08:30-17:00",
-        travelTime: "1시간",
-        waitTime: "0시간",
-    },
-    {
-        id: 7,
-        date: "2025.11.07",
-        vesselName: "SH8219",
-        workTime: "9시간",
-        timeRange: "09:00-18:00",
-        travelTime: "1시간 30분",
-        waitTime: "30분",
-    },
-    {
-        id: 8,
-        date: "2025.11.08",
-        vesselName: "SH8218",
-        workTime: "8시간",
-        timeRange: "09:00-17:00",
-        travelTime: "2시간",
-        waitTime: "0시간",
-    },
-    {
-        id: 9,
-        date: "2025.11.09",
-        vesselName: "SH8220",
-        workTime: "7시간 30분",
-        timeRange: "09:30-17:00",
-        travelTime: "1시간 30분",
-        waitTime: "0시간",
-    },
-    {
-        id: 10,
-        date: "2025.11.10",
-        vesselName: "SH8218",
-        workTime: "8시간",
-        timeRange: "09:00-17:00",
-        travelTime: "1시간",
-        waitTime: "0시간",
-    },
-];
-
 export default function WorkloadDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const [selectedYear, setSelectedYear] = useState("2025년");
-    const [selectedMonth, setSelectedMonth] = useState("11월");
+    
+    // 오늘 날짜 기준으로 기본값 설정
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1;
+    
+    const [selectedYear, setSelectedYear] = useState(`${currentYear}년`);
+    const [selectedMonth, setSelectedMonth] = useState(`${currentMonth}월`);
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [summary, setSummary] = useState<{
+        name: string;
+        totalWork: number;
+        totalTravel: number;
+        totalWait: number;
+    } | null>(null);
+    const [detailEntries, setDetailEntries] = useState<WorkloadDetailEntry[]>([]);
 
-    const user = userData[id || "1"] || userData["1"];
-    const totalPages = 3;
+    const itemsPerPage = 10;
+    const personName = id ? decodeURIComponent(id) : "";
+
+    // 데이터 로드
+    useEffect(() => {
+        if (!personName) {
+            setLoading(false);
+            return;
+        }
+
+        const loadData = async () => {
+            setLoading(true);
+            try {
+                const yearNum = parseInt(selectedYear.replace("년", ""));
+                const monthNum = parseInt(selectedMonth.replace("월", "")) - 1;
+
+                const data = await getWorkerWorkloadDetail(personName, {
+                    year: yearNum,
+                    month: monthNum,
+                });
+
+                setSummary(data.summary);
+                setDetailEntries(data.entries);
+                setCurrentPage(1);
+            } catch (error) {
+                console.error("워크로드 상세 데이터 로드 실패:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadData();
+    }, [personName, selectedYear, selectedMonth]);
+
+    // 페이지네이션 계산
+    const totalPages = useMemo(() => {
+        return Math.ceil(detailEntries.length / itemsPerPage);
+    }, [detailEntries.length]);
+
+    const currentTableData = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        return detailEntries.slice(startIndex, endIndex);
+    }, [detailEntries, currentPage, itemsPerPage]);
 
     return (
         <div className="flex h-screen bg-white font-pretendard">
@@ -216,7 +149,7 @@ export default function WorkloadDetailPage() {
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <Header
-                    title={`${user.name} 작업자 워크로드`}
+                    title={`${personName} 작업자 워크로드`}
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         <button
@@ -231,131 +164,151 @@ export default function WorkloadDetailPage() {
 
                 {/* Content */}
                 <main className="flex-1 overflow-auto pt-6 pb-24 px-9">
-                    <div className="flex flex-col gap-6 w-full">
-                        {/* 요약 카드 (Icon 기반) */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {[
-                                {
-                                    label: "총 작업시간",
-                                    value: user.totalWork,
-                                    color: "text-gray-900",
-                                },
-                                {
-                                    label: "이동시간",
-                                    value: user.totalTravel,
-                                    color: "text-gray-900",
-                                },
-                                {
-                                    label: "대기시간",
-                                    value: user.totalWait,
-                                    color: "text-gray-900",
-                                },
-                            ].map((card) => (
-                                <div
-                                    key={card.label}
-                                    className="bg-gray-50 rounded-2xl p-5"
-                                >
-                                    <div className="flex items-center gap-2 text-gray-500 mb-2">
-                                        {card.label === "총 작업시간" ? (
-                                            <IconWork />
-                                        ) : card.label === "이동시간" ? (
-                                            <IconDriveEta />
-                                        ) : (
-                                            <IconSchedule />
-                                        )}
-                                        <span className="text-sm">
-                                            {card.label}
-                                        </span>
-                                    </div>
-                                    <div
-                                        className={`mt-2 text-[26px] font-bold ${card.color}`}
-                                    >
-                                        {card.value}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* 조회 기간 */}
-                        <div className="flex flex-wrap items-center gap-4">
-                            <h2 className="text-[24px] font-semibold text-gray-900">
-                                조회 기간
-                            </h2>
-                            <YearMonthSelector
-                                year={selectedYear}
-                                month={selectedMonth}
-                                onYearChange={setSelectedYear}
-                                onMonthChange={setSelectedMonth}
-                            />
-                        </div>
-
-                        {/* 날짜별 세부 분석 테이블 */}
-                        <div className="bg-white border border-gray-200 rounded-2xl p-7">
-                            <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight mb-6">
-                                날짜별 세부 분석
-                            </h2>
-
-                            <Table
-                                columns={[
-                                    {
-                                        key: "date",
-                                        label: "날짜",
-                                        render: (value: string) => {
-                                            const date = new Date(
-                                                value.replace(/\./g, "-")
-                                            );
-                                            if (isNaN(date.getTime()))
-                                                return value;
-
-                                            const days = [
-                                                "일",
-                                                "월",
-                                                "화",
-                                                "수",
-                                                "목",
-                                                "금",
-                                                "토",
-                                            ];
-                                            const dayOfWeek = date.getDay();
-                                            const dayLabel = days[dayOfWeek];
-
-                                            // 2025. 12. 18.(목) 형식
-                                            const formattedDate = `${date.getFullYear()}. ${
-                                                date.getMonth() + 1
-                                            }. ${date.getDate()}.(${dayLabel})`;
-
-                                            let colorClass = "text-gray-800";
-                                            if (dayOfWeek === 0)
-                                                colorClass =
-                                                    "text-red-600"; // 일요일
-                                            else if (dayOfWeek === 6)
-                                                colorClass = "text-blue-600"; // 토요일
-
-                                            return (
-                                                <span
-                                                    className={`font-medium ${colorClass}`}
-                                                >
-                                                    {formattedDate}
-                                                </span>
-                                            );
+                    {loading ? (
+                        <WorkloadDetailSkeleton />
+                    ) : (
+                        <div className="flex flex-col gap-6 w-full">
+                            {/* 요약 카드 (Icon 기반) */}
+                            {summary ? (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {[
+                                        {
+                                            label: "총 작업시간",
+                                            value: formatHours(summary.totalWork),
+                                            color: "text-gray-900",
                                         },
-                                    },
-                                    { key: "vesselName", label: "호선명" },
-                                    { key: "workTime", label: "작업시간" },
-                                    { key: "timeRange", label: "시간대" },
-                                    { key: "travelTime", label: "이동시간" },
-                                    { key: "waitTime", label: "대기시간" },
-                                ]}
-                                data={detailTableData}
-                                rowKey="id"
-                                pagination={{
-                                    currentPage,
-                                    totalPages,
-                                    onPageChange: setCurrentPage,
-                                }}
-                            />
+                                        {
+                                            label: "이동시간",
+                                            value: formatHours(summary.totalTravel),
+                                            color: "text-gray-900",
+                                        },
+                                        {
+                                            label: "대기시간",
+                                            value: formatHours(summary.totalWait),
+                                            color: "text-gray-900",
+                                        },
+                                    ].map((card) => (
+                                        <div
+                                            key={card.label}
+                                            className="bg-gray-50 rounded-2xl p-5"
+                                        >
+                                            <div className="flex items-center gap-2 text-gray-500 mb-2">
+                                                {card.label === "총 작업시간" ? (
+                                                    <IconWork />
+                                                ) : card.label === "이동시간" ? (
+                                                    <IconDriveEta />
+                                                ) : (
+                                                    <IconSchedule />
+                                                )}
+                                                <span className="text-sm">
+                                                    {card.label}
+                                                </span>
+                                            </div>
+                                            <div
+                                                className={`mt-2 text-[26px] font-bold ${card.color}`}
+                                            >
+                                                {card.value}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {/* 조회 기간 */}
+                            <div className="flex flex-wrap items-center gap-4">
+                                <h2 className="text-[24px] font-semibold text-gray-900">
+                                    조회 기간
+                                </h2>
+                                <YearMonthSelector
+                                    year={selectedYear}
+                                    month={selectedMonth}
+                                    onYearChange={setSelectedYear}
+                                    onMonthChange={setSelectedMonth}
+                                />
+                            </div>
+
+                            {/* 날짜별 세부 분석 테이블 */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
+                                <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight mb-6">
+                                    날짜별 세부 분석
+                                </h2>
+
+                                {detailEntries.length === 0 ? (
+                                    <div className="py-8 text-center text-gray-500">
+                                        데이터가 없습니다.
+                                    </div>
+                                ) : (
+                                    <Table
+                                        columns={[
+                                            {
+                                                key: "date",
+                                                label: "날짜",
+                                                render: (_, row: WorkloadDetailEntry) => {
+                                                    const formattedDate = formatDetailDate(row.date);
+                                                    const date = new Date(row.date + "T00:00:00");
+                                                    const dayOfWeek = date.getDay();
+                                                    
+                                                    let colorClass = "text-gray-800";
+                                                    if (dayOfWeek === 0)
+                                                        colorClass = "text-red-600"; // 일요일
+                                                    else if (dayOfWeek === 6)
+                                                        colorClass = "text-blue-600"; // 토요일
+
+                                                    return (
+                                                        <span
+                                                            className={`font-medium ${colorClass}`}
+                                                        >
+                                                            {formattedDate}
+                                                        </span>
+                                                    );
+                                                },
+                                            },
+                                            {
+                                                key: "vesselName",
+                                                label: "호선명",
+                                                render: (value: string | null) => value || "-",
+                                            },
+                                            {
+                                                key: "workTime",
+                                                label: "작업시간",
+                                                render: (_, row: WorkloadDetailEntry) =>
+                                                    formatHours(row.workTime),
+                                            },
+                                            {
+                                                key: "timeRange",
+                                                label: "시간대",
+                                                render: (_, row: WorkloadDetailEntry) =>
+                                                    formatTimeRange(row.timeFrom, row.timeTo),
+                                            },
+                                            {
+                                                key: "travelTime",
+                                                label: "이동시간",
+                                                render: (_, row: WorkloadDetailEntry) =>
+                                                    formatHours(row.travelTime),
+                                            },
+                                            {
+                                                key: "waitTime",
+                                                label: "대기시간",
+                                                render: (_, row: WorkloadDetailEntry) =>
+                                                    formatHours(row.waitTime),
+                                            },
+                                        ]}
+                                        data={currentTableData}
+                                        rowKey="id"
+                                        pagination={
+                                            totalPages > 1
+                                                ? {
+                                                      currentPage,
+                                                      totalPages,
+                                                      onPageChange: setCurrentPage,
+                                                  }
+                                                : undefined
+                                        }
+                                    />
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </main>
             </div>
         </div>

@@ -28,6 +28,7 @@ import {
     calendarEventRecordToCalendarEvent,
 } from "../../lib/dashboardApi";
 import { supabase } from "../../lib/supabase";
+import DashboardSkeleton from "../../components/common/DashboardSkeleton";
 
 // 공휴일 API 정보
 const HOLIDAY_API_KEY =
@@ -950,6 +951,7 @@ export default function DashboardPage() {
                             </div>
                         </div>
                     </div>
+                    )}
                 </main>
             </div>
 

@@ -321,23 +321,26 @@ export default function AdminVacationPage() {
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto px-9 py-6 md:py-9">
-                    <div className="flex flex-col gap-6 w-full">
-                        {/* 통계 카드 */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {statsCards.map((card) => (
-                                <div
-                                    key={card.label}
-                                    className="bg-gray-50 rounded-2xl p-5"
-                                >
-                                    <div className="text-[13px] font-semibold text-gray-500">
-                                        {card.label}
+                    {loading ? (
+                        <AdminVacationSkeleton />
+                    ) : (
+                        <div className="flex flex-col gap-6 w-full">
+                            {/* 통계 카드 */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {statsCards.map((card) => (
+                                    <div
+                                        key={card.label}
+                                        className="bg-gray-50 rounded-2xl p-5"
+                                    >
+                                        <div className="text-[13px] font-semibold text-gray-500">
+                                            {card.label}
+                                        </div>
+                                        <div className={`mt-2 text-[26px] font-bold ${card.color}`}>
+                                            {card.value}
+                                        </div>
                                     </div>
-                                    <div className={`mt-2 text-[26px] font-bold ${card.color}`}>
-                                        {card.value}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
 
                         {/* 연도 선택 */}
                         <div className="flex items-center gap-4">

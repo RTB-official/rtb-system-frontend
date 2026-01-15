@@ -8,6 +8,7 @@ import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
+import ReportListSkeleton from "../../components/common/ReportListSkeleton";
 import { IconMore, IconPlus } from "../../components/icons/Icons";
 import EmptyValueIndicator from "../Expense/components/EmptyValueIndicator";
 import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
@@ -42,6 +43,7 @@ export default function ReportListPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [loading, setLoading] = useState(true);
     const itemsPerPage = 10;
     const navigate = useNavigate();
     const { showSuccess, showError, showInfo } = useToast();
@@ -70,6 +72,7 @@ export default function ReportListPage() {
 
     // 데이터 로드
     const loadReports = async () => {
+        setLoading(true);
         try {
             const workLogs = await getWorkLogs();
             const reportItems = workLogs.map(convertToReportItem);
@@ -117,6 +120,8 @@ export default function ReportListPage() {
         } catch (error) {
             console.error("Error loading reports:", error);
             showError("보고서 목록을 불러오는 중 오류가 발생했습니다.");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -200,86 +205,18 @@ export default function ReportListPage() {
                 />
 
                 <div className="flex-1 overflow-y-auto px-4 lg:px-12 pt-6 pb-24">
-                    <div className="flex flex-col gap-4">
-                        {/* 검색 및 필터 섹션 */}
-                        <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
-                            <div className="flex flex-wrap items-center gap-3 justify-between">
-                                <Input
-                                    value={search}
-                                    onChange={setSearch}
-                                    placeholder="검색어를 입력해 주세요"
-                                    icon={
-                                        <svg
-                                            width="16"
-                                            height="16"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
-                                            <circle cx="11" cy="11" r="7" />
-                                            <line
-                                                x1="16.65"
-                                                y1="16.65"
-                                                x2="21"
-                                                y2="21"
-                                            />
-                                        </svg>
-                                    }
-                                    iconPosition="left"
-                                    className="flex-1 min-w-[300px]"
-                                />
-                                <div className="flex items-center gap-2 flex-wrap justify-end">
-                                    <YearMonthSelector
-                                        year={year}
-                                        month={month}
-                                        onYearChange={(value) => {
-                                            setYear(value);
-                                            setCurrentPage(1);
-                                        }}
-                                        onMonthChange={(value) => {
-                                            setMonth(value);
-                                            setCurrentPage(1);
-                                        }}
-                                        yearOptions={[
-                                            {
-                                                value: "년도 전체",
-                                                label: "년도 전체",
-                                            },
-                                            {
-                                                value: "2025년",
-                                                label: "2025년",
-                                            },
-                                            {
-                                                value: "2026년",
-                                                label: "2026년",
-                                            },
-                                        ]}
-                                        monthOptions={[
-                                            {
-                                                value: "월 전체",
-                                                label: "월 전체",
-                                            },
-                                            { value: "1월", label: "1월" },
-                                            { value: "2월", label: "2월" },
-                                            { value: "3월", label: "3월" },
-                                            { value: "4월", label: "4월" },
-                                            { value: "5월", label: "5월" },
-                                            { value: "6월", label: "6월" },
-                                            { value: "7월", label: "7월" },
-                                            { value: "8월", label: "8월" },
-                                            { value: "9월", label: "9월" },
-                                            { value: "10월", label: "10월" },
-                                            { value: "11월", label: "11월" },
-                                            { value: "12월", label: "12월" },
-                                        ]}
-                                    />
-                                    {isFilterActive && (
-                                        <button
-                                            onClick={handleResetFilter}
-                                            className="h-12 w-12 flex items-center justify-center border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 transition-colors"
-                                            aria-label="필터 초기화"
-                                        >
+                    {loading ? (
+                        <ReportListSkeleton />
+                    ) : (
+                        <div className="flex flex-col gap-4">
+                            {/* 검색 및 필터 섹션 */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                <div className="flex flex-wrap items-center gap-3 justify-between">
+                                    <Input
+                                        value={search}
+                                        onChange={setSearch}
+                                        placeholder="검색어를 입력해 주세요"
+                                        icon={
                                             <svg
                                                 width="16"
                                                 height="16"
@@ -287,205 +224,295 @@ export default function ReportListPage() {
                                                 fill="none"
                                                 stroke="currentColor"
                                                 strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
                                             >
-                                                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                                                <path d="M21 3v5h-5" />
-                                                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                                                <path d="M3 21v-5h5" />
+                                                <circle cx="11" cy="11" r="7" />
+                                                <line
+                                                    x1="16.65"
+                                                    y1="16.65"
+                                                    x2="21"
+                                                    y2="21"
+                                                />
                                             </svg>
-                                        </button>
-                                    )}
+                                        }
+                                        iconPosition="left"
+                                        className="flex-1 min-w-[300px]"
+                                    />
+                                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                                        <YearMonthSelector
+                                            year={year}
+                                            month={month}
+                                            onYearChange={(value) => {
+                                                setYear(value);
+                                                setCurrentPage(1);
+                                            }}
+                                            onMonthChange={(value) => {
+                                                setMonth(value);
+                                                setCurrentPage(1);
+                                            }}
+                                            yearOptions={[
+                                                {
+                                                    value: "년도 전체",
+                                                    label: "년도 전체",
+                                                },
+                                                {
+                                                    value: "2025년",
+                                                    label: "2025년",
+                                                },
+                                                {
+                                                    value: "2026년",
+                                                    label: "2026년",
+                                                },
+                                            ]}
+                                            monthOptions={[
+                                                {
+                                                    value: "월 전체",
+                                                    label: "월 전체",
+                                                },
+                                                { value: "1월", label: "1월" },
+                                                { value: "2월", label: "2월" },
+                                                { value: "3월", label: "3월" },
+                                                { value: "4월", label: "4월" },
+                                                { value: "5월", label: "5월" },
+                                                { value: "6월", label: "6월" },
+                                                { value: "7월", label: "7월" },
+                                                { value: "8월", label: "8월" },
+                                                { value: "9월", label: "9월" },
+                                                {
+                                                    value: "10월",
+                                                    label: "10월",
+                                                },
+                                                {
+                                                    value: "11월",
+                                                    label: "11월",
+                                                },
+                                                {
+                                                    value: "12월",
+                                                    label: "12월",
+                                                },
+                                            ]}
+                                        />
+                                        {isFilterActive && (
+                                            <button
+                                                onClick={handleResetFilter}
+                                                className="h-12 w-12 flex items-center justify-center border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 transition-colors"
+                                                aria-label="필터 초기화"
+                                            >
+                                                <svg
+                                                    width="16"
+                                                    height="16"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                >
+                                                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                                                    <path d="M21 3v5h-5" />
+                                                    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                                                    <path d="M3 21v-5h5" />
+                                                </svg>
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* 테이블 섹션 */}
-                        <Table
-                            className="text-[14px]"
-                            columns={[
-                                {
-                                    key: "owner",
-                                    label: "작성자",
-                                    width: "12%",
-                                    render: (_, row: ReportItem) => {
-                                        return (
-                                            <div className="flex items-center gap-2">
-                                                <Avatar
-                                                    email={
-                                                        row.ownerEmail || null
+                            {/* 테이블 섹션 */}
+                            <Table
+                                className="text-[14px]"
+                                columns={[
+                                    {
+                                        key: "owner",
+                                        label: "작성자",
+                                        width: "12%",
+                                        render: (_, row: ReportItem) => {
+                                            return (
+                                                <div className="flex items-center gap-2">
+                                                    <Avatar
+                                                        email={
+                                                            row.ownerEmail ||
+                                                            null
+                                                        }
+                                                        size={24}
+                                                        position={
+                                                            row.ownerPosition ||
+                                                            null
+                                                        }
+                                                    />
+                                                    <span className="text-gray-900">
+                                                        {row.owner}
+                                                    </span>
+                                                </div>
+                                            );
+                                        },
+                                    },
+                                    {
+                                        key: "title",
+                                        label: "제목",
+                                        width: "36%",
+                                    },
+                                    {
+                                        key: "place",
+                                        label: "출장지",
+                                        width: "12%",
+                                        render: (value) => {
+                                            if (
+                                                value &&
+                                                value.trim() &&
+                                                value !== "—"
+                                            ) {
+                                                return (
+                                                    <span className="text-gray-600">
+                                                        {value}
+                                                    </span>
+                                                );
+                                            }
+                                            return <EmptyValueIndicator />;
+                                        },
+                                    },
+                                    {
+                                        key: "supervisor",
+                                        label: "참관감독",
+                                        width: "12%",
+                                        render: (value) => {
+                                            if (
+                                                value &&
+                                                value.trim() &&
+                                                value !== "—"
+                                            ) {
+                                                return (
+                                                    <span className="text-gray-500">
+                                                        {value}
+                                                    </span>
+                                                );
+                                            }
+                                            return <EmptyValueIndicator />;
+                                        },
+                                    },
+                                    {
+                                        key: "date",
+                                        label: "작성일",
+                                        width: "12%",
+                                        render: (value) => (
+                                            <span className="text-gray-600">
+                                                {value}
+                                            </span>
+                                        ),
+                                    },
+                                    {
+                                        key: "status",
+                                        label: "상태",
+                                        width: "10%",
+                                        render: (_, row: ReportItem) => {
+                                            const statusConfig: Record<
+                                                ReportStatus,
+                                                { color: string; label: string }
+                                            > = {
+                                                submitted: {
+                                                    color: "blue-500",
+                                                    label: "제출 완료",
+                                                },
+                                                pending: {
+                                                    color: "green-600",
+                                                    label: "임시저장",
+                                                },
+                                                not_submitted: {
+                                                    color: "gray-400",
+                                                    label: "미제출",
+                                                },
+                                            };
+
+                                            const { color, label } =
+                                                statusConfig[row.status];
+
+                                            return (
+                                                <Chip
+                                                    color={color}
+                                                    variant="solid"
+                                                    size="md"
+                                                >
+                                                    {label}
+                                                </Chip>
+                                            );
+                                        },
+                                    },
+                                    {
+                                        key: "actions",
+                                        label: "",
+                                        width: "12%",
+                                        align: "right",
+                                        render: (_, row: ReportItem) => (
+                                            <div className="relative inline-flex">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setOpenMenuId(
+                                                            openMenuId ===
+                                                                row.id
+                                                                ? null
+                                                                : row.id
+                                                        );
+                                                        setMenuAnchor(
+                                                            openMenuId ===
+                                                                row.id
+                                                                ? null
+                                                                : e.currentTarget
+                                                        );
+                                                    }}
+                                                    className="p-2 rounded hover:bg-gray-100 text-gray-600"
+                                                    aria-label="행 메뉴"
+                                                >
+                                                    <IconMore className="w-[18px] h-[18px]" />
+                                                </button>
+                                                <ActionMenu
+                                                    isOpen={
+                                                        openMenuId === row.id
                                                     }
-                                                    size={24}
-                                                    position={
-                                                        row.ownerPosition ||
-                                                        null
-                                                    }
+                                                    anchorEl={menuAnchor}
+                                                    onClose={() => {
+                                                        setOpenMenuId(null);
+                                                        setMenuAnchor(null);
+                                                    }}
+                                                    onEdit={() => {
+                                                        navigate(
+                                                            `/reportcreate?id=${row.id}`
+                                                        );
+                                                    }}
+                                                    onDelete={() => {
+                                                        setDeleteTargetId(
+                                                            row.id
+                                                        );
+                                                        setDeleteConfirmOpen(
+                                                            true
+                                                        );
+                                                    }}
+                                                    onDownload={() => {
+                                                        console.log(
+                                                            "PDF 다운로드:",
+                                                            row.id
+                                                        );
+                                                        showInfo(
+                                                            `PDF 다운로드: ${row.id}`
+                                                        );
+                                                    }}
+                                                    width="w-44"
                                                 />
-                                                <span className="text-gray-900">
-                                                    {row.owner}
-                                                </span>
                                             </div>
-                                        );
+                                        ),
                                     },
-                                },
-                                {
-                                    key: "title",
-                                    label: "제목",
-                                    width: "36%",
-                                },
-                                {
-                                    key: "place",
-                                    label: "출장지",
-                                    width: "12%",
-                                    render: (value) => {
-                                        if (
-                                            value &&
-                                            value.trim() &&
-                                            value !== "—"
-                                        ) {
-                                            return (
-                                                <span className="text-gray-600">
-                                                    {value}
-                                                </span>
-                                            );
-                                        }
-                                        return <EmptyValueIndicator />;
-                                    },
-                                },
-                                {
-                                    key: "supervisor",
-                                    label: "참관감독",
-                                    width: "12%",
-                                    render: (value) => {
-                                        if (
-                                            value &&
-                                            value.trim() &&
-                                            value !== "—"
-                                        ) {
-                                            return (
-                                                <span className="text-gray-500">
-                                                    {value}
-                                                </span>
-                                            );
-                                        }
-                                        return <EmptyValueIndicator />;
-                                    },
-                                },
-                                {
-                                    key: "date",
-                                    label: "작성일",
-                                    width: "12%",
-                                    render: (value) => (
-                                        <span className="text-gray-600">
-                                            {value}
-                                        </span>
-                                    ),
-                                },
-                                {
-                                    key: "status",
-                                    label: "상태",
-                                    width: "10%",
-                                    render: (_, row: ReportItem) => {
-                                        const statusConfig: Record<
-                                            ReportStatus,
-                                            { color: string; label: string }
-                                        > = {
-                                            submitted: {
-                                                color: "blue-500",
-                                                label: "제출 완료",
-                                            },
-                                            pending: {
-                                                color: "green-600",
-                                                label: "임시저장",
-                                            },
-                                            not_submitted: {
-                                                color: "gray-400",
-                                                label: "미제출",
-                                            },
-                                        };
-
-                                        const { color, label } =
-                                            statusConfig[row.status];
-
-                                        return (
-                                            <Chip
-                                                color={color}
-                                                variant="solid"
-                                                size="md"
-                                            >
-                                                {label}
-                                            </Chip>
-                                        );
-                                    },
-                                },
-                                {
-                                    key: "actions",
-                                    label: "",
-                                    width: "12%",
-                                    align: "right",
-                                    render: (_, row: ReportItem) => (
-                                        <div className="relative inline-flex">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setOpenMenuId(
-                                                        openMenuId === row.id
-                                                            ? null
-                                                            : row.id
-                                                    );
-                                                    setMenuAnchor(
-                                                        openMenuId === row.id
-                                                            ? null
-                                                            : e.currentTarget
-                                                    );
-                                                }}
-                                                className="p-2 rounded hover:bg-gray-100 text-gray-600"
-                                                aria-label="행 메뉴"
-                                            >
-                                                <IconMore className="w-[18px] h-[18px]" />
-                                            </button>
-                                            <ActionMenu
-                                                isOpen={openMenuId === row.id}
-                                                anchorEl={menuAnchor}
-                                                onClose={() => {
-                                                    setOpenMenuId(null);
-                                                    setMenuAnchor(null);
-                                                }}
-                                                onEdit={() => {
-                                                    navigate(
-                                                        `/reportcreate?id=${row.id}`
-                                                    );
-                                                }}
-                                                onDelete={() => {
-                                                    setDeleteTargetId(row.id);
-                                                    setDeleteConfirmOpen(true);
-                                                }}
-                                                onDownload={() => {
-                                                    console.log(
-                                                        "PDF 다운로드:",
-                                                        row.id
-                                                    );
-                                                    showInfo(
-                                                        `PDF 다운로드: ${row.id}`
-                                                    );
-                                                }}
-                                                width="w-44"
-                                            />
-                                        </div>
-                                    ),
-                                },
-                            ]}
-                            data={currentData}
-                            rowKey="id"
-                            emptyText="결과가 없습니다."
-                            pagination={{
-                                currentPage,
-                                totalPages,
-                                onPageChange: setCurrentPage,
-                            }}
-                        />
-                    </div>
+                                ]}
+                                data={currentData}
+                                rowKey="id"
+                                emptyText="결과가 없습니다."
+                                pagination={{
+                                    currentPage,
+                                    totalPages,
+                                    onPageChange: setCurrentPage,
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
 
