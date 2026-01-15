@@ -160,14 +160,9 @@ export default function ExpenseSection() {
         <SectionCard
             title="지출 내역"
             headerContent={
-                <div className="flex flex-col items-end">
-                    <span className="font-medium text-[14px] text-gray-400">
-                        총 {expenses.length}건
-                    </span>
-                    <span className="font-semibold text-[18px] md:text-[20px] text-gray-700">
-                        {formatCurrency(total)}원
-                    </span>
-                </div>
+                <span className="font-medium text-[14px] text-gray-400">
+                    총 {expenses.length}건
+                </span>
             }
         >
             <div className="flex flex-col gap-2 -mt-4">
@@ -372,48 +367,55 @@ export default function ExpenseSection() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {expenses.map((expense) => (
-                                    <tr
-                                        key={expense.id}
-                                        onClick={() => handleEdit(expense)}
-                                        className={`cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
-                                            expense.type
-                                        )} ${
-                                            editingExpenseId === expense.id
-                                                ? "outline outline-2 outline-blue-500 -outline-offset-2"
-                                                : ""
-                                        }`}
-                                    >
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
-                                            {formatDate(expense.date)}
-                                        </td>
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
-                                            {expense.type}
-                                        </td>
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px]">
-                                            {expense.detail}
-                                        </td>
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
-                                            {formatCurrency(expense.amount)}원
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (
-                                                        confirm(
-                                                            "삭제하시겠습니까?"
+                                {expenses.map((expense) => {
+                                    const isSelected = editingExpenseId === expense.id;
+                                    return (
+                                        <tr
+                                            key={expense.id}
+                                            onClick={() => handleEdit(expense)}
+                                            className={`group cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
+                                                expense.type
+                                            )} ${
+                                                isSelected
+                                                    ? "outline outline-2 outline-blue-500 -outline-offset-2"
+                                                    : ""
+                                            }`}
+                                        >
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
+                                                {formatDate(expense.date)}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
+                                                {expense.type}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px]">
+                                                {expense.detail}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
+                                                {formatCurrency(expense.amount)}원
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (
+                                                            confirm(
+                                                                "삭제하시겠습니까?"
+                                                            )
                                                         )
-                                                    )
-                                                        deleteExpense(
-                                                            expense.id
-                                                        );
-                                                }}
-                                                className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 opacity-0 hover:opacity-100"
-                                            >
-                                                ✕
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                                            deleteExpense(
+                                                                expense.id
+                                                            );
+                                                    }}
+                                                    className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${
+                                                        isSelected
+                                                            ? "opacity-100"
+                                                            : "opacity-0 group-hover:opacity-100"
+                                                    }`}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                             <tfoot>
                                 <tr>

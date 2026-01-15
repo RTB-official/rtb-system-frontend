@@ -669,7 +669,7 @@ export default function MembersPage() {
                     setEditModalOpen(true);
                 }}
                 onResetPassword={() => {
-                    // staff는 본인만 가능
+                    // admin은 모든 계정, staff는 본인만 가능
                     if (!isAdmin && selectedMemberId !== myUserId) return;
                     setActionOpen(false);
                     setResetPasswordModalOpen(true);
@@ -711,13 +711,13 @@ export default function MembersPage() {
                 onSubmit={async (payload) => {
                     if (!selectedMemberId) return false;
 
-                    // ✅ staff는 본인만
+                    // ✅ staff는 본인만 가능
                     if (!isAdmin && selectedMemberId !== myUserId) {
                         alert("본인 비밀번호만 변경할 수 있습니다.");
                         return false;
                     }
 
-                    // staff(본인) 또는 admin이 “본인” 변경
+                    // 본인 비밀번호 변경 (staff 또는 admin이 본인 변경)
                     if (selectedMemberId === myUserId) {
                         const { error } = await supabase.auth.updateUser({
                             password: payload.newPassword,
@@ -733,28 +733,70 @@ export default function MembersPage() {
                         return true;
                     }
 
-                    // ✅ admin이 타인 비번 재설정: Edge Function 필요
-                    const { error } = await supabase.functions.invoke(
-                        "admin-reset-password",
-                        {
-                            body: {
-                                userId: selectedMemberId,
-                                newPassword: payload.newPassword,
-                            },
-                        }
-                    );
+                    // ✅ admin이 타인 비밀번호 재설정
+                    if (isAdmin && selectedMemberId !== myUserId) {
+                        // 디버깅: admin 권한 확인
+                        console.log("관리자 비밀번호 재설정 시도:", {
+                            isAdmin,
+                            selectedMemberId,
+                            myUserId,
+                        });
 
-                    if (error) {
-                        console.error(
-                            "관리자 비밀번호 재설정 실패:",
-                            error.message
+                        const {
+                            data: { session },
+                        } = await supabase.auth.getSession();
+
+                        if (!session?.access_token) {
+                            alert("로그인 정보가 없습니다.");
+                            return false;
+                        }
+
+                        // 비밀번호 길이 검증 (Edge Function과 일치)
+                        if (payload.newPassword.length < 8) {
+                            alert("비밀번호는 최소 8자 이상이어야 합니다.");
+                            return false;
+                        }
+
+                        // Edge Function을 통한 관리자 비밀번호 재설정
+                        // authorization 헤더를 명시적으로 전달
+                        const { data, error } = await supabase.functions.invoke(
+                            "admin-reset-password",
+                            {
+                                body: {
+                                    userId: selectedMemberId,
+                                    newPassword: payload.newPassword,
+                                },
+                                headers: {
+                                    Authorization: `Bearer ${session.access_token}`,
+                                },
+                            }
                         );
-                        alert("비밀번호 재설정에 실패했습니다.");
-                        return false;
+
+                        if (error) {
+                            console.error("관리자 비밀번호 재설정 실패:", {
+                                error,
+                                errorDetails: JSON.stringify(error, null, 2),
+                                data,
+                            });
+                            
+                            // 에러 응답 본문에서 상세 메시지 추출 시도
+                            let errorMessage = "비밀번호 재설정에 실패했습니다.";
+                            if (error.message) {
+                                errorMessage = error.message;
+                            } else if (typeof error === 'object' && 'error' in error) {
+                                errorMessage = String(error.error);
+                            }
+                            
+                            alert(errorMessage);
+                            return false;
+                        }
+
+                        console.log("비밀번호 재설정 성공:", data);
+                        alert("비밀번호가 재설정되었습니다.");
+                        return true;
                     }
 
-                    alert("비밀번호가 재설정되었습니다.");
-                    return true;
+                    return false;
                 }}
             />
         </div>

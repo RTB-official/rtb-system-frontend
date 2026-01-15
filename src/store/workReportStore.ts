@@ -137,6 +137,7 @@ interface WorkReportState {
   
   // Actions - 작업자
   addWorker: (name: string) => void;
+  setWorkers: (workers: string[]) => void;
   removeWorker: (name: string) => void;
   addWorkersByRegion: (region: string) => void;
   
@@ -154,6 +155,7 @@ interface WorkReportState {
   
   // Actions - 지출내역
   addExpense: (expense: Omit<ExpenseEntry, 'id'>) => void;
+  setExpenses: (expenses: ExpenseEntry[]) => void;
   updateExpense: (id: number, expense: Partial<ExpenseEntry>) => void;
   deleteExpense: (id: number) => void;
   editExpense: (id: number) => void;
@@ -161,6 +163,7 @@ interface WorkReportState {
   
   // Actions - 소모자재
   addMaterial: (material: Omit<MaterialEntry, 'id'>) => void;
+  setMaterials: (materials: MaterialEntry[]) => void;
   removeMaterial: (id: number) => void;
   
   // Actions - 첨부파일
@@ -230,6 +233,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     }
     return { workers: [...state.workers, trimmed] };
   }),
+  setWorkers: (workers) => set({ workers }),
   removeWorker: (name) => set((state) => ({
     workers: state.workers.filter((w) => w !== name),
   })),
@@ -343,6 +347,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     expenses: [...state.expenses, { ...expense, id: Date.now() }],
     editingExpenseId: null,
   })),
+  setExpenses: (expenses) => set({ expenses }),
   updateExpense: (id, expense) => set((state) => ({
     expenses: state.expenses.map((e) => (e.id === id ? { ...e, ...expense } : e)),
     editingExpenseId: null,
@@ -357,6 +362,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   addMaterial: (material) => set((state) => ({
     materials: [...state.materials, { ...material, id: Date.now() }],
   })),
+  setMaterials: (materials) => set({ materials }),
   removeMaterial: (id) => set((state) => ({
     materials: state.materials.filter((m) => m.id !== id),
   })),

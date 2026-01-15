@@ -1,3 +1,4 @@
+// src/components/sections/BasicInfoSection.tsx
 import SectionCard from "../ui/SectionCard";
 import TextInput from "../ui/TextInput";
 import Select from "../common/Select";

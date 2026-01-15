@@ -131,9 +131,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
             }
 
             // ✅ DB 조회 전에 먼저 렌더링 값 확보 (깜빡임 방지)
+            // ✅ 직급은 캐시(sidebarPosition)를 먼저 넣어 Avatar 색 깜빡임 제거
+            const cachedPosition = localStorage.getItem("sidebarPosition") || "";
+
             setCurrentUser({
                 displayName: sessionId || "사용자",
                 email: sessionEmail,
+                position: cachedPosition || null,
             });
 
 
@@ -149,9 +153,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     const email = (user.email ?? "").toString();
                     const id = email ? email.split("@")[0] : "";
     
+                    const cachedPosition = localStorage.getItem("sidebarPosition") || "";
+
                     setCurrentUser({
                         displayName: user.email ?? "사용자",
                         email,
+                        position: cachedPosition || null,
                     });
     
                     if (id) {

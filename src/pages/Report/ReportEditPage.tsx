@@ -1,6 +1,6 @@
-// src/pages/Creation/CreationPage.tsx
+// src/pages/Report/ReportEditPage.tsx
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
@@ -15,9 +15,7 @@ import CreationSkeleton from "../../components/common/CreationSkeleton";
 import { useWorkReportStore, LOCATIONS } from "../../store/workReportStore";
 import { IconArrowBack, IconReport } from "../../components/icons/Icons";
 import {
-    createWorkLog,
     uploadReceiptFile,
-    getDraftWorkLog,
     updateWorkLog,
     getWorkLogById,
     type WorkLog,
@@ -27,11 +25,10 @@ import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 
-export default function CreationPage() {
-    const [searchParams] = useSearchParams();
-    const workLogId = searchParams.get("id");
-    const isEditMode = !!workLogId;
-    const [loading, setLoading] = useState(isEditMode);
+export default function ReportEditPage() {
+    const { id } = useParams<{ id: string }>();
+    const workLogId = id ? Number(id) : null;
+    const [loading, setLoading] = useState(true);
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -67,40 +64,29 @@ export default function CreationPage() {
         setOrderPerson,
         setLocation,
         setLocationCustom,
-        toggleVehicle,
         setVehicles,
         setWorkers,
         setExpenses,
         setMaterials,
-        saveWorkLogEntry,
         setWorkLogEntries,
-        setCurrentEntry,
-        addCurrentEntryPerson,
     } = useWorkReportStore();
 
-    // 새로 작성 모드일 때 폼 초기화
-    useEffect(() => {
-        if (!isEditMode) {
-            // 수정 모드가 아닐 때는 항상 폼을 초기화
-            resetForm();
-            setLastSavedAt(null);
-            setHasUnsavedChanges(false);
-            setIsSubmittedWorkLog(false);
-        }
-    }, [isEditMode, resetForm]);
-
-    // 수정 모드일 때 기존 데이터 로드
+    // 기존 데이터 로드
     useEffect(() => {
         const loadWorkLogData = async () => {
-            if (!isEditMode || !workLogId) return;
+            if (!workLogId) {
+                showError("보고서 ID가 없습니다.");
+                navigate("/report");
+                return;
+            }
 
             try {
                 setLoading(true);
 
-                // 수정 모드일 때는 기존 데이터를 초기화
+                // 기존 데이터를 초기화
                 resetForm();
 
-                const data = await getWorkLogById(Number(workLogId));
+                const data = await getWorkLogById(workLogId);
 
                 if (!data) {
                     showError("보고서를 찾을 수 없습니다.");
@@ -191,10 +177,12 @@ export default function CreationPage() {
         };
 
         loadWorkLogData();
-    }, [isEditMode, workLogId]);
+    }, [workLogId]);
 
     // 실제 제출 로직
     const performSubmit = async () => {
+        if (!workLogId) return;
+
         setSubmitting(true);
         try {
             // 현재 로그인한 사용자의 이름 가져오기
@@ -214,7 +202,7 @@ export default function CreationPage() {
                 }
             }
 
-            // 출장 보고서 생성 또는 업데이트
+            // 출장 보고서 업데이트
             const resolvedLocation =
                 location === "OTHER" ? locationCustom : location;
             const resolvedVehicle =
@@ -257,16 +245,10 @@ export default function CreationPage() {
                 created_by: user?.id || undefined,
             };
 
-            let workLog: WorkLog;
-            if (isEditMode && workLogId) {
-                // 수정 모드: 기존 레코드 업데이트
-                workLog = await updateWorkLog(Number(workLogId), workLogData);
-            } else {
-                // 생성 모드: 새 레코드 생성
-                workLog = await createWorkLog(workLogData);
-            }
+            // 기존 레코드 업데이트
+            const workLog = await updateWorkLog(workLogId, workLogData);
 
-            // 파일 업로드 처리 (work_log 생성 후)
+            // 파일 업로드 처리 (work_log 업데이트 후)
             if (uploadedFiles.length > 0) {
                 const receipts = [];
                 for (const file of uploadedFiles) {
@@ -306,16 +288,16 @@ export default function CreationPage() {
                 }
             }
 
-            showSuccess("제출이 완료되었습니다!");
+            showSuccess("수정이 완료되었습니다!");
             isNavigatingRef.current = true;
             resetForm();
             setLastSavedAt(null);
             setHasUnsavedChanges(false);
             navigate("/report");
         } catch (error: any) {
-            console.error("Error submitting work log:", error);
+            console.error("Error updating work log:", error);
             showError(
-                `제출 실패: ${
+                `수정 실패: ${
                     error.message || "알 수 없는 오류가 발생했습니다."
                 }`
             );
@@ -346,6 +328,8 @@ export default function CreationPage() {
     // 임시저장 핸들러 (자동 저장용 - 알림 없음)
     const handleDraftSave = useCallback(
         async (silent = false) => {
+            if (!workLogId) return;
+
             // 이미 저장 중이면 스킵
             if (savingDraft || !user?.id) return;
 
@@ -375,9 +359,6 @@ export default function CreationPage() {
                     location === "OTHER" ? locationCustom : location;
                 const resolvedVehicle =
                     vehicles.length > 0 ? vehicles.join(", ") : null;
-
-                // 현재 사용자의 기존 임시저장 항목 조회
-                const existingDraft = await getDraftWorkLog(user.id);
 
                 const draftData = {
                     author: authorName,
@@ -416,16 +397,8 @@ export default function CreationPage() {
                     created_by: user.id,
                 };
 
-                if (isEditMode && workLogId) {
-                    // 수정 모드: 기존 레코드 업데이트
-                    await updateWorkLog(Number(workLogId), draftData);
-                } else if (existingDraft) {
-                    // 기존 임시저장 항목 업데이트
-                    await updateWorkLog(existingDraft.id, draftData);
-                } else {
-                    // 새 임시저장 항목 생성
-                    await createWorkLog(draftData);
-                }
+                // 기존 레코드 업데이트
+                await updateWorkLog(workLogId, draftData);
 
                 setLastSavedAt(new Date());
                 setHasUnsavedChanges(false);
@@ -447,6 +420,7 @@ export default function CreationPage() {
             }
         },
         [
+            workLogId,
             vessel,
             engine,
             subject,
@@ -461,8 +435,6 @@ export default function CreationPage() {
             materials,
             user?.id,
             savingDraft,
-            isEditMode,
-            workLogId,
             isSubmittedWorkLog,
         ]
     );
@@ -567,7 +539,7 @@ export default function CreationPage() {
             isNavigatingRef.current = true;
             await handleDraftSave(true);
         }
-        navigate(-1);
+        navigate("/report");
     };
 
     return (
@@ -595,7 +567,7 @@ export default function CreationPage() {
             {/* Main Content */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
-                    title="출장 보고서 작성"
+                    title="보고서 수정"
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         <div className="flex items-center gap-3">
@@ -690,9 +662,9 @@ export default function CreationPage() {
                     setSubmitConfirmOpen(false);
                     await performSubmit();
                 }}
-                title="제출 확인"
-                message="제출하시겠습니까?"
-                confirmText="제출"
+                title="수정 확인"
+                message="수정 내용을 저장하시겠습니까?"
+                confirmText="저장"
                 cancelText="취소"
                 confirmVariant="primary"
                 isLoading={submitting}

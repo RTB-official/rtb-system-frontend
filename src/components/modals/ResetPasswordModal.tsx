@@ -42,8 +42,8 @@ export default function ResetPasswordModal({
 
         if (!newPassword) {
             newErrors.newPassword = "새 비밀번호를 입력해주세요.";
-        } else if (newPassword.length < 4) {
-            newErrors.newPassword = "비밀번호는 최소 4자 이상이어야 합니다.";
+        } else if (newPassword.length < 8) {
+            newErrors.newPassword = "비밀번호는 최소 8자 이상이어야 합니다.";
         }
 
         if (!confirmPassword) {
