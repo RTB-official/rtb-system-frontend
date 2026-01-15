@@ -20,6 +20,8 @@ import {
     deletePersonalMileage,
     updatePersonalExpense,
     updatePersonalMileage,
+    uploadPersonalExpenseReceipt,
+    getPersonalExpenseReceiptUrl,
     type PersonalExpense,
     type PersonalMileage,
 } from "../../lib/personalExpenseApi";
@@ -189,6 +191,7 @@ export default function PersonalExpensePage() {
         amount: string;
         detail: string;
         img?: string | null;
+        file?: File | null;
     }) => {
         if (!user?.id) {
             alert("로그인이 필요합니다.");
@@ -202,13 +205,28 @@ export default function PersonalExpensePage() {
                 return;
             }
 
+            // 영수증 파일이 있으면 Supabase Storage에 업로드
+            let receiptPath: string | undefined = undefined;
+            if (item.file) {
+                try {
+                    receiptPath = await uploadPersonalExpenseReceipt(
+                        item.file,
+                        user.id
+                    );
+                } catch (uploadError: any) {
+                    console.error("영수증 업로드 실패:", uploadError);
+                    alert(`영수증 업로드 실패: ${uploadError.message}`);
+                    return;
+                }
+            }
+
             await createPersonalExpense({
                 user_id: user.id,
                 expense_date: item.date,
                 expense_type: item.type,
                 detail: item.detail || undefined,
                 amount: amountNum,
-                receipt_path: item.img || undefined, // 추후 파일 업로드 구현 시 수정
+                receipt_path: receiptPath,
             });
 
             // 목록 새로고침
@@ -313,7 +331,9 @@ export default function PersonalExpensePage() {
                 amount: `${Number(it.amount || 0).toLocaleString("ko-KR")}원`,
                 tag: it.expense_type || "기타",
                 desc: it.detail || "",
-                img: it.receipt_path || null,
+                img: it.receipt_path
+                    ? getPersonalExpenseReceiptUrl(it.receipt_path)
+                    : null,
                 isSubmitted: it.is_submitted,
             }))
             .sort((a, b) => {

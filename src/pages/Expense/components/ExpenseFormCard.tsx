@@ -25,6 +25,7 @@ export default function ExpenseFormCard({
     const [amount, setAmount] = React.useState("");
     const [detail, setDetail] = React.useState("");
     const [preview, setPreview] = React.useState<string | null>(null);
+    const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
     const fileRef = React.useRef<HTMLInputElement | null>(null);
     const [errors, setErrors] = React.useState<{
         date?: string;
@@ -59,6 +60,7 @@ export default function ExpenseFormCard({
                 amount,
                 detail,
                 img: preview,
+                file: selectedFile, // 파일 객체 전달
             });
             // Reset form
             setDate(initialDate || "");
@@ -66,6 +68,10 @@ export default function ExpenseFormCard({
             setAmount("");
             setDetail("");
             setPreview(null);
+            setSelectedFile(null);
+            if (fileRef.current) {
+                fileRef.current.value = "";
+            }
         }
     };
 
@@ -191,8 +197,10 @@ export default function ExpenseFormCard({
                                 if (f) {
                                     const url = URL.createObjectURL(f);
                                     setPreview(url);
+                                    setSelectedFile(f);
                                 } else {
                                     setPreview(null);
+                                    setSelectedFile(null);
                                 }
                             }}
                         />

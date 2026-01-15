@@ -345,7 +345,7 @@ export function workLogToCalendarEvent(
     return {
         id: `worklog-${workLog.id}`,
         title: `출장 보고서 - ${workLog.subject}`,
-        color: "#fb923c",
+        color: "#84cc16", // 연두색
         startDate,
         endDate,
         attendees: workLog.persons,
@@ -389,7 +389,7 @@ export function calendarEventRecordToCalendarEvent(
     return {
         id: `event-${record.id}`,
         title: record.title,
-        color: record.color,
+        color: "#fb923c", // 주황색 (일정)
         startDate: record.start_date,
         endDate: record.end_date,
     };

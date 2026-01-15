@@ -82,7 +82,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                     </div>
                 ) : isWorkLog ? (
                     <div className="w-4 h-4 flex items-center justify-center mr-1 shrink-0">
-                        <IconReport className="w-4 h-4 text-orange-500" />
+                        <IconReport className="w-4 h-4 text-green-600" />
                     </div>
                 ) : (
                     isStart && (

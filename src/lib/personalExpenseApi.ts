@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { compressImageFile } from "./imageUtils";
 
 // ==================== 타입 정의 ====================
 
@@ -776,6 +777,87 @@ export async function getUserCardExpenseDetails(
         details: e.detail || "",
         receipt_path: e.receipt_path || null,
     }));
+}
+
+// ==================== 영수증 업로드 ====================
+
+/**
+ * 개인 지출 영수증 파일 업로드 (이미지 자동 압축)
+ */
+export async function uploadPersonalExpenseReceipt(
+    file: File,
+    userId: string
+): Promise<string> {
+    // 이미지 파일인 경우 강제 압축
+    let fileToUpload = file;
+    if (file.type.startsWith("image/")) {
+        try {
+            const originalSizeMB = file.size / (1024 * 1024);
+            
+            // 1MB 이상인 경우에만 압축 (작은 파일은 그대로)
+            if (originalSizeMB >= 1) {
+                fileToUpload = await compressImageFile(file, {
+                    maxWidth: 1200, // 해상도 낮춤
+                    maxHeight: 1200,
+                    quality: 0.6, // 품질 낮춤
+                    maxSizeKB: 300, // 최대 300KB로 압축
+                });
+                
+                const compressedSizeMB = fileToUpload.size / (1024 * 1024);
+                console.log(
+                    `이미지 압축 완료: ${originalSizeMB.toFixed(2)}MB → ${compressedSizeMB.toFixed(2)}MB (${((fileToUpload.size / file.size) * 100).toFixed(1)}%)`
+                );
+                
+                // 압축이 제대로 안 된 경우 (원본보다 크거나 거의 비슷한 경우) 에러
+                if (fileToUpload.size >= file.size * 0.9) {
+                    throw new Error("압축 효과가 없습니다. 원본 파일이 너무 큽니다.");
+                }
+            } else {
+                // 1MB 미만이지만 500KB 이상이면 압축
+                const originalSizeKB = file.size / 1024;
+                if (originalSizeKB > 500) {
+                    fileToUpload = await compressImageFile(file, {
+                        maxWidth: 1200,
+                        maxHeight: 1200,
+                        quality: 0.7,
+                        maxSizeKB: 300,
+                    });
+                    console.log(
+                        `이미지 압축 완료: ${(file.size / 1024).toFixed(2)}KB → ${(fileToUpload.size / 1024).toFixed(2)}KB`
+                    );
+                }
+            }
+        } catch (error: any) {
+            console.error("이미지 압축 실패:", error);
+            throw new Error(`이미지 압축 실패: ${error.message || "압축할 수 없습니다."}`);
+        }
+    }
+
+    const fileExt = fileToUpload.name.split(".").pop();
+    const fileName = `${userId}_${Date.now()}.${fileExt}`;
+    const filePath = `personal-expenses/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+        .from("personal-expense-receipts")
+        .upload(filePath, fileToUpload);
+
+    if (uploadError) {
+        console.error("Error uploading receipt file:", uploadError);
+        throw new Error(`영수증 업로드 실패: ${uploadError.message}`);
+    }
+
+    return filePath;
+}
+
+/**
+ * 개인 지출 영수증 public URL 가져오기
+ */
+export function getPersonalExpenseReceiptUrl(receiptPath: string): string {
+    const { data } = supabase.storage
+        .from("personal-expense-receipts")
+        .getPublicUrl(receiptPath);
+
+    return data.publicUrl;
 }
 
 // ==================== 유틸리티 함수 ====================
