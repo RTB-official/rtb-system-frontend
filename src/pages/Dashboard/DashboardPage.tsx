@@ -286,6 +286,30 @@ export default function DashboardPage() {
     const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState(true);
 
+    // 사용자 department 정보 로드
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const fetchUserDepartment = async () => {
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("department")
+                .eq("id", user.id)
+                .single();
+
+            if (error) {
+                console.error("유저 department 조회 실패:", error.message);
+                return;
+            }
+
+            if (data?.department) {
+                setUserDepartment(data.department);
+            }
+        };
+
+        fetchUserDepartment();
+    }, [user]);
+
     // 실제 데이터 가져오기
     useEffect(() => {
         const loadEvents = async () => {
@@ -678,8 +702,8 @@ export default function DashboardPage() {
             );
             setAllEvents([...otherEvents, ...newEvents]);
 
-            setEditingEvent(null);
-            setEventModalOpen(false);
+        setEditingEvent(null);
+        setEventModalOpen(false);
             setEventDetailMenuOpen(false);
         } catch (err: any) {
             console.error("Error deleting event:", err);
