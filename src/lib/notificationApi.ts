@@ -54,6 +54,8 @@ export async function createNotificationsForUsers(
     message: string,
     type: "report" | "schedule" | "vacation" | "other"
 ): Promise<Notification[]> {
+    // RLS 정책 문제로 인해 함수를 사용하거나, 하나씩 생성
+    // 먼저 직접 INSERT 시도
     const notifications = userIds.map((user_id) => ({
         user_id,
         title,
@@ -61,10 +63,90 @@ export async function createNotificationsForUsers(
         type,
     }));
 
-    const { data, error } = await supabase
+    let data: Notification[] = [];
+    let error: any = null;
+
+    // 방법 1: 일괄 INSERT 시도
+    const { data: insertData, error: insertError } = await supabase
         .from("notifications")
         .insert(notifications)
         .select();
+
+    if (insertError) {
+        console.warn("⚠️ [알림] 일괄 생성 실패, 개별 생성 시도:", insertError.message);
+        
+        // 방법 2: RLS 함수 사용 시도
+        try {
+            const functionResults = await Promise.all(
+                userIds.map(async (user_id) => {
+                    const { data: funcData, error: funcError } = await supabase.rpc(
+                        'create_notification_for_user',
+                        {
+                            p_user_id: user_id,
+                            p_title: title,
+                            p_message: message,
+                            p_type: type,
+                        }
+                    );
+                    
+                    if (funcError) {
+                        console.error(`❌ [알림] 함수 생성 실패 (${user_id}):`, funcError);
+                        return null;
+                    }
+                    
+                    // 함수는 UUID만 반환하므로, 다시 조회
+                    const { data: notifData } = await supabase
+                        .from("notifications")
+                        .select("*")
+                        .eq("id", funcData)
+                        .single();
+                    
+                    return notifData;
+                })
+            );
+            
+            data = functionResults.filter((n): n is Notification => n !== null);
+            
+            if (data.length > 0) {
+                console.log(`✅ [알림] 함수를 통해 ${data.length}개 알림 생성 완료`);
+                return data;
+            }
+        } catch (funcError) {
+            console.error("❌ [알림] 함수 생성도 실패:", funcError);
+        }
+        
+        // 방법 3: 개별 INSERT 시도 (자신에게만 생성 가능한 경우)
+        console.warn("⚠️ [알림] 개별 생성 시도 중...");
+        const individualResults = await Promise.allSettled(
+            userIds.map(async (user_id) => {
+                const { data: indData, error: indError } = await supabase
+                    .from("notifications")
+                    .insert([{ user_id, title, message, type }])
+                    .select()
+                    .single();
+                
+                if (indError) {
+                    throw indError;
+                }
+                return indData;
+            })
+        );
+        
+        data = individualResults
+            .filter((result): result is PromiseFulfilledResult<Notification> => 
+                result.status === 'fulfilled' && result.value !== null
+            )
+            .map(result => result.value);
+        
+        if (data.length === 0) {
+            error = insertError;
+        } else {
+            console.log(`✅ [알림] 개별 생성으로 ${data.length}/${userIds.length}개 알림 생성 완료`);
+            return data;
+        }
+    } else {
+        data = insertData || [];
+    }
 
     if (error) {
         console.error("Error creating notifications:", error);
@@ -72,10 +154,14 @@ export async function createNotificationsForUsers(
             console.error("❌ [알림] notifications 테이블이 존재하지 않습니다. scripts/create_notifications_table.sql을 실행해주세요.");
             throw new Error(`notifications 테이블이 존재하지 않습니다. 데이터베이스 관리자에게 문의하세요.`);
         }
+        if (error.message?.includes("row-level security") || error.message?.includes("RLS")) {
+            console.error("❌ [알림] RLS 정책 문제입니다. scripts/fix_notification_rls.sql을 실행해주세요.");
+            throw new Error(`RLS 정책 문제: ${error.message}`);
+        }
         throw new Error(`알림 생성 실패: ${error.message}`);
     }
 
-    return data || [];
+    return data;
 }
 
 // ==================== 알림 조회 ====================
