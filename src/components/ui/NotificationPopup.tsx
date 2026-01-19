@@ -138,7 +138,7 @@ export default function NotificationPopup({
                                 className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${
                                     isRead
                                         ? "bg-white hover:bg-gray-50"
-                                        : "bg-gray-50 hover:bg-gray-100 border-l-4 border-l-blue-500"
+                                        : "bg-gray-50 hover:bg-gray-100"
                                 }`}
                             >
                                 <div className="flex items-start justify-between gap-2">
