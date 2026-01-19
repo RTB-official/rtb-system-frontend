@@ -71,6 +71,11 @@ export default function CreationPage() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [isSubmittedWorkLog, setIsSubmittedWorkLog] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+    
+    // ✅ 최초 작성자 유지용(업데이트 시 author NOT NULL 방지)
+    const [originalAuthor, setOriginalAuthor] = useState<string | null>(null);
+    const [originalCreatedBy, setOriginalCreatedBy] = useState<string | null>(null);
+    
     const navigate = useNavigate();
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
@@ -142,6 +147,10 @@ export default function CreationPage() {
                 // 제출 완료된 항목인지 확인
                 setIsSubmittedWorkLog(!data.workLog.is_draft);
 
+                // ✅ 최초 작성자/생성자 보관 (수정 시 그대로 유지)
+                setOriginalAuthor((data.workLog.author ?? null) as any);
+                setOriginalCreatedBy((data.workLog.created_by ?? null) as any);
+                
                 // 기본 정보 설정
                 if (data.workLog.vessel) setVessel(data.workLog.vessel);
                 if (data.workLog.engine) setEngine(data.workLog.engine);
@@ -251,42 +260,47 @@ export default function CreationPage() {
             const resolvedVehicle =
                 vehicles.length > 0 ? vehicles.join(", ") : null;
 
-            const workLogData = {
-                author: authorName,
-                vessel,
-                engine,
-                order_group: orderGroup || undefined,
-                order_person: orderPerson || undefined,
-                location: resolvedLocation || undefined,
-                vehicle: resolvedVehicle || undefined,
-                subject,
-                workers,
-                entries: workLogEntries.map((entry) => ({
-                    dateFrom: entry.dateFrom,
-                    timeFrom: entry.timeFrom || undefined,
-                    dateTo: entry.dateTo,
-                    timeTo: entry.timeTo || undefined,
-                    descType: entry.descType,
-                    details: entry.details,
-                    persons: entry.persons,
-                    note: entry.note || undefined,
-                    moveFrom: entry.moveFrom || undefined,
-                    moveTo: entry.moveTo || undefined,
-                })),
-                expenses: expenses.map((exp) => ({
-                    date: exp.date,
-                    type: exp.type,
-                    detail: exp.detail,
-                    amount: exp.amount,
-                })),
-                materials: materials.map((mat) => ({
-                    name: mat.name,
-                    qty: mat.qty,
-                    unit: mat.unit || undefined,
-                })),
-                is_draft: false,
-                created_by: user?.id || undefined,
-            };
+                const workLogData = {
+                    // ✅ 수정모드면 최초 작성자 유지 (NOT NULL + 작성자 덮어쓰기 방지)
+                    author: isEditMode ? (originalAuthor || authorName) : authorName,
+                
+                    vessel,
+                    engine,
+                    order_group: orderGroup || undefined,
+                    order_person: orderPerson || undefined,
+                    location: resolvedLocation || undefined,
+                    vehicle: resolvedVehicle || undefined,
+                    subject,
+                    workers,
+                    entries: workLogEntries.map((entry) => ({
+                        dateFrom: entry.dateFrom,
+                        timeFrom: entry.timeFrom || undefined,
+                        dateTo: entry.dateTo,
+                        timeTo: entry.timeTo || undefined,
+                        descType: entry.descType,
+                        details: entry.details,
+                        persons: entry.persons,
+                        note: entry.note || undefined,
+                        moveFrom: entry.moveFrom || undefined,
+                        moveTo: entry.moveTo || undefined,
+                    })),
+                    expenses: expenses.map((exp) => ({
+                        date: exp.date,
+                        type: exp.type,
+                        detail: exp.detail,
+                        amount: exp.amount,
+                    })),
+                    materials: materials.map((mat) => ({
+                        name: mat.name,
+                        qty: mat.qty,
+                        unit: mat.unit || undefined,
+                    })),
+                    is_draft: false,
+                
+                    // ✅ 수정모드면 created_by도 기존 유지(원하면 생략 가능하지만, 덮어쓰기 타입이면 유지가 안전)
+                    created_by: isEditMode ? (originalCreatedBy || user?.id || undefined) : (user?.id || undefined),
+                };
+                
 
             let workLog: WorkLog;
             if (isEditMode && workLogId) {
@@ -466,7 +480,8 @@ export default function CreationPage() {
                 const existingDraft = await getDraftWorkLog(user.id);
 
                 const draftData = {
-                    author: authorName,
+                    author: isEditMode ? (originalAuthor || authorName) : authorName,
+                
                     vessel: vessel || undefined,
                     engine: engine || undefined,
                     order_group: orderGroup || undefined,
@@ -499,9 +514,10 @@ export default function CreationPage() {
                         unit: mat.unit || undefined,
                     })),
                     is_draft: true,
-                    created_by: user.id,
+                    created_by: isEditMode ? (originalCreatedBy || user.id) : user.id,
                 };
-
+                
+                
                 if (isEditMode && workLogId) {
                     // 수정 모드: 기존 레코드 업데이트
                     await updateWorkLog(Number(workLogId), draftData);

@@ -925,9 +925,9 @@ useEffect(() => {
                                             <div className="flex-1 h-px bg-gradient-to-l from-transparent to-rose-300" />
                                         </div>
                                     )}
-                                    <div
-                                        className={`rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
-                                    >
+                                        <div
+                                            className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
+                                        >
                                         {/* 상단 컬러바 */}
                                         <div
                                             className={`h-1 bg-gradient-to-r ${style.gradient}`}
@@ -935,7 +935,7 @@ useEffect(() => {
 
                                         {/* 헤더 (클릭으로 접기/펼치기) */}
                                         <div
-                                            className="p-4 cursor-pointer"
+                                            className="relative p-4 cursor-pointer"
                                             onClick={() => toggleCard(entry.id)}
                                         >
                                             <div className="flex items-start justify-between gap-3">
@@ -951,6 +951,15 @@ useEffect(() => {
                                                             {hoursLabel}
                                                         </span>
                                                     </div>
+
+                                                    {/* ✅ 점심 안 먹고 작업진행 칩 (헤더 우측 하단 고정) */}
+                                                    {entry.descType === "작업" && effectiveNoLunch && (
+                                                        <div className="absolute bottom-3 right-3 z-20">
+                                                            <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm">
+                                                                {NO_LUNCH_TEXT}
+                                                            </span>
+                                                        </div>
+                                                    )}
 
                                                     {/* 시간 정보 */}
                                                     <div className="flex items-center gap-2 text-[13px] text-gray-600 mb-2">
@@ -1044,6 +1053,7 @@ useEffect(() => {
                                                     : "max-h-0 opacity-0"
                                             }`}
                                         >
+                                            
                                             <div className="px-4 pb-4 border-t border-white/50">
                                                 <div className="pt-4 space-y-3">
                                                     {/* 상세내용 */}

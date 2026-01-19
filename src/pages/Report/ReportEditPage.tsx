@@ -70,6 +70,11 @@ export default function ReportEditPage() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [isSubmittedWorkLog, setIsSubmittedWorkLog] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+
+    // ✅ 최초 작성자 유지용
+    const [originalAuthor, setOriginalAuthor] = useState<string | null>(null);
+    const [originalCreatedBy, setOriginalCreatedBy] = useState<string | null>(null);
+
     const navigate = useNavigate();
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
@@ -129,6 +134,9 @@ export default function ReportEditPage() {
 
                 // 제출 완료된 항목인지 확인
                 setIsSubmittedWorkLog(!data.workLog.is_draft);
+
+                setOriginalAuthor((data.workLog.author ?? null) as any);
+                setOriginalCreatedBy((data.workLog.created_by ?? null) as any);
 
                 // 기본 정보 설정
                 if (data.workLog.vessel) setVessel(data.workLog.vessel);
@@ -241,43 +249,45 @@ export default function ReportEditPage() {
             const resolvedVehicle =
                 vehicles.length > 0 ? vehicles.join(", ") : null;
 
-            const workLogData = {
-                author: authorName,
-                vessel,
-                engine,
-                order_group: orderGroup || undefined,
-                order_person: orderPerson || undefined,
-                location: resolvedLocation || undefined,
-                vehicle: resolvedVehicle || undefined,
-                subject,
-                workers,
-                entries: workLogEntries.map((entry) => ({
-                    dateFrom: entry.dateFrom,
-                    timeFrom: entry.timeFrom || undefined,
-                    dateTo: entry.dateTo,
-                    timeTo: entry.timeTo || undefined,
-                    descType: entry.descType,
-                    details: entry.details,
-                    persons: entry.persons,
-                    note: entry.note || undefined,
-                    moveFrom: entry.moveFrom || undefined,
-                    moveTo: entry.moveTo || undefined,
-                })),
-                expenses: expenses.map((exp) => ({
-                    date: exp.date,
-                    type: exp.type,
-                    detail: exp.detail,
-                    amount: exp.amount,
-                })),
-                materials: materials.map((mat) => ({
-                    name: mat.name,
-                    qty: mat.qty,
-                    unit: mat.unit || undefined,
-                })),
-                is_draft: false,
-                created_by: user?.id || undefined,
-            };
-
+                const workLogData = {
+                    author: originalAuthor || authorName,
+                
+                    vessel,
+                    engine,
+                    order_group: orderGroup || undefined,
+                    order_person: orderPerson || undefined,
+                    location: resolvedLocation || undefined,
+                    vehicle: resolvedVehicle || undefined,
+                    subject,
+                    workers,
+                    entries: workLogEntries.map((entry) => ({
+                        dateFrom: entry.dateFrom,
+                        timeFrom: entry.timeFrom || undefined,
+                        dateTo: entry.dateTo,
+                        timeTo: entry.timeTo || undefined,
+                        descType: entry.descType,
+                        details: entry.details,
+                        persons: entry.persons,
+                        note: entry.note || undefined,
+                        moveFrom: entry.moveFrom || undefined,
+                        moveTo: entry.moveTo || undefined,
+                    })),
+                    expenses: expenses.map((exp) => ({
+                        date: exp.date,
+                        type: exp.type,
+                        detail: exp.detail,
+                        amount: exp.amount,
+                    })),
+                    materials: materials.map((mat) => ({
+                        name: mat.name,
+                        qty: mat.qty,
+                        unit: mat.unit || undefined,
+                    })),
+                    is_draft: false,
+                    created_by: originalCreatedBy || user?.id || undefined,
+                };
+                
+                
             // 기존 레코드 업데이트
             const workLog = await updateWorkLog(workLogId, workLogData);
 
@@ -448,42 +458,45 @@ export default function ReportEditPage() {
                 const resolvedVehicle =
                     vehicles.length > 0 ? vehicles.join(", ") : null;
 
-                const draftData = {
-                    author: authorName,
-                    vessel: vessel || undefined,
-                    engine: engine || undefined,
-                    order_group: orderGroup || undefined,
-                    order_person: orderPerson || undefined,
-                    location: resolvedLocation || undefined,
-                    vehicle: resolvedVehicle || undefined,
-                    subject: subject || undefined,
-                    workers: workers || [],
-                    entries: workLogEntries.map((entry) => ({
-                        dateFrom: entry.dateFrom,
-                        timeFrom: entry.timeFrom || undefined,
-                        dateTo: entry.dateTo,
-                        timeTo: entry.timeTo || undefined,
-                        descType: entry.descType,
-                        details: entry.details,
-                        persons: entry.persons,
-                        note: entry.note || undefined,
-                        moveFrom: entry.moveFrom || undefined,
-                        moveTo: entry.moveTo || undefined,
-                    })),
-                    expenses: expenses.map((exp) => ({
-                        date: exp.date,
-                        type: exp.type,
-                        detail: exp.detail,
-                        amount: exp.amount,
-                    })),
-                    materials: materials.map((mat) => ({
-                        name: mat.name,
-                        qty: mat.qty,
-                        unit: mat.unit || undefined,
-                    })),
-                    is_draft: true,
-                    created_by: user.id,
-                };
+                    const draftData = {
+                        author: originalAuthor || authorName,
+                    
+                        vessel: vessel || undefined,
+                        engine: engine || undefined,
+                        order_group: orderGroup || undefined,
+                        order_person: orderPerson || undefined,
+                        location: resolvedLocation || undefined,
+                        vehicle: resolvedVehicle || undefined,
+                        subject: subject || undefined,
+                        workers: workers || [],
+                        entries: workLogEntries.map((entry) => ({
+                            dateFrom: entry.dateFrom,
+                            timeFrom: entry.timeFrom || undefined,
+                            dateTo: entry.dateTo,
+                            timeTo: entry.timeTo || undefined,
+                            descType: entry.descType,
+                            details: entry.details,
+                            persons: entry.persons,
+                            note: entry.note || undefined,
+                            moveFrom: entry.moveFrom || undefined,
+                            moveTo: entry.moveTo || undefined,
+                        })),
+                        expenses: expenses.map((exp) => ({
+                            date: exp.date,
+                            type: exp.type,
+                            detail: exp.detail,
+                            amount: exp.amount,
+                        })),
+                        materials: materials.map((mat) => ({
+                            name: mat.name,
+                            qty: mat.qty,
+                            unit: mat.unit || undefined,
+                        })),
+                        is_draft: true,
+                        created_by: originalCreatedBy || user?.id || undefined,
+                    };
+                    
+                    
 
                 // 기존 레코드 업데이트
                 await updateWorkLog(workLogId, draftData);

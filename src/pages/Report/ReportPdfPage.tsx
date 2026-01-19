@@ -27,6 +27,12 @@ function weekday_kr(ymd?: string | null) {
     return w[d.getDay()];
 }
 
+function toLocalYMD(d: Date) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
 function enumerate_dates(startYmd?: string | null, endYmd?: string | null) {
     if (!startYmd) return [];
     const s = new Date(startYmd);
@@ -48,6 +54,36 @@ function enumerate_dates(startYmd?: string | null, endYmd?: string | null) {
 function formatWon(n: number) {
     return n.toLocaleString("ko-KR");
 }
+
+function formatPdfFilename(
+    start?: string | null,
+    end?: string | null,
+    vessel?: string | null,
+    subject?: string | null
+) {
+    if (!start) return "출장보고서";
+
+    const fmt = (ymd: string) => {
+        const d = new Date(ymd);
+        if (Number.isNaN(d.getTime())) return "";
+        const m = d.getMonth() + 1;
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${m}월${day}일`;
+    };
+
+    const s = fmt(start);
+    const e = end ? fmt(end) : s;
+
+    const vesselText = vessel ? `${vessel}` : "";
+    const subjectText = subject ? subject.trim() : "";
+
+    // ✅ 하루짜리면 "~" 구간 제거
+    const datePart = !end || start === end ? `${s}` : `${s}~${e}`;
+
+    return `${datePart} ${vesselText} ${subjectText}`.trim();
+}
+
+
 
 // ✅ 고정 양력 공휴일(음력은 브라우저에서 계산이 어려워 제외)
 function kr_fixed_holidays(year: number) {
@@ -178,8 +214,8 @@ export default function ReportPdfPage() {
             }
         }
 
-        const startStr = workStart ? new Date(workStart).toISOString().slice(0, 10) : "";
-        const endStr = workEnd ? new Date(workEnd).toISOString().slice(0, 10) : "";
+        const startStr = workStart ? toLocalYMD(new Date(workStart)) : "";
+        const endStr = workEnd ? toLocalYMD(new Date(workEnd)) : "";
         const workPeriodText =
             (startStr || endStr)
                 ? `${startStr}${(startStr || endStr) ? " ~ " : ""}${endStr}`
@@ -358,18 +394,21 @@ export default function ReportPdfPage() {
         return expenses.reduce((acc, x) => acc + (Number(x.amount ?? 0) || 0), 0);
     }, [expenses]);
 
-    // 자동 프린트
+    // ✅ 웹페이지 제목을 PDF 파일명 규칙과 동일하게 설정
     useEffect(() => {
-        if (!autoPrint) return;
-        if (loading) return;
-        if (error) return;
+        if (!log || !workPeriodText) return;
 
-        const t = window.setTimeout(() => {
-            window.print();
-        }, 300);
+        const [start, end] = workPeriodText.split(" ~ ");
 
-        return () => window.clearTimeout(t);
-    }, [autoPrint, loading, error]);
+        const title = formatPdfFilename(
+            start,
+            end || start,
+            log.vessel,
+            log.subject
+        );
+
+        document.title = title;
+    }, [log, workPeriodText]);
 
     if (loading) return <div className="p-6 text-sm text-gray-600">PDF 로딩중…</div>;
     if (error || !log) return <div className="p-6 text-sm text-red-600">{error ?? "오류"}</div>;
@@ -392,6 +431,66 @@ export default function ReportPdfPage() {
 
         return (
             <div>
+                {/* ✅ 브라우저 우측 상단 고정 버튼 (내용과 완전 분리) */}
+                <div className="pdf-save-fixed">
+                <button
+                        className="pdf-save-btn"
+                        onClick={() => {
+                            // ✅ 파일명 규칙 적용
+                            const filename = formatPdfFilename(
+                                workPeriodText.split(" ~ ")[0] || log?.date_from,
+                                workPeriodText.split(" ~ ")[1] || log?.date_to,
+                                log?.vessel,
+                                log?.subject
+                            );
+
+                            const prevTitle = document.title;
+                            document.title = filename;
+
+                            window.print();
+
+                            // 인쇄 후 원래 타이틀 복구 (안전)
+                            setTimeout(() => {
+                                document.title = prevTitle;
+                            }, 300);
+                        }}
+                        type="button"
+                    >
+
+                        {/* 디스크 아이콘 (심플) */}
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <path
+                                d="M4 3h12l4 4v14H4V3z"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinejoin="round"
+                            />
+                            <path
+                                d="M8 3v6h8V3"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinejoin="round"
+                            />
+                            <rect
+                                x="8"
+                                y="13"
+                                width="8"
+                                height="6"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinejoin="round"
+                            />
+                        </svg>
+                        <span>PDF로 저장</span>
+                    </button>
+                </div>
+
                 {/* ✅ 신형 PDF CSS (public 기준으로 폰트 경로만 조정) */}
                 <style>{`
     html, body {
@@ -430,6 +529,35 @@ export default function ReportPdfPage() {
       margin: 0 auto;
     }
     
+    /* ✅ 우측 상단 고정 PDF 저장 버튼 (내용과 완전 분리) */
+    .pdf-save-fixed{
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 9999;
+    }
+
+    .pdf-save-btn{
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 18px rgba(0,0,0,0.18);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pdf-save-btn:hover{ background:#1d4ed8; }
+
+    /* 인쇄 시 버튼 숨김 */
+    @media print{
+      .pdf-save-fixed{ display:none !important; }
+    }
+
     /* Header */
     .head-table{ width:100%; border-collapse:collapse; }
     .head-table td{ vertical-align:top; border:none; padding:0; }
@@ -641,7 +769,21 @@ export default function ReportPdfPage() {
 
 
     
-    @media print { html, body { background:#fff; } }
+    @media print {
+      html, body { background:#fff; }
+
+      /* ✅ 인쇄 프리뷰에서 색상/배경색이 빠지는 현상 최소화 */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      /* ✅ 타임라인/일별시간표 섹션은 특히 강제 */
+      .timeline-section, .timeline-section * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
                 `}</style>
     
                 {/* ✅ A4 폭 적용 범위 */}

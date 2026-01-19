@@ -487,9 +487,29 @@ export default function ReportListPage() {
                                                         );
                                                     }}
                                                     onDownload={() => {
-                                                        // 새 탭에서 PDF 인쇄(저장) 페이지 열기
-                                                        window.open(`/report/pdf?id=${row.id}&autoPrint=1`, "_blank", "noopener,noreferrer");
+                                                        // ✅ 새 "창"으로 PDF 인쇄(저장) 페이지 열기 (예시 브라우저처럼)
+                                                        const url = `/report/pdf?id=${row.id}&autoPrint=1`;
+
+                                                        window.open(
+                                                            url,
+                                                            "report_pdf_window",
+                                                            [
+                                                                "width=980",
+                                                                "height=820",
+                                                                "left=120",
+                                                                "top=60",
+                                                                "scrollbars=yes",
+                                                                "resizable=yes",
+                                                                "toolbar=yes",
+                                                                "menubar=yes",
+                                                                "location=yes",
+                                                                "status=no",
+                                                                "noopener=yes",
+                                                                "noreferrer=yes",
+                                                            ].join(",")
+                                                        );
                                                     }}
+
                                                     
                                                     width="w-44"
                                                 />
