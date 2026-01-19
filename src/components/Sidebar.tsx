@@ -9,6 +9,12 @@ import Button from "./common/Button";
 import { supabase } from "../lib/supabase";
 import Avatar from "./common/Avatar";
 import {
+    getUserNotifications,
+    getUnreadNotificationCount,
+    markAllNotificationsAsRead,
+    type Notification,
+} from "../lib/notificationApi";
+import {
     IconHome,
     IconReport,
     IconWorkload,
@@ -77,6 +83,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     // ✅ notification 브랜치 기능 이식: 알림 패널 토글
     const [showNotifications, setShowNotifications] = useState(false);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     // 사용자 메뉴 상태
     const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -189,10 +198,37 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 localStorage.setItem("sidebarLoginId", id);
             }
 
+            // 알림 데이터 로드
+            setCurrentUserId(user.id);
         };
 
         fetchUser();
     }, []);
+
+    // 알림 데이터 로드 및 업데이트
+    useEffect(() => {
+        if (!currentUserId) return;
+
+        const loadNotifications = async () => {
+            try {
+                const [notificationList, count] = await Promise.all([
+                    getUserNotifications(currentUserId),
+                    getUnreadNotificationCount(currentUserId),
+                ]);
+                setNotifications(notificationList);
+                setUnreadCount(count);
+            } catch (error) {
+                console.error("알림 로드 실패:", error);
+            }
+        };
+
+        loadNotifications();
+
+        // 30초마다 알림 업데이트
+        const interval = setInterval(loadNotifications, 30000);
+
+        return () => clearInterval(interval);
+    }, [currentUserId]);
 
 
     // 라우트 변경 시: 해당 라우트의 메뉴는 자동으로 열림 + 포커스 자동 정렬
@@ -455,17 +491,51 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                     알림
                                 </p>
                             </div>
-                            <div className="ml-auto">
-                                <span className="inline-flex items-center justify-center bg-red-500 text-white text-[12px] w-6 h-6 rounded-full font-bold">
-                                    8
-                                </span>
-                            </div>
+                            {unreadCount > 0 && (
+                                <div className="ml-auto">
+                                    <span className="inline-flex items-center justify-center bg-red-500 text-white text-[12px] w-6 h-6 rounded-full font-bold">
+                                        {unreadCount > 99 ? "99+" : unreadCount}
+                                    </span>
+                                </div>
+                            )}
                         </button>
 
                         {showNotifications && (
                             <NotificationPopup
                                 onClose={() => setShowNotifications(false)}
                                 anchorEl={notificationRef.current}
+                                items={notifications.map((n) => ({
+                                    id: n.id,
+                                    title: n.title,
+                                    message: n.message,
+                                    created_at: n.created_at,
+                                }))}
+                                onMarkAllAsRead={async () => {
+                                    if (currentUserId) {
+                                        try {
+                                            await markAllNotificationsAsRead(
+                                                currentUserId
+                                            );
+                                            // 알림 다시 로드
+                                            const [notificationList, count] =
+                                                await Promise.all([
+                                                    getUserNotifications(
+                                                        currentUserId
+                                                    ),
+                                                    getUnreadNotificationCount(
+                                                        currentUserId
+                                                    ),
+                                                ]);
+                                            setNotifications(notificationList);
+                                            setUnreadCount(count);
+                                        } catch (error) {
+                                            console.error(
+                                                "모두 읽음 처리 실패:",
+                                                error
+                                            );
+                                        }
+                                    }
+                                }}
                             />
                         )}
                     </div>

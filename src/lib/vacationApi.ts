@@ -1,4 +1,8 @@
 import { supabase } from "./supabase";
+import {
+    getAdminUserIds,
+    createNotificationsForUsers,
+} from "./notificationApi";
 
 // ==================== 타입 정의 ====================
 
@@ -66,6 +70,34 @@ export async function createVacation(
     if (error) {
         console.error("Error creating vacation:", error);
         throw new Error(`휴가 신청 실패: ${error.message}`);
+    }
+
+    // 휴가 등록 시 대표님에게 알림 생성
+    try {
+        const adminUserIds = await getAdminUserIds();
+        if (adminUserIds.length > 0) {
+            // 사용자 이름 가져오기
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("name")
+                .eq("id", data.user_id)
+                .single();
+
+            const userName = profile?.name || "사용자";
+
+            await createNotificationsForUsers(
+                adminUserIds,
+                "휴가 신청",
+                `${userName}님이 휴가를 신청했습니다.`,
+                "vacation"
+            );
+        }
+    } catch (notificationError) {
+        // 알림 생성 실패는 휴가 신청을 막지 않음
+        console.error(
+            "알림 생성 실패 (휴가는 정상 신청됨):",
+            notificationError
+        );
     }
 
     return vacation;

@@ -1,4 +1,8 @@
 import { supabase } from "./supabase";
+import {
+    getGongmuTeamUserIds,
+    createNotificationsForUsers,
+} from "./notificationApi";
 
 // ==================== 타입 정의 ====================
 
@@ -329,6 +333,27 @@ export async function createWorkLog(
                 console.error("Error creating work log receipts:", receiptsError);
                 throw new Error(
                     `첨부파일 저장 실패: ${receiptsError.message}`
+                );
+            }
+        }
+
+        // 7. 보고서 제출 시 공무팀에 알림 생성 (임시저장이 아닐 때만)
+        if (!data.is_draft) {
+            try {
+                const gongmuUserIds = await getGongmuTeamUserIds();
+                if (gongmuUserIds.length > 0) {
+                    await createNotificationsForUsers(
+                        gongmuUserIds,
+                        "새 보고서",
+                        `${workLog.author || "작성자"}님이 새 보고서를 제출했습니다.`,
+                        "report"
+                    );
+                }
+            } catch (notificationError) {
+                // 알림 생성 실패는 보고서 생성을 막지 않음
+                console.error(
+                    "알림 생성 실패 (보고서는 정상 생성됨):",
+                    notificationError
                 );
             }
         }
