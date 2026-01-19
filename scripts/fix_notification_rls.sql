@@ -5,15 +5,9 @@
 DROP POLICY IF EXISTS "Authenticated users can create notifications" ON notifications;
 DROP POLICY IF EXISTS "Users can create notifications for themselves" ON notifications;
 DROP POLICY IF EXISTS "Allow authenticated insert" ON notifications;
+DROP POLICY IF EXISTS "Allow all authenticated insert" ON notifications;
 
--- 방법 1: 인증된 사용자는 누구에게나 알림 생성 가능 (USING과 WITH CHECK 모두 true)
-CREATE POLICY "Allow authenticated insert"
-    ON notifications
-    FOR INSERT
-    TO authenticated
-    WITH CHECK (true);
-
--- 방법 2: 만약 위 방법이 안 되면, SECURITY DEFINER 함수 사용
+-- 방법 1: SECURITY DEFINER 함수 생성 (RLS 우회)
 CREATE OR REPLACE FUNCTION create_notification_for_user(
     p_user_id UUID,
     p_title TEXT,
@@ -35,6 +29,32 @@ BEGIN
     RETURN v_notification_id;
 END;
 $$;
+
+-- 함수 실행 권한 부여
+GRANT EXECUTE ON FUNCTION create_notification_for_user TO authenticated;
+GRANT EXECUTE ON FUNCTION create_notification_for_user TO anon;
+
+-- 방법 2: RLS 정책 재설정 (더 명확하게)
+-- USING은 SELECT/UPDATE/DELETE용, WITH CHECK는 INSERT/UPDATE용
+CREATE POLICY "Allow all authenticated insert"
+    ON notifications
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- 정책이 제대로 적용되었는지 확인
+SELECT 
+    schemaname,
+    tablename,
+    policyname,
+    permissive,
+    roles,
+    cmd,
+    qual,
+    with_check
+FROM pg_policies
+WHERE tablename = 'notifications'
+ORDER BY policyname;
 
 -- 정책 확인
 SELECT 
