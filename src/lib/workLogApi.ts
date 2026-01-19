@@ -710,6 +710,37 @@ export async function updateWorkLog(
             }
         }
 
+        // 7. 보고서 제출 시 공무팀에 알림 생성 (임시저장이 아닐 때만, 그리고 이전에 draft였던 경우만)
+        if (!data.is_draft) {
+            try {
+                // 이전 상태 확인 (draft였는지)
+                const { data: previousWorkLog } = await supabase
+                    .from("work_logs")
+                    .select("is_draft")
+                    .eq("id", workLogId)
+                    .single();
+
+                // 이전에 draft였거나, 또는 새로 제출되는 경우 알림 생성
+                if (!previousWorkLog || previousWorkLog.is_draft) {
+                    const gongmuUserIds = await getGongmuTeamUserIds();
+                    if (gongmuUserIds.length > 0) {
+                        await createNotificationsForUsers(
+                            gongmuUserIds,
+                            "새 보고서",
+                            `${workLog.author || "작성자"}님이 새 보고서를 제출했습니다.`,
+                            "report"
+                        );
+                    }
+                }
+            } catch (notificationError) {
+                // 알림 생성 실패는 보고서 업데이트를 막지 않음
+                console.error(
+                    "알림 생성 실패 (보고서는 정상 업데이트됨):",
+                    notificationError
+                );
+            }
+        }
+
         return workLog;
     } catch (error) {
         throw error;
