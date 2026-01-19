@@ -35,6 +35,10 @@ export async function createNotification(
 
     if (error) {
         console.error("Error creating notification:", error);
+        if (error.message?.includes("Could not find the table") || error.message?.includes("does not exist")) {
+            console.error("❌ [알림] notifications 테이블이 존재하지 않습니다. scripts/create_notifications_table.sql을 실행해주세요.");
+            throw new Error(`notifications 테이블이 존재하지 않습니다. 데이터베이스 관리자에게 문의하세요.`);
+        }
         throw new Error(`알림 생성 실패: ${error.message}`);
     }
 
@@ -64,6 +68,10 @@ export async function createNotificationsForUsers(
 
     if (error) {
         console.error("Error creating notifications:", error);
+        if (error.message?.includes("Could not find the table") || error.message?.includes("does not exist")) {
+            console.error("❌ [알림] notifications 테이블이 존재하지 않습니다. scripts/create_notifications_table.sql을 실행해주세요.");
+            throw new Error(`notifications 테이블이 존재하지 않습니다. 데이터베이스 관리자에게 문의하세요.`);
+        }
         throw new Error(`알림 생성 실패: ${error.message}`);
     }
 
@@ -93,6 +101,11 @@ export async function getUserNotifications(
 
     if (error) {
         console.error("Error fetching notifications:", error);
+        if (error.message?.includes("Could not find the table") || error.message?.includes("does not exist")) {
+            console.warn("⚠️ [알림] notifications 테이블이 존재하지 않습니다. scripts/create_notifications_table.sql을 실행해주세요.");
+            // 테이블이 없으면 빈 배열 반환 (에러를 던지지 않음)
+            return [];
+        }
         throw new Error(`알림 조회 실패: ${error.message}`);
     }
 
@@ -146,6 +159,10 @@ export async function getUnreadNotificationCount(
 
     if (error) {
         console.error("Error counting unread notifications:", error);
+        if (error.message?.includes("Could not find the table") || error.message?.includes("does not exist")) {
+            console.warn("⚠️ [알림] notifications 테이블이 존재하지 않습니다. scripts/create_notifications_table.sql을 실행해주세요.");
+            return 0;
+        }
         return 0;
     }
 

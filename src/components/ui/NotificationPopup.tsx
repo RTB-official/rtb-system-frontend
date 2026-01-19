@@ -86,8 +86,8 @@ export default function NotificationPopup({
             {/* Notification List */}
             <div className="max-h-[480px] overflow-y-auto custom-scrollbar">
                 {items.length === 0 ? (
-                    <div className="px-5 py-8 text-center text-gray-400">
-                        알림이 없습니다
+                    <div className="px-5 pt-8 pb-16 text-center text-gray-400">
+                        알림이 없습니다.
                     </div>
                 ) : (
                     items.map((it) => (
