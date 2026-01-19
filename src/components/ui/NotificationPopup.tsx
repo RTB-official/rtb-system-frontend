@@ -107,10 +107,10 @@ export default function NotificationPopup({
     return (
         <div
             ref={popupRef}
-            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200"
+            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
         >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50 mb-2">
                 <h4 className="text-[20px] font-bold text-[#1e293b]">알림</h4>
                 {items.length > 0 && onMarkAllAsRead && (
                     <button
@@ -123,7 +123,7 @@ export default function NotificationPopup({
             </div>
 
             {/* Notification List */}
-            <div className="max-h-[480px] overflow-y-auto custom-scrollbar">
+            <div className="max-h-[360px] overflow-y-auto custom-scrollbar">
                 {items.length === 0 ? (
                     <div className="px-5 pt-8 pb-16 text-center text-gray-400">
                         알림이 없습니다.
@@ -138,7 +138,7 @@ export default function NotificationPopup({
                                 className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${
                                     isRead
                                         ? "bg-white hover:bg-gray-50"
-                                        : "bg-gray-50 hover:bg-gray-100"
+                                        : "bg-blue-50 hover:bg-gray-100"
                                 }`}
                             >
                                 <div className="flex items-start justify-between gap-2">
