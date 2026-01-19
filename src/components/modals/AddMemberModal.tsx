@@ -272,7 +272,7 @@ export default function AddMemberModal({
                                 { value: "과장", label: "과장" },
                                 { value: "대리", label: "대리" },
                                 { value: "주임", label: "주임" },
-                                { value: "사원", label: "사원" },
+                                { value: "인턴", label: "인턴" },
                             ]}
                             placeholder="직급 선택"
                         />

@@ -16,8 +16,6 @@ export default function Avatar({ email, size = 32, position }: Props) {
         switch (position) {
             case "인턴":
                 return "#94A3B8"; // slate
-            case "사원":
-                return "#38BDF8"; // sky
             case "주임":
                 return "#22C55E"; // green
             case "대리":

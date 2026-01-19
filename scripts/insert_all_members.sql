@@ -61,19 +61,22 @@ INSERT INTO profiles (
 ('1054dbe5-f4a7-44a5-a328-1092c120fad3', '이종훈', 'jh.lee', 'jh.lee@rtb-kor.com', '대리', '010-2106-6682', '경상남도 창원시 진해구 적도로 60,305동 204호(석동,벚꽃그린빌주공3단지)', TO_DATE('19771026', 'YYYYMMDD'), TO_DATE('20231016', 'YYYYMMDD'), 'staff'),
 
 -- 16. 박영성 (ys.park) - 이미 존재
-('f43f7410-7d08-4497-b6a4-6ef0a5d13af0', '박영성', 'ys.park', 'ys.park@rtb-kor.com', '사원', '010-4914-0781', '부산 북구 효열로 37번길 22,503동 1304호', TO_DATE('19981122', 'YYYYMMDD'), TO_DATE('20240502', 'YYYYMMDD'), 'staff'),
+('f43f7410-7d08-4497-b6a4-6ef0a5d13af0', '박영성', 'ys.park', 'ys.park@rtb-kor.com', '주임', '010-4914-0781', '부산 북구 효열로 37번길 22,503동 1304호', TO_DATE('19981122', 'YYYYMMDD'), TO_DATE('20240502', 'YYYYMMDD'), 'staff'),
 
 -- 17. 문채훈 (ch.moon) - 이미 존재
-('8786201f-cf65-4bbb-b3d7-c90dbbb1a9b5', '문채훈', 'ch.moon', 'ch.moon@rtb-kor.com', '사원', '010-2594-1419', '부산 사상구 대동로 148-29,2동 2711호 (학장동,1차 삼성아파트)', TO_DATE('19761125', 'YYYYMMDD'), TO_DATE('20240919', 'YYYYMMDD'), 'staff'),
+('8786201f-cf65-4bbb-b3d7-c90dbbb1a9b5', '문채훈', 'ch.moon', 'ch.moon@rtb-kor.com', '주임', '010-2594-1419', '부산 사상구 대동로 148-29,2동 2711호 (학장동,1차 삼성아파트)', TO_DATE('19761125', 'YYYYMMDD'), TO_DATE('20240919', 'YYYYMMDD'), 'staff'),
 
 -- 18. 박민욱 (mw.park) - 새로 추가 필요 (auth.users에 먼저 생성 필요)
--- ('USER_ID_박민욱', '박민욱', 'mw.park', 'mw.park@rtb-kor.com', '사원', '010-4282-5040', '경상남도 창원시 진해구 용원 중로5번길 8-17,201호', TO_DATE('19951105', 'YYYYMMDD'), TO_DATE('20240919', 'YYYYMMDD'), 'staff'),
+-- ('USER_ID_박민욱', '박민욱', 'mw.park', 'mw.park@rtb-kor.com', '주임', '010-4282-5040', '경상남도 창원시 진해구 용원 중로5번길 8-17,201호', TO_DATE('19951105', 'YYYYMMDD'), TO_DATE('20240919', 'YYYYMMDD'), 'staff'),
 
 -- 19. 김민규 (mg.kim) - 이미 존재
-('246f9e8b-a46c-4d0d-8b2e-11dfd5fcd341', '김민규', 'mg.kim', 'mg.kim@rtb-kor.com', '사원', '010-2019-0031', '경상남도 창원시 성산구 용지로 229,7동 508호', TO_DATE('19980901', 'YYYYMMDD'), TO_DATE('20241104', 'YYYYMMDD'), 'staff'),
+('246f9e8b-a46c-4d0d-8b2e-11dfd5fcd341', '김민규', 'mg.kim', 'mg.kim@rtb-kor.com', '주임', '010-2019-0031', '경상남도 창원시 성산구 용지로 229,7동 508호', TO_DATE('19980901', 'YYYYMMDD'), TO_DATE('20241104', 'YYYYMMDD'), 'staff'),
 
 -- 20. 김상민 (sm.kim) - 이미 존재
-('ef08a1e4-a85e-43ef-a04f-8bb02f8e28ab', '김상민', 'sm.kim', 'sm.kim@rtb-kor.com', '사원', '010-4147-4859', '창원시 마산회원구 석전북2길 64 가동 608호', TO_DATE('19840110', 'YYYYMMDD'), TO_DATE('20250203', 'YYYYMMDD'), 'staff'),
+('ef08a1e4-a85e-43ef-a04f-8bb02f8e28ab', '김상민', 'sm.kim', 'sm.kim@rtb-kor.com', '주임', '010-4147-4859', '창원시 마산회원구 석전북2길 64 가동 608호', TO_DATE('19840110', 'YYYYMMDD'), TO_DATE('20250203', 'YYYYMMDD'), 'staff'),
+
+-- 25. 강민지 (mj.kang) - 인턴 (auth.users에 먼저 생성 필요)
+-- ('USER_ID_강민지', '강민지', 'mj.kang', 'mj.kang@rtb-kor.com', '인턴', '010-9963-0772', '부산광역시 금강로 131번길 42 206동 1005호', TO_DATE('20070718', 'YYYYMMDD'), TO_DATE('20251117', 'YYYYMMDD'), 'staff'),
 
 -- 21. 김지연 (jay.kim) - 이미 존재
 ('3e602998-a6b9-4c59-87f9-b81997392ad6', '김지연', 'jay.kim', 'jay.kim@rtb-kor.com', '대리', '010-3433-5755', '부산시 강서구 명지국제5로 60 108동 1203호(에일린의뜰)', TO_DATE('19821105', 'YYYYMMDD'), TO_DATE('20250310', 'YYYYMMDD'), 'staff'),
@@ -82,7 +85,10 @@ INSERT INTO profiles (
 ('62da12a4-8677-44f3-a1c8-09d6b635c322', '김영', 'y.k', 'y.k@rtb-kor.com', '대표', '010-9958-4156', '부산광역시 명지오션시티 10로 114(삼정그린코아 106동 202호)', TO_DATE('19800720', 'YYYYMMDD'), TO_DATE('20210402', 'YYYYMMDD'), 'admin'),
 
 -- 24. 김현지 (hj.kim) - 이미 존재
-('b75eb52d-c594-4761-adb3-df8c0a7ddd98', '김현지', 'hj.kim', 'hj.kim@rtb-kor.com', '감사', '010-2533-0106', '부산광역시 명지오션시티 10로 114(삼정그린코아 106동 203호)', TO_DATE('19790106', 'YYYYMMDD'), TO_DATE('20230302', 'YYYYMMDD'), 'staff')
+('b75eb52d-c594-4761-adb3-df8c0a7ddd98', '김현지', 'hj.kim', 'hj.kim@rtb-kor.com', '감사', '010-2533-0106', '부산광역시 명지오션시티 10로 114(삼정그린코아 106동 203호)', TO_DATE('19790106', 'YYYYMMDD'), TO_DATE('20230302', 'YYYYMMDD'), 'staff'),
+
+-- 25. 강민지 (mj.kang) - 인턴 (auth.users에 먼저 생성 필요)
+-- ('USER_ID_강민지', '강민지', 'mj.kang', 'mj.kang@rtb-kor.com', '인턴', '010-9963-0772', '부산광역시 금강로 131번길 42 206동 1005호', TO_DATE('20070718', 'YYYYMMDD'), TO_DATE('20251117', 'YYYYMMDD'), 'staff')
 
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -164,7 +170,10 @@ INSERT INTO profile_passports (
 ('62da12a4-8677-44f3-a1c8-09d6b635c322', 'KIM', 'YOUNG', NULL, TO_DATE('20310803', 'YYYYMMDD')),
 
 -- 24. 김현지 (hj.kim)
-('b75eb52d-c594-4761-adb3-df8c0a7ddd98', 'KIM', 'HYUNJI', NULL, TO_DATE('20281005', 'YYYYMMDD'))
+('b75eb52d-c594-4761-adb3-df8c0a7ddd98', 'KIM', 'HYUNJI', NULL, TO_DATE('20281005', 'YYYYMMDD')),
+
+-- 25. 강민지 (mj.kang) - 인턴 (auth.users에 먼저 생성 필요)
+-- ('USER_ID_강민지', 'KANG', 'MINJI', NULL, NULL)
 
 ON CONFLICT (user_id) DO UPDATE SET
     passport_last_name = EXCLUDED.passport_last_name,
