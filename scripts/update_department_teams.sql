@@ -32,10 +32,15 @@ UPDATE profiles
 SET department = '공무팀'
 WHERE name = '김희규';
 
+-- 7. 김현지
+UPDATE profiles
+SET department = '공무팀'
+WHERE name = '김현지';
+
 -- 나머지 모두 공사팀으로 설정
 UPDATE profiles
 SET department = '공사팀'
-WHERE name NOT IN ('박민욱', '김영', '강민지', '김지연', '고두형', '김희규')
+WHERE name NOT IN ('박민욱', '김영', '강민지', '김지연', '고두형', '김희규', '김현지')
 AND department IS DISTINCT FROM '공사팀';
 
 -- 결과 확인
