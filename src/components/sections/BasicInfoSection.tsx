@@ -141,6 +141,7 @@ export default function BasicInfoSection() {
                         required
                         value={vessel}
                         onChange={setVessel}
+                        uppercase
                     />
                 </div>
 

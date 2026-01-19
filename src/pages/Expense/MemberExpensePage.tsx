@@ -61,7 +61,29 @@ export default function MemberExpensePage() {
     const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
     const [employeeProfiles, setEmployeeProfiles] = useState<
         Map<string, { email: string | null; position: string | null }>
-    >(new Map());
+    >(() => {
+        // ✅ 초기 렌더링 시 localStorage에서 캐시된 프로필 정보 로드 (깜빡임 방지)
+        try {
+            const cached = localStorage.getItem("employeeProfiles_cache");
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                const profileMap = new Map<
+                    string,
+                    { email: string | null; position: string | null }
+                >();
+                Object.entries(parsed).forEach(([name, profile]: [string, any]) => {
+                    profileMap.set(name, {
+                        email: profile.email || null,
+                        position: profile.position || null,
+                    });
+                });
+                return profileMap;
+            }
+        } catch {
+            // 캐시 파싱 실패 시 빈 Map 반환
+        }
+        return new Map();
+    });
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
     useEffect(() => {
@@ -125,6 +147,24 @@ export default function MemberExpensePage() {
                         position: profile.position || null,
                     });
                 });
+                
+                // ✅ 프로필 정보를 localStorage에 캐시 (다음 로딩 시 깜빡임 방지)
+                try {
+                    const cacheObject: Record<
+                        string,
+                        { email: string | null; position: string | null }
+                    > = {};
+                    profileMap.forEach((profile, name) => {
+                        cacheObject[name] = profile;
+                    });
+                    localStorage.setItem(
+                        "employeeProfiles_cache",
+                        JSON.stringify(cacheObject)
+                    );
+                } catch {
+                    // localStorage 저장 실패 시 무시
+                }
+                
                 setEmployeeProfiles(profileMap);
             } catch (error) {
                 console.error("데이터 로드 실패:", error);

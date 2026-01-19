@@ -351,19 +351,51 @@ export async function uploadReceiptFile(
     workLogId: number,
     category: string
 ): Promise<string> {
+    console.log("=== 파일 업로드 디버깅 ===");
+    console.log("File:", file.name, file.size, file.type);
+    console.log("Work Log ID:", workLogId);
+    console.log("Category:", category);
+    
     const fileExt = file.name.split(".").pop();
-    const fileName = `${workLogId}_${category}_${Date.now()}.${fileExt}`;
-    const filePath = `receipts/${fileName}`;
+    
+    // 카테고리를 영문으로 변환 (한글 경로 문제 방지)
+    const categoryMap: Record<string, string> = {
+        "숙박영수증": "accommodation",
+        "자재구매영수증": "material",
+        "식비및유대영수증": "food",
+        "기타": "other",
+    };
+    const categoryEn = categoryMap[category] || "other";
+    
+    // 파일명에 특수문자 제거 및 URL 안전한 문자만 사용
+    const safeFileName = `${workLogId}_${categoryEn}_${Date.now()}.${fileExt}`;
+    const filePath = `receipts/${safeFileName}`;
+    
+    console.log("File Path:", filePath);
+    console.log("Bucket:", "work-log-recipts");
 
-    const { error: uploadError } = await supabase.storage
-        .from("work-log-receipts")
-        .upload(filePath, file);
+    // Storage 버킷 존재 여부 확인
+    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+    console.log("Available buckets:", buckets?.map(b => b.name));
+    console.log("Buckets error:", bucketsError);
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("work-log-recipts")
+        .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+        });
 
     if (uploadError) {
-        console.error("Error uploading file:", uploadError);
-        throw new Error(`파일 업로드 실패: ${uploadError.message}`);
+        console.error("=== Storage 업로드 에러 상세 ===");
+        console.error("Error Code:", uploadError.error);
+        console.error("Error Message:", uploadError.message);
+        console.error("Error Status Code:", uploadError.statusCode);
+        console.error("Full Error:", JSON.stringify(uploadError, null, 2));
+        throw new Error(`파일 업로드 실패: ${uploadError.message || uploadError.error || "알 수 없는 오류"}`);
     }
 
+    console.log("파일 업로드 성공:", uploadData);
     return filePath;
 }
 
@@ -504,15 +536,15 @@ export async function getWorkLogById(
 
     // 6. 첨부파일 조회
     const { data: receiptsData } = await supabase
-        .from("work_log_receipts")
+        .from("work_log_receipt")
         .select("*")
         .eq("work_log_id", workLogId);
 
     const receipts =
         receiptsData?.map((rec) => ({
             id: rec.id,
-            file_path: rec.file_path,
-            orig_name: rec.orig_name,
+            file_path: rec.storage_path || rec.file_path,
+            orig_name: rec.original_name || rec.orig_name,
             mime_type: rec.mime_type || undefined,
             file_size: rec.file_size || undefined,
             ext: rec.ext || undefined,
@@ -687,6 +719,108 @@ export async function updateWorkLog(
 
         return workLog;
     } catch (error) {
+        throw error;
+    }
+}
+
+/**
+ * 영수증 조회
+ */
+export async function getWorkLogReceipts(
+    workLogId: number
+): Promise<
+    Array<{
+        id: number;
+        category: string;
+        storage_path: string;
+        original_name: string | null;
+        mime_type: string | null;
+        file_size: number | null;
+        file_url?: string;
+    }>
+> {
+    const { data, error } = await supabase
+        .from("work_log_receipt")
+        .select("*")
+        .eq("work_log_id", workLogId)
+        .order("created_at", { ascending: true });
+
+    if (error) {
+        console.error("Error fetching receipts:", error);
+        throw new Error(`영수증 조회 실패: ${error.message}`);
+    }
+
+    // Storage에서 공개 URL 생성
+    const receiptsWithUrl = await Promise.all(
+        (data || []).map(async (receipt) => {
+            let fileUrl: string | undefined;
+            try {
+                // 버킷이 private이므로 signed URL 생성
+                const bucketName = receipt.storage_bucket || "work-log-recipts";
+                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                    .from(bucketName)
+                    .createSignedUrl(receipt.storage_path, 60 * 60 * 24 * 365); // 1년 유효
+                
+                if (signedUrlError) {
+                    console.error("Error creating signed URL:", signedUrlError);
+                    // signed URL 실패 시 public URL 시도
+                    const { data: urlData } = await supabase.storage
+                        .from(bucketName)
+                        .getPublicUrl(receipt.storage_path);
+                    fileUrl = urlData?.publicUrl;
+                } else {
+                    fileUrl = signedUrlData?.signedUrl;
+                }
+            } catch (err) {
+                console.error("Error getting URL:", err);
+            }
+
+            return {
+                id: receipt.id,
+                category: receipt.category,
+                storage_path: receipt.storage_path,
+                original_name: receipt.original_name,
+                mime_type: receipt.mime_type,
+                file_size: receipt.file_size,
+                file_url: fileUrl,
+            };
+        })
+    );
+
+    return receiptsWithUrl;
+}
+
+/**
+ * 영수증 삭제
+ */
+export async function deleteWorkLogReceipt(
+    receiptId: number,
+    storagePath: string,
+    storageBucket: string = "work-log-recipts"
+): Promise<void> {
+    try {
+        // 1. Storage에서 파일 삭제
+        const { error: storageError } = await supabase.storage
+            .from(storageBucket)
+            .remove([storagePath]);
+
+        if (storageError) {
+            console.error("Error deleting file from storage:", storageError);
+            // Storage 삭제 실패해도 DB는 삭제 시도
+        }
+
+        // 2. DB에서 레코드 삭제
+        const { error: dbError } = await supabase
+            .from("work_log_receipt")
+            .delete()
+            .eq("id", receiptId);
+
+        if (dbError) {
+            console.error("Error deleting receipt from DB:", dbError);
+            throw new Error(`영수증 삭제 실패: ${dbError.message}`);
+        }
+    } catch (error: any) {
+        console.error("Error deleting receipt:", error);
         throw error;
     }
 }

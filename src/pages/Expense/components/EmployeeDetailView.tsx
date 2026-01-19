@@ -1,3 +1,4 @@
+// src/pages/Expense/components/EmployeeDetailView.tsx
 import Table, { TableColumn } from "../../../components/common/Table";
 import Button from "../../../components/common/Button";
 import { IconDownload } from "../../../components/icons/Icons";

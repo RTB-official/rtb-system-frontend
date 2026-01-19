@@ -62,9 +62,24 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     const isMatch = (pattern: string) =>
         !!matchPath({ path: pattern, end: false }, location.pathname);
-
+    
+    // ✅ 보고서 수정 진입 감지:
+    // 1) /reportcreate?id=123 같은 쿼리 방식
+    const searchParams = new URLSearchParams(location.search);
+    const isReportEditByQuery =
+        isMatch(PATHS.reportCreate) && !!searchParams.get("id");
+    
+    // 2) 혹시 쓰는 경우를 대비한 path param 방식도 유지
+    const isReportEditByPath =
+        !!matchPath({ path: "/report/edit/:id", end: false }, location.pathname) ||
+        !!matchPath({ path: "/report/:id/edit", end: false }, location.pathname);
+    
+    const isReportEditRoute = isReportEditByQuery || isReportEditByPath;
+    
     const isReportRoute =
-        isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate);
+        isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate) || isReportEditRoute;
+    
+    
     const isExpenseRoute =
         isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
 
@@ -304,7 +319,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     const reportSubMenuItems = [
         { label: "보고서 목록", to: PATHS.reportList },
-        { label: "보고서 작성", to: PATHS.reportCreate },
+        {
+            // ✅ 수정 화면일 때 라벨 변경
+            label: isReportEditRoute ? "보고서 작성(수정)" : "보고서 작성",
+            // ✅ 쿼리스트링까지 포함해야 NavLink 활성(파란색)이 정확히 잡힘
+            to: isReportEditRoute
+                ? `${location.pathname}${location.search}`
+                : PATHS.reportCreate,
+        },
     ];
 
     const expenseSubMenuItems = [

@@ -25,6 +25,39 @@ import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 
+type ReceiptCategoryEnum =
+    | "숙박영수증"
+    | "자재구매영수증"
+    | "식비및유대영수증"
+    | "기타";
+
+function mapReceiptCategory(input: string): ReceiptCategoryEnum {
+    const normalized = (input || "").replace(/\s+/g, "").trim();
+
+    if (normalized === "숙박" || normalized === "숙박영수증") return "숙박영수증";
+
+    if (
+        normalized === "자재" ||
+        normalized === "자재구매" ||
+        normalized === "자재구매영수증"
+    )
+        return "자재구매영수증";
+
+    if (
+        normalized === "식비및유대" ||
+        normalized === "식비유대" ||
+        normalized === "식비" ||
+        normalized === "유대" ||
+        normalized === "식비및유대영수증"
+    )
+        return "식비및유대영수증";
+
+    return "기타";
+}
+
+
+
+
 export default function ReportEditPage() {
     const { id } = useParams<{ id: string }>();
     const workLogId = id ? Number(id) : null;
@@ -249,44 +282,100 @@ export default function ReportEditPage() {
             const workLog = await updateWorkLog(workLogId, workLogData);
 
             // 파일 업로드 처리 (work_log 업데이트 후)
-            if (uploadedFiles.length > 0) {
-                const receipts = [];
-                for (const file of uploadedFiles) {
+            // 새로 업로드한 파일만 처리 (기존 영수증은 이미 DB에 있음)
+            const newFiles = uploadedFiles.filter((f) => !f.isExisting && f.file);
+            if (newFiles.length > 0) {
+    const receipts: Array<{
+        category: ReceiptCategoryEnum;
+        storage_bucket: string;
+        storage_path: string;
+        original_name?: string;
+        mime_type?: string;
+        file_size?: number;
+        created_by?: string;
+    }> = [];
+
+                for (const file of newFiles) {
+                    if (!file.file) continue;
+                    
                     try {
                         const filePath = await uploadReceiptFile(
                             file.file,
                             workLog.id,
                             file.category
                         );
+
                         receipts.push({
-                            file_path: filePath,
-                            orig_name: file.file.name,
+                            category: mapReceiptCategory(file.category),
+                            storage_bucket: "work-log-recipts",
+                            storage_path: filePath,
+                            original_name: file.file.name,
                             mime_type: file.file.type || undefined,
                             file_size: file.file.size || undefined,
-                            ext: file.file.name.split(".").pop() || undefined,
+                            created_by: user?.id || undefined, // RLS 정책을 위해 명시적으로 전달
                         });
-                    } catch (err) {
+                    } catch (err: any) {
                         console.error("Error uploading file:", err);
-                        // 파일 업로드 실패해도 계속 진행
+                        showError(
+                            `영수증 파일 업로드 실패: ${err?.message || "알 수 없는 오류"}`
+                        );
+                        throw err; // ✅ 업로드 실패면 제출도 실패 처리(중요)
                     }
                 }
 
                 // receipts 저장
                 if (receipts.length > 0) {
-                    const { error: receiptsError } = await supabase
-                        .from("work_log_receipts")
-                        .insert(
-                            receipts.map((r) => ({
-                                work_log_id: workLog.id,
-                                ...r,
-                            }))
-                        );
+                    // 디버깅: 사용자 정보 확인
+                    console.log("=== 영수증 저장 디버깅 (수정 페이지) ===");
+                    console.log("User ID:", user?.id);
+                    console.log("Work Log ID:", workLog.id);
+                    console.log("Receipts to insert:", receipts);
+                    
+                    // 인증 상태 확인
+                    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+                    console.log("Auth User:", authUser);
+                    console.log("Auth Error:", authError);
+                    
+                    const insertDataList = receipts.map((r) => {
+                        // 명시적으로 필드 지정 (스프레드 연산자 대신)
+                        const insertData: any = {
+                            work_log_id: workLog.id,
+                            category: r.category,
+                            storage_bucket: r.storage_bucket,
+                            storage_path: r.storage_path,
+                        };
+                        
+                        // 선택적 필드 추가
+                        if (r.original_name) insertData.original_name = r.original_name;
+                        if (r.mime_type) insertData.mime_type = r.mime_type;
+                        if (r.file_size) insertData.file_size = r.file_size;
+                        if (user?.id) insertData.created_by = user.id;
+                        
+                        return insertData;
+                    });
+                    
+                    console.log("Insert Data List:", JSON.stringify(insertDataList, null, 2));
+                    
+                    const { data: insertData, error: receiptsError } = await supabase
+                        .from("work_log_receipt")
+                        .insert(insertDataList)
+                        .select();
 
                     if (receiptsError) {
-                        console.error("Error saving receipts:", receiptsError);
+                        console.error("=== 영수증 저장 에러 상세 (수정 페이지) ===");
+                        console.error("Error Code:", receiptsError.code);
+                        console.error("Error Message:", receiptsError.message);
+                        console.error("Error Details:", receiptsError.details);
+                        console.error("Error Hint:", receiptsError.hint);
+                        console.error("Full Error:", JSON.stringify(receiptsError, null, 2));
+                        showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`);
+                        throw receiptsError; // ✅ DB 저장 실패면 제출도 실패 처리
                     }
+                    
+                    console.log("영수증 저장 성공:", insertData);
                 }
             }
+
 
             showSuccess("수정이 완료되었습니다!");
             isNavigatingRef.current = true;
@@ -333,8 +422,7 @@ export default function ReportEditPage() {
             // 이미 저장 중이면 스킵
             if (savingDraft || !user?.id) return;
 
-            // 제출 완료된 항목은 임시저장하지 않음
-            if (isSubmittedWorkLog) return;
+
 
             setSavingDraft(true);
             try {
@@ -402,9 +490,12 @@ export default function ReportEditPage() {
 
                 setLastSavedAt(new Date());
                 setHasUnsavedChanges(false);
-
+                setIsSubmittedWorkLog(false); // ✅ 제출완료 → 임시저장 상태로 전환
+                
                 if (!silent) {
                     showSuccess("임시저장이 완료되었습니다!");
+                    isNavigatingRef.current = true;
+                    navigate("/report"); // ✅ 임시저장 후 목록으로 이동
                 }
             } catch (error: any) {
                 console.error("Error saving draft:", error);
@@ -582,32 +673,25 @@ export default function ReportEditPage() {
                     }
                     rightContent={
                         <div className="flex items-center gap-3">
-                            {!isSubmittedWorkLog && (
-                                <>
-                                    {lastSavedAt && (
-                                        <span className="text-sm text-gray-400 whitespace-nowrap">
-                                            {lastSavedAt.toLocaleTimeString(
-                                                "ko-KR",
-                                                {
-                                                    hour: "2-digit",
-                                                    minute: "2-digit",
-                                                }
-                                            )}{" "}
-                                            저장됨
-                                        </span>
-                                    )}
-                                    <Button
-                                        variant="outline"
-                                        size="lg"
-                                        onClick={handleManualDraftSave}
-                                        disabled={savingDraft}
-                                    >
-                                        {savingDraft
-                                            ? "저장 중..."
-                                            : "임시 저장"}
-                                    </Button>
-                                </>
-                            )}
+                            <>
+                                {lastSavedAt && (
+                                    <span className="text-sm text-gray-400 whitespace-nowrap">
+                                        {lastSavedAt.toLocaleTimeString("ko-KR", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                        })}{" "}
+                                        저장됨
+                                    </span>
+                                )}
+                                <Button
+                                    variant="outline"
+                                    size="lg"
+                                    onClick={handleManualDraftSave}
+                                    disabled={savingDraft}
+                                >
+                                    {savingDraft ? "저장 중..." : "임시 저장"}
+                                </Button>
+                            </>
                             <Button
                                 variant="primary"
                                 size="lg"
@@ -621,6 +705,8 @@ export default function ReportEditPage() {
                             </Button>
                         </div>
                     }
+                    
+                    
                 />
 
                 {/* Content Area - 스크롤 가능 */}
@@ -645,7 +731,7 @@ export default function ReportEditPage() {
                             <ConsumablesSection />
 
                             {/* 첨부파일 업로드 */}
-                            <FileUploadSection />
+                            <FileUploadSection workLogId={workLogId} />
 
                             {/* 타임라인 요약 */}
                             <TimelineSummarySection />

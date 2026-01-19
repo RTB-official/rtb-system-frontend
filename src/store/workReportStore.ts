@@ -31,13 +31,20 @@ export interface MaterialEntry {
   unit: string;
 }
 
-export type FileCategory = '숙박영수증' | '자재영수증' | '식비영수증' | '기타';
+export type FileCategory = '숙박영수증' | '자재구매영수증' | '식비및유대영수증' | '기타';
 
 export interface UploadedFile {
   id: number;
-  file: File;
+  file?: File; // 새로 업로드하는 파일
   preview?: string;
   category: FileCategory;
+  // 기존 영수증 정보 (DB에서 로드된 경우)
+  receiptId?: number; // DB의 receipt id
+  storagePath?: string;
+  originalName?: string;
+  fileUrl?: string; // Storage 공개 URL
+  mimeType?: string;
+  isExisting?: boolean; // 기존 영수증인지 여부
 }
 
 // 직급별 직원 데이터
@@ -168,6 +175,14 @@ interface WorkReportState {
   
   // Actions - 첨부파일
   addFiles: (files: File[], category: FileCategory) => void;
+  addExistingReceipt: (receipt: {
+    receiptId: number;
+    category: FileCategory;
+    storagePath: string;
+    originalName: string | null;
+    fileUrl?: string;
+    mimeType?: string | null;
+  }) => void;
   removeFile: (id: number) => void;
   
   // Actions - 전체
@@ -374,12 +389,38 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       file,
       preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
       category,
+      isExisting: false,
     }));
     return { uploadedFiles: [...state.uploadedFiles, ...newFiles] };
   }),
+  addExistingReceipt: (receipt) => set((state) => {
+    // 중복 체크: 이미 같은 receiptId가 있는지 확인
+    const alreadyExists = state.uploadedFiles.some(
+      (f) => f.isExisting && f.receiptId === receipt.receiptId
+    );
+    
+    if (alreadyExists) {
+      console.log("이미 존재하는 영수증, 추가하지 않음:", receipt.receiptId);
+      return state; // 이미 있으면 추가하지 않음
+    }
+    
+    const newReceipt: UploadedFile = {
+      id: Date.now(),
+      category: receipt.category,
+      receiptId: receipt.receiptId,
+      storagePath: receipt.storagePath,
+      originalName: receipt.originalName || undefined,
+      fileUrl: receipt.fileUrl,
+      mimeType: receipt.mimeType || undefined,
+      preview: receipt.fileUrl && (receipt.mimeType?.startsWith('image/') || !receipt.mimeType) ? receipt.fileUrl : undefined,
+      isExisting: true,
+    };
+    console.log("새 영수증 추가:", newReceipt);
+    return { uploadedFiles: [...state.uploadedFiles, newReceipt] };
+  }),
   removeFile: (id) => set((state) => {
     const file = state.uploadedFiles.find((f) => f.id === id);
-    if (file?.preview) URL.revokeObjectURL(file.preview);
+    if (file?.preview && !file.isExisting) URL.revokeObjectURL(file.preview);
     return { uploadedFiles: state.uploadedFiles.filter((f) => f.id !== id) };
   }),
   

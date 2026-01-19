@@ -1,0 +1,1079 @@
+// src/pages/Report/ReportPdfPage.tsx
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import {
+    getReportPdfData,
+    PdfEntry,
+    PdfExpense,
+    PdfMaterial,
+    PdfReceipt,
+} from "../../lib/reportPdfData";
+import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
+import { useWorkReportStore } from "../../store/workReportStore";
+
+function toHM(t?: string | null) {
+    if (!t) return "";
+    const parts = String(t).split(":");
+    const hh = String(parts[0] ?? "0").padStart(2, "0");
+    const mm = String(parts[1] ?? "0").padStart(2, "0");
+    return `${hh}:${mm}`;
+}
+
+function weekday_kr(ymd?: string | null) {
+    if (!ymd) return "";
+    const w = ["일", "월", "화", "수", "목", "금", "토"];
+    const d = new Date(ymd);
+    if (Number.isNaN(d.getTime())) return "";
+    return w[d.getDay()];
+}
+
+function enumerate_dates(startYmd?: string | null, endYmd?: string | null) {
+    if (!startYmd) return [];
+    const s = new Date(startYmd);
+    const e = endYmd ? new Date(endYmd) : s;
+    if (Number.isNaN(s.getTime())) return [];
+    const out: string[] = [];
+    const cur = new Date(s);
+    const end = Number.isNaN(e.getTime()) ? s : e;
+    while (cur <= end) {
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, "0");
+        const d = String(cur.getDate()).padStart(2, "0");
+        out.push(`${y}-${m}-${d}`);
+        cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+}
+
+function formatWon(n: number) {
+    return n.toLocaleString("ko-KR");
+}
+
+// ✅ 고정 양력 공휴일(음력은 브라우저에서 계산이 어려워 제외)
+function kr_fixed_holidays(year: number) {
+    const y = year;
+    return [
+        `${y}-01-01`,
+        `${y}-03-01`,
+        `${y}-05-05`,
+        `${y}-06-06`,
+        `${y}-08-15`,
+        `${y}-10-03`,
+        `${y}-10-09`,
+        `${y}-12-25`,
+    ];
+}
+
+function isWeekend(ymd: string) {
+    const ts = new Date(ymd);
+    const w = ts.getDay(); // 0=일,6=토
+    return w === 0 || w === 6;
+}
+
+export default function ReportPdfPage() {
+    const [params] = useSearchParams();
+    const id = Number(params.get("id") ?? 0);
+    const autoPrint = params.get("autoPrint") === "1";
+
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const [log, setLog] = useState<any>(null);
+    const [persons, setPersons] = useState<string[]>([]);
+    const [entries, setEntries] = useState<PdfEntry[]>([]);
+    const [entryPersonsMap, setEntryPersonsMap] = useState<
+        Record<number, string[]>
+    >({});
+    const [materials, setMaterials] = useState<PdfMaterial[]>([]);
+    const [expenses, setExpenses] = useState<PdfExpense[]>([]);
+    const [receipts, setReceipts] = useState<PdfReceipt[]>([]);
+    const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
+    const { setWorkLogEntries } = useWorkReportStore();
+
+    useEffect(() => {
+        if (!id) {
+            setError("잘못된 id");
+            setLoading(false);
+            return;
+        }
+        (async () => {
+            try {
+                setLoading(true);
+                const data = await getReportPdfData(id);
+                setLog(data.log);
+                setPersons(data.persons);
+                setEntries(data.entries);
+                setEntryPersonsMap(data.entryPersonsMap);
+                setMaterials(data.materials);
+                setExpenses(data.expenses);
+                setReceipts(data.receipts);
+                setImageErrors(new Set()); // 영수증 데이터 로드 시 에러 상태 초기화
+
+                // TimelineSummarySection을 위한 WorkLogEntry 형식으로 변환
+                const workLogEntries = data.entries.map((entry: PdfEntry) => {
+                    const note = String(entry.note ?? "");
+                    const noLunch =
+                        note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
+                        note.includes("점심 안먹고 작업진행(12:00~13:00)");
+                    
+                    // moveFrom, moveTo 추출 (note에서 패턴 찾기)
+                    let moveFrom: string | undefined;
+                    let moveTo: string | undefined;
+                    const moveMatch = note.match(/(?:이동|move)[:：\s]*([^→→\s]+)\s*[→→]\s*([^\s]+)/i);
+                    if (moveMatch) {
+                        moveFrom = moveMatch[1];
+                        moveTo = moveMatch[2];
+                    }
+
+                    return {
+                        id: entry.id,
+                        dateFrom: entry.date_from ?? "",
+                        timeFrom: entry.time_from ?? "",
+                        dateTo: entry.date_to ?? "",
+                        timeTo: entry.time_to ?? "",
+                        descType: (entry.desc_type ?? "") as '작업' | '이동' | '대기' | '',
+                        details: entry.details ?? "",
+                        persons: data.entryPersonsMap[entry.id] ?? [],
+                        note: note,
+                        noLunch: noLunch,
+                        moveFrom: moveFrom,
+                        moveTo: moveTo,
+                    };
+                });
+                setWorkLogEntries(workLogEntries);
+            } catch (e: any) {
+                setError(e?.message ?? "PDF 데이터 로드 실패");
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, [id]);
+
+    // ✅ 기간/rows 계산 (신형 PHP의 상세정보 테이블과 동일한 구조)
+    const { workPeriodText, rows, holidaysByYear } = useMemo(() => {
+        const sorted = [...entries].sort((a, b) => {
+            const ak = `${a.date_from ?? ""}T${a.time_from ?? "00:00"}`;
+            const bk = `${b.date_from ?? ""}T${b.time_from ?? "00:00"}`;
+            return ak.localeCompare(bk);
+        });
+
+        // 전체 엔트리 시작~종료(날짜만)
+        let workStart: number | null = null;
+        let workEnd: number | null = null;
+
+        for (const e of sorted) {
+            const s = `${e.date_from ?? ""} ${e.time_from ?? ""}`.trim();
+            const t = `${e.date_to ?? ""} ${e.time_to ?? ""}`.trim();
+            if (s) {
+                const ts = new Date(s.replace(" ", "T")).getTime();
+                if (!Number.isNaN(ts)) {
+                    if (workStart === null || ts < workStart) workStart = ts;
+                }
+            }
+            if (t) {
+                const tt = new Date(t.replace(" ", "T")).getTime();
+                if (!Number.isNaN(tt)) {
+                    if (workEnd === null || tt > workEnd) workEnd = tt;
+                }
+            }
+        }
+
+        const startStr = workStart ? new Date(workStart).toISOString().slice(0, 10) : "";
+        const endStr = workEnd ? new Date(workEnd).toISOString().slice(0, 10) : "";
+        const workPeriodText =
+            (startStr || endStr)
+                ? `${startStr}${(startStr || endStr) ? " ~ " : ""}${endStr}`
+                : "";
+
+        // 공휴일 year set
+        const years = new Set<number>();
+        for (const e of sorted) {
+            if (e.date_from) years.add(Number(e.date_from.slice(0, 4)));
+            if (e.date_to) years.add(Number(e.date_to.slice(0, 4)));
+        }
+        if (years.size === 0) years.add(new Date().getFullYear());
+
+        const holidaysByYear: Record<number, Set<string>> = {};
+        for (const y of years) {
+            holidaysByYear[y] = new Set(kr_fixed_holidays(y));
+        }
+
+        type Row = {
+            y: string;
+            m: string;
+            d: string;
+            w: string;
+            type: string;
+            from: string;
+            to: string;
+            desc: string;
+            note: string;
+            rmk: string;
+            dateKey: string; // YYYY-m-d (중복표시 판단용)
+            dateStr: string; // YYYY-mm-dd (휴일색)
+        };
+
+        const rows: Row[] = [];
+
+        // 시간 라벨(구형과 동일: 총분 -> 0.5 단위)
+        const hours_half_label_with_lunch = (e: PdfEntry) => {
+            const df = e.date_from ?? "";
+            const tf = e.time_from ?? "";
+            const dt = e.date_to ?? "";
+            const tt = e.time_to ?? "";
+            const from = `${df} ${tf}`.trim();
+            const to = `${dt} ${tt}`.trim();
+            if (!from || !to) return "";
+            const ft = new Date(from.replace(" ", "T")).getTime();
+            const tts = new Date(to.replace(" ", "T")).getTime();
+            if (Number.isNaN(ft) || Number.isNaN(tts) || tts <= ft) return "";
+
+            let totalMins = Math.floor((tts - ft) / 60000);
+
+            const descType = String(e.desc_type ?? "").trim();
+            const note = String(e.note ?? "");
+
+            if (descType !== "작업") {
+                const h = Math.floor(totalMins / 60);
+                const m = totalMins % 60;
+                return `${h}${m >= 30 ? ".5" : ""}`;
+            }
+
+            if (
+                note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
+                note.includes("점심 안먹고 작업진행(12:00~13:00)")
+            ) {
+                const h = Math.floor(totalMins / 60);
+                const m = totalMins % 60;
+                return `${h}${m >= 30 ? ".5" : ""}`;
+            }
+            
+
+            // 동일 일자만 점심 차감
+            const sameDay = df && dt && df === dt;
+            if (sameDay) {
+                const lunchStart = new Date(`${df}T12:00`).getTime();
+                const lunchEnd = new Date(`${df}T13:00`).getTime();
+                const s = Math.max(ft, lunchStart);
+                const eov = Math.min(tts, lunchEnd);
+                const ov = Math.max(0, Math.floor((eov - s) / 60000));
+                if (ov >= 60) totalMins -= 60;
+            }
+
+            const h = Math.floor(totalMins / 60);
+            const m = totalMins % 60;
+            return `${h}${m >= 30 ? ".5" : ""}`;
+        };
+
+        // 전체 인원 목록(비고 전원 처리용)
+        const workerSet = Array.from(new Set(persons.map((p) => p.trim()).filter(Boolean))).sort();
+
+        for (const e of sorted) {
+            const eid = e.id;
+            const ppl = (entryPersonsMap[eid] ?? []).map((x) => x.trim()).filter(Boolean);
+
+            const hoursDisp = hours_half_label_with_lunch(e);
+
+            const startDate = e.date_from ?? e.date_to ?? "";
+            const endDate = e.date_to ?? startDate;
+            const dates = startDate ? enumerate_dates(startDate, endDate) : [""];
+
+            // 비고(인원 우선, 3명 단위 줄바꿈 / 전원(N명) 처리)
+            let rmk = "";
+            if (ppl.length) {
+                const remarkList = ppl;
+                const remarkSet = Array.from(new Set(remarkList)).sort();
+                const workerSetSorted = [...workerSet].sort();
+                const same =
+                    workerSetSorted.length > 1 &&
+                    remarkSet.length === workerSetSorted.length &&
+                    remarkSet.every((v, i) => v === workerSetSorted[i]);
+
+                if (same) {
+                    rmk = `전원(${workerSetSorted.length}명)`;
+                } else {
+                    const lines: string[] = [];
+                    for (let i = 0; i < remarkList.length; i += 3) {
+                        lines.push(remarkList.slice(i, i + 3).join(", "));
+                    }
+                    rmk = lines.join("\n");
+                }
+            }
+
+            const firstDate = dates[0] ?? "";
+            const lastDate = dates[dates.length - 1] ?? "";
+
+            for (const dYmd of dates) {
+                const isFirst = dYmd === firstDate;
+                const isLast = dYmd === lastDate;
+
+                const dt = dYmd ? new Date(dYmd) : null;
+                const y = dt ? String(dt.getFullYear()) : "";
+                const m = dt ? String(dt.getMonth() + 1) : "";
+                const d = dt ? String(dt.getDate()) : "";
+                const w = dYmd ? weekday_kr(dYmd) : "";
+
+                const baseType = String(e.desc_type ?? "");
+                const type = baseType + (hoursDisp ? `(${hoursDisp})` : "");
+
+                const dateKey = `${y}-${m}-${d}`;
+                const dateStr = dYmd || "";
+
+                rows.push({
+                    y,
+                    m,
+                    d,
+                    w,
+                    type,
+                    from: isFirst ? toHM(e.time_from ?? "") : "",
+                    to: isLast ? toHM(e.time_to ?? "") : "",
+                    desc: String(e.details ?? "").trim(),
+                    note: String(e.note ?? ""),
+                    rmk,
+                    dateKey,
+                    dateStr,
+                });
+            }
+        }
+
+        // 완전 빈 행 제거
+        const filtered = rows.filter((r) => {
+            const emptyDate = (!r.y || r.y === "0") && (!r.m || r.m === "0") && (!r.d || r.d === "0");
+            return !(
+                emptyDate &&
+                !r.type.trim() &&
+                !r.from.trim() &&
+                !r.to.trim() &&
+                !r.desc.trim() &&
+                !r.rmk.trim()
+            );
+        });
+
+
+
+        return { workPeriodText, rows: filtered, holidaysByYear };
+    }, [entries, entryPersonsMap, persons]);
+
+    const expenseSum = useMemo(() => {
+        return expenses.reduce((acc, x) => acc + (Number(x.amount ?? 0) || 0), 0);
+    }, [expenses]);
+
+    // 자동 프린트
+    useEffect(() => {
+        if (!autoPrint) return;
+        if (loading) return;
+        if (error) return;
+
+        const t = window.setTimeout(() => {
+            window.print();
+        }, 300);
+
+        return () => window.clearTimeout(t);
+    }, [autoPrint, loading, error]);
+
+    if (loading) return <div className="p-6 text-sm text-gray-600">PDF 로딩중…</div>;
+    if (error || !log) return <div className="p-6 text-sm text-red-600">{error ?? "오류"}</div>;
+
+    // 영수증 URL 결정(테이블에 file_url이 있으면 그걸 우선 사용)
+    const receiptImgs = (receipts ?? [])
+        .map((r) => ({
+            id: r.id ?? 0,
+            url: (r.file_url ?? "").trim(),
+            name: (r.file_name ?? "").trim(),
+            storagePath: r.storage_path ?? r.path ?? "",
+            category: r.category ?? "",
+        }))
+        .filter((x) => Boolean(x.url));
+
+    // 이미지 로드 에러 핸들러
+    const handleImageError = (receiptId: number) => {
+        setImageErrors((prev) => new Set(prev).add(receiptId));
+    };
+
+        return (
+            <div>
+                {/* ✅ 신형 PDF CSS (public 기준으로 폰트 경로만 조정) */}
+                <style>{`
+    html, body {
+      page-break-inside: auto !important;
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+    }
+    * {
+      page-break-inside: auto !important;
+      page-break-before: auto !important;
+      page-break-after: auto !important;
+    }
+    
+    @font-face{
+      font-family:'NanumGothic';
+      src:url('/fonts/NanumGothic.ttf') format('truetype');
+      font-weight:400; font-style:normal;
+    }
+    @font-face{
+      font-family:'NanumGothic';
+      src:url('/fonts/NanumGothicBold.ttf') format('truetype');
+      font-weight:700; font-style:normal;
+    }
+    
+    @page { size: A4 portrait; margin: 12mm 10mm; }
+    body { font-family:'NanumGothic', sans-serif; color:#1b1d22; font-size:11.5pt; }
+    
+    :root{
+      --ink:#1b1d22; --muted:#6b7280; --line:#e6e8ee; --soft:#f7f8fb;
+      --brand:#800020; --work:#2563eb; --move:#10b981; --wait:#f59e0b;
+    }
+    
+    /* ✅ A4 내용폭 고정 */
+    .sheet{
+      width: 190mm;
+      margin: 0 auto;
+    }
+    
+    /* Header */
+    .head-table{ width:100%; border-collapse:collapse; }
+    .head-table td{ vertical-align:top; border:none; padding:0; }
+    
+    .brand-row{ width:auto; border-collapse:collapse; margin:0 auto; }
+    .brand-row td{ padding:0; border:none; vertical-align:middle; }
+    .brand-row .logo-cell{ white-space:nowrap; }
+    .brand-row .title-cell{ padding-left:10px; white-space:nowrap; }
+    .logo{ object-fit:contain; }
+    
+    .doc-title{ font-size:20pt; font-weight:700; color:var(--brand); line-height:1.2; }
+    
+    /* Sections */
+    .section{ margin:12px 0 16px; }
+    .section h2{
+      font-size:12.5pt; margin:0 0 8px; color:#222;
+      border-left:3px solid var(--brand); padding-left:8px;
+    }
+    
+    /* 기본정보 Remaster — gap 최소화 */
+    .kvx{
+      width:100%;
+      border-collapse:collapse;
+      background:transparent;
+      font-size:10pt;
+      table-layout:auto;
+    }
+    .kvx tr{ border-bottom:1px solid var(--line); }
+    .kvx tr:last-child{ border-bottom:none; }
+    .kvx th{
+      border:none;
+      background:transparent;
+      color:#6b7280;
+      font-weight:700;
+      text-align:left;
+      white-space:nowrap;
+      padding:8px 0;
+      width:0.01%;
+    }
+    .kvx th::after{ content:":"; color:#6b7280; }
+    .kvx td{
+      border:none;
+      padding:8px 0;
+      color:#111827;
+      word-break:break-word;
+    }
+    .kvx td::before{ content:"\\00a0\\00a0"; }
+    .kvx tr:first-child td:nth-child(2){ white-space:nowrap; }
+    
+    .muted{ color:var(--muted); }
+    .right{ text-align:right; }
+    .center{ text-align:center; }
+    
+    /* =========================
+       상세정보 (완전 신규)
+       ========================= */
+    .detail-wrap{ width:100%; }
+
+    .detail-table{
+      width:100%;
+      border-collapse:collapse;
+      table-layout:fixed;
+      font-size:8.5pt;
+      background:#fff;
+    }
+
+    .detail-table th,
+    .detail-table td{
+      border:1px solid #111;
+      padding:4px 5px;
+      vertical-align:top;
+      word-break:break-word;
+      overflow-wrap:anywhere;
+    }
+
+    .detail-table thead th{
+      background:#eef3ff;
+      text-align:center;
+      vertical-align:middle;
+      white-space:nowrap;
+      font-weight:700;
+    }
+
+    /* ✅ A4 안정 폭(mm 고정) */
+    .dcol-y{ width:10mm; }
+    .dcol-m{ width:7mm; }
+    .dcol-d{ width:7mm; }
+    .dcol-w{ width:7mm; }
+    .dcol-type{ width:16mm; }
+    .dcol-from{ width:14mm; }
+    .dcol-to{ width:14mm; }
+    .dcol-desc{ width:auto; }
+    .dcol-rmk{ width:30mm; }
+
+    .detail-center{ text-align:center; }
+    .detail-right{ text-align:right; }
+
+
+        /* ✅ 년도(YYYY)만 폰트 줄이기 */
+    .detail-year{
+      font-size:7pt;
+      line-height:1.05;
+      letter-spacing:-0.2px;
+    }
+
+    .detail-date-red  { color:#d32f2f !important; font-weight:700; }
+    .detail-date-blue { color:#2563eb !important; font-weight:700; }
+
+    /* ✅ 날짜 변경 구분선(테이블 깨짐 방지: border 제거) */
+    .detail-sep td{
+      padding:0 !important;
+      height:3px;
+      background:#0ea5e9;
+      border:none !important;
+    }
+
+    /* ✅ 반복 날짜 셀: 내용만 비워도 높이 유지 */
+    .detail-date-empty{
+      color:transparent;
+    }
+
+    /* ✅ Description 줄바꿈 */
+    .detail-pre{
+      white-space:pre-wrap;
+    }
+
+    .detail-note{
+      margin-top:4px;
+      color:#d00000;
+    }
+
+    /* ✅ 타임라인 섹션: 다른 섹션과 동일한 A4 폭(=sheet 내부 100%)로 고정 */
+    .timeline-section{
+      width:100%;
+      display:block;
+    }
+    .timeline-section .timeline-root{
+      width:100% !important;
+      max-width:none !important;
+      margin:0 !important;
+    }
+    /* 타임라인 내부에서 max-width/mx-auto가 폭을 줄이는 경우 방지 */
+    .timeline-section .timeline-root [class*="max-w-"]{
+      max-width:none !important;
+    }
+    .timeline-section .timeline-root [class*="mx-auto"]{
+      margin-left:0 !important;
+      margin-right:0 !important;
+    }
+
+
+
+    
+    
+    /* Generic table */
+    .table{
+      width:100%;
+      border-collapse:collapse;
+      background:#fff;
+      font-size:8pt;
+      table-layout:fixed;
+    }
+    .table th,.table td{
+      border:1px solid var(--line);
+      padding:7px 6px;
+      word-break:break-word;
+      overflow-wrap:anywhere;
+    }
+    .table th{ background:#eef1f6; color:#364152; font-weight:700; }
+    .table tbody tr:nth-child(odd){ background:#fbfcfe; }
+    
+    /* 소모 자재 4열 균등 */
+    .table.materials { table-layout:fixed; width:100%; }
+    .table.materials th, .table.materials td { width:25%; }
+    
+/* 영수증 크게 표시 (1열) */
+/* 영수증 : 가로 1개 + 거의 정사각형 */
+.receipts-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0 14px;
+  table-layout:fixed;
+}
+
+.receipts-table td{
+  width:100%;
+  vertical-align:top;
+}
+
+.receipt-card{
+  border:1px solid var(--line);
+  background:#fff;
+  border-radius:10px;
+  padding:10px;
+  page-break-inside:avoid;
+  overflow:hidden;
+
+  /* 🔥 정사각형 느낌 핵심 */
+  aspect-ratio: 1 / 1;
+}
+
+/* 이미지 꽉 차게 */
+.receipt-img{
+  width:100%;
+  height:100%;
+  object-fit:cover;        /* 🔥 여백 제거 */
+  border:1px solid #f0f2f6;
+}
+
+
+    
+    @media print { html, body { background:#fff; } }
+                `}</style>
+    
+                {/* ✅ A4 폭 적용 범위 */}
+                <div className="sheet">
+                    {/* 헤더 */}
+                    <table className="head-table">
+                        <tbody>
+                            <tr>
+                                <td colSpan={2} align="center">
+                                    <table className="brand-row">
+                                        <tbody>
+                                            <tr>
+                                                <td className="logo-cell">
+                                                    <img
+                                                        src="/images/RTBlogo.png"
+                                                        alt="RTB"
+                                                        className="logo"
+                                                        style={{
+                                                            width: "10mm",
+                                                            height: "10mm",
+                                                        }}
+                                                    />
+                                                </td>
+                                                <td className="title-cell">
+                                                    <div className="doc-title">
+                                                        출장 보고서
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+    
+                    {/* 기본정보 */}
+                    <div className="section">
+                        <h2>기본정보</h2>
+                        <table className="kvx">
+                            <colgroup>
+                                <col className="l" />
+                                <col className="v" />
+                                <col className="l" />
+                                <col className="v" />
+                            </colgroup>
+                            <tbody>
+                                <tr>
+                                    <th>기간</th>
+                                    <td>{workPeriodText}</td>
+                                    <th>작성자</th>
+                                    <td>{String(log.author ?? "")}</td>
+                                </tr>
+                                <tr>
+                                    <th>출장지</th>
+                                    <td>{String(log.location ?? "")}</td>
+                                    <th>호선</th>
+                                    <td>{String(log.vessel ?? "")}</td>
+                                </tr>
+                                <tr>
+                                    <th>엔진타입</th>
+                                    <td>{String(log.engine ?? "").toUpperCase()}</td>
+                                    <th>참관감독</th>
+                                    <td>
+                                        {String(
+                                            `${log.order_group ?? ""}-${log.order_person ?? ""}`
+                                        ).replace(/^-|-$/g, "")}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>출장목적</th>
+                                    <td colSpan={3} style={{ whiteSpace: "pre-wrap" }}>
+                                        {String(log.subject ?? "")}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>인원</th>
+                                    <td colSpan={3}>
+                                        {persons.length ? (
+                                            `${persons.join(", ")} (${persons.length}명)`
+                                        ) : (
+                                            <span className="muted">없음</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+    
+                    {/* 상세정보 */}
+                    <div className="section">
+                        <h2>상세정보</h2>
+                        {!rows.length ? (
+                            <p className="muted">등록된 상세정보가 없습니다.</p>
+                        ) : (
+                            <div className="detail-wrap">
+                                <table className="detail-table">
+                                    <colgroup>
+                                        <col className="dcol-y" />
+                                        <col className="dcol-m" />
+                                        <col className="dcol-d" />
+                                        <col className="dcol-w" />
+                                        <col className="dcol-type" />
+                                        <col className="dcol-from" />
+                                        <col className="dcol-to" />
+                                        <col className="dcol-desc" />
+                                        <col className="dcol-rmk" />
+                                    </colgroup>
+
+                                    <thead>
+                                        <tr>
+                                            <th>년</th>
+                                            <th>월</th>
+                                            <th>일</th>
+                                            <th>요일</th>
+                                            <th>구분</th>
+                                            <th>From</th>
+                                            <th>To</th>
+                                            <th>작업내용(Description)</th>
+                                            <th>비고(Remark)</th>
+                                        </tr>
+                                    </thead>
+
+                                    <tbody>
+                                        {(() => {
+                                            let lastDateKey: string | null = null;
+                                            const printed = new Set<string>();
+                                            const out: React.ReactNode[] = [];
+
+                                            rows.forEach((r, idx) => {
+                                                const drawSep =
+                                                    lastDateKey !== null &&
+                                                    r.dateKey &&
+                                                    r.dateKey !== lastDateKey &&
+                                                    r.y !== "";
+
+                                                if (r.y) lastDateKey = r.dateKey || lastDateKey;
+
+                                                const dateStr = r.dateStr;
+                                                const y = dateStr ? Number(dateStr.slice(0, 4)) : NaN;
+                                                const dow = dateStr ? new Date(dateStr).getDay() : -1;
+
+                                                const isSat = dow === 6;
+                                                const isSun = dow === 0;
+
+                                                const holidaySet = Number.isNaN(y) ? null : holidaysByYear[y];
+                                                const isHolidayFixed = holidaySet ? holidaySet.has(dateStr) : false;
+
+                                                const dateCls = isSat
+                                                    ? "detail-date-blue"
+                                                    : isSun || isHolidayFixed
+                                                    ? "detail-date-red"
+                                                    : "";
+
+                                                const showDate =
+                                                    r.dateKey &&
+                                                    !printed.has(r.dateKey) &&
+                                                    r.y !== "";
+
+                                                if (showDate) printed.add(r.dateKey);
+
+                                                // ✅ 날짜 변경 구분선
+                                                if (drawSep) {
+                                                    out.push(
+                                                        <tr key={`sep-${idx}`} className="detail-sep">
+                                                            <td colSpan={9} />
+                                                        </tr>
+                                                    );
+                                                }
+
+                                                out.push(
+                                                    <tr key={`row-${idx}`}>
+                                                        {showDate ? (
+                                                            <>
+                                                                <td className={`detail-center detail-year ${dateCls}`}>{r.y}</td>
+                                                                <td className={`detail-center ${dateCls}`}>{r.m}</td>
+                                                                <td className={`detail-center ${dateCls}`}>{r.d}</td>
+                                                                <td className={`detail-center ${dateCls}`}>{r.w}</td>
+
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                {/* ✅ 반복 날짜: 셀은 유지, 내용만 비움(테이블 폭/라인 유지) */}
+                                                                <td className="detail-date-empty">-</td>
+                                                                <td className="detail-date-empty">-</td>
+                                                                <td className="detail-date-empty">-</td>
+                                                                <td className="detail-date-empty">-</td>
+                                                            </>
+                                                        )}
+
+                                                        <td className="detail-center">{r.type}</td>
+                                                        <td className="detail-center">{r.from}</td>
+                                                        <td className="detail-center">{r.to}</td>
+
+                                                        <td className="detail-pre">
+                                                            {r.desc}
+                                                            {r.note?.trim() ? (
+                                                                <div className="detail-note">
+                                                                    특이사항 : {r.note}
+                                                                </div>
+                                                            ) : null}
+                                                        </td>
+
+                                                        <td className="detail-pre">{r.rmk}</td>
+                                                    </tr>
+                                                );
+                                            });
+
+                                            return out;
+                                        })()}
+                                    </tbody>
+                                    </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 타임라인 */}
+                    <div className="section timeline-section">
+
+                        <div className="timeline-root">
+                            <TimelineSummarySection />
+                        </div>
+                    </div>
+
+                    {/* 소모 자재 */}
+                    <div className="section">
+                        <h2>소모 자재</h2>
+                        {!materials.length ? (
+                            <p className="muted">없음</p>
+                        ) : (
+                            <table className="table materials">
+                                <thead>
+                                    <tr>
+                                        <th>자재명</th>
+                                        <th className="right">수량</th>
+                                        <th>자재명</th>
+                                        <th className="right">수량</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {Array.from({
+                                        length: Math.ceil(materials.length / 2),
+                                    }).map((_, i) => {
+                                        const a = materials[i * 2];
+                                        const b = materials[i * 2 + 1];
+                                        return (
+                                            <tr key={i}>
+                                                <td>{a?.material_name ?? ""}</td>
+                                                <td className="right">
+                                                    {a
+                                                        ? `${Number(a.qty ?? 0)} ${a.unit ?? ""}`
+                                                        : ""}
+                                                </td>
+    
+                                                <td>{b?.material_name ?? ""}</td>
+                                                <td className="right">
+                                                    {b
+                                                        ? `${Number(b.qty ?? 0)} ${b.unit ?? ""}`
+                                                        : ""}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+    
+                    {/* 지출내역 */}
+                    <div className="section">
+                        <h2>지출내역</h2>
+                        {!expenses.length ? (
+                            <p className="muted">없음</p>
+                        ) : (
+                            <table className="table">
+                                <thead>
+                                    <tr>
+                                        <th>날짜</th>
+                                        <th>분류</th>
+                                        <th>상세내용</th>
+                                        <th className="right">금액(￦)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {expenses.map((x, idx) => (
+                                        <tr key={idx}>
+                                            <td>{x.expense_date ?? ""}</td>
+                                            <td>{x.expense_type ?? ""}</td>
+                                            <td>{x.detail ?? ""}</td>
+                                            <td className="right">
+                                                {formatWon(Number(x.amount ?? 0))}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td
+                                            colSpan={3}
+                                            className="right"
+                                            style={{ fontWeight: 700 }}
+                                        >
+                                            합계
+                                        </td>
+                                        <td
+                                            className="right"
+                                            style={{ fontWeight: 700 }}
+                                        >
+                                            {formatWon(expenseSum)}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        )}
+                    </div>
+    
+                    {/* 영수증 */}
+                    <div className="section">
+                        <h2>영수증</h2>
+                        {!receiptImgs.length ? (
+                            <p className="muted">없음</p>
+                        ) : (
+                            <table className="receipts-table">
+                                <tbody>
+                                    {Array.from({
+                                        length: Math.ceil(receiptImgs.length / 2),
+                                    }).map((_, i) => {
+                                        const a = receiptImgs[i * 2];
+                                        const b = receiptImgs[i * 2 + 1];
+                                        return (
+                                            <tr key={i}>
+                                                <td>
+                                                    {a ? (
+                                                        <div className="receipt-card" style={{ position: "relative" }}>
+                                                            <a
+                                                                href={a.url}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                            >
+                                                                {imageErrors.has(a.id) ? (
+                                                                    <div
+                                                                        className="receipt-img"
+                                                                        style={{
+                                                                            display: "flex",
+                                                                            alignItems: "center",
+                                                                            justifyContent: "center",
+                                                                            backgroundColor: "#f3f4f6",
+                                                                            color: "#6b7280",
+                                                                            fontSize: "12px",
+                                                                            textAlign: "center",
+                                                                            padding: "20px",
+                                                                        }}
+                                                                    >
+                                                                        <div>
+                                                                            <div>이미지를</div>
+                                                                            <div>불러올 수 없습니다</div>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <img
+                                                                        className="receipt-img"
+                                                                        src={a.url}
+                                                                        alt={a.name || "receipt"}
+                                                                        onError={() => handleImageError(a.id)}
+                                                                        style={{ display: "block" }}
+                                                                    />
+                                                                )}
+                                                                <div className="receipt-caption" style={{ marginTop: "8px", fontSize: "10px", color: "#6b7280" }}>
+                                                                    {a.name ||
+                                                                        a.url
+                                                                            .split("/")
+                                                                            .pop()}
+                                                                </div>
+                                                            </a>
+                                                        </div>
+                                                    ) : null}
+                                                </td>
+                                                <td>
+                                                    {b ? (
+                                                        <div className="receipt-card" style={{ position: "relative" }}>
+                                                            <a
+                                                                href={b.url}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                            >
+                                                                {imageErrors.has(b.id) ? (
+                                                                    <div
+                                                                        className="receipt-img"
+                                                                        style={{
+                                                                            display: "flex",
+                                                                            alignItems: "center",
+                                                                            justifyContent: "center",
+                                                                            backgroundColor: "#f3f4f6",
+                                                                            color: "#6b7280",
+                                                                            fontSize: "12px",
+                                                                            textAlign: "center",
+                                                                            padding: "20px",
+                                                                        }}
+                                                                    >
+                                                                        <div>
+                                                                            <div>이미지를</div>
+                                                                            <div>불러올 수 없습니다</div>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <img
+                                                                        className="receipt-img"
+                                                                        src={b.url}
+                                                                        alt={b.name || "receipt"}
+                                                                        onError={() => handleImageError(b.id)}
+                                                                        style={{ display: "block" }}
+                                                                    />
+                                                                )}
+                                                                <div className="receipt-caption" style={{ marginTop: "8px", fontSize: "10px", color: "#6b7280" }}>
+                                                                    {b.name ||
+                                                                        b.url
+                                                                            .split("/")
+                                                                            .pop()}
+                                                                </div>
+                                                            </a>
+                                                        </div>
+                                                    ) : null}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    

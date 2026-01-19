@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef } from "react";
+//workLogSection.tsx
+import { useState, useMemo, useRef, useEffect } from "react";
 import SectionCard from "../ui/SectionCard";
 import Select from "../common/Select";
 import DatePicker from "../ui/DatePicker";
@@ -11,6 +12,86 @@ import {
 } from "../../store/workReportStore";
 import { IconEdit, IconTrash, IconClose } from "../icons/Icons";
 import ConfirmDialog from "../ui/ConfirmDialog";
+
+// ✅ 작업 시간(분) 계산: 점심(12:00~13:00) 제외 옵션 포함
+function calcWorkMinutesWithLunchRule(params: {
+    dateFrom: string;
+    timeFrom?: string;
+    dateTo: string;
+    timeTo?: string;
+    descType: "작업" | "이동" | "대기" | "";
+    noLunch?: boolean;
+  }) {
+    const { dateFrom, timeFrom, dateTo, timeTo, descType, noLunch } = params;
+  
+    // 시간 없으면 0
+    if (!dateFrom || !dateTo || !timeFrom || !timeTo) return 0;
+  
+    const start = new Date(`${dateFrom}T${timeFrom}:00`);
+    const end = new Date(`${dateTo}T${timeTo}:00`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    if (end <= start) return 0;
+  
+    const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
+  
+    // ✅ 작업이 아니면 점심 규칙 적용 X
+    if (descType !== "작업") return totalMinutes;
+  
+    // ✅ "점심 안 먹음"이면 전체 시간 카운트
+    if (noLunch) return totalMinutes;
+  
+    // ✅ 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
+    let lunchOverlapMinutes = 0;
+  
+    // 시작 날짜 00:00 기준으로 day loop
+    const cur = new Date(`${dateFrom}T00:00:00`);
+    const last = new Date(`${dateTo}T00:00:00`);
+  
+    while (cur <= last) {
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, "0");
+      const dd = String(cur.getDate()).padStart(2, "0");
+      const d = `${yyyy}-${mm}-${dd}`;
+  
+      const lunchStart = new Date(`${d}T12:00:00`);
+      const lunchEnd = new Date(`${d}T13:00:00`);
+  
+      // 겹침 계산: [start, end] ∩ [lunchStart, lunchEnd]
+      const overlapStart = start > lunchStart ? start : lunchStart;
+      const overlapEnd = end < lunchEnd ? end : lunchEnd;
+  
+      if (overlapEnd > overlapStart) {
+        lunchOverlapMinutes += Math.floor(
+          (overlapEnd.getTime() - overlapStart.getTime()) / 60000
+        );
+      }
+  
+      // 다음날
+      cur.setDate(cur.getDate() + 1);
+    }
+  
+    const result = totalMinutes - lunchOverlapMinutes;
+    return result < 0 ? 0 : result;
+  }
+  
+  function formatHoursMinutes(totalMinutes: number) {
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    if (m === 0) return `${h}시간`;
+    if (h === 0) return `${m}분`;
+    return `${h}시간 ${m}분`;
+  }
+  
+
+  const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
+
+function stripNoLunchText(note: string) {
+    return (note || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && line !== NO_LUNCH_TEXT)
+        .join("\n");
+}
 
 // 시간 선택 옵션
 const hourOptions = Array.from({ length: 25 }, (_, i) => ({
@@ -74,6 +155,8 @@ export default function WorkLogSection() {
         dateTo?: string;
         timeTo?: string;
         descType?: string;
+        details?: string; // ✅ 추가
+        persons?: string; // ✅ 추가
     }>({});
 
     // 시간 분리
@@ -81,6 +164,30 @@ export default function WorkLogSection() {
         ":"
     );
     const [timeToHour, timeToMin] = (currentEntry.timeTo || "").split(":");
+
+// ✅ 수정 진입 시: note에 문구가 있으면 체크가 자동으로 켜지게만 처리
+// ✅ 문구 생성/삭제는 체크박스로만 가능 (textarea에서 편집 불가)
+useEffect(() => {
+    const hasNoLunchText = (currentEntry.note || "").includes(NO_LUNCH_TEXT);
+
+    // 작업이 아니면: 체크 해제 + note에서 문구 제거
+    if (currentEntry.descType !== "작업") {
+        if (currentEntry.noLunch || hasNoLunchText) {
+            setCurrentEntry({
+                noLunch: false,
+                note: stripNoLunchText(currentEntry.note || ""),
+            });
+        }
+        return;
+    }
+
+    // 작업인데 note에 문구가 있으면 체크만 켜주기(복원)
+    if (hasNoLunchText && !currentEntry.noLunch) {
+        setCurrentEntry({ noLunch: true });
+    }
+}, [currentEntry.descType, currentEntry.noLunch, currentEntry.note, setCurrentEntry]);
+
+
 
     const handleTimeChange = (
         type: "from" | "to",
@@ -188,15 +295,14 @@ export default function WorkLogSection() {
                                     </p>
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                    <DatePicker
+                                <DatePicker
                                         value={currentEntry.dateFrom || ""}
                                         onChange={(val) => {
-                                            setCurrentEntry({ dateFrom: val });
-                                            if (!currentEntry.dateTo) {
-                                                setCurrentEntry({
-                                                    dateTo: val,
-                                                });
-                                            }
+                                            setCurrentEntry({
+                                                dateFrom: val,
+                                                dateTo: val, // ✅ 시작 날짜 변경 시 종료 날짜도 동일하게 설정
+                                            });
+
                                             if (errors.dateFrom) {
                                                 setErrors((prev) => ({
                                                     ...prev,
@@ -338,33 +444,44 @@ export default function WorkLogSection() {
                         </div>
                     </div>
 
-                    {/* 작업 분류 */}
-                    <div className="flex flex-col gap-3">
-                        <Select
-                            label="유형"
-                            placeholder="선택"
-                            fullWidth
-                            required
-                            options={descTypeOptions}
-                            value={currentEntry.descType || ""}
-                            onChange={(v) => {
-                                setCurrentEntry({
-                                    descType: v as
-                                        | ""
-                                        | "작업"
-                                        | "이동"
-                                        | "대기",
-                                });
-                                if (errors.descType) {
-                                    setErrors((prev) => ({
-                                        ...prev,
-                                        descType: undefined,
-                                    }));
-                                }
-                            }}
-                            error={errors.descType}
-                        />
-                    </div>
+{/* 작업 분류 */}
+<div className="flex flex-col gap-3">
+    <div className="flex items-center">
+        <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
+            유형
+        </label>
+        <RequiredIndicator />
+    </div>
+
+    <div className="flex gap-2">
+        {(["작업", "이동", "대기"] as const).map((t) => (
+            <Button
+                key={t}
+                type="button"
+                size="lg"
+                fullWidth
+                variant={currentEntry.descType === t ? "primary" : "outline"}
+                onClick={() => {
+                    setCurrentEntry({ descType: t });
+
+                    if (errors.descType) {
+                        setErrors((prev) => ({
+                            ...prev,
+                            descType: undefined,
+                        }));
+                    }
+                }}
+            >
+                {t}
+            </Button>
+        ))}
+    </div>
+
+    {errors.descType && (
+        <p className="text-[12px] text-red-500">{errors.descType}</p>
+    )}
+</div>
+
                     {/* 이동일 때 From/To 선택 */}
                     {currentEntry.descType === "이동" && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -449,18 +566,26 @@ export default function WorkLogSection() {
 
                     {/* 상세내용 */}
                     <div className="flex flex-col gap-2">
-                        <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
-                            상세 내용
-                            <RequiredIndicator />
-                        </label>
-                        <textarea
-                            placeholder="수행한 업무 내용을 자세히 기록해주세요"
-                            value={currentEntry.details || ""}
-                            onChange={(e) =>
-                                setCurrentEntry({ details: e.target.value })
+                    <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
+                        상세 내용
+                        <RequiredIndicator />
+                    </label>
+                    <textarea
+                        placeholder="수행한 업무 내용을 자세히 기록해주세요"
+                        value={currentEntry.details || ""}
+                        onChange={(e) => {
+                            setCurrentEntry({ details: e.target.value });
+                            if (errors.details) {
+                                setErrors((prev) => ({ ...prev, details: undefined }));
                             }
-                            className="w-full min-h-[80px] p-3 border border-[#e5e7eb] rounded-xl text-[16px] resize-none outline-none focus:border-[#9ca3af]"
-                        />
+                        }}
+                        className={`w-full min-h-[80px] p-3 border rounded-xl text-[16px] resize-none outline-none focus:border-[#9ca3af] ${
+                            errors.details ? "border-red-500" : "border-[#e5e7eb]"
+                        }`}
+                    />
+                    {errors.details && (
+                        <p className="text-[12px] text-red-500 mt-1">{errors.details}</p>
+                    )}
                     </div>
 
                     {/* 참여 인원 선택 */}
@@ -541,8 +666,12 @@ export default function WorkLogSection() {
                             </Button>
                         </div>
 
-                        {/* 선택된 인원 */}
-                        <div className="border-2 border-blue-300 rounded-2xl px-4 py-3 mt-2">
+                            {/* 선택된 인원 */}
+                            <div
+                                className={`border-2 rounded-2xl px-4 py-3 mt-2 ${
+                                    errors.persons ? "border-red-500" : "border-blue-300"
+                                }`}
+                            >
                             <div className="flex items-center gap-1 mb-3">
                                 <svg
                                     width="20"
@@ -567,6 +696,7 @@ export default function WorkLogSection() {
                                     <p className="text-[#99a1af] text-sm">
                                         인원을 선택해주세요
                                     </p>
+                                    
                                 ) : (
                                     currentEntryPersons.map((person) => (
                                         <Button
@@ -582,45 +712,37 @@ export default function WorkLogSection() {
                                         </Button>
                                     ))
                                 )}
+                                {errors.persons && (
+                                    <p className="text-[12px] text-red-500 mt-2">{errors.persons}</p>
+                                )}
                             </div>
                         </div>
                         {/* 작업일 때 점심 체크박스 */}
                         {currentEntry.descType === "작업" && (
                             <label className="flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
-                                <input
-                                    type="checkbox"
-                                    checked={currentEntry.noLunch || false}
-                                    onChange={(e) => {
-                                        const checked = e.target.checked;
-                                        setCurrentEntry({ noLunch: checked });
-                                        // 특이사항에 자동 추가/제거
-                                        const noLunchText =
-                                            "점심 안 먹고 작업진행(12:00~13:00)";
-                                        const currentNote =
-                                            currentEntry.note || "";
-                                        if (checked) {
-                                            if (
-                                                !currentNote.includes(
-                                                    noLunchText
-                                                )
-                                            ) {
-                                                setCurrentEntry({
-                                                    note: currentNote
-                                                        ? `${currentNote}\n${noLunchText}`
-                                                        : noLunchText,
-                                                });
-                                            }
-                                        } else {
-                                            setCurrentEntry({
-                                                note: currentNote
-                                                    .replace(noLunchText, "")
-                                                    .replace(/\n{2,}/g, "\n")
-                                                    .trim(),
-                                            });
-                                        }
-                                    }}
-                                    className="w-5 h-5 mt-0.5 accent-amber-500"
-                                />
+                        <input
+                            type="checkbox"
+                            checked={currentEntry.noLunch || false}
+                            onChange={(e) => {
+                                const checked = e.target.checked;
+                                const baseNote = stripNoLunchText(currentEntry.note || "");
+
+                                if (checked) {
+                                    setCurrentEntry({
+                                        noLunch: true,
+                                        note: baseNote ? `${baseNote}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
+                                    });
+                                } else {
+                                    setCurrentEntry({
+                                        noLunch: false,
+                                        note: baseNote,
+                                    });
+                                }
+                            }}
+                            className="w-5 h-5 mt-0.5 accent-amber-500"
+                        />
+
+
                                 <div className="flex flex-col">
                                     <span className="text-[14px] font-semibold text-[#92400e]">
                                         점심 안 먹고 작업진행 (12:00~13:00)
@@ -638,15 +760,35 @@ export default function WorkLogSection() {
                         <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
                             특이 사항
                         </label>
+
+                        {/* ✅ 점심 문구는 textarea에서 삭제/수정 불가: 칩으로만 표시 */}
+                        {currentEntry.descType === "작업" && currentEntry.noLunch && (
+                            <div className="flex flex-wrap gap-2">
+                                <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[13px] font-semibold border border-amber-200">
+                                    {NO_LUNCH_TEXT}
+                                </span>
+                            </div>
+                        )}
+
                         <textarea
                             placeholder="특이 사항이 있으면 입력해주세요"
-                            value={currentEntry.note || ""}
-                            onChange={(e) =>
-                                setCurrentEntry({ note: e.target.value })
-                            }
+                            value={stripNoLunchText(currentEntry.note || "")}
+                            onChange={(e) => {
+                                const cleaned = stripNoLunchText(e.target.value);
+
+                                // ✅ 문구는 체크박스로만 관리되므로, textarea 입력값에는 항상 문구를 제거한 값만 반영
+                                if (currentEntry.noLunch) {
+                                    setCurrentEntry({
+                                        note: cleaned ? `${cleaned}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
+                                    });
+                                } else {
+                                    setCurrentEntry({ note: cleaned });
+                                }
+                            }}
                             className="w-full min-h-[60px] p-3 border border-[#e5e7eb] rounded-xl text-[16px] resize-none outline-none focus:border-[#9ca3af]"
                         />
                     </div>
+
                 </div>
 
                 {/* 저장 버튼 */}
@@ -669,6 +811,13 @@ export default function WorkLogSection() {
                             }
                             if (!currentEntry.descType) {
                                 newErrors.descType = "유형을 선택해주세요";
+                            }
+
+                            if (!currentEntry.details || !currentEntry.details.trim()) {
+                                newErrors.details = "상세 내용을 입력해주세요";
+                            }
+                            if (currentEntryPersons.length === 0) {
+                                newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
                             }
 
                             if (Object.keys(newErrors).length > 0) {
@@ -713,14 +862,22 @@ export default function WorkLogSection() {
                     <div className="flex flex-col gap-3">
                         <div className="h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
                         {sortedEntries.map((entry, index) => {
-                            const hours = calcDurationHours(
-                                entry.dateFrom,
-                                entry.timeFrom,
-                                entry.dateTo,
-                                entry.timeTo,
-                                entry.noLunch
-                            );
-                            const isExpanded = expandedCards[entry.id] ?? false;
+                        const noLunchText = "점심 안 먹고 작업진행(12:00~13:00)";
+                        const effectiveNoLunch =
+                            !!entry.noLunch || (entry.note || "").includes(noLunchText);
+
+                        const minutes = calcWorkMinutesWithLunchRule({
+                            dateFrom: entry.dateFrom,
+                            timeFrom: entry.timeFrom,
+                            dateTo: entry.dateTo,
+                            timeTo: entry.timeTo,
+                            descType: entry.descType,
+                            noLunch: effectiveNoLunch, // ✅ 특이사항 문구가 있으면 점심 제외 안함
+                        });
+
+                        const hoursLabel = formatHoursMinutes(minutes);
+                        const isExpanded = expandedCards[entry.id] ?? false;
+
 
                             // 유형별 스타일 설정
                             const typeStyles = {
@@ -790,10 +947,8 @@ export default function WorkLogSection() {
                                                         >
                                                             {entry.descType}
                                                         </span>
-                                                        <span
-                                                            className={`text-[15px] font-bold ${style.text}`}
-                                                        >
-                                                            {hours}시간
+                                                        <span className={`text-[15px] font-bold ${style.text}`}>
+                                                            {hoursLabel}
                                                         </span>
                                                     </div>
 

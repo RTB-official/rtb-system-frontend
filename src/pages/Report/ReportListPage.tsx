@@ -1,3 +1,4 @@
+// src/pages/Report/ReportListPage.tsx
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -475,9 +476,7 @@ export default function ReportListPage() {
                                                         setMenuAnchor(null);
                                                     }}
                                                     onEdit={() => {
-                                                        navigate(
-                                                            `/reportcreate?id=${row.id}`
-                                                        );
+                                                        navigate(`/report/${row.id}/edit`);
                                                     }}
                                                     onDelete={() => {
                                                         setDeleteTargetId(
@@ -488,14 +487,10 @@ export default function ReportListPage() {
                                                         );
                                                     }}
                                                     onDownload={() => {
-                                                        console.log(
-                                                            "PDF 다운로드:",
-                                                            row.id
-                                                        );
-                                                        showInfo(
-                                                            `PDF 다운로드: ${row.id}`
-                                                        );
+                                                        // 새 탭에서 PDF 인쇄(저장) 페이지 열기
+                                                        window.open(`/report/pdf?id=${row.id}&autoPrint=1`, "_blank", "noopener,noreferrer");
                                                     }}
+                                                    
                                                     width="w-44"
                                                 />
                                             </div>

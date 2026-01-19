@@ -389,7 +389,7 @@ export default function TimelineSummarySection({
 
     if (overallGroups.length === 0) {
         return (
-            <div className="bg-white border border-[#e5e7eb] rounded-2xl p-4 md:p-7">
+            <div className="bg-white p-4 md:p-7" style={{ width: "100%" }}>
                 <h2 className="text-[18px] md:text-[22px] font-semibold text-[#364153] mb-4">
                     타임라인
                 </h2>
@@ -454,7 +454,7 @@ export default function TimelineSummarySection({
     };
 
     return (
-        <div className="bg-white border border-[#e5e7eb] rounded-2xl p-4 md:p-7">
+        <div className="bg-white" style={{ width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
             {/* 타임라인 */}
             <h2 className="text-[18px] md:text-[22px] font-semibold text-[#364153] mb-4">
                 타임라인
@@ -477,12 +477,13 @@ export default function TimelineSummarySection({
             </div>
 
             {/* 그룹별 타임라인 (전체 기준으로 같은 사람끼리 묶임) */}
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-8" style={{ width: "100%" }}>
                 {overallGroups.map((group, groupIdx) => {
                     return (
                         <div
                             key={`overall-group-${groupIdx}`}
-                            className="border border-slate-200 rounded-2xl p-4"
+                            className="p-4"
+                            style={{ width: "100%" }}
                         >
                             {/* 그룹 라벨 */}
                             <div className="flex items-center justify-between gap-3 mb-3">
@@ -494,7 +495,7 @@ export default function TimelineSummarySection({
                             </div>
 
                             {/* 그룹 내 날짜별 타임라인 */}
-                            <div className="flex flex-col gap-6">
+                            <div className="flex flex-col gap-6" style={{ width: "100%" }}>
                                 {group.sortedDates.map((dateKey) => {
                                     const segments =
                                         group.segmentsByDate.get(dateKey) || [];
@@ -517,6 +518,7 @@ export default function TimelineSummarySection({
                                         <div
                                             key={`${groupIdx}-${dateKey}`}
                                             className="flex items-start gap-3"
+                                            style={{ width: "100%" }}
                                         >
                                             {/* ✅ 날짜 (막대 왼쪽, M/D) */}
                                             <div className="w-[44px] shrink-0 text-[14px] font-semibold text-slate-700 leading-[28px] pt-[18px]">
@@ -524,10 +526,11 @@ export default function TimelineSummarySection({
                                             </div>
 
                                             {/* ✅ 트랙 영역 */}
-                                            <div className="flex-1">
+                                            <div className="flex-1" style={{ minWidth: 0, width: "100%" }}>
                                                 <div
                                                     className="relative border border-[#e5e7eb] rounded-xl overflow-visible w-full mt-5"
                                                     style={{
+                                                        width: "100%",
                                                         height: `${trackHeight}px`,
                                                         background: `
                                             linear-gradient(90deg, rgba(17,24,39,0.04) 1px, transparent 1px) 0 0 / calc(100%/24) 100%,
@@ -669,8 +672,8 @@ export default function TimelineSummarySection({
 
             {/* 작업자별 일자 요약 테이블 */}
             {allPersons.length > 0 && (
-                <div className="mt-8">
-                    <div className="flex items-center justify-between mb-4">
+                <div className="mt-8" style={{ width: "100%" }}>
+                    <div className="flex items-center justify-between mb-4" style={{ width: "100%" }}>
                         <h3 className="text-[16px] md:text-[18px] font-semibold text-[#364153]">
                             일별 시간표
                         </h3>
@@ -687,8 +690,8 @@ export default function TimelineSummarySection({
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
-                        <table className="w-full text-[13px]">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm" style={{ width: "100%" }}>
+                        <table className="w-full text-[13px]" style={{ width: "100%" }}>
                             <thead>
                                 <tr className="bg-gradient-to-r from-slate-100 to-slate-50">
                                     <th className="px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200 min-w-[100px] sticky left-0 bg-gradient-to-r from-slate-100 to-slate-50">
