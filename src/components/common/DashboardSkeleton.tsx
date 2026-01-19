@@ -3,7 +3,7 @@
  */
 export default function DashboardSkeleton() {
     return (
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col h-full">
             {/* 캘린더 헤더 - 실제처럼 보이게 */}
             <div className="flex items-center justify-between mb-6">
                 <div className="h-9 w-48 pl-9" />
@@ -15,7 +15,7 @@ export default function DashboardSkeleton() {
             </div>
 
             {/* 캘린더 스켈레톤 */}
-            <div className="bg-white flex-1 flex flex-col min-h-0 overflow-visible">
+            <div className="bg-white flex-1 flex flex-col min-h-0 overflow-visible h-full">
                 {/* 요일 헤더 스켈레톤 */}
                 <div className="grid grid-cols-7 border-b border-gray-200">
                     {Array.from({ length: 7 }).map((_, i) => (
