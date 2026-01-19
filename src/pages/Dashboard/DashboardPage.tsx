@@ -82,9 +82,9 @@ export default function DashboardPage() {
                 const response = await fetch(url);
                 const data = await response.json();
 
-                const items = data.response?.body?.items?.item;
-                if (items) {
-                    const itemList = Array.isArray(items) ? items : [items];
+                    const items = data.response?.body?.items?.item;
+                    if (items) {
+                        const itemList = Array.isArray(items) ? items : [items];
                     setHolidays((prev) => {
                         const newHolidays = { ...prev };
                         itemList.forEach((item: any) => {
@@ -96,7 +96,7 @@ export default function DashboardPage() {
                             newHolidays[formattedDate] = item.dateName;
                         });
                         return newHolidays;
-                    });
+                });
                 }
             } catch (error) {
                 // 공휴일 실패는 무시 (로딩을 차단하지 않음)
@@ -262,9 +262,9 @@ export default function DashboardPage() {
 
     const { wheelRef: calendarWheelRef, motionStyle: calendarMotionStyle } =
         useCalendarWheelNavigation({
-            onPrevMonth: prevMonth,
-            onNextMonth: nextMonth,
-        });
+        onPrevMonth: prevMonth,
+        onNextMonth: nextMonth,
+    });
 
     // 안전하게 날짜 키 생성
     const getSafeDateKey = (d: Date) => {
@@ -597,14 +597,18 @@ export default function DashboardPage() {
                 // 기존 이벤트 수정 (event- 접두사가 있는 경우만)
                 if (editingEvent.id.startsWith("event-")) {
                     const eventId = editingEvent.id.replace("event-", "");
-                    await updateCalendarEvent(eventId, {
-                        title: data.title,
-                        start_date: data.startDate,
-                        end_date: data.endDate,
-                        start_time: data.startTime || undefined,
-                        end_time: data.endTime || undefined,
-                        all_day: data.allDay,
-                    });
+                    await updateCalendarEvent(
+                        eventId,
+                        {
+                            title: data.title,
+                            start_date: data.startDate,
+                            end_date: data.endDate,
+                            start_time: data.startTime || undefined,
+                            end_time: data.endTime || undefined,
+                            all_day: data.allDay,
+                        },
+                        user.id
+                    );
                 } else {
                     // 다른 타입의 이벤트는 수정 불가
                     console.warn("Cannot edit this type of event");
@@ -614,8 +618,8 @@ export default function DashboardPage() {
                 // 새 이벤트 생성
                 await createCalendarEvent({
                     user_id: user.id,
-                    title: data.title,
-                    color: randomColor,
+                title: data.title,
+                color: randomColor,
                     start_date: data.startDate,
                     end_date: data.endDate,
                     start_time: data.startTime,
@@ -650,7 +654,7 @@ export default function DashboardPage() {
             // event- 접두사가 있는 경우만 삭제 가능 (calendar_events 테이블의 일정)
             if (eventId.startsWith("event-")) {
                 const id = eventId.replace("event-", "");
-                await deleteCalendarEvent(id);
+                await deleteCalendarEvent(id, user?.id);
             } else {
                 // 다른 타입의 이벤트는 삭제 불가
                 console.warn("Cannot delete this type of event");
@@ -669,8 +673,8 @@ export default function DashboardPage() {
             );
             setAllEvents([...otherEvents, ...newEvents]);
 
-            setEditingEvent(null);
-            setEventModalOpen(false);
+        setEditingEvent(null);
+        setEventModalOpen(false);
             setEventDetailMenuOpen(false);
         } catch (err) {
             console.error("Error deleting event:", err);
@@ -800,36 +804,36 @@ export default function DashboardPage() {
                     {loading ? (
                         <DashboardSkeleton />
                     ) : (
-                        <div className="flex-1 flex flex-col">
-                            <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-3xl font-bold pl-9">
-                                    {year}년 {month + 1}월
-                                </h2>
-                                <div className="flex items-center gap-1 pr-9">
-                                    <Button
-                                        variant="outline"
-                                        size="md"
-                                        onClick={prevMonth}
-                                        icon={<IconChevronLeft />}
-                                    />
-                                    <Button
-                                        variant="outline"
-                                        size="md"
-                                        onClick={goToday}
-                                    >
-                                        오늘
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="md"
-                                        onClick={nextMonth}
-                                        icon={<IconChevronRight />}
-                                    />
-                                </div>
+                    <div className="flex-1 flex flex-col">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-3xl font-bold pl-9">
+                                {year}년 {month + 1}월
+                            </h2>
+                            <div className="flex items-center gap-1 pr-9">
+                                <Button
+                                    variant="outline"
+                                    size="md"
+                                    onClick={prevMonth}
+                                    icon={<IconChevronLeft />}
+                                />
+                                <Button
+                                    variant="outline"
+                                    size="md"
+                                    onClick={goToday}
+                                >
+                                    오늘
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="md"
+                                    onClick={nextMonth}
+                                    icon={<IconChevronRight />}
+                                />
                             </div>
+                        </div>
 
-                            <div className="bg-white flex-1 flex flex-col min-h-0 overflow-visible">
-                                <div className="grid grid-cols-7 shrink-0 border-b border-gray-200">
+                        <div className="bg-white flex-1 flex flex-col min-h-0 overflow-visible">
+                            <div className="grid grid-cols-7 shrink-0 border-b border-gray-200">
                                     {[
                                         "일",
                                         "월",
@@ -860,158 +864,158 @@ export default function DashboardPage() {
                                             </div>
                                         </div>
                                     ))}
-                                </div>
+                            </div>
 
-                                <div
+                            <div
                                     ref={calendarWheelRef}
-                                    key={`${year}-${month}`}
-                                    className="flex-1 flex flex-col min-h-0 relative transition-all duration-300 ease-out"
-                                    style={calendarMotionStyle}
-                                >
-                                    {weeks.map((week, weekIdx) => {
-                                        // 주 단위 이벤트 행 정보 가져오기
-                                        const weekEventRows =
-                                            getWeekEventRows(week);
+                                key={`${year}-${month}`}
+                                className="flex-1 flex flex-col min-h-0 relative transition-all duration-300 ease-out"
+                                style={calendarMotionStyle}
+                            >
+                                {weeks.map((week, weekIdx) => {
+                                    // 주 단위 이벤트 행 정보 가져오기
+                                    const weekEventRows =
+                                        getWeekEventRows(week);
 
-                                        // 각 날짜 셀의 최소 높이를 계산하여 표시 가능한 행 수 결정
-                                        const dateHeaderHeight = 48;
-                                        const bottomPadding = 18;
-                                        const tagHeight = 24;
-                                        const tagSpacing = 4;
+                                    // 각 날짜 셀의 최소 높이를 계산하여 표시 가능한 행 수 결정
+                                    const dateHeaderHeight = 48;
+                                    const bottomPadding = 18;
+                                    const tagHeight = 24;
+                                    const tagSpacing = 4;
 
-                                        // 주의 모든 날짜 셀 중 최소 높이를 찾아서 표시 가능한 행 수 계산
-                                        const pad = (n: number) =>
-                                            n < 10 ? "0" + n : String(n);
-                                        const weekCellHeights = week.map(
-                                            ({ date }) => {
-                                                const dateKey = `${date.getFullYear()}-${pad(
-                                                    date.getMonth() + 1
-                                                )}-${pad(date.getDate())}`;
+                                    // 주의 모든 날짜 셀 중 최소 높이를 찾아서 표시 가능한 행 수 계산
+                                    const pad = (n: number) =>
+                                        n < 10 ? "0" + n : String(n);
+                                    const weekCellHeights = week.map(
+                                        ({ date }) => {
+                                            const dateKey = `${date.getFullYear()}-${pad(
+                                                date.getMonth() + 1
+                                            )}-${pad(date.getDate())}`;
                                                 return (
                                                     cellHeights[dateKey] || 0
                                                 );
-                                            }
-                                        );
+                                        }
+                                    );
 
-                                        const minCellHeight = Math.min(
+                                    const minCellHeight = Math.min(
                                             ...weekCellHeights.filter(
                                                 (h) => h > 0
                                             )
-                                        );
-                                        const availableHeight = Math.max(
-                                            0,
-                                            minCellHeight -
-                                                dateHeaderHeight -
-                                                bottomPadding
-                                        );
-                                        const maxVisibleRows =
-                                            availableHeight > 0
-                                                ? Math.ceil(
-                                                      (availableHeight +
-                                                          tagSpacing) /
+                                    );
+                                    const availableHeight = Math.max(
+                                        0,
+                                        minCellHeight -
+                                            dateHeaderHeight -
+                                            bottomPadding
+                                    );
+                                    const maxVisibleRows =
+                                        availableHeight > 0
+                                            ? Math.ceil(
+                                                  (availableHeight +
+                                                      tagSpacing) /
                                                           (tagHeight +
                                                               tagSpacing)
-                                                  )
-                                                : 3;
+                                              )
+                                            : 3;
 
-                                        return (
-                                            <WeekRow
-                                                key={weekIdx}
-                                                week={week}
-                                                weekIdx={weekIdx}
-                                                weekEventRows={weekEventRows}
-                                                today={today}
-                                                dragStart={dragStart}
-                                                dragEnd={dragEnd}
-                                                isDragging={isDragging}
-                                                cellRefs={cellRefs}
+                                    return (
+                                        <WeekRow
+                                            key={weekIdx}
+                                            week={week}
+                                            weekIdx={weekIdx}
+                                            weekEventRows={weekEventRows}
+                                            today={today}
+                                            dragStart={dragStart}
+                                            dragEnd={dragEnd}
+                                            isDragging={isDragging}
+                                            cellRefs={cellRefs}
                                                 getColumnPadding={
                                                     getColumnPadding
                                                 }
-                                                getSafeDateKey={getSafeDateKey}
+                                            getSafeDateKey={getSafeDateKey}
                                                 getEventsForDate={
                                                     getEventsForDate
                                                 }
-                                                maxVisibleRows={maxVisibleRows}
-                                                tagHeight={tagHeight}
-                                                tagSpacing={tagSpacing}
-                                                onEditEvent={(event) => {
-                                                    setEditingEvent(event);
-                                                    setSelectedDateForModal(
-                                                        event.startDate
-                                                    );
-                                                    setSelectedEndDateForModal(
-                                                        event.endDate
-                                                    );
-                                                    setEventModalOpen(true);
-                                                }}
+                                            maxVisibleRows={maxVisibleRows}
+                                            tagHeight={tagHeight}
+                                            tagSpacing={tagSpacing}
+                                            onEditEvent={(event) => {
+                                                setEditingEvent(event);
+                                                setSelectedDateForModal(
+                                                    event.startDate
+                                                );
+                                                setSelectedEndDateForModal(
+                                                    event.endDate
+                                                );
+                                                setEventModalOpen(true);
+                                            }}
                                                 onDeleteEvent={
                                                     handleEventDelete
                                                 }
-                                                onEventClick={(event, e) => {
-                                                    setEventDetailMenuPos({
-                                                        x: e.clientX,
-                                                        y: e.clientY,
-                                                    });
+                                            onEventClick={(event, e) => {
+                                                setEventDetailMenuPos({
+                                                    x: e.clientX,
+                                                    y: e.clientY,
+                                                });
                                                     setSelectedEventForMenu(
                                                         event
                                                     );
                                                     setEventDetailMenuOpen(
                                                         true
                                                     );
-                                                }}
-                                                onDateClick={(dateKey, e) => {
-                                                    setSelectedDateForModal(
-                                                        dateKey
-                                                    );
-                                                    const ev = new CustomEvent(
-                                                        "showCalendarMenu",
-                                                        {
-                                                            detail: {
-                                                                date: dateKey,
-                                                                x: e.clientX,
-                                                                y: e.clientY,
-                                                            },
-                                                        }
-                                                    );
-                                                    window.dispatchEvent(ev);
-                                                }}
-                                                onDragStart={(dateKey, e) => {
-                                                    setIsDragging(true);
-                                                    setDragStart(dateKey);
-                                                    setDragEnd(dateKey);
-                                                    setSelectedDateForModal(
-                                                        dateKey
-                                                    );
-                                                    setSelectedEndDateForModal(
-                                                        dateKey
-                                                    );
-                                                    e.preventDefault();
-                                                }}
-                                                onDragEnter={(dateKey) => {
-                                                    setDragEnd(dateKey);
-                                                    setSelectedEndDateForModal(
-                                                        dateKey
-                                                    );
-                                                }}
-                                                onHiddenCountClick={(
+                                            }}
+                                            onDateClick={(dateKey, e) => {
+                                                setSelectedDateForModal(
+                                                    dateKey
+                                                );
+                                                const ev = new CustomEvent(
+                                                    "showCalendarMenu",
+                                                    {
+                                                        detail: {
+                                                            date: dateKey,
+                                                            x: e.clientX,
+                                                            y: e.clientY,
+                                                        },
+                                                    }
+                                                );
+                                                window.dispatchEvent(ev);
+                                            }}
+                                            onDragStart={(dateKey, e) => {
+                                                setIsDragging(true);
+                                                setDragStart(dateKey);
+                                                setDragEnd(dateKey);
+                                                setSelectedDateForModal(
+                                                    dateKey
+                                                );
+                                                setSelectedEndDateForModal(
+                                                    dateKey
+                                                );
+                                                e.preventDefault();
+                                            }}
+                                            onDragEnter={(dateKey) => {
+                                                setDragEnd(dateKey);
+                                                setSelectedEndDateForModal(
+                                                    dateKey
+                                                );
+                                            }}
+                                            onHiddenCountClick={(
+                                                dateKey,
+                                                threshold
+                                            ) => {
+                                                setHiddenEventsDate({
                                                     dateKey,
-                                                    threshold
-                                                ) => {
-                                                    setHiddenEventsDate({
-                                                        dateKey,
-                                                        threshold,
-                                                    });
+                                                    threshold,
+                                                });
                                                     setHiddenEventsModalOpen(
                                                         true
                                                     );
-                                                }}
-                                            />
-                                        );
-                                    })}
-                                </div>
+                                            }}
+                                        />
+                                    );
+                                })}
                             </div>
                         </div>
+                    </div>
                     )}
                 </main>
             </div>
