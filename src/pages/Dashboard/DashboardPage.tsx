@@ -1128,6 +1128,7 @@ export default function DashboardPage() {
                 position={eventDetailMenuPos || undefined}
                 onClose={() => setEventDetailMenuOpen(false)}
                 event={selectedEventForMenu}
+                currentUserId={user?.id}
                 onEdit={(eventToEdit) => {
                     setEventDetailMenuOpen(false);
                     setEditingEvent(eventToEdit);

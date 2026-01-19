@@ -18,6 +18,7 @@ interface EventDetailMenuProps {
     event: CalendarEvent | null;
     onEdit: (event: CalendarEvent) => void;
     onDelete: (eventId: string) => void;
+    currentUserId?: string; // 현재 로그인한 사용자 ID
 }
 
 const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
@@ -28,6 +29,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
     event,
     onEdit,
     onDelete,
+    currentUserId,
 }) => {
     const navigate = useNavigate();
     const menuRef = useRef<HTMLDivElement>(null);
@@ -343,33 +345,38 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                         )}
                     </div>
                 </div>
-                <div className="h-px bg-gray-100" />
-                <div className="flex gap-2">
-                    <Button
-                        variant="primary"
-                        size="sm"
-                        fullWidth
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onEdit(event);
-                            onClose();
-                        }}
-                    >
-                        수정
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        fullWidth
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete(event.id);
-                            onClose();
-                        }}
-                    >
-                        삭제
-                    </Button>
-                </div>
+                {/* 생성자만 수정/삭제 버튼 표시 */}
+                {event.userId === currentUserId && (
+                    <>
+                        <div className="h-px bg-gray-100" />
+                        <div className="flex gap-2">
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                fullWidth
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onEdit(event);
+                                    onClose();
+                                }}
+                            >
+                                수정
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                fullWidth
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDelete(event.id);
+                                    onClose();
+                                }}
+                            >
+                                삭제
+                            </Button>
+                        </div>
+                    </>
+                )}
             </div>
         );
     };

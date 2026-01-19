@@ -471,5 +471,6 @@ export function calendarEventRecordToCalendarEvent(
         color: "#fb923c", // 주황색 (일정)
         startDate: record.start_date,
         endDate: record.end_date,
+        userId: record.user_id, // 생성자 ID 포함
     };
 }
