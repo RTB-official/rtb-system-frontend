@@ -73,13 +73,17 @@ export async function createVacation(
         throw new Error(`휴가 신청 실패: ${error.message}`);
     }
 
-    // 휴가 등록 시 공무팀 전체에 알림 생성
+    // 휴가 등록 시 공무팀 전체에 알림 생성 (본인 제외)
     try {
         console.log("🔔 [알림] 휴가 등록 알림 생성 시작...");
         const gongmuUserIds = await getGongmuTeamUserIds();
         console.log("🔔 [알림] 공무팀 사용자 ID 목록:", gongmuUserIds);
         
-        if (gongmuUserIds.length > 0) {
+        // 본인 제외
+        const targetUserIds = gongmuUserIds.filter(id => id !== data.user_id);
+        console.log("🔔 [알림] 알림 대상 사용자 ID 목록 (본인 제외):", targetUserIds);
+        
+        if (targetUserIds.length > 0) {
             // 사용자 이름 가져오기
             const { data: profile } = await supabase
                 .from("profiles")
@@ -90,14 +94,14 @@ export async function createVacation(
             const userName = profile?.name || "사용자";
 
             const result = await createNotificationsForUsers(
-                gongmuUserIds,
+                targetUserIds,
                 "휴가 신청",
                 `${userName}님이 휴가를 신청했습니다.`,
                 "vacation"
             );
             console.log("🔔 [알림] 알림 생성 완료:", result.length, "개");
         } else {
-            console.warn("⚠️ [알림] 공무팀 사용자가 없어 알림을 생성하지 않았습니다.");
+            console.warn("⚠️ [알림] 알림 대상 사용자가 없어 알림을 생성하지 않았습니다.");
         }
     } catch (notificationError: any) {
         // 알림 생성 실패는 휴가 신청을 막지 않음

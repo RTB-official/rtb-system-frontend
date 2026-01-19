@@ -81,13 +81,17 @@ export async function createCalendarEvent(
         throw new Error(`일정 생성 실패: ${error.message}`);
     }
 
-    // 일정 생성 시 공무팀에 알림 생성
+    // 일정 생성 시 공무팀에 알림 생성 (본인 제외)
     try {
         console.log("🔔 [알림] 일정 생성 알림 시작...");
         const gongmuUserIds = await getGongmuTeamUserIds();
         console.log("🔔 [알림] 공무팀 사용자 ID 목록:", gongmuUserIds);
         
-        if (gongmuUserIds.length > 0) {
+        // 본인 제외
+        const targetUserIds = gongmuUserIds.filter(id => id !== data.user_id);
+        console.log("🔔 [알림] 알림 대상 사용자 ID 목록 (본인 제외):", targetUserIds);
+        
+        if (targetUserIds.length > 0) {
             // 사용자 이름 가져오기
             const { data: profile } = await supabase
                 .from("profiles")
@@ -98,14 +102,14 @@ export async function createCalendarEvent(
             const userName = profile?.name || "사용자";
 
             const result = await createNotificationsForUsers(
-                gongmuUserIds,
+                targetUserIds,
                 "새 일정",
                 `${userName}님이 새 일정 "${data.title}"을(를) 추가했습니다.`,
                 "schedule"
             );
             console.log("🔔 [알림] 알림 생성 완료:", result.length, "개");
         } else {
-            console.warn("⚠️ [알림] 공무팀 사용자가 없어 알림을 생성하지 않았습니다.");
+            console.warn("⚠️ [알림] 알림 대상 사용자가 없어 알림을 생성하지 않았습니다.");
         }
     } catch (notificationError: any) {
         // 알림 생성 실패는 일정 생성을 막지 않음
