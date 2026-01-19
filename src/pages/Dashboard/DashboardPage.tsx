@@ -642,9 +642,10 @@ export default function DashboardPage() {
 
             setEditingEvent(null);
             setEventModalOpen(false);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error saving event:", err);
-            alert("일정 저장에 실패했습니다.");
+            const errorMessage = err?.message || "일정 저장에 실패했습니다.";
+            alert(errorMessage);
         }
     };
 
@@ -658,6 +659,7 @@ export default function DashboardPage() {
             } else {
                 // 다른 타입의 이벤트는 삭제 불가
                 console.warn("Cannot delete this type of event");
+                alert("이 일정은 삭제할 수 없습니다.");
                 return;
             }
 
@@ -673,12 +675,13 @@ export default function DashboardPage() {
             );
             setAllEvents([...otherEvents, ...newEvents]);
 
-        setEditingEvent(null);
-        setEventModalOpen(false);
+            setEditingEvent(null);
+            setEventModalOpen(false);
             setEventDetailMenuOpen(false);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error deleting event:", err);
-            alert("일정 삭제에 실패했습니다.");
+            const errorMessage = err?.message || "일정 삭제에 실패했습니다.";
+            alert(errorMessage);
         }
     };
 
