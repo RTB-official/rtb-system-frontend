@@ -283,6 +283,7 @@ export default function DashboardPage() {
                             start_time: data.startTime || undefined,
                             end_time: data.endTime || undefined,
                             all_day: data.allDay,
+                            attendees: data.attendees || [],
                         },
                         user.id
                     );
@@ -302,6 +303,7 @@ export default function DashboardPage() {
                     start_time: data.startTime,
                     end_time: data.endTime,
                     all_day: data.allDay ?? true,
+                    attendees: data.attendees || [],
                 });
             }
 

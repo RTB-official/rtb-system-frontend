@@ -68,24 +68,24 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     const isMatch = (pattern: string) =>
         !!matchPath({ path: pattern, end: false }, location.pathname);
-    
+
     // ✅ 보고서 수정 진입 감지:
     // 1) /reportcreate?id=123 같은 쿼리 방식
     const searchParams = new URLSearchParams(location.search);
     const isReportEditByQuery =
         isMatch(PATHS.reportCreate) && !!searchParams.get("id");
-    
+
     // 2) 혹시 쓰는 경우를 대비한 path param 방식도 유지
     const isReportEditByPath =
         !!matchPath({ path: "/report/edit/:id", end: false }, location.pathname) ||
         !!matchPath({ path: "/report/:id/edit", end: false }, location.pathname);
-    
+
     const isReportEditRoute = isReportEditByQuery || isReportEditByPath;
-    
+
     const isReportRoute =
         isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate) || isReportEditRoute;
-    
-    
+
+
     const isExpenseRoute =
         isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
 
@@ -171,42 +171,42 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 .eq("id", user.id)
                 .single();
 
-                if (error) {
-                    console.error("유저 정보 조회 실패:", error.message);
-    
-                    const email = (user.email ?? "").toString();
-                    const id = email ? email.split("@")[0] : "";
-    
-                    const cachedPosition = localStorage.getItem("sidebarPosition") || "";
+            if (error) {
+                console.error("유저 정보 조회 실패:", error.message);
 
-                    setCurrentUser({
-                        displayName: user.email ?? "사용자",
-                        email,
-                        position: cachedPosition || null,
-                    });
-    
-                    if (id) {
-                        setSidebarLoginId(id);
-                        localStorage.setItem("sidebarLoginId", id);
-                    }
-                    return;
-                }
-
-                const email = (data.email ?? user.email ?? "").toString();
-                if (email) localStorage.setItem("sidebarEmail", email);
+                const email = (user.email ?? "").toString();
                 const id = email ? email.split("@")[0] : "";
 
-                const pos = (data?.position ?? "").toString();
-                if (pos) localStorage.setItem("sidebarPosition", pos);
-                else localStorage.removeItem("sidebarPosition");
-            
+                const cachedPosition = localStorage.getItem("sidebarPosition") || "";
 
                 setCurrentUser({
-                    displayName: data?.username ?? data?.name ?? (user.email ?? "사용자"),
+                    displayName: user.email ?? "사용자",
                     email,
-                    position: data?.position ?? null,
+                    position: cachedPosition || null,
                 });
-    
+
+                if (id) {
+                    setSidebarLoginId(id);
+                    localStorage.setItem("sidebarLoginId", id);
+                }
+                return;
+            }
+
+            const email = (data.email ?? user.email ?? "").toString();
+            if (email) localStorage.setItem("sidebarEmail", email);
+            const id = email ? email.split("@")[0] : "";
+
+            const pos = (data?.position ?? "").toString();
+            if (pos) localStorage.setItem("sidebarPosition", pos);
+            else localStorage.removeItem("sidebarPosition");
+
+
+            setCurrentUser({
+                displayName: data?.username ?? data?.name ?? (user.email ?? "사용자"),
+                email,
+                position: data?.position ?? null,
+            });
+
 
             if (id) {
                 setSidebarLoginId(id);
@@ -266,7 +266,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     // ✅ menuFocus가 있으면 다른 메뉴는 "강제로 비활성" 처리(워크로드 강조 잔상 제거)
     const shouldForceInactive = (
-        _kind: "DASH" | "WORKLOAD" | "VACATION" | "MEMBERS"
+        _kind: "HOME" | "WORKLOAD" | "VACATION" | "MEMBERS"
     ) => {
         if (!menuFocus) return false;
         // report/expense 포커스일 때는 다른 링크의 isActive를 무시
@@ -303,11 +303,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 const forcedInactive = shouldForceInactive(kind);
                 const active = forcedInactive ? false : isActive;
 
-                return `flex gap-6 items-center p-3 rounded-xl transition-colors ${
-                    active
+                return `flex gap-6 items-center p-3 rounded-xl transition-colors ${active
                         ? "bg-gray-700 text-white"
                         : "text-gray-900 hover:bg-gray-200"
-                }`;
+                    }`;
             }}
         >
             <div className="flex gap-3 items-center w-[162px]">
@@ -338,10 +337,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 onClose?.();
             }}
             className={({ isActive }) =>
-                `flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
-                    isActive
-                        ? "text-blue-600 font-medium"
-                        : "text-gray-500 hover:text-gray-900 hover:bg-gray-200"
+                `flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${isActive
+                    ? "text-blue-600 font-medium"
+                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-200"
                 }`
             }
         >
@@ -501,11 +499,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 setShowNotifications(!showNotifications);
                                 setUserMenuOpen(false);
                             }}
-                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors w-full text-left ${
-                                showNotifications
+                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors w-full text-left ${showNotifications
                                     ? "bg-gray-100"
                                     : "text-gray-900 hover:bg-gray-200"
-                            }`}
+                                }`}
                         >
                             <div className="flex gap-3 items-center w-[162px]">
                                 <IconNotifications />
@@ -604,11 +601,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 setExpenseOpen(false);
                                 navigate(PATHS.reportList);
                             }}
-                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${
-                                reportActive
+                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${reportActive
                                     ? "bg-gray-700 text-white"
                                     : "text-gray-900 hover:bg-gray-200"
-                            }`}
+                                }`}
                         >
                             <div className="flex gap-3 items-center w-[162px]">
                                 <IconReport />
@@ -648,11 +644,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 setReportOpen(false);
                                 navigate(PATHS.expensePersonal);
                             }}
-                            className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${
-                                expenseActive
+                            className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${expenseActive
                                     ? "bg-gray-700 text-white"
                                     : "text-gray-900 hover:bg-gray-200"
-                            }`}
+                                }`}
                         >
                             <div className="flex gap-3 items-center w-[162px]">
                                 <IconCard />
