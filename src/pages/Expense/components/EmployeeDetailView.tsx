@@ -1,11 +1,11 @@
 // src/pages/Expense/components/EmployeeDetailView.tsx
 import Table, { TableColumn } from "../../../components/common/Table";
-import Button from "../../../components/common/Button";
 import { IconDownload } from "../../../components/icons/Icons";
 import {
     type EmployeeMileageDetail,
     type EmployeeCardExpenseDetail,
 } from "../../../lib/personalExpenseApi";
+import { generateExpenseReportPDF } from "../../../lib/pdfUtils";
 
 interface EmployeeDetailViewProps {
     employeeName: string;
@@ -63,18 +63,22 @@ export default function EmployeeDetailView({
                         {employeeName}님의 청구서
                     </h2>
                 </div>
-                <Button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        alert("PDF 다운로드");
+                <button
+                    type="button"
+                    onClick={async () => {
+                        await generateExpenseReportPDF({
+                            employeeName,
+                            year,
+                            month,
+                            mileageDetails,
+                            cardDetails,
+                        });
                     }}
-                    variant="primary"
-                    size="md"
-                    icon={<IconDownload />}
-                    className="bg-gray-800 hover:bg-gray-900"
+                    className="flex items-center justify-center gap-1.5 h-[36px] px-3 text-[14px] rounded-[10px] bg-gray-800 hover:bg-gray-900 text-white font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-600 cursor-pointer"
                 >
+                    <IconDownload />
                     PDF 다운로드
-                </Button>
+                </button>
             </div>
 
             {/* 탭 */}

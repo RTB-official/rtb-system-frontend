@@ -425,6 +425,7 @@ export interface EmployeeExpenseSummary {
 export interface EmployeeMileageDetail {
     id: number;
     date: string;
+    dateRaw?: string; // 원본 날짜 (YYYY-MM-DD 형식)
     route: string;
     distance: number;
     amount: number;
@@ -434,6 +435,7 @@ export interface EmployeeMileageDetail {
 export interface EmployeeCardExpenseDetail {
     id: number;
     date: string;
+    dateRaw?: string; // 원본 날짜 (YYYY-MM-DD 형식)
     merchant: string;
     amount: number;
     category: string;
@@ -715,6 +717,7 @@ export async function getUserMileageDetails(
     return (data || []).map((m) => ({
         id: m.id,
         date: formatMileageDate(m.m_date),
+        dateRaw: m.m_date, // 원본 날짜 추가
         route: `${m.from_text} → ${m.to_text}`,
         distance: Number(m.distance_km || 0),
         amount: m.amount_won || 0,
@@ -771,6 +774,7 @@ export async function getUserCardExpenseDetails(
     return (data || []).map((e) => ({
         id: e.id,
         date: formatExpenseDate(e.expense_date),
+        dateRaw: e.expense_date, // 원본 날짜 추가
         merchant: "N/A", // 가맹점 정보는 현재 스키마에 없음
         amount: e.amount || 0,
         category: e.expense_type || "기타",

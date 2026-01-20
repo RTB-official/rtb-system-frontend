@@ -3,6 +3,7 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
+import AdminVacationSkeleton from "../../components/common/AdminVacationSkeleton";
 import {
     getVacations,
     updateVacationStatus,
@@ -10,18 +11,9 @@ import {
     leaveTypeToKorean,
     statusToKorean,
     type Vacation,
-    type VacationStatus,
 } from "../../lib/vacationApi";
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
-
-// 전체 통계 인터페이스
-interface OverallStats {
-    totalEmployees: number;
-    totalUsedDays: number;
-    totalPendingDays: number;
-    totalRemainingDays: number;
-}
 
 // 직원별 통계
 interface EmployeeStats {
@@ -49,14 +41,6 @@ export default function AdminVacationPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [year, setYear] = useState(() => String(new Date().getFullYear()));
     const [loading, setLoading] = useState(false);
-
-    // 전체 통계
-    const [overallStats, setOverallStats] = useState<OverallStats>({
-        totalEmployees: 0,
-        totalUsedDays: 0,
-        totalPendingDays: 0,
-        totalRemainingDays: 0,
-    });
 
     // 직원별 통계
     const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
@@ -176,18 +160,6 @@ export default function AdminVacationPage() {
                 const employeeStatsList = Array.from(statsMap.values());
                 setEmployeeStats(employeeStatsList);
 
-                // 전체 통계 계산
-                const totalUsed = employeeStatsList.reduce((sum, stat) => sum + stat.usedDays, 0);
-                const totalPending = employeeStatsList.reduce((sum, stat) => sum + stat.pendingDays, 0);
-                const totalRemaining = employeeStatsList.reduce((sum, stat) => sum + stat.remainingDays, 0);
-
-                setOverallStats({
-                    totalEmployees: employees.length,
-                    totalUsedDays: totalUsed,
-                    totalPendingDays: totalPending,
-                    totalRemainingDays: totalRemaining,
-                });
-
                 // 대기 중인 휴가만 필터링
                 const pending = allVacations.filter(v => v.status === "pending");
                 setPendingVacations(pending);
@@ -263,28 +235,6 @@ export default function AdminVacationPage() {
     };
 
     // 통계 카드
-    const statsCards = [
-        {
-            label: "전체 직원",
-            value: `${overallStats.totalEmployees}명`,
-            color: "text-gray-900",
-        },
-        {
-            label: "전체 사용 일수",
-            value: `${overallStats.totalUsedDays.toFixed(1)}일`,
-            color: "text-blue-600",
-        },
-        {
-            label: "대기 중",
-            value: `${overallStats.totalPendingDays.toFixed(1)}일`,
-            color: "text-yellow-600",
-        },
-        {
-            label: "전체 잔여 일수",
-            value: `${overallStats.totalRemainingDays.toFixed(1)}일`,
-            color: "text-green-600",
-        },
-    ];
 
     return (
         <div className="flex h-screen bg-white overflow-hidden">
@@ -325,23 +275,6 @@ export default function AdminVacationPage() {
                         <AdminVacationSkeleton />
                     ) : (
                         <div className="flex flex-col gap-6 w-full">
-                            {/* 통계 카드 */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                {statsCards.map((card) => (
-                                    <div
-                                        key={card.label}
-                                        className="bg-gray-50 rounded-2xl p-5"
-                                    >
-                                        <div className="text-[13px] font-semibold text-gray-500">
-                                            {card.label}
-                                        </div>
-                                        <div className={`mt-2 text-[26px] font-bold ${card.color}`}>
-                                            {card.value}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
                         {/* 연도 선택 */}
                         <div className="flex items-center gap-4">
                             <div className="text-[24px] font-semibold text-gray-900">
@@ -352,6 +285,7 @@ export default function AdminVacationPage() {
                                 onChange={(e) => setYear(e.target.value)}
                                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm"
                             >
+                                <option value="2026">2026년</option>
                                 <option value="2025">2025년</option>
                                 <option value="2024">2024년</option>
                                 <option value="2023">2023년</option>
@@ -496,6 +430,7 @@ export default function AdminVacationPage() {
                             />
                         </div>
                     </div>
+                    )}
                 </div>
             </div>
 
