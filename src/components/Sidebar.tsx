@@ -408,7 +408,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         } else {
             setReportOpen(false);
         }
-        
+
         if (isExpenseRoute) {
             setMenuFocus("EXPENSE");
             // 하위메뉴가 1개일 때는 하위메뉴를 열지 않음
@@ -647,15 +647,15 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     <div className="h-px bg-gray-200 rounded-full" />
 
                     <nav className="flex flex-col gap-2">
-                        {/* 대시보드 - 대표님, 공무팀만 */}
-                        {(isCEO || isAdmin) && (
+                        {/* 대시보드 - 대표님, 공무팀만 (항상 렌더링하여 높이 유지) */}
+                        <div style={{ display: (isCEO || isAdmin) ? 'block' : 'none' }}>
                             <MainLink
                                 to={PATHS.dashboard}
                                 icon={<IconHome />}
                                 label="홈"
                                 kind="HOME"
                             />
-                        )}
+                        </div>
 
                         {/* 출장 보고서 - 모두 접근 가능 */}
                         <button
@@ -730,29 +730,33 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             </div>
                         </button>
 
-                        {/* 하위메뉴 - 2개 이상일 때만 표시 */}
-                        {expenseOpen && expenseSubMenuItems.length > 1 && (
-                            <div className="ml-4 mt-1 flex flex-col gap-1">
-                                {expenseSubMenuItems.map((s) => (
-                                    <SubLink
-                                        key={s.label}
-                                        to={s.to}
-                                        label={s.label}
-                                        focus="EXPENSE"
-                                    />
-                                ))}
-                            </div>
-                        )}
+                        {/* 하위메뉴 - 항상 렌더링하여 높이 유지, 조건부로 표시 */}
+                        <div 
+                            className="ml-4 mt-1 flex flex-col gap-1"
+                            style={{ 
+                                display: (expenseOpen && expenseSubMenuItems.length > 1) ? 'flex' : 'none',
+                                minHeight: expenseSubMenuItems.length > 1 ? '0' : '0'
+                            }}
+                        >
+                            {expenseSubMenuItems.map((s) => (
+                                <SubLink
+                                    key={s.label}
+                                    to={s.to}
+                                    label={s.label}
+                                    focus="EXPENSE"
+                                />
+                            ))}
+                        </div>
 
-                        {/* 휴가 관리 - 공사팀 제외 (사용자 정보가 완전히 로드되고 공사팀이 아닐 때만 표시) */}
-                        {hasUserInfo && !isStaff && (
+                        {/* 휴가 관리 - 공사팀 제외 (항상 렌더링하여 높이 유지) */}
+                        <div style={{ display: (hasUserInfo && !isStaff) ? 'block' : 'none' }}>
                             <MainLink
                                 to={PATHS.vacation}
                                 icon={<IconVacation />}
                                 label="휴가 관리"
                                 kind="VACATION"
                             />
-                        )}
+                        </div>
 
                         {/* 구성원 관리 - 모두 접근 가능 */}
                         <MainLink
