@@ -72,7 +72,9 @@ export default function WorkloadDetailPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [isStaff, setIsStaff] = useState(false);
+    // 공사팀은 자동 리다이렉트되므로, 상세 페이지에 접근했다면 공사팀일 가능성이 높음
+    // 초기값을 true로 설정하여 깜빡임 방지
+    const [isStaff, setIsStaff] = useState(true);
 
     // 공사팀(스태프) 여부 확인
     useEffect(() => {
@@ -86,7 +88,12 @@ export default function WorkloadDetailPage() {
                     .single();
                 if (profile) {
                     setIsStaff(profile.role === "staff" || profile.department === "공사팀");
+                } else {
+                    // 프로필이 없으면 일반 사용자로 간주
+                    setIsStaff(false);
                 }
+            } else {
+                setIsStaff(false);
             }
         };
         checkUserRole();
@@ -170,7 +177,7 @@ export default function WorkloadDetailPage() {
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <Header
-                    title={`${personName} 작업자 워크로드`}
+                    title={isStaff ? "워크로드" : `${personName} 작업자 워크로드`}
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         !isStaff && (

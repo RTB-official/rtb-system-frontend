@@ -268,24 +268,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
     }, [currentUserId]);
 
 
-    // 라우트 변경 시: 해당 라우트의 메뉴는 자동으로 열림 + 포커스 자동 정렬
-    useEffect(() => {
-        if (isReportRoute) {
-            setReportOpen(true);
-            setMenuFocus("REPORT");
-        }
-        if (isExpenseRoute) {
-            setExpenseOpen(true);
-            setMenuFocus("EXPENSE");
-        }
-
-        if (!isReportRoute) setReportOpen(false);
-        if (!isExpenseRoute) setExpenseOpen(false);
-
-        // 라우트 이동 시 알림 팝업은 닫아두는 게 UX 안전
-        setShowNotifications(false);
-    }, [location.pathname, isReportRoute, isExpenseRoute]); // eslint-disable-line react-hooks/exhaustive-deps
-
     // ✅ menuFocus가 있으면 다른 메뉴는 "강제로 비활성" 처리(워크로드 강조 잔상 제거)
     const shouldForceInactive = (
         _kind: "HOME" | "WORKLOAD" | "VACATION" | "MEMBERS"
@@ -380,7 +362,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         const role = userRole || currentUser?.role;
         const department = userDepartment || currentUser?.department;
         const position = currentUser?.position;
-        
+
         return {
             hasUserInfo: hasInfo,
             isCEO: hasInfo && position === "대표",
@@ -417,6 +399,37 @@ export default function Sidebar({ onClose }: SidebarProps) {
         }
         return [];
     }, [isCEO, isAdmin, isStaff]);
+
+    // 라우트 변경 시: 해당 라우트의 메뉴는 자동으로 열림 + 포커스 자동 정렬
+    useEffect(() => {
+        if (isReportRoute) {
+            setReportOpen(true);
+            setMenuFocus("REPORT");
+        } else {
+            setReportOpen(false);
+        }
+        
+        if (isExpenseRoute) {
+            setMenuFocus("EXPENSE");
+            // 하위메뉴가 1개일 때는 하위메뉴를 열지 않음
+            const hasMultipleSubMenus = expenseSubMenuItems.length > 1;
+            if (hasMultipleSubMenus) {
+                setExpenseOpen(true);
+            } else {
+                // 하위메뉴가 1개일 때는 항상 닫힌 상태 유지 (이미 false면 변경하지 않음)
+                if (expenseOpen) {
+                    setExpenseOpen(false);
+                }
+            }
+        } else {
+            if (expenseOpen) {
+                setExpenseOpen(false);
+            }
+        }
+
+        // 라우트 이동 시 알림 팝업은 닫아두는 게 UX 안전
+        setShowNotifications(false);
+    }, [location.pathname, isReportRoute, isExpenseRoute]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <aside className="w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col">
@@ -688,54 +701,47 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         />
 
                         {/* 지출 관리 - 모두 접근 가능 (서브메뉴는 권한별로 다름) */}
-                        {expenseSubMenuItems.length === 1 ? (
-                            // 하위메뉴가 1개일 때는 상위메뉴 클릭 시 바로 이동 (모바일에서만 사이드바 닫기)
-                            <MainLink
-                                to={expenseSubMenuItems[0].to}
-                                icon={<IconCard />}
-                                label="지출 관리"
-                                kind="WORKLOAD"
-                                onClick={() => {
-                                    // 모바일에서만 사이드바 닫기
-                                    onClose?.();
-                                }}
-                            />
-                        ) : (
-                            <>
-                                <button
-                                    onClick={() => {
-                                        setShowNotifications(false);
-                                        setMenuFocus("EXPENSE");
-                                        setExpenseOpen(true);
-                                        setReportOpen(false);
+                        <button
+                            onClick={() => {
+                                setShowNotifications(false);
+                                setMenuFocus("EXPENSE");
+                                setReportOpen(false);
+                                // 하위메뉴가 1개일 때는 바로 이동, 2개 이상일 때는 하위메뉴 토글
+                                if (expenseSubMenuItems.length === 1) {
+                                    navigate(expenseSubMenuItems[0].to);
+                                    setExpenseOpen(false); // 하위메뉴는 항상 닫힌 상태 유지
+                                } else {
+                                    setExpenseOpen(!expenseOpen);
+                                    if (!expenseOpen) {
                                         navigate(PATHS.expensePersonal);
-                                    }}
-                                    className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${expenseActive
-                                        ? "bg-gray-700 text-white"
-                                        : "text-gray-900 hover:bg-gray-200"
-                                        }`}
-                                >
-                                    <div className="flex gap-3 items-center w-[162px]">
-                                        <IconCard />
-                                        <p className="font-medium text-[16px] leading-normal">
-                                            지출 관리
-                                        </p>
-                                    </div>
-                                </button>
+                                    }
+                                }
+                            }}
+                            className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${expenseActive
+                                ? "bg-gray-700 text-white"
+                                : "text-gray-900 hover:bg-gray-200"
+                                }`}
+                        >
+                            <div className="flex gap-3 items-center w-[162px]">
+                                <IconCard />
+                                <p className="font-medium text-[16px] leading-normal">
+                                    지출 관리
+                                </p>
+                            </div>
+                        </button>
 
-                                {expenseOpen && (
-                                    <div className="ml-4 mt-1 flex flex-col gap-1">
-                                        {expenseSubMenuItems.map((s) => (
-                                            <SubLink
-                                                key={s.label}
-                                                to={s.to}
-                                                label={s.label}
-                                                focus="EXPENSE"
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </>
+                        {/* 하위메뉴 - 2개 이상일 때만 표시 */}
+                        {expenseOpen && expenseSubMenuItems.length > 1 && (
+                            <div className="ml-4 mt-1 flex flex-col gap-1">
+                                {expenseSubMenuItems.map((s) => (
+                                    <SubLink
+                                        key={s.label}
+                                        to={s.to}
+                                        label={s.label}
+                                        focus="EXPENSE"
+                                    />
+                                ))}
+                            </div>
                         )}
 
                         {/* 휴가 관리 - 공사팀 제외 (사용자 정보가 완전히 로드되고 공사팀이 아닐 때만 표시) */}
