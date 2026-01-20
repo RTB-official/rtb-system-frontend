@@ -1,4 +1,32 @@
+//workloadApi.ts
 import { supabase } from "./supabase";
+
+type ProfileDeptRow = {
+    name: string | null;
+    department: string | null;
+};
+
+// ✅ 워크로드 대상 인원(공사팀/공무팀) 조회
+export async function getWorkloadTargetProfiles(): Promise<
+    { name: string; department: "공사팀" | "공무팀" }[]
+> {
+    const { data, error } = await supabase
+        .from("profiles")
+        .select("name, department")
+        .in("department", ["공사팀", "공무팀"]);
+
+    if (error) {
+        console.error("profiles 조회 실패:", error);
+        throw new Error(`profiles 조회 실패: ${error.message}`);
+    }
+
+    return (data as ProfileDeptRow[] | null | undefined)
+        ? (data as ProfileDeptRow[])
+              .filter((x) => !!x.name && (x.department === "공사팀" || x.department === "공무팀"))
+              .map((x) => ({ name: x.name!.trim(), department: x.department as "공사팀" | "공무팀" }))
+        : [];
+}
+
 
 // ==================== 타입 정의 ====================
 
@@ -45,9 +73,17 @@ export interface WorkloadChartData {
  * @param timeStr "HH:mm" 형식의 시간 문자열
  * @returns 분 단위 숫자
  */
+
+function normalizeTimeHHMM(timeStr: string | null | undefined): string | null {
+    if (!timeStr) return null;
+    // "08:00:00" -> "08:00", "08:00" -> "08:00"
+    return timeStr.slice(0, 5);
+}
+
 function timeToMinutes(timeStr: string | null | undefined): number {
-    if (!timeStr) return 0;
-    const [hours, minutes] = timeStr.split(":").map(Number);
+    const t = normalizeTimeHHMM(timeStr);
+    if (!t) return 0;
+    const [hours, minutes] = t.split(":").map(Number);
     return (hours || 0) * 60 + (minutes || 0);
 }
 
@@ -78,8 +114,12 @@ function calculateHours(
     }
 
     // 날짜가 다른 경우 (다음 날로 넘어가는 경우)
-    const fromDate = new Date(`${dateFrom}T${timeFrom}`);
-    const toDate = new Date(`${dateTo}T${timeTo}`);
+    const tf = normalizeTimeHHMM(timeFrom);
+    const tt = normalizeTimeHHMM(timeTo);
+    if (!tf || !tt) return 0;
+    
+    const fromDate = new Date(`${dateFrom}T${tf}:00`);
+    const toDate = new Date(`${dateTo}T${tt}:00`);
     const diffMs = toDate.getTime() - fromDate.getTime();
     return diffMs / (1000 * 60 * 60);
 }
@@ -157,10 +197,10 @@ export async function getWorkloadData(filters?: {
         if (filters?.year && filters?.month !== undefined) {
             // 특정 월: 해당 월과 겹치는 모든 entry 필터링
             const year = filters.year;
-            const month = filters.month + 1; // month는 0-based
+            const month = filters.month; // month는 1~12
             const filterStartDate = `${year}-${String(month).padStart(2, "0")}-01`;
-            const lastDay = new Date(year, month, 0).getDate();
-            const filterEndDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+            const lastDay = new Date(year, month, 0).getDate(); // month=1이면 1월 마지막날 OK
+            const filterEndDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;            
             
             filteredEntries = entries.filter((entry) => {
                 if (!entry.date_from || !entry.date_to) return false;
@@ -240,7 +280,8 @@ export async function getWorkloadData(filters?: {
  * 인원별 작업시간 집계
  */
 export function aggregatePersonWorkload(
-    entries: WorkloadEntry[]
+    entries: WorkloadEntry[],
+    profiles?: { name: string; department: "공사팀" | "공무팀" }[]
 ): PersonWorkloadSummary[] {
     const personMap = new Map<string, PersonWorkloadSummary>();
 
@@ -310,7 +351,53 @@ export function aggregatePersonWorkload(
         summary.totalDays = dateSet.size;
     }
 
-    return Array.from(personMap.values());
+    // ✅ profiles(공사팀/공무팀) 기준으로 워크로드 표시 대상 결정
+    if (profiles && profiles.length) {
+        const resultMap = new Map<string, PersonWorkloadSummary>();
+
+        // 이름별 기존 집계 맵(personMap)을 조회해서 규칙 적용
+        for (const p of profiles) {
+            const name = p.name;
+            const dept = p.department;
+
+            const existing =
+                personMap.get(name) ??
+                ({
+                    personName: name,
+                    workHours: 0,
+                    travelHours: 0,
+                    waitHours: 0,
+                    totalDays: 0,
+                    workLogIds: new Set<number>(),
+                } as PersonWorkloadSummary);
+
+            // ✅ 공사팀: 무조건 표시 (0시간이어도)
+            if (dept === "공사팀") {
+                resultMap.set(name, existing);
+                continue;
+            }
+
+            // ✅ 공무팀: 작업/이동 시간이 있을 때만 표시
+            if (dept === "공무팀") {
+                if (existing.workHours > 0 || existing.travelHours > 0) {
+                    resultMap.set(name, existing);
+                }
+                continue;
+            }
+        }
+
+        // ✅ 작업시간(workHours) 내림차순 정렬
+        return Array.from(resultMap.values()).sort(
+            (a, b) => b.workHours - a.workHours
+        );
+    }
+
+    // profiles 미사용 시 기존 동작 유지
+    // ✅ 작업시간 기준 내림차순 정렬
+    return Array.from(personMap.values()).sort(
+        (a, b) => b.workHours - a.workHours
+    );
+
 }
 
 /**
