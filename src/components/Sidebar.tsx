@@ -133,6 +133,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
         };
     });
 
+    // role과 department를 별도로 관리하여 한 번 설정되면 유지
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [userDepartment, setUserDepartment] = useState<string | null>(null);
+
 
 
     useEffect(() => {
@@ -166,6 +170,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 displayName: sessionId || "사용자",
                 email: sessionEmail,
                 position: cachedPosition || null,
+                role: userRole, // 기존 값 유지
+                department: userDepartment, // 기존 값 유지
             });
 
 
@@ -187,6 +193,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     displayName: user.email ?? "사용자",
                     email,
                     position: cachedPosition || null,
+                    role: userRole, // 기존 값 유지
+                    department: userDepartment, // 기존 값 유지
                 });
 
                 if (id) {
@@ -205,12 +213,20 @@ export default function Sidebar({ onClose }: SidebarProps) {
             else localStorage.removeItem("sidebarPosition");
 
 
+            // role과 department를 별도 state에 저장 (한 번 설정되면 유지)
+            if (data?.role !== null && data?.role !== undefined) {
+                setUserRole(data.role);
+            }
+            if (data?.department !== null && data?.department !== undefined) {
+                setUserDepartment(data.department);
+            }
+
             setCurrentUser({
                 displayName: data?.username ?? data?.name ?? (user.email ?? "사용자"),
                 email,
                 position: data?.position ?? null,
-                role: data?.role ?? null,
-                department: data?.department ?? null,
+                role: data?.role ?? userRole ?? null, // DB 값 또는 기존 값
+                department: data?.department ?? userDepartment ?? null, // DB 값 또는 기존 값
             });
 
 
@@ -357,12 +373,21 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const reportActive = isReportRoute || menuFocus === "REPORT";
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
 
-    // 권한 확인 - currentUser가 로드되고 role/department가 확실히 설정된 후에만 판단
-    // role이나 department가 null이 아닐 때만 판단하여 초기 로딩 시 메뉴 깜빡임 방지
-    const hasUserInfo = currentUser && (currentUser.role !== null || currentUser.department !== null);
-    const isCEO = hasUserInfo && currentUser.position === "대표";
-    const isAdmin = hasUserInfo && (currentUser.role === "admin" || currentUser.department === "공무팀");
-    const isStaff = hasUserInfo && (currentUser.role === "staff" || currentUser.department === "공사팀");
+    // 권한 확인 - userRole과 userDepartment를 사용하여 안정적으로 판단
+    const { hasUserInfo, isCEO, isAdmin, isStaff } = useMemo(() => {
+        // userRole 또는 userDepartment가 설정되어 있으면 사용자 정보가 로드된 것으로 간주
+        const hasInfo = userRole !== null || userDepartment !== null;
+        const role = userRole || currentUser?.role;
+        const department = userDepartment || currentUser?.department;
+        const position = currentUser?.position;
+        
+        return {
+            hasUserInfo: hasInfo,
+            isCEO: hasInfo && position === "대표",
+            isAdmin: hasInfo && (role === "admin" || department === "공무팀"),
+            isStaff: hasInfo && (role === "staff" || department === "공사팀"),
+        };
+    }, [userRole, userDepartment, currentUser?.role, currentUser?.department, currentUser?.position]);
 
     const reportSubMenuItems = [
         { label: "보고서 목록", to: PATHS.reportList },
@@ -664,12 +689,16 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                         {/* 지출 관리 - 모두 접근 가능 (서브메뉴는 권한별로 다름) */}
                         {expenseSubMenuItems.length === 1 ? (
-                            // 하위메뉴가 1개일 때는 상위메뉴 클릭 시 바로 이동
+                            // 하위메뉴가 1개일 때는 상위메뉴 클릭 시 바로 이동 (모바일에서만 사이드바 닫기)
                             <MainLink
                                 to={expenseSubMenuItems[0].to}
                                 icon={<IconCard />}
                                 label="지출 관리"
                                 kind="WORKLOAD"
+                                onClick={() => {
+                                    // 모바일에서만 사이드바 닫기
+                                    onClose?.();
+                                }}
                             />
                         ) : (
                             <>

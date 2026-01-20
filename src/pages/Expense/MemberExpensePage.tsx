@@ -98,7 +98,7 @@ export default function MemberExpensePage() {
                     .select("role, department")
                     .eq("id", user.id)
                     .single();
-                
+
                 if (profile) {
                     const isStaff = profile.role === "staff" || profile.department === "공사팀";
                     if (isStaff) {
@@ -127,10 +127,10 @@ export default function MemberExpensePage() {
                 const monthNum = parseInt(month.replace("월", "")) - 1;
 
                 const filter: { year: number; month: number; userId?: string } =
-                    {
-                        year: yearNum,
-                        month: monthNum,
-                    };
+                {
+                    year: yearNum,
+                    month: monthNum,
+                };
 
                 if (user !== "전체") {
                     // 선택한 사용자 찾기
@@ -172,7 +172,7 @@ export default function MemberExpensePage() {
                         position: profile.position || null,
                     });
                 });
-                
+
                 // ✅ 프로필 정보를 localStorage에 캐시 (다음 로딩 시 깜빡임 방지)
                 try {
                     const cacheObject: Record<
@@ -189,7 +189,7 @@ export default function MemberExpensePage() {
                 } catch {
                     // localStorage 저장 실패 시 무시
                 }
-                
+
                 setEmployeeProfiles(profileMap);
             } catch (error) {
                 console.error("데이터 로드 실패:", error);
@@ -472,11 +472,10 @@ export default function MemberExpensePage() {
             fixed lg:static inset-y-0 left-0 z-30
             w-[239px] h-screen shrink-0
             transform transition-transform duration-300 ease-in-out
-            ${
-                sidebarOpen
-                    ? "translate-x-0"
-                    : "-translate-x-full lg:translate-x-0"
-            }
+            ${sidebarOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full lg:translate-x-0"
+                    }
           `}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -511,7 +510,7 @@ export default function MemberExpensePage() {
                                                 );
                                             return (
                                                 nameWithoutInitials ===
-                                                    selectedUser ||
+                                                selectedUser ||
                                                 emp.name === selectedUser
                                             );
                                         }
@@ -529,11 +528,11 @@ export default function MemberExpensePage() {
 
                         {/* 사용자 한 명 선택 시 상세 내역 표시 */}
                         {user !== "전체" &&
-                        selectedEmployeeId &&
-                        selectedEmployee ? (
+                            selectedEmployeeId &&
+                            selectedEmployee ? (
                             loading &&
-                            mileageDetails.length === 0 &&
-                            cardDetails.length === 0 ? (
+                                mileageDetails.length === 0 &&
+                                cardDetails.length === 0 ? (
                                 <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
                                     <DetailSkeleton />
                                 </div>
@@ -685,11 +684,10 @@ export default function MemberExpensePage() {
                                                         onClick={() =>
                                                             setCurrentPage(page)
                                                         }
-                                                        className={`px-3 py-1 text-sm rounded ${
-                                                            currentPage === page
+                                                        className={`px-3 py-1 text-sm rounded ${currentPage === page
                                                                 ? "bg-gray-900 text-white"
                                                                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                                        }`}
+                                                            }`}
                                                     >
                                                         {page}
                                                     </button>
