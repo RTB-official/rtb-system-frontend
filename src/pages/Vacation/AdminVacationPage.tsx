@@ -4,6 +4,7 @@ import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
 import AdminVacationSkeleton from "../../components/common/AdminVacationSkeleton";
+import Select from "../../components/common/Select";
 import {
     getVacations,
     updateVacationStatus,
@@ -280,16 +281,16 @@ export default function AdminVacationPage() {
                             <div className="text-[24px] font-semibold text-gray-900">
                                 조회 기간
                             </div>
-                            <select
+                            <Select
+                                options={[
+                                    { value: "2026", label: "2026년" },
+                                    { value: "2025", label: "2025년" },
+                                    { value: "2024", label: "2024년" },
+                                    { value: "2023", label: "2023년" },
+                                ]}
                                 value={year}
-                                onChange={(e) => setYear(e.target.value)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm"
-                            >
-                                <option value="2026">2026년</option>
-                                <option value="2025">2025년</option>
-                                <option value="2024">2024년</option>
-                                <option value="2023">2023년</option>
-                            </select>
+                                onChange={setYear}
+                            />
                         </div>
 
                         {/* 직원별 통계 테이블 */}

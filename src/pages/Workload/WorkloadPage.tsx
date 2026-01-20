@@ -79,6 +79,7 @@ export default function WorkloadPage() {
     const [userRole, setUserRole] = useState<string | null>(null);
     const [userDepartment, setUserDepartment] = useState<string | null>(null);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [userName, setUserName] = useState<string | null>(null);
 
     const itemsPerPage = 10;
 
@@ -90,12 +91,13 @@ export default function WorkloadPage() {
                 setCurrentUserId(user.id);
                 const { data: profile } = await supabase
                     .from("profiles")
-                    .select("role, department")
+                    .select("role, department, name")
                     .eq("id", user.id)
                     .single();
                 if (profile) {
                     setUserRole(profile.role);
                     setUserDepartment(profile.department);
+                    setUserName(profile.name);
                 }
             }
         };
@@ -159,6 +161,18 @@ export default function WorkloadPage() {
 
         loadData();
     }, [selectedYear, selectedMonth]);
+
+    // 공사팀(스태프)인 경우 본인 상세 페이지로 자동 리다이렉트
+    useEffect(() => {
+        const isStaff = userRole === "staff" || userDepartment === "공사팀";
+        if (isStaff && userName && tableData.length > 0 && !loading) {
+            // 본인 데이터 찾기
+            const ownData = tableData.find(row => row.id === currentUserId || row.name === userName);
+            if (ownData) {
+                navigate(`/workload/detail/${encodeURIComponent(ownData.name)}`, { replace: true });
+            }
+        }
+    }, [userRole, userDepartment, userName, tableData, currentUserId, loading, navigate]);
 
     // 페이지네이션 계산
     const totalPages = useMemo(() => {

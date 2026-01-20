@@ -7,6 +7,7 @@ import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkeleton";
 import { IconArrowBack } from "../../components/icons/Icons";
+import { supabase } from "../../lib/supabase";
 import {
     getWorkerWorkloadDetail,
     formatHours,
@@ -71,6 +72,25 @@ export default function WorkloadDetailPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [isStaff, setIsStaff] = useState(false);
+
+    // 공사팀(스태프) 여부 확인
+    useEffect(() => {
+        const checkUserRole = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("role, department")
+                    .eq("id", user.id)
+                    .single();
+                if (profile) {
+                    setIsStaff(profile.role === "staff" || profile.department === "공사팀");
+                }
+            }
+        };
+        checkUserRole();
+    }, []);
     const [summary, setSummary] = useState<{
         name: string;
         totalWork: number;
@@ -153,13 +173,15 @@ export default function WorkloadDetailPage() {
                     title={`${personName} 작업자 워크로드`}
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
-                        <button
-                            onClick={() => navigate("/workload")}
-                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
-                            title="목록으로 돌아가기"
-                        >
-                            <IconArrowBack />
-                        </button>
+                        !isStaff && (
+                            <button
+                                onClick={() => navigate("/workload")}
+                                className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                                title="목록으로 돌아가기"
+                            >
+                                <IconArrowBack />
+                            </button>
+                        )
                     }
                 />
 

@@ -661,47 +661,61 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         />
 
                         {/* 지출 관리 - 모두 접근 가능 (서브메뉴는 권한별로 다름) */}
-                        <button
-                            onClick={() => {
-                                setShowNotifications(false);
-                                setMenuFocus("EXPENSE");
-                                setExpenseOpen(true);
-                                setReportOpen(false);
-                                navigate(PATHS.expensePersonal);
-                            }}
-                            className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${expenseActive
-                                ? "bg-gray-700 text-white"
-                                : "text-gray-900 hover:bg-gray-200"
-                                }`}
-                        >
-                            <div className="flex gap-3 items-center w-[162px]">
-                                <IconCard />
-                                <p className="font-medium text-[16px] leading-normal">
-                                    지출 관리
-                                </p>
-                            </div>
-                        </button>
+                        {expenseSubMenuItems.length === 1 ? (
+                            // 하위메뉴가 1개일 때는 상위메뉴 클릭 시 바로 이동
+                            <MainLink
+                                to={expenseSubMenuItems[0].to}
+                                icon={<IconCard />}
+                                label="지출 관리"
+                                kind="WORKLOAD"
+                            />
+                        ) : (
+                            <>
+                                <button
+                                    onClick={() => {
+                                        setShowNotifications(false);
+                                        setMenuFocus("EXPENSE");
+                                        setExpenseOpen(true);
+                                        setReportOpen(false);
+                                        navigate(PATHS.expensePersonal);
+                                    }}
+                                    className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${expenseActive
+                                        ? "bg-gray-700 text-white"
+                                        : "text-gray-900 hover:bg-gray-200"
+                                        }`}
+                                >
+                                    <div className="flex gap-3 items-center w-[162px]">
+                                        <IconCard />
+                                        <p className="font-medium text-[16px] leading-normal">
+                                            지출 관리
+                                        </p>
+                                    </div>
+                                </button>
 
-                        {expenseOpen && (
-                            <div className="ml-4 mt-1 flex flex-col gap-1">
-                                {expenseSubMenuItems.map((s) => (
-                                    <SubLink
-                                        key={s.label}
-                                        to={s.to}
-                                        label={s.label}
-                                        focus="EXPENSE"
-                                    />
-                                ))}
-                            </div>
+                                {expenseOpen && (
+                                    <div className="ml-4 mt-1 flex flex-col gap-1">
+                                        {expenseSubMenuItems.map((s) => (
+                                            <SubLink
+                                                key={s.label}
+                                                to={s.to}
+                                                label={s.label}
+                                                focus="EXPENSE"
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </>
                         )}
 
-                        {/* 휴가 관리 - 모두 접근 가능 */}
-                        <MainLink
-                            to={PATHS.vacation}
-                            icon={<IconVacation />}
-                            label="휴가 관리"
-                            kind="VACATION"
-                        />
+                        {/* 휴가 관리 - 공사팀 제외 */}
+                        {!isStaff && (
+                            <MainLink
+                                to={PATHS.vacation}
+                                icon={<IconVacation />}
+                                label="휴가 관리"
+                                kind="VACATION"
+                            />
+                        )}
 
                         {/* 구성원 관리 - 모두 접근 가능 */}
                         <MainLink
