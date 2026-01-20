@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
@@ -8,6 +8,7 @@ import VacationRequestModal from "../../components/ui/VacationRequestModal";
 import VacationSkeleton from "../../components/common/VacationSkeleton";
 import { IconPlus } from "../../components/icons/Icons";
 import { useAuth } from "../../store/auth";
+import { supabase } from "../../lib/supabase";
 import {
     createVacation,
     updateVacation,
@@ -44,8 +45,38 @@ export interface GrantExpireRow {
 
 export default function VacationPage() {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+    const [userPosition, setUserPosition] = useState<string | null>(null);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [userDepartment, setUserDepartment] = useState<string | null>(null);
+
+    // 사용자 권한 확인 및 리다이렉트
+    useEffect(() => {
+        const checkUserRole = async () => {
+            if (!user?.id) return;
+            
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("position, role, department")
+                .eq("id", user.id)
+                .single();
+
+            if (profile) {
+                setUserPosition(profile.position);
+                setUserRole(profile.role);
+                setUserDepartment(profile.department);
+
+                // 대표님인 경우 승인 페이지로 리다이렉트
+                if (profile.position === "대표") {
+                    navigate("/vacation/admin", { replace: true });
+                }
+            }
+        };
+
+        checkUserRole();
+    }, [user?.id, navigate]);
 
     // 연도 필터 / 탭 상태
     const [year, setYear] = useState(() => {

@@ -116,6 +116,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
         displayName: string;
         email: string;
         position?: string | null;
+        role?: string | null;
+        department?: string | null;
     } | null>(() => {
         const cachedEmail = localStorage.getItem("sidebarEmail") || "";
         const cachedId = localStorage.getItem("sidebarLoginId") || "";
@@ -126,6 +128,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
             displayName: cachedId || "",
             email: cachedEmail,
             position: cachedPosition || null,
+            role: null,
+            department: null,
         };
     });
 
@@ -167,7 +171,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
             const { data, error } = await supabase
                 .from("profiles")
-                .select("name, email, username, position")
+                .select("name, email, username, position, role, department")
                 .eq("id", user.id)
                 .single();
 
@@ -205,6 +209,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 displayName: data?.username ?? data?.name ?? (user.email ?? "사용자"),
                 email,
                 position: data?.position ?? null,
+                role: data?.role ?? null,
+                department: data?.department ?? null,
             });
 
 
@@ -351,6 +357,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const reportActive = isReportRoute || menuFocus === "REPORT";
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
 
+    // 권한 확인
+    const isCEO = currentUser?.position === "대표";
+    const isAdmin = currentUser?.role === "admin" || currentUser?.department === "공무팀";
+    const isStaff = currentUser?.role === "staff" || currentUser?.department === "공사팀";
+
     const reportSubMenuItems = [
         { label: "보고서 목록", to: PATHS.reportList },
         {
@@ -363,10 +374,22 @@ export default function Sidebar({ onClose }: SidebarProps) {
         },
     ];
 
-    const expenseSubMenuItems = [
-        { label: "개인 지출 기록", to: PATHS.expensePersonal },
-        { label: "구성원 지출 관리", to: PATHS.expenseTeam },
-    ];
+    // 권한별 지출 관리 서브메뉴
+    const expenseSubMenuItems = useMemo(() => {
+        if (isCEO || isAdmin) {
+            // 대표님, 공무팀: 전체 지출 관리
+            return [
+                { label: "개인 지출 기록", to: PATHS.expensePersonal },
+                { label: "구성원 지출 관리", to: PATHS.expenseTeam },
+            ];
+        } else if (isStaff) {
+            // 공사팀: 개인 지출 기록만
+            return [
+                { label: "개인 지출 기록", to: PATHS.expensePersonal },
+            ];
+        }
+        return [];
+    }, [isCEO, isAdmin, isStaff]);
 
     return (
         <aside className="w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col">
@@ -584,15 +607,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     <div className="h-px bg-gray-200 rounded-full" />
 
                     <nav className="flex flex-col gap-2">
-                        {/* 대시보드 */}
-                        <MainLink
-                            to={PATHS.dashboard}
-                            icon={<IconHome />}
-                            label="홈"
-                            kind="HOME"
-                        />
+                        {/* 대시보드 - 대표님, 공무팀만 */}
+                        {(isCEO || isAdmin) && (
+                            <MainLink
+                                to={PATHS.dashboard}
+                                icon={<IconHome />}
+                                label="홈"
+                                kind="HOME"
+                            />
+                        )}
 
-                        {/* 출장 보고서 (헤더 버튼) */}
+                        {/* 출장 보고서 - 모두 접근 가능 */}
                         <button
                             onClick={() => {
                                 setShowNotifications(false);
@@ -627,7 +652,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             </div>
                         )}
 
-                        {/* 워크로드 */}
+                        {/* 워크로드 - 모두 접근 가능 */}
                         <MainLink
                             to={PATHS.workload}
                             icon={<IconWorkload />}
@@ -635,7 +660,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             kind="WORKLOAD"
                         />
 
-                        {/* 지출 관리 (헤더 버튼) */}
+                        {/* 지출 관리 - 모두 접근 가능 (서브메뉴는 권한별로 다름) */}
                         <button
                             onClick={() => {
                                 setShowNotifications(false);
@@ -670,7 +695,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             </div>
                         )}
 
-                        {/* 휴가 관리 */}
+                        {/* 휴가 관리 - 모두 접근 가능 */}
                         <MainLink
                             to={PATHS.vacation}
                             icon={<IconVacation />}
@@ -678,7 +703,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             kind="VACATION"
                         />
 
-                        {/* 구성원 관리 */}
+                        {/* 구성원 관리 - 모두 접근 가능 */}
                         <MainLink
                             to={PATHS.members}
                             icon={<IconMembers />}

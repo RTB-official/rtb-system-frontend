@@ -15,6 +15,7 @@ import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
+import { supabase } from "../../lib/supabase";
 import {
     getWorkloadData,
     getWorkloadTargetProfiles,
@@ -75,11 +76,40 @@ export default function WorkloadPage() {
     const [loading, setLoading] = useState(true);
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [userDepartment, setUserDepartment] = useState<string | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     const itemsPerPage = 10;
 
+    // 사용자 정보 로드
+    useEffect(() => {
+        const fetchUserInfo = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                setCurrentUserId(user.id);
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("role, department")
+                    .eq("id", user.id)
+                    .single();
+                if (profile) {
+                    setUserRole(profile.role);
+                    setUserDepartment(profile.department);
+                }
+            }
+        };
+        fetchUserInfo();
+    }, []);
+
     // 행 클릭 핸들러
     const handleRowClick = (row: WorkloadTableRow) => {
+        const isStaff = userRole === "staff" || userDepartment === "공사팀";
+        // 공사팀(스태프)인 경우 본인 ID와 일치하는 경우만 상세 페이지로 이동
+        if (isStaff && row.id !== currentUserId) {
+            alert("본인의 상세 페이지만 조회할 수 있습니다.");
+            return;
+        }
         navigate(`/workload/detail/${encodeURIComponent(row.name)}`);
     };
 

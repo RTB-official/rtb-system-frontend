@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table, { TableColumn } from "../../components/common/Table";
@@ -21,6 +22,7 @@ import Avatar from "../../components/common/Avatar";
 import { supabase } from "../../lib/supabase";
 
 export default function MemberExpensePage() {
+    const navigate = useNavigate();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const currentDate = new Date();
     const [year, setYear] = useState(`${currentDate.getFullYear()}년`);
@@ -86,6 +88,30 @@ export default function MemberExpensePage() {
     });
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
+    // 권한 체크: 공사팀(스태프)은 접근 불가
+    useEffect(() => {
+        const checkAccess = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("role, department")
+                    .eq("id", user.id)
+                    .single();
+                
+                if (profile) {
+                    const isStaff = profile.role === "staff" || profile.department === "공사팀";
+                    if (isStaff) {
+                        alert("접근 권한이 없습니다.");
+                        navigate("/expense", { replace: true });
+                        return;
+                    }
+                }
+            }
+        };
+        checkAccess();
+    }, [navigate]);
+
     useEffect(() => {
         document.body.style.overflow = sidebarOpen ? "hidden" : "";
         return () => {
