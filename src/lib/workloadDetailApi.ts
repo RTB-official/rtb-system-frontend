@@ -1,11 +1,18 @@
+//workloadDetailApi.ts
 import { getWorkloadData, type WorkloadEntry } from "./workloadApi";
 
 /**
  * 시간 문자열을 분 단위로 변환
  */
+function normalizeTimeHHMM(timeStr: string | null | undefined): string | null {
+    if (!timeStr) return null;
+    return timeStr.slice(0, 5);
+}
+
 function timeToMinutes(timeStr: string | null | undefined): number {
-    if (!timeStr) return 0;
-    const [hours, minutes] = timeStr.split(":").map(Number);
+    const t = normalizeTimeHHMM(timeStr);
+    if (!t) return 0;
+    const [hours, minutes] = t.split(":").map(Number);
     return (hours || 0) * 60 + (minutes || 0);
 }
 
@@ -31,8 +38,12 @@ function calculateHours(
     }
 
     // 날짜가 다른 경우 (다음 날로 넘어가는 경우)
-    const fromDate = new Date(`${dateFrom}T${timeFrom}`);
-    const toDate = new Date(`${dateTo}T${timeTo}`);
+    const tf = normalizeTimeHHMM(timeFrom);
+    const tt = normalizeTimeHHMM(timeTo);
+    if (!tf || !tt) return 0;
+    
+    const fromDate = new Date(`${dateFrom}T${tf}:00`);
+    const toDate = new Date(`${dateTo}T${tt}:00`);
     const diffMs = toDate.getTime() - fromDate.getTime();
     return diffMs / (1000 * 60 * 60);
 }

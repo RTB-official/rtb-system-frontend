@@ -1,3 +1,4 @@
+//workloadDetailPage.tsx
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -92,9 +93,9 @@ export default function WorkloadDetailPage() {
             setLoading(true);
             try {
                 const yearNum = parseInt(selectedYear.replace("년", ""));
-                const monthNum = parseInt(selectedMonth.replace("월", "")) - 1;
+                const monthNum = parseInt(selectedMonth.replace("월", ""));
 
-                const data = await getWorkerWorkloadDetail(personName, {
+                const entries = await getWorkloadData({
                     year: yearNum,
                     month: monthNum,
                 });

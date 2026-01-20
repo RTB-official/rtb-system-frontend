@@ -193,7 +193,7 @@ export default function CreationPage() {
                     details: entry.details,
                     persons: entry.persons,
                     note: entry.note || "",
-                    noLunch: false,
+                    noLunch: (entry as any).lunch_worked ?? false,
                     moveFrom: entry.moveFrom,
                     moveTo: entry.moveTo,
                 }));
@@ -283,6 +283,7 @@ export default function CreationPage() {
                         note: entry.note || undefined,
                         moveFrom: entry.moveFrom || undefined,
                         moveTo: entry.moveTo || undefined,
+                        lunch_worked: !!entry.noLunch,
                     })),
                     expenses: expenses.map((exp) => ({
                         date: exp.date,
@@ -501,6 +502,7 @@ export default function CreationPage() {
                         note: entry.note || undefined,
                         moveFrom: entry.moveFrom || undefined,
                         moveTo: entry.moveTo || undefined,
+                        lunch_worked: !!entry.noLunch,
                     })),
                     expenses: expenses.map((exp) => ({
                         date: exp.date,

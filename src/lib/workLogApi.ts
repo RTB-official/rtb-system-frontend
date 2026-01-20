@@ -1,3 +1,4 @@
+//workLogApi.ts
 import { supabase } from "./supabase";
 
 // ==================== 타입 정의 ====================
@@ -90,6 +91,7 @@ export interface CreateWorkLogInput {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        lunch_worked?: boolean;
     }>;
     expenses?: Array<{
         date: string;
@@ -128,6 +130,7 @@ export interface WorkLogFullData {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        lunch_worked?: boolean;
     }>;
     expenses: Array<{
         id: number;
@@ -228,6 +231,7 @@ export async function createWorkLog(
                             note: entry.note || null,
                             move_from: entry.moveFrom || null,
                             move_to: entry.moveTo || null,
+                            lunch_worked: entry.lunch_worked ?? false,
                         },
                     ])
                     .select()
@@ -499,6 +503,7 @@ export async function getWorkLogById(
                 note: entry.note || undefined,
                 moveFrom: entry.move_from || undefined,
                 moveTo: entry.move_to || undefined,
+                lunch_worked: entry.lunch_worked ?? false,
             });
         }
     }
@@ -635,6 +640,7 @@ export async function updateWorkLog(
                             note: entry.note || null,
                             move_from: entry.moveFrom || null,
                             move_to: entry.moveTo || null,
+                            lunch_worked: entry.lunch_worked ?? false,
                         },
                     ])
                     .select()

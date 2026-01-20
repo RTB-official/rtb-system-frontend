@@ -1,3 +1,4 @@
+//workloadPage.tsx
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -16,12 +17,14 @@ import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
 import {
     getWorkloadData,
+    getWorkloadTargetProfiles,
     aggregatePersonWorkload,
     generateChartData,
     generateTableData,
     type WorkloadChartData,
     type WorkloadTableRow,
 } from "../../lib/workloadApi";
+
 
 // 커스텀 툴팁
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -93,8 +96,19 @@ export default function WorkloadPage() {
                     month: monthNum,
                 });
 
-                // 인원별 집계
-                const summaries = aggregatePersonWorkload(entries);
+                // ✅ 공사팀/공무팀 대상자 조회 (실패해도 워크로드는 계속 표시)
+                let profiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                try {
+                    profiles = await getWorkloadTargetProfiles();
+                } catch (e) {
+                    console.error("워크로드 대상자(profiles) 조회 실패 - fallback 처리:", e);
+                    profiles = []; // ✅ 대상자 필터 없이 전체 집계
+                }
+
+                // ✅ 인원별 집계
+                const summaries = aggregatePersonWorkload(entries, profiles);
+
+
 
                 // 차트 데이터 생성
                 const chart = generateChartData(summaries);
