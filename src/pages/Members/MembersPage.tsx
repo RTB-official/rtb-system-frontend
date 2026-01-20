@@ -283,7 +283,8 @@ export default function MembersPage() {
         "과장": 5,
         "대리": 6,
         "주임": 7,
-        "인턴": 8,
+        "사원": 8,
+        "인턴": 9,
     };
 
     const filteredMembers = useMemo(() => {
