@@ -96,8 +96,8 @@ export default function EventForm({
         initialEndDate
             ? formatDateForInput(initialEndDate)
             : initialDate
-            ? formatDateForInput(initialDate)
-            : ""
+                ? formatDateForInput(initialDate)
+                : ""
     );
     const [endHour, setEndHour] = useState<string>("18");
     const [endMinute, setEndMinute] = useState<string>("00");
@@ -124,7 +124,7 @@ export default function EventForm({
 
     const handleAddAttendee = (member?: { name: string; username: string } | string) => {
         let targetName: string;
-        
+
         if (typeof member === "object" && member) {
             targetName = member.name;
         } else if (typeof member === "string") {
@@ -132,7 +132,7 @@ export default function EventForm({
         } else {
             targetName = attendeeInput;
         }
-        
+
         if (targetName && !attendees.includes(targetName)) {
             setAttendees((prev) => [...prev, targetName]);
             setAttendeeInput("");

@@ -304,8 +304,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 const active = forcedInactive ? false : isActive;
 
                 return `flex gap-6 items-center p-3 rounded-xl transition-colors ${active
-                        ? "bg-gray-700 text-white"
-                        : "text-gray-900 hover:bg-gray-200"
+                    ? "bg-gray-700 text-white"
+                    : "text-gray-900 hover:bg-gray-200"
                     }`;
             }}
         >
@@ -500,8 +500,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 setUserMenuOpen(false);
                             }}
                             className={`flex gap-6 items-center p-3 rounded-xl transition-colors w-full text-left ${showNotifications
-                                    ? "bg-gray-100"
-                                    : "text-gray-900 hover:bg-gray-200"
+                                ? "bg-gray-100"
+                                : "text-gray-900 hover:bg-gray-200"
                                 }`}
                         >
                             <div className="flex gap-3 items-center w-[162px]">
@@ -602,8 +602,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 navigate(PATHS.reportList);
                             }}
                             className={`flex gap-6 items-center p-3 rounded-xl transition-colors ${reportActive
-                                    ? "bg-gray-700 text-white"
-                                    : "text-gray-900 hover:bg-gray-200"
+                                ? "bg-gray-700 text-white"
+                                : "text-gray-900 hover:bg-gray-200"
                                 }`}
                         >
                             <div className="flex gap-3 items-center w-[162px]">
@@ -645,8 +645,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 navigate(PATHS.expensePersonal);
                             }}
                             className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors ${expenseActive
-                                    ? "bg-gray-700 text-white"
-                                    : "text-gray-900 hover:bg-gray-200"
+                                ? "bg-gray-700 text-white"
+                                : "text-gray-900 hover:bg-gray-200"
                                 }`}
                         >
                             <div className="flex gap-3 items-center w-[162px]">

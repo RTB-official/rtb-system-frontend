@@ -10,6 +10,8 @@ import { IconPlus } from "../../components/icons/Icons";
 import { useAuth } from "../../store/auth";
 import {
     createVacation,
+    updateVacation,
+    deleteVacation,
     getVacations,
     getVacationStats,
     statusToKorean,
@@ -53,6 +55,9 @@ export default function VacationPage() {
     const [page, setPage] = useState(1);
 
     const [modalOpen, setModalOpen] = useState(false);
+    const [editingVacation, setEditingVacation] = useState<VacationRow | null>(null);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [vacations, setVacations] = useState<Vacation[]>([]);
     const [summary, setSummary] = useState({
@@ -144,30 +149,32 @@ export default function VacationPage() {
     );
 
     const handleRegister = () => {
+        setEditingVacation(null);
         setModalOpen(true);
     };
 
-    const handleVacationSubmit = async (payload: {
-        date: string;
-        leaveType: "FULL" | "AM" | "PM";
-        reason: string;
-    }) => {
-        if (!user?.id) {
-            alert("로그인이 필요합니다.");
-            return;
+    const handleEdit = (row: VacationRow) => {
+        const vacation = vacations.find(v => v.id === row.id);
+        if (vacation) {
+            setEditingVacation(row);
+            setModalOpen(true);
         }
+    };
+
+    const handleDelete = (row: VacationRow) => {
+        setDeleteTargetId(row.id);
+        setDeleteConfirmOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteTargetId || !user?.id) return;
 
         try {
             setLoading(true);
-            await createVacation({
-                user_id: user.id,
-                date: payload.date,
-                leave_type: payload.leaveType,
-                reason: payload.reason,
-            });
-
-            alert("휴가 신청이 완료되었습니다.");
-            setModalOpen(false);
+            await deleteVacation(deleteTargetId, user.id);
+            alert("휴가가 삭제되었습니다.");
+            setDeleteConfirmOpen(false);
+            setDeleteTargetId(null);
 
             // 목록 새로고침
             const yearNum = parseInt(year);
@@ -182,8 +189,67 @@ export default function VacationPage() {
                 expired: 0,
             });
         } catch (error: any) {
-            console.error("휴가 신청 실패:", error);
-            alert(error.message || "휴가 신청에 실패했습니다.");
+            console.error("휴가 삭제 실패:", error);
+            alert(error.message || "휴가 삭제에 실패했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVacationSubmit = async (payload: {
+        date: string;
+        leaveType: "FULL" | "AM" | "PM";
+        reason: string;
+    }) => {
+        if (!user?.id) {
+            alert("로그인이 필요합니다.");
+            return;
+        }
+
+        try {
+            setLoading(true);
+            
+            if (editingVacation) {
+                // 수정 모드
+                await updateVacation(
+                    editingVacation.id,
+                    {
+                        date: payload.date,
+                        leave_type: payload.leaveType,
+                        reason: payload.reason,
+                    },
+                    user.id
+                );
+                alert("휴가가 수정되었습니다.");
+            } else {
+                // 신청 모드
+                await createVacation({
+                    user_id: user.id,
+                    date: payload.date,
+                    leave_type: payload.leaveType,
+                    reason: payload.reason,
+                });
+                alert("휴가 신청이 완료되었습니다.");
+            }
+
+            setModalOpen(false);
+            setEditingVacation(null);
+
+            // 목록 새로고침
+            const yearNum = parseInt(year);
+            const data = await getVacations(user.id, { year: yearNum });
+            setVacations(data);
+
+            const stats = await getVacationStats(user.id, yearNum);
+            setSummary({
+                myAnnual: stats.total || 15,
+                granted: stats.total || 0,
+                used: stats.used,
+                expired: 0,
+            });
+        } catch (error: any) {
+            console.error("휴가 처리 실패:", error);
+            alert(error.message || (editingVacation ? "휴가 수정에 실패했습니다." : "휴가 신청에 실패했습니다."));
         } finally {
             setLoading(false);
         }
@@ -251,14 +317,53 @@ export default function VacationPage() {
                                     page={page}
                                     totalPages={totalPages}
                                     onPageChange={setPage}
+                                    onEdit={handleEdit}
+                                    onDelete={handleDelete}
                                 />
 
                                 <VacationRequestModal
                                     isOpen={modalOpen}
-                                    onClose={() => setModalOpen(false)}
+                                    onClose={() => {
+                                        setModalOpen(false);
+                                        setEditingVacation(null);
+                                    }}
                                     availableDays={summary.myAnnual}
                                     onSubmit={handleVacationSubmit}
+                                    editingVacation={editingVacation ? vacations.find(v => v.id === editingVacation.id) || null : null}
                                 />
+
+                                {deleteConfirmOpen && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                                        <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+                                            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                                                휴가 삭제
+                                            </h3>
+                                            <p className="text-gray-600 mb-6">
+                                                정말로 이 휴가를 삭제하시겠습니까?
+                                            </p>
+                                            <div className="flex gap-3 justify-end">
+                                                <Button
+                                                    variant="outline"
+                                                    size="lg"
+                                                    onClick={() => {
+                                                        setDeleteConfirmOpen(false);
+                                                        setDeleteTargetId(null);
+                                                    }}
+                                                >
+                                                    취소
+                                                </Button>
+                                                <Button
+                                                    variant="primary"
+                                                    size="lg"
+                                                    onClick={confirmDelete}
+                                                    disabled={loading}
+                                                >
+                                                    삭제
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>
