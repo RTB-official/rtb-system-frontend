@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+//workloadPage.tsx
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     BarChart,
     Bar,
@@ -13,112 +14,17 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
+import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
+import {
+    getWorkloadData,
+    getWorkloadTargetProfiles,
+    aggregatePersonWorkload,
+    generateChartData,
+    generateTableData,
+    type WorkloadChartData,
+    type WorkloadTableRow,
+} from "../../lib/workloadApi";
 
-// 샘플 차트 데이터
-const chartData = [
-    { name: "온권태", 작업: 69, 이동: 21.5, 대기: 14.5 },
-    { name: "홍길동", 작업: 72, 이동: 18, 대기: 12 },
-    { name: "김철수", 작업: 65, 이동: 25, 대기: 10 },
-    { name: "이영희", 작업: 80, 이동: 15, 대기: 8 },
-    { name: "박민수", 작업: 55, 이동: 30, 대기: 15 },
-    { name: "정수진", 작업: 75, 이동: 20, 대기: 5 },
-    { name: "최동욱", 작업: 60, 이동: 22, 대기: 18 },
-    { name: "강미경", 작업: 70, 이동: 19, 대기: 11 },
-    { name: "윤서준", 작업: 68, 이동: 24, 대기: 8 },
-    { name: "임지현", 작업: 77, 이동: 16, 대기: 7 },
-    { name: "한상우", 작업: 62, 이동: 28, 대기: 10 },
-    { name: "오나영", 작업: 73, 이동: 17, 대기: 10 },
-    { name: "신민호", 작업: 58, 이동: 32, 대기: 10 },
-    { name: "조은비", 작업: 82, 이동: 12, 대기: 6 },
-    { name: "권태희", 작업: 67, 이동: 23, 대기: 10 },
-    { name: "문준영", 작업: 71, 이동: 20, 대기: 9 },
-    { name: "배수현", 작업: 64, 이동: 26, 대기: 10 },
-    { name: "송지은", 작업: 78, 이동: 14, 대기: 8 },
-];
-
-// 샘플 테이블 데이터
-const tableData = [
-    {
-        id: 1,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 2,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 3,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 4,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 5,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 6,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 7,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 8,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 9,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-    {
-        id: 10,
-        name: "홍길동",
-        work: "93시간",
-        travel: "21시간 30분",
-        wait: "0시간",
-        days: "11일",
-    },
-];
 
 // 커스텀 툴팁
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -142,7 +48,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
                         </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                        <div className="w-3.5 h-3.5 rounded bg-[#d1d5dc]" />
+                        <div className="w-3.5 h-3.5 rounded bg-gray-300" />
                         <span className="text-sm text-gray-600">
                             대기 {payload[2]?.value}시간
                         </span>
@@ -155,12 +61,92 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function WorkloadPage() {
-    const [selectedYear, setSelectedYear] = useState("2025년");
-    const [selectedMonth, setSelectedMonth] = useState("11월");
+    const navigate = useNavigate();
+
+    // 오늘 날짜 기준으로 기본값 설정
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1; // 0-based이므로 +1
+
+    const [selectedYear, setSelectedYear] = useState(`${currentYear}년`);
+    const [selectedMonth, setSelectedMonth] = useState(`${currentMonth}월`);
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
+    const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
 
-    const totalPages = 3;
+    const itemsPerPage = 10;
+
+    // 행 클릭 핸들러
+    const handleRowClick = (row: WorkloadTableRow) => {
+        navigate(`/workload/detail/${encodeURIComponent(row.name)}`);
+    };
+
+    // 데이터 로드
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            try {
+                const yearNum = parseInt(selectedYear.replace("년", ""));
+                const monthNum = parseInt(selectedMonth.replace("월", "")) - 1;
+
+                const entries = await getWorkloadData({
+                    year: yearNum,
+                    month: monthNum,
+                });
+
+                // ✅ 공사팀/공무팀 대상자 조회 (실패해도 워크로드는 계속 표시)
+                let profiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                try {
+                    profiles = await getWorkloadTargetProfiles();
+                } catch (e) {
+                    console.error("워크로드 대상자(profiles) 조회 실패 - fallback 처리:", e);
+                    profiles = []; // ✅ 대상자 필터 없이 전체 집계
+                }
+
+                // ✅ 인원별 집계
+                const summaries = aggregatePersonWorkload(entries, profiles);
+
+
+
+                // 차트 데이터 생성
+                const chart = generateChartData(summaries);
+                setChartData(chart);
+
+                // 테이블 데이터 생성
+                const table = generateTableData(summaries);
+                setTableData(table);
+
+                // 페이지 초기화
+                setCurrentPage(1);
+            } catch (error) {
+                console.error("워크로드 데이터 로드 실패:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadData();
+    }, [selectedYear, selectedMonth]);
+
+    // 페이지네이션 계산
+    const totalPages = useMemo(() => {
+        return Math.ceil(tableData.length / itemsPerPage);
+    }, [tableData.length]);
+
+    const currentTableData = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = startIndex + itemsPerPage;
+        return tableData.slice(startIndex, endIndex);
+    }, [tableData, currentPage, itemsPerPage]);
+
+    // Y축 최대값 계산 (차트용)
+    const maxYValue = useMemo(() => {
+        if (chartData.length === 0) return 140;
+        const max = Math.max(...chartData.map((d) => d.작업 + d.이동 + d.대기));
+        return Math.ceil(max / 35) * 35; // 35의 배수로 올림
+    }, [chartData]);
 
     return (
         <div className="flex h-screen bg-white font-pretendard">
@@ -194,157 +180,198 @@ export default function WorkloadPage() {
 
                 {/* Content */}
                 <main className="flex-1 overflow-auto pt-9 pb-20 px-9">
-                    <div className="flex flex-col gap-6 w-full">
-                        {/* 조회 기간 */}
-                        <div className="flex flex-wrap items-center gap-4">
-                            <h2 className="text-[24px] font-semibold text-gray-900">
-                                조회 기간
-                            </h2>
-                            <YearMonthSelector
-                                year={selectedYear}
-                                month={selectedMonth}
-                                onYearChange={setSelectedYear}
-                                onMonthChange={setSelectedMonth}
-                            />
-                        </div>
-
-                        {/* 인원별 작업시간 차트 */}
-                        <div className="bg-white border border-gray-200 rounded-2xl p-7">
-                            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                                <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight">
-                                    인원별 작업시간
+                    {loading ? (
+                        <WorkloadSkeleton />
+                    ) : (
+                        <div className="flex flex-col gap-6 w-full">
+                            {/* 조회 기간 */}
+                            <div className="flex flex-wrap items-center gap-4">
+                                <h2 className="text-[24px] font-semibold text-gray-900">
+                                    조회 기간
                                 </h2>
-                                <div className="flex items-center gap-5">
-                                    <div className="flex items-center gap-1.5">
-                                        <div className="w-4 h-4 rounded bg-[#51a2ff]" />
-                                        <span className="text-[13px] text-gray-500">
-                                            작업
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <div className="w-4 h-4 rounded bg-[#fd9a00]" />
-                                        <span className="text-[13px] text-gray-500">
-                                            이동
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <div className="w-4 h-4 rounded bg-[#d1d5dc]" />
-                                        <span className="text-[13px] text-gray-500">
-                                            대기
-                                        </span>
+                                <YearMonthSelector
+                                    year={selectedYear}
+                                    month={selectedMonth}
+                                    onYearChange={setSelectedYear}
+                                    onMonthChange={setSelectedMonth}
+                                />
+                            </div>
+
+                            {/* 인원별 작업시간 차트 */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
+                                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                                    <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight">
+                                        인원별 작업시간
+                                    </h2>
+                                    <div className="flex items-center gap-5">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-4 h-4 rounded bg-[#51a2ff]" />
+                                            <span className="text-[13px] text-gray-500">
+                                                작업
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-4 h-4 rounded bg-[#fd9a00]" />
+                                            <span className="text-[13px] text-gray-500">
+                                                이동
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-4 h-4 rounded bg-gray-300" />
+                                            <span className="text-[13px] text-gray-500">
+                                                대기
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="h-[300px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart
-                                        data={chartData}
-                                        margin={{
-                                            top: 20,
-                                            right: 20,
-                                            left: 0,
-                                            bottom: 5,
-                                        }}
-                                    >
-                                        <CartesianGrid
-                                            strokeDasharray="3 3"
-                                            vertical={false}
-                                            stroke="#e5e7eb"
-                                        />
-                                        <XAxis
-                                            dataKey="name"
-                                            tick={{
-                                                fontSize: 12,
-                                                fill: "#6a7282",
-                                            }}
-                                            axisLine={false}
-                                            tickLine={false}
-                                        />
-                                        <YAxis
-                                            tick={{
-                                                fontSize: 14,
-                                                fill: "#99a1af",
-                                            }}
-                                            axisLine={false}
-                                            tickLine={false}
-                                            ticks={[0, 35, 70, 105, 140]}
-                                        />
-                                        <Tooltip
-                                            content={<CustomTooltip />}
-                                            cursor={{
-                                                fill: "rgba(0,0,0,0.05)",
-                                            }}
-                                        />
-                                        <Bar
-                                            dataKey="대기"
-                                            stackId="a"
-                                            fill="#d1d5dc"
-                                            radius={[4, 4, 0, 0]}
-                                        />
-                                        <Bar
-                                            dataKey="이동"
-                                            stackId="a"
-                                            fill="#fd9a00"
-                                        />
-                                        <Bar
-                                            dataKey="작업"
-                                            stackId="a"
-                                            fill="#51a2ff"
-                                            radius={[0, 0, 4, 4]}
-                                        />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* 상세 데이터 테이블 */}
-                        <div className="bg-white border border-gray-200 rounded-2xl p-7">
-                            <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight mb-6">
-                                상세 데이터
-                            </h2>
-
-                            <Table
-                                columns={[
-                                    {
-                                        key: "name",
-                                        label: "이름",
-                                        render: (_, row) => (
-                                            <Link
-                                                to={`/workload/detail/${row.id}`}
-                                                className="text-blue-500 hover:text-blue-700 hover:underline font-medium"
+                                {loading ? (
+                                    <div className="h-[300px] flex items-center justify-center">
+                                        <div className="text-gray-500">
+                                            데이터 로딩 중...
+                                        </div>
+                                    </div>
+                                ) : chartData.length === 0 ? (
+                                    <div className="h-[300px] flex items-center justify-center">
+                                        <div className="text-gray-500">
+                                            데이터가 없습니다.
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="h-[300px] w-full">
+                                        <ResponsiveContainer
+                                            width="100%"
+                                            height="100%"
+                                        >
+                                            <BarChart
+                                                data={chartData}
+                                                margin={{
+                                                    top: 20,
+                                                    right: 20,
+                                                    left: 0,
+                                                    bottom: 5,
+                                                }}
                                             >
-                                                {row.name}
-                                            </Link>
-                                        ),
-                                    },
-                                    {
-                                        key: "work",
-                                        label: "작업",
-                                    },
-                                    {
-                                        key: "travel",
-                                        label: "이동",
-                                    },
-                                    {
-                                        key: "wait",
-                                        label: "대기",
-                                    },
-                                    {
-                                        key: "days",
-                                        label: "일수",
-                                    },
-                                ]}
-                                data={tableData}
-                                rowKey="id"
-                                pagination={{
-                                    currentPage,
-                                    totalPages,
-                                    onPageChange: setCurrentPage,
-                                }}
-                            />
+                                                <CartesianGrid
+                                                    strokeDasharray="3 3"
+                                                    vertical={false}
+                                                    stroke="#e5e7eb"
+                                                />
+                                                <XAxis
+                                                    dataKey="name"
+                                                    tick={{
+                                                        fontSize: 12,
+                                                        fill: "#6a7282",
+                                                    }}
+                                                    axisLine={false}
+                                                    tickLine={false}
+                                                />
+                                                <YAxis
+                                                    tick={{
+                                                        fontSize: 14,
+                                                        fill: "#99a1af",
+                                                    }}
+                                                    axisLine={false}
+                                                    tickLine={false}
+                                                    domain={[0, maxYValue]}
+                                                    ticks={Array.from(
+                                                        {
+                                                            length:
+                                                                maxYValue / 35 +
+                                                                1,
+                                                        },
+                                                        (_, i) => i * 35
+                                                    )}
+                                                />
+                                                <Tooltip
+                                                    content={<CustomTooltip />}
+                                                    cursor={{
+                                                        fill: "rgba(0,0,0,0.05)",
+                                                    }}
+                                                />
+                                                <Bar
+                                                    dataKey="대기"
+                                                    stackId="a"
+                                                    fill="#d1d5dc"
+                                                    radius={[0, 0, 0, 0]}
+                                                />
+                                                <Bar
+                                                    dataKey="이동"
+                                                    stackId="a"
+                                                    fill="#fd9a00"
+                                                    radius={[0, 0, 0, 0]}
+                                                />
+                                                <Bar
+                                                    dataKey="작업"
+                                                    stackId="a"
+                                                    fill="#51a2ff"
+                                                    radius={[4, 4, 4, 4]}
+                                                />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 상세 데이터 테이블 */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
+                                <h2 className="text-lg font-semibold text-gray-800 mb-1">
+                                    상세 데이터
+                                </h2>
+                                <p className="text-sm text-gray-500 mb-4">
+                                    클릭하여 상세 내역을 확인하세요
+                                </p>
+
+                                {loading ? (
+                                    <div className="py-8 text-center text-gray-500">
+                                        데이터 로딩 중...
+                                    </div>
+                                ) : tableData.length === 0 ? (
+                                    <div className="py-8 text-center text-gray-500">
+                                        데이터가 없습니다.
+                                    </div>
+                                ) : (
+                                    <Table
+                                        columns={[
+                                            {
+                                                key: "name",
+                                                label: "이름",
+                                            },
+                                            {
+                                                key: "work",
+                                                label: "작업",
+                                            },
+                                            {
+                                                key: "travel",
+                                                label: "이동",
+                                            },
+                                            {
+                                                key: "wait",
+                                                label: "대기",
+                                            },
+                                            {
+                                                key: "days",
+                                                label: "일수",
+                                            },
+                                        ]}
+                                        data={currentTableData}
+                                        rowKey="id"
+                                        onRowClick={handleRowClick}
+                                        pagination={
+                                            totalPages > 1
+                                                ? {
+                                                      currentPage,
+                                                      totalPages,
+                                                      onPageChange:
+                                                          setCurrentPage,
+                                                  }
+                                                : undefined
+                                        }
+                                    />
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </main>
             </div>
         </div>

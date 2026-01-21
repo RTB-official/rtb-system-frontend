@@ -1,7 +1,9 @@
+// src/components/sections/BasicInfoSection.tsx
 import SectionCard from "../ui/SectionCard";
 import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
 import Button from "../common/Button";
+import RequiredIndicator from "../ui/RequiredIndicator";
 import {
     useWorkReportStore,
     ORDER_PERSONS,
@@ -60,6 +62,7 @@ export default function BasicInfoSection() {
                         label="참관감독"
                         placeholder="그룹 선택"
                         fullWidth
+                        required
                         options={orderGroupOptions}
                         value={orderGroup}
                         onChange={setOrderGroup}
@@ -69,11 +72,13 @@ export default function BasicInfoSection() {
                             placeholder="직급 없이 이름만 기입해 주세요"
                             value={orderPerson}
                             onChange={setOrderPerson}
+                            required
                         />
                     ) : orderGroup ? (
                         <Select
                             placeholder="감독 선택"
                             fullWidth
+                            required
                             options={orderPersonOptions}
                             value={orderPerson}
                             onChange={setOrderPerson}
@@ -85,9 +90,12 @@ export default function BasicInfoSection() {
 
                 {/* 운행차량 */}
                 <div className="flex flex-col gap-2">
-                    <label className="font-medium text-[14px] md:text-[15px] text-gray-900 leading-[1.467]">
-                        운행차량 (다중 선택 가능)
-                    </label>
+                    <div className="flex items-center">
+                        <label className="font-medium text-[14px] md:text-[15px] text-gray-900 leading-[1.467]">
+                            운행차량 (다중 선택 가능)
+                        </label>
+                        <RequiredIndicator />
+                    </div>
                     <div className="flex flex-wrap gap-2">
                         {VEHICLES.map((vehicle) => (
                             <Button
@@ -123,20 +131,23 @@ export default function BasicInfoSection() {
                                 placeholder="출장지를 직접 입력"
                                 value={locationCustom}
                                 onChange={setLocationCustom}
+                                required
                             />
                         )}
                     </div>
                     <TextInput
                         label="호선명"
                         placeholder="예) 한국호"
+                        required
                         value={vessel}
                         onChange={setVessel}
+                        uppercase
                     />
                 </div>
 
                 {/* 출장목적 */}
                 <TextInput
-                    label="출장목적"
+                    label="출장 목적"
                     placeholder="선박 점검 및 정비"
                     required
                     value={subject}
@@ -145,8 +156,9 @@ export default function BasicInfoSection() {
 
                 {/* 엔진타입 */}
                 <TextInput
-                    label="엔진타입"
+                    label="엔진 타입"
                     placeholder="엔진 타입을 입력해 주세요"
+                    required
                     value={engine}
                     onChange={setEngine}
                     uppercase

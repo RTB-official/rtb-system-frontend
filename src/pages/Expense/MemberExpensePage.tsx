@@ -1,343 +1,89 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table, { TableColumn } from "../../components/common/Table";
 import ExpenseFilterBar from "../../components/common/ExpenseFilterBar";
 import Button from "../../components/common/Button";
-
-// 다운로드 아이콘 컴포넌트
-const IconDownload = () => (
-    <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        />
-        <path
-            d="M7 10l5 5 5-5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        />
-        <path
-            d="M12 15V3"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-        />
-    </svg>
-);
-
-interface EmployeeExpenseSummary {
-    id: number;
-    name: string;
-    initials: string;
-    mileage: number;
-    distance: number;
-    cardExpense: number;
-    total: number;
-    count: number;
-}
-
-interface MileageDetail {
-    id: number;
-    date: string;
-    route: string;
-    distance: number;
-    amount: number;
-    details: string;
-}
-
-interface CardExpenseDetail {
-    id: number;
-    date: string;
-    merchant: string;
-    amount: number;
-    category: string;
-    details: string;
-}
-
-// Mock 데이터: 직원별 집계
-const MOCK_DATA: EmployeeExpenseSummary[] = [
-    {
-        id: 1,
-        name: "MK 강민지",
-        initials: "MK",
-        mileage: 150000,
-        distance: 600,
-        cardExpense: 60000,
-        total: 210000,
-        count: 6,
-    },
-    {
-        id: 2,
-        name: "홍길동",
-        initials: "HG",
-        mileage: 120000,
-        distance: 480,
-        cardExpense: 80000,
-        total: 200000,
-        count: 5,
-    },
-    {
-        id: 3,
-        name: "김철수",
-        initials: "KC",
-        mileage: 180000,
-        distance: 720,
-        cardExpense: 45000,
-        total: 225000,
-        count: 8,
-    },
-    {
-        id: 4,
-        name: "이영희",
-        initials: "LY",
-        mileage: 90000,
-        distance: 360,
-        cardExpense: 100000,
-        total: 190000,
-        count: 4,
-    },
-    {
-        id: 5,
-        name: "박민수",
-        initials: "PM",
-        mileage: 200000,
-        distance: 800,
-        cardExpense: 70000,
-        total: 270000,
-        count: 10,
-    },
-    {
-        id: 6,
-        name: "정수진",
-        initials: "JS",
-        mileage: 110000,
-        distance: 440,
-        cardExpense: 55000,
-        total: 165000,
-        count: 7,
-    },
-    {
-        id: 7,
-        name: "최동현",
-        initials: "CD",
-        mileage: 160000,
-        distance: 640,
-        cardExpense: 90000,
-        total: 250000,
-        count: 9,
-    },
-    {
-        id: 8,
-        name: "한지은",
-        initials: "HJ",
-        mileage: 95000,
-        distance: 380,
-        cardExpense: 65000,
-        total: 160000,
-        count: 5,
-    },
-    {
-        id: 9,
-        name: "윤태호",
-        initials: "YT",
-        mileage: 140000,
-        distance: 560,
-        cardExpense: 75000,
-        total: 215000,
-        count: 6,
-    },
-    {
-        id: 10,
-        name: "장미라",
-        initials: "JM",
-        mileage: 130000,
-        distance: 520,
-        cardExpense: 85000,
-        total: 215000,
-        count: 7,
-    },
-];
-
-// Mock 데이터: 마일리지 내역
-const MOCK_MILEAGE_DETAILS: Record<number, MileageDetail[]> = {
-    1: [
-        {
-            id: 1,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "통행료 1000원 포함",
-        },
-        {
-            id: 2,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "S oil 레포트작성",
-        },
-        {
-            id: 3,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선작업통행료포함",
-        },
-        {
-            id: 4,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선 작업 통행료 포함",
-        },
-        {
-            id: 5,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선 작업 통행료 포함",
-        },
-        {
-            id: 6,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선 작업 통행료 포함",
-        },
-        {
-            id: 7,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선 작업 통행료 포함",
-        },
-        {
-            id: 8,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선 작업 통행료 포함",
-        },
-        {
-            id: 9,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선 작업 통행료 포함",
-        },
-        {
-            id: 10,
-            date: "12월 29일 (월)",
-            route: "공장 → 자택",
-            distance: 30,
-            amount: 20120,
-            details: "SH8218 승선 작업 통행료 포함",
-        },
-    ],
-    2: [
-        {
-            id: 1,
-            date: "12월 28일 (일)",
-            route: "회사 → 고객사",
-            distance: 45,
-            amount: 30180,
-            details: "출장 통행료 포함",
-        },
-        {
-            id: 2,
-            date: "12월 27일 (토)",
-            route: "자택 → 회사",
-            distance: 25,
-            amount: 16760,
-            details: "주말 근무",
-        },
-    ],
-    3: [
-        {
-            id: 1,
-            date: "12월 29일 (월)",
-            route: "공장 → 현장",
-            distance: 50,
-            amount: 33520,
-            details: "현장 점검",
-        },
-    ],
-};
-
-// Mock 데이터: 카드 지출 내역
-const MOCK_CARD_DETAILS: Record<number, CardExpenseDetail[]> = {
-    1: [
-        {
-            id: 1,
-            date: "12월 29일 (월)",
-            merchant: "GS25",
-            amount: 15000,
-            category: "식비",
-            details: "점심 식사",
-        },
-        {
-            id: 2,
-            date: "12월 29일 (월)",
-            merchant: "주유소",
-            amount: 45000,
-            category: "교통비",
-            details: "주유",
-        },
-    ],
-    2: [
-        {
-            id: 1,
-            date: "12월 28일 (일)",
-            merchant: "맥도날드",
-            amount: 12000,
-            category: "식비",
-            details: "점심 식사",
-        },
-    ],
-    3: [
-        {
-            id: 1,
-            date: "12월 29일 (월)",
-            merchant: "CU",
-            amount: 8000,
-            category: "식비",
-            details: "간식",
-        },
-    ],
-};
+import {
+    getAllUsersExpenseSummary,
+    getUserMileageDetails,
+    getUserCardExpenseDetails,
+    type EmployeeExpenseSummary,
+    type EmployeeMileageDetail,
+    type EmployeeCardExpenseDetail,
+} from "../../lib/personalExpenseApi";
+import { TableSkeleton } from "./components/TableSkeleton";
+import { DetailSkeleton } from "./components/DetailSkeleton";
+import EmployeeDetailView from "./components/EmployeeDetailView";
+import BaseModal from "../../components/ui/BaseModal";
+import EmptyValueIndicator from "./components/EmptyValueIndicator";
+import Avatar from "../../components/common/Avatar";
+import { supabase } from "../../lib/supabase";
 
 export default function MemberExpensePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [year, setYear] = useState("2025년");
-    const [month, setMonth] = useState("12월");
+    const currentDate = new Date();
+    const [year, setYear] = useState(`${currentDate.getFullYear()}년`);
+    const [month, setMonth] = useState(`${currentDate.getMonth() + 1}월`);
     const [user, setUser] = useState("전체");
     const [currentPage, setCurrentPage] = useState(1);
-    const [selectedEmployeeId, setSelectedEmployeeId] = useState<number | null>(
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
         null
     );
     const [activeTab, setActiveTab] = useState<"mileage" | "card">("mileage");
+    const [expandedRowKeys, setExpandedRowKeys] = useState<(string | number)[]>(
+        []
+    );
+    const [expandedRowDetails, setExpandedRowDetails] = useState<
+        Map<
+            string,
+            {
+                mileage: EmployeeMileageDetail[];
+                card: EmployeeCardExpenseDetail[];
+            }
+        >
+    >(new Map());
+    const [expandedRowActiveTab, setExpandedRowActiveTab] = useState<
+        Map<string, "mileage" | "card">
+    >(new Map());
     const itemsPerPage = 10;
+
+    const [loading, setLoading] = useState(false);
+    const [expenseSummary, setExpenseSummary] = useState<
+        EmployeeExpenseSummary[]
+    >([]);
+    const [mileageDetails, setMileageDetails] = useState<
+        EmployeeMileageDetail[]
+    >([]);
+    const [cardDetails, setCardDetails] = useState<EmployeeCardExpenseDetail[]>(
+        []
+    );
+    const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
+    const [employeeProfiles, setEmployeeProfiles] = useState<
+        Map<string, { email: string | null; position: string | null }>
+    >(() => {
+        // ✅ 초기 렌더링 시 localStorage에서 캐시된 프로필 정보 로드 (깜빡임 방지)
+        try {
+            const cached = localStorage.getItem("employeeProfiles_cache");
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                const profileMap = new Map<
+                    string,
+                    { email: string | null; position: string | null }
+                >();
+                Object.entries(parsed).forEach(([name, profile]: [string, any]) => {
+                    profileMap.set(name, {
+                        email: profile.email || null,
+                        position: profile.position || null,
+                    });
+                });
+                return profileMap;
+            }
+        } catch {
+            // 캐시 파싱 실패 시 빈 Map 반환
+        }
+        return new Map();
+    });
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
     useEffect(() => {
@@ -347,18 +93,135 @@ export default function MemberExpensePage() {
         };
     }, [sidebarOpen]);
 
+    // 데이터 로드
+    useEffect(() => {
+        const loadData = async () => {
+            setLoading(true);
+            try {
+                const yearNum = parseInt(year.replace("년", ""));
+                const monthNum = parseInt(month.replace("월", "")) - 1;
+
+                const filter: { year: number; month: number; userId?: string } =
+                    {
+                        year: yearNum,
+                        month: monthNum,
+                    };
+
+                if (user !== "전체") {
+                    // 선택한 사용자 찾기
+                    const selectedUser = expenseSummary.find((emp) => {
+                        const nameWithoutInitials = emp.name.replace(
+                            /^[A-Z]{2,3} /,
+                            ""
+                        );
+                        return (
+                            nameWithoutInitials === user || emp.name === user
+                        );
+                    });
+                    if (selectedUser) {
+                        filter.userId = selectedUser.id;
+                    }
+                }
+
+                const summary = await getAllUsersExpenseSummary(filter);
+                setExpenseSummary(summary);
+
+                // 직원 프로필 정보 조회 (email, position)
+                const employeeNames = [...new Set(summary.map((emp) => emp.name))];
+                const { data: profiles, error: profilesError } = await supabase
+                    .from("profiles")
+                    .select("name, email, position")
+                    .in("name", employeeNames);
+
+                if (profilesError) {
+                    console.error("프로필 조회 실패:", profilesError);
+                }
+
+                const profileMap = new Map<
+                    string,
+                    { email: string | null; position: string | null }
+                >();
+                (profiles || []).forEach((profile: any) => {
+                    profileMap.set(profile.name, {
+                        email: profile.email || null,
+                        position: profile.position || null,
+                    });
+                });
+                
+                // ✅ 프로필 정보를 localStorage에 캐시 (다음 로딩 시 깜빡임 방지)
+                try {
+                    const cacheObject: Record<
+                        string,
+                        { email: string | null; position: string | null }
+                    > = {};
+                    profileMap.forEach((profile, name) => {
+                        cacheObject[name] = profile;
+                    });
+                    localStorage.setItem(
+                        "employeeProfiles_cache",
+                        JSON.stringify(cacheObject)
+                    );
+                } catch {
+                    // localStorage 저장 실패 시 무시
+                }
+                
+                setEmployeeProfiles(profileMap);
+            } catch (error) {
+                console.error("데이터 로드 실패:", error);
+                alert("데이터를 불러오는데 실패했습니다.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadData();
+    }, [year, month]); // user 제외 - user 필터는 클라이언트에서 처리
+
+    // 선택한 사용자의 상세 내역 로드
+    useEffect(() => {
+        if (!selectedEmployeeId) {
+            setMileageDetails([]);
+            setCardDetails([]);
+            return;
+        }
+
+        const loadDetails = async () => {
+            try {
+                const yearNum = parseInt(year.replace("년", ""));
+                const monthNum = parseInt(month.replace("월", "")) - 1;
+
+                const [mileageData, cardData] = await Promise.all([
+                    getUserMileageDetails(selectedEmployeeId, {
+                        year: yearNum,
+                        month: monthNum,
+                    }),
+                    getUserCardExpenseDetails(selectedEmployeeId, {
+                        year: yearNum,
+                        month: monthNum,
+                    }),
+                ]);
+
+                setMileageDetails(mileageData);
+                setCardDetails(cardData);
+            } catch (error) {
+                console.error("상세 내역 로드 실패:", error);
+                alert("상세 내역을 불러오는데 실패했습니다.");
+            }
+        };
+
+        loadDetails();
+    }, [selectedEmployeeId, year, month]);
+
     // 사용자 필터링
-    const filteredData =
-        user === "전체"
-            ? MOCK_DATA
-            : MOCK_DATA.filter((emp) => {
-                  // 이름에서 이니셜 제거 후 비교
-                  const nameWithoutInitials = emp.name.replace(
-                      /^[A-Z]{2,3} /,
-                      ""
-                  );
-                  return nameWithoutInitials === user || emp.name === user;
-              });
+    const filteredData = useMemo(() => {
+        if (user === "전체") {
+            return expenseSummary;
+        }
+        return expenseSummary.filter((emp) => {
+            const nameWithoutInitials = emp.name.replace(/^[A-Z]{2,3} /, "");
+            return nameWithoutInitials === user || emp.name === user;
+        });
+    }, [expenseSummary, user]);
 
     // 페이지네이션 계산
     const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -367,20 +230,22 @@ export default function MemberExpensePage() {
     const currentData = filteredData.slice(startIndex, endIndex);
 
     // 사용자 옵션 생성 (중복 제거)
-    const userOptions = [
-        { value: "전체", label: "전체" },
-        ...Array.from(
-            new Set(
-                MOCK_DATA.map((emp) => {
-                    const nameWithoutInitials = emp.name.replace(
-                        /^[A-Z]{2,3} /,
-                        ""
-                    );
-                    return nameWithoutInitials;
-                })
-            )
-        ).map((name) => ({ value: name, label: name })),
-    ];
+    const userOptions = useMemo(() => {
+        return [
+            { value: "전체", label: "전체" },
+            ...Array.from(
+                new Set(
+                    expenseSummary.map((emp) => {
+                        const nameWithoutInitials = emp.name.replace(
+                            /^[A-Z]{2,3} /,
+                            ""
+                        );
+                        return nameWithoutInitials;
+                    })
+                )
+            ).map((name) => ({ value: name, label: name })),
+        ];
+    }, [expenseSummary]);
 
     // 금액 포맷팅
     const formatCurrency = (amount: number) => {
@@ -388,7 +253,7 @@ export default function MemberExpensePage() {
     };
 
     // 마일리지 내역 테이블 컬럼
-    const mileageColumns: TableColumn<MileageDetail>[] = [
+    const mileageColumns: TableColumn<EmployeeMileageDetail>[] = [
         {
             key: "date",
             label: "날짜",
@@ -410,18 +275,20 @@ export default function MemberExpensePage() {
         {
             key: "details",
             label: "상세 내용",
+            render: (value) => {
+                if (value && value.trim()) {
+                    return <span className="text-gray-700">{value}</span>;
+                }
+                return <EmptyValueIndicator />;
+            },
         },
     ];
 
     // 카드 지출 내역 테이블 컬럼
-    const cardColumns: TableColumn<CardExpenseDetail>[] = [
+    const cardColumns: TableColumn<EmployeeCardExpenseDetail>[] = [
         {
             key: "date",
             label: "날짜",
-        },
-        {
-            key: "merchant",
-            label: "가맹점",
         },
         {
             key: "category",
@@ -435,21 +302,99 @@ export default function MemberExpensePage() {
         {
             key: "details",
             label: "상세 내용",
+            render: (value) => {
+                if (value && value.trim()) {
+                    return <span className="text-gray-700">{value}</span>;
+                }
+                return <EmptyValueIndicator />;
+            },
+        },
+        {
+            key: "receipt_path",
+            label: "영수증",
+            render: (_value, row) => {
+                if (row.receipt_path) {
+                    return (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedReceipt(row.receipt_path || null);
+                            }}
+                            className="text-blue-500 underline cursor-pointer hover:text-blue-700"
+                        >
+                            영수증보기
+                        </button>
+                    );
+                }
+                return <EmptyValueIndicator />;
+            },
         },
     ];
+
+    // 드롭다운 행의 상세 데이터 로드
+    const loadExpandedRowDetails = async (rowId: string) => {
+        try {
+            const yearNum = parseInt(year.replace("년", ""));
+            const monthNum = parseInt(month.replace("월", "")) - 1;
+
+            const [mileageData, cardData] = await Promise.all([
+                getUserMileageDetails(rowId, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+                getUserCardExpenseDetails(rowId, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+            ]);
+
+            setExpandedRowDetails((prev) => {
+                const newMap = new Map(prev);
+                newMap.set(rowId, { mileage: mileageData, card: cardData });
+                return newMap;
+            });
+
+            setExpandedRowActiveTab((prev) => {
+                const newMap = new Map(prev);
+                if (!newMap.has(rowId)) {
+                    newMap.set(rowId, "mileage");
+                }
+                return newMap;
+            });
+        } catch (error) {
+            console.error("드롭다운 상세 내역 로드 실패:", error);
+        }
+    };
+
+    // 행 확장/축소 토글
+    const toggleRowExpand = (rowId: string) => {
+        setExpandedRowKeys((prev) => {
+            if (prev.includes(rowId)) {
+                return prev.filter((id) => id !== rowId);
+            } else {
+                loadExpandedRowDetails(rowId);
+                return [...prev, rowId];
+            }
+        });
+    };
 
     const columns: TableColumn<EmployeeExpenseSummary>[] = [
         {
             key: "name",
             label: "직원 명",
-            render: (_, row) => (
-                <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-100 text-[11px] text-orange-600 font-semibold">
-                        {row.initials}
-                    </span>
-                    <span className="text-gray-900">{row.name}</span>
-                </div>
-            ),
+            render: (_, row) => {
+                const profile = employeeProfiles.get(row.name);
+                return (
+                    <div className="flex items-center gap-2">
+                        <Avatar
+                            email={profile?.email || null}
+                            size={24}
+                            position={profile?.position || null}
+                        />
+                        <span className="text-gray-900">{row.name}</span>
+                    </div>
+                );
+            },
         },
         {
             key: "mileage",
@@ -479,6 +424,12 @@ export default function MemberExpensePage() {
             render: (value) => `${value}건`,
         },
     ];
+
+    // 선택한 사용자 정보
+    const selectedEmployee = useMemo(() => {
+        if (!selectedEmployeeId) return null;
+        return expenseSummary.find((emp) => emp.id === selectedEmployeeId);
+    }, [expenseSummary, selectedEmployeeId]);
 
     return (
         <div className="flex h-screen bg-white overflow-hidden">
@@ -526,7 +477,7 @@ export default function MemberExpensePage() {
                                 setCurrentPage(1); // 사용자 변경 시 첫 페이지로
                                 // 사용자 선택 시 해당 사용자 ID 찾기
                                 if (selectedUser !== "전체") {
-                                    const selectedEmp = MOCK_DATA.find(
+                                    const selectedEmp = expenseSummary.find(
                                         (emp) => {
                                             const nameWithoutInitials =
                                                 emp.name.replace(
@@ -552,104 +503,39 @@ export default function MemberExpensePage() {
                         />
 
                         {/* 사용자 한 명 선택 시 상세 내역 표시 */}
-                        {user !== "전체" && selectedEmployeeId ? (
-                            (() => {
-                                const selectedEmployee = MOCK_DATA.find(
-                                    (emp) => emp.id === selectedEmployeeId
-                                );
-                                if (!selectedEmployee) return null;
-
-                                const mileageDetails =
-                                    MOCK_MILEAGE_DETAILS[selectedEmployeeId] ||
-                                    [];
-                                const cardDetails =
-                                    MOCK_CARD_DETAILS[selectedEmployeeId] || [];
-
-                                // 이름에서 "MK " 제거
-                                const displayName =
-                                    selectedEmployee.name.replace(
+                        {user !== "전체" &&
+                        selectedEmployeeId &&
+                        selectedEmployee ? (
+                            loading &&
+                            mileageDetails.length === 0 &&
+                            cardDetails.length === 0 ? (
+                                <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                    <DetailSkeleton />
+                                </div>
+                            ) : (
+                                <EmployeeDetailView
+                                    employeeName={selectedEmployee.name.replace(
                                         /^[A-Z]{2,3} /,
                                         ""
-                                    );
-
-                                return (
-                                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 lg:p-6">
-                                        {/* 헤더 */}
-                                        <div className="flex items-center justify-between mb-6">
-                                            <div>
-                                                <h2 className="text-lg font-semibold text-gray-800">
-                                                    {displayName}님의 청구서
-                                                </h2>
-                                                <p className="text-sm text-gray-500 mt-1">
-                                                    {year} {month}
-                                                </p>
-                                            </div>
-                                            <Button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    alert("PDF 다운로드");
-                                                }}
-                                                variant="primary"
-                                                size="sm"
-                                                icon={<IconDownload />}
-                                                className="bg-gray-800 hover:bg-gray-900"
-                                            >
-                                                PDF 다운로드
-                                            </Button>
-                                        </div>
-
-                                        {/* 탭 */}
-                                        <div className="flex gap-1 border-b border-gray-200 mb-6">
-                                            <button
-                                                onClick={() =>
-                                                    setActiveTab("mileage")
-                                                }
-                                                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                    activeTab === "mileage"
-                                                        ? "text-gray-900 border-b-2 border-gray-900"
-                                                        : "text-gray-500 hover:text-gray-700"
-                                                }`}
-                                            >
-                                                마일리지 내역
-                                            </button>
-                                            <button
-                                                onClick={() =>
-                                                    setActiveTab("card")
-                                                }
-                                                className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                    activeTab === "card"
-                                                        ? "text-gray-900 border-b-2 border-gray-900"
-                                                        : "text-gray-500 hover:text-gray-700"
-                                                }`}
-                                            >
-                                                카드 지출 내역
-                                            </button>
-                                        </div>
-
-                                        {/* 마일리지 내역 테이블 */}
-                                        {activeTab === "mileage" && (
-                                            <Table
-                                                columns={mileageColumns}
-                                                data={mileageDetails}
-                                                rowKey="id"
-                                                emptyText="마일리지 내역이 없습니다."
-                                                className="border-gray-200"
-                                            />
-                                        )}
-
-                                        {/* 카드 지출 내역 테이블 */}
-                                        {activeTab === "card" && (
-                                            <Table
-                                                columns={cardColumns}
-                                                data={cardDetails}
-                                                rowKey="id"
-                                                emptyText="카드 지출 내역이 없습니다."
-                                                className="border-gray-200"
-                                            />
-                                        )}
-                                    </div>
-                                );
-                            })()
+                                    )}
+                                    year={year}
+                                    month={month}
+                                    mileageDetails={mileageDetails}
+                                    cardDetails={cardDetails}
+                                    activeTab={activeTab}
+                                    onTabChange={setActiveTab}
+                                    mileageColumns={mileageColumns}
+                                    cardColumns={cardColumns}
+                                />
+                            )
+                        ) : loading && expenseSummary.length === 0 ? (
+                            <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                                <div className="animate-pulse space-y-6">
+                                    <div className="h-7 bg-gray-100 rounded w-40 mb-2"></div>
+                                    <div className="h-5 bg-gray-100 rounded w-80 mb-8"></div>
+                                    <TableSkeleton rows={5} />
+                                </div>
+                            </div>
                         ) : (
                             /* 전체 선택 시 직원별 집계 테이블 표시 */
                             <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
@@ -666,210 +552,167 @@ export default function MemberExpensePage() {
                                     data={currentData}
                                     rowKey="id"
                                     onRowClick={(row) => {
-                                        setSelectedEmployeeId(
-                                            selectedEmployeeId === row.id
-                                                ? null
-                                                : row.id
-                                        );
-                                        setActiveTab("mileage");
+                                        toggleRowExpand(row.id);
                                     }}
-                                    expandedRowKeys={
-                                        selectedEmployeeId
-                                            ? [selectedEmployeeId]
-                                            : []
-                                    }
                                     expandableRowRender={(row) => {
-                                        if (selectedEmployeeId !== row.id)
-                                            return null;
-
-                                        const selectedEmployee = MOCK_DATA.find(
-                                            (emp) =>
-                                                emp.id === selectedEmployeeId
+                                        const details = expandedRowDetails.get(
+                                            row.id
                                         );
-                                        if (!selectedEmployee) return null;
+                                        const rowTab =
+                                            expandedRowActiveTab.get(row.id) ||
+                                            "mileage";
 
-                                        const mileageDetails =
-                                            MOCK_MILEAGE_DETAILS[
-                                                selectedEmployeeId
-                                            ] || [];
-                                        const cardDetails =
-                                            MOCK_CARD_DETAILS[
-                                                selectedEmployeeId
-                                            ] || [];
-
-                                        // 이름에서 "MK " 제거
-                                        const displayName =
-                                            selectedEmployee.name.replace(
-                                                /^[A-Z]{2,3} /,
-                                                ""
+                                        if (!details) {
+                                            return (
+                                                <div className="p-6">
+                                                    <TableSkeleton rows={3} />
+                                                </div>
                                             );
+                                        }
 
                                         return (
-                                            <div className="p-4 lg:p-6 bg-gray-50">
-                                                {/* 헤더 */}
-                                                <div className="flex items-center justify-between mb-6">
-                                                    <div>
-                                                        <h2 className="text-lg font-semibold text-gray-800">
-                                                            {displayName}님의
-                                                            청구서
-                                                        </h2>
-                                                        <p className="text-sm text-gray-500 mt-1">
-                                                            {year} {month}
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            alert(
-                                                                "PDF 다운로드"
-                                                            );
-                                                        }}
-                                                        className="px-4 py-2 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"
-                                                    >
-                                                        <svg
-                                                            width="16"
-                                                            height="16"
-                                                            viewBox="0 0 24 24"
-                                                            fill="none"
-                                                            xmlns="http://www.w3.org/2000/svg"
-                                                        >
-                                                            <path
-                                                                d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"
-                                                                stroke="currentColor"
-                                                                strokeWidth="1.5"
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                            />
-                                                            <path
-                                                                d="M7 10l5 5 5-5"
-                                                                stroke="currentColor"
-                                                                strokeWidth="1.5"
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                            />
-                                                            <path
-                                                                d="M12 15V3"
-                                                                stroke="currentColor"
-                                                                strokeWidth="1.5"
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                            />
-                                                        </svg>
-                                                        PDF 다운로드
-                                                    </button>
-                                                </div>
-
-                                                {/* 탭 */}
-                                                <div className="flex gap-1 border-b border-gray-200 mb-6">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setActiveTab(
-                                                                "mileage"
-                                                            );
-                                                        }}
-                                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                            activeTab ===
-                                                            "mileage"
-                                                                ? "text-gray-900 border-b-2 border-gray-900"
-                                                                : "text-gray-500 hover:text-gray-700"
-                                                        }`}
-                                                    >
-                                                        마일리지 내역
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setActiveTab(
-                                                                "card"
-                                                            );
-                                                        }}
-                                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                                            activeTab === "card"
-                                                                ? "text-gray-900 border-b-2 border-gray-900"
-                                                                : "text-gray-500 hover:text-gray-700"
-                                                        }`}
-                                                    >
-                                                        카드 지출 내역
-                                                    </button>
-                                                </div>
-
-                                                {/* 마일리지 내역 테이블 */}
-                                                {activeTab === "mileage" && (
-                                                    <Table
-                                                        columns={mileageColumns}
-                                                        data={mileageDetails}
-                                                        rowKey="id"
-                                                        emptyText="마일리지 내역이 없습니다."
-                                                        className="border-gray-200"
-                                                    />
+                                            <EmployeeDetailView
+                                                employeeName={row.name.replace(
+                                                    /^[A-Z]{2,3} /,
+                                                    ""
                                                 )}
-
-                                                {/* 카드 지출 내역 테이블 */}
-                                                {activeTab === "card" && (
-                                                    <Table
-                                                        columns={cardColumns}
-                                                        data={cardDetails}
-                                                        rowKey="id"
-                                                        emptyText="카드 지출 내역이 없습니다."
-                                                        className="border-gray-200"
-                                                    />
-                                                )}
-                                            </div>
+                                                year={year}
+                                                month={month}
+                                                mileageDetails={details.mileage}
+                                                cardDetails={details.card}
+                                                activeTab={rowTab}
+                                                onTabChange={(tab) => {
+                                                    setExpandedRowActiveTab(
+                                                        (prev) => {
+                                                            const newMap =
+                                                                new Map(prev);
+                                                            newMap.set(
+                                                                row.id,
+                                                                tab
+                                                            );
+                                                            return newMap;
+                                                        }
+                                                    );
+                                                }}
+                                                mileageColumns={mileageColumns}
+                                                cardColumns={cardColumns}
+                                                variant="dropdown"
+                                                onHeaderClick={() => {
+                                                    const employeeNameWithoutInitials =
+                                                        row.name.replace(
+                                                            /^[A-Z]{2,3} /,
+                                                            ""
+                                                        );
+                                                    setSelectedEmployeeId(
+                                                        row.id
+                                                    );
+                                                    setUser(
+                                                        employeeNameWithoutInitials
+                                                    );
+                                                    setActiveTab("mileage");
+                                                    setExpandedRowKeys((prev) =>
+                                                        prev.filter(
+                                                            (id) =>
+                                                                id !== row.id
+                                                        )
+                                                    );
+                                                }}
+                                            />
                                         );
                                     }}
+                                    expandedRowKeys={expandedRowKeys}
+                                    emptyText="데이터가 없습니다."
+                                    className="border-gray-200"
                                 />
 
                                 {/* 페이지네이션 */}
-                                <div className="flex items-center justify-center gap-2 mt-4 text-sm text-gray-600">
-                                    <button
-                                        onClick={() =>
-                                            setCurrentPage((prev) =>
-                                                Math.max(1, prev - 1)
-                                            )
-                                        }
-                                        disabled={currentPage === 1}
-                                        className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        &lt;
-                                    </button>
-                                    <div className="flex items-center gap-1">
-                                        {Array.from(
-                                            { length: totalPages },
-                                            (_, i) => i + 1
-                                        ).map((page) => (
-                                            <button
-                                                key={page}
+                                {totalPages > 1 && (
+                                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                                        <div className="text-sm text-gray-500">
+                                            총 {filteredData.length}명 중{" "}
+                                            {startIndex + 1}-
+                                            {Math.min(
+                                                endIndex,
+                                                filteredData.length
+                                            )}
+                                            명 표시
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
                                                 onClick={() =>
-                                                    setCurrentPage(page)
+                                                    setCurrentPage((p) =>
+                                                        Math.max(1, p - 1)
+                                                    )
                                                 }
-                                                className={`w-8 h-8 flex items-center justify-center rounded-full font-medium ${
-                                                    currentPage === page
-                                                        ? "bg-gray-100 text-gray-800"
-                                                        : "hover:bg-gray-100"
-                                                }`}
+                                                disabled={currentPage === 1}
                                             >
-                                                {page}
-                                            </button>
-                                        ))}
+                                                이전
+                                            </Button>
+                                            <div className="flex items-center gap-1">
+                                                {Array.from(
+                                                    { length: totalPages },
+                                                    (_, i) => i + 1
+                                                ).map((page) => (
+                                                    <button
+                                                        key={page}
+                                                        onClick={() =>
+                                                            setCurrentPage(page)
+                                                        }
+                                                        className={`px-3 py-1 text-sm rounded ${
+                                                            currentPage === page
+                                                                ? "bg-gray-900 text-white"
+                                                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                        }`}
+                                                    >
+                                                        {page}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() =>
+                                                    setCurrentPage((p) =>
+                                                        Math.min(
+                                                            totalPages,
+                                                            p + 1
+                                                        )
+                                                    )
+                                                }
+                                                disabled={
+                                                    currentPage === totalPages
+                                                }
+                                            >
+                                                다음
+                                            </Button>
+                                        </div>
                                     </div>
-                                    <button
-                                        onClick={() =>
-                                            setCurrentPage((prev) =>
-                                                Math.min(totalPages, prev + 1)
-                                            )
-                                        }
-                                        disabled={currentPage === totalPages}
-                                        className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        &gt;
-                                    </button>
-                                </div>
+                                )}
                             </div>
                         )}
                     </div>
                 </div>
             </div>
+
+            {/* 영수증 모달 */}
+            {selectedReceipt && (
+                <BaseModal
+                    isOpen={!!selectedReceipt}
+                    onClose={() => setSelectedReceipt(null)}
+                    title="영수증 원본"
+                    maxWidth="max-w-[90vw]"
+                >
+                    <div className="flex justify-center bg-gray-50 rounded-xl overflow-hidden mb-2">
+                        <img
+                            src={selectedReceipt}
+                            alt="receipt full"
+                            className="max-w-full h-auto max-h-[70vh] object-contain"
+                        />
+                    </div>
+                </BaseModal>
+            )}
         </div>
     );
 }

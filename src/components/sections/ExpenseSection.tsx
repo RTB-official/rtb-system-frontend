@@ -3,6 +3,7 @@ import SectionCard from "../ui/SectionCard";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
 import TextInput from "../ui/TextInput";
+import RequiredIndicator from "../ui/RequiredIndicator";
 import {
     useWorkReportStore,
     formatCurrency,
@@ -30,6 +31,14 @@ export default function ExpenseSection() {
     const [typeCustom, setTypeCustom] = useState("");
     const [detail, setDetail] = useState("");
     const [amount, setAmount] = useState("");
+
+    // 에러 상태
+    const [errors, setErrors] = useState<{
+        date?: string;
+        type?: string;
+        detail?: string;
+        amount?: string;
+    }>({});
 
     // 엔트리에서 날짜 추출
     const entryDates = useMemo(() => {
@@ -63,15 +72,27 @@ export default function ExpenseSection() {
         const finalDate = date || entryDates[0] || "";
         const finalType = type === "OTHER" ? typeCustom : type;
 
-        if (!finalDate || !finalType || !detail || parseCurrency(amount) <= 0) {
-            const missing = [];
-            if (!finalDate) missing.push("날짜");
-            if (!finalType) missing.push("분류");
-            if (!detail) missing.push("상세내용");
-            if (parseCurrency(amount) <= 0) missing.push("금액");
-            alert("다음 항목을 확인해 주세요: " + missing.join(", "));
+        // 유효성 검사
+        const newErrors: typeof errors = {};
+        if (!finalDate) {
+            newErrors.date = "날짜를 선택해주세요";
+        }
+        if (!finalType) {
+            newErrors.type = "분류를 선택해주세요";
+        }
+        if (!detail) {
+            newErrors.detail = "상세내용을 입력해주세요";
+        }
+        if (parseCurrency(amount) <= 0) {
+            newErrors.amount = "금액을 입력해주세요";
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
             return;
         }
+
+        setErrors({});
 
         if (editingExpenseId) {
             updateExpense(editingExpenseId, {
@@ -94,6 +115,13 @@ export default function ExpenseSection() {
         setTypeCustom("");
         setDetail("");
         setAmount("");
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handleAddExpense();
+        }
     };
 
     const handleEdit = (expense: ExpenseEntry) => {
@@ -119,58 +147,70 @@ export default function ExpenseSection() {
         setDetail(workers.join(", "));
     };
 
+    // 날짜 포맷팅 함수 (YYYY-MM-DD -> M월 D일)
+    const formatDate = (dateString: string) => {
+        if (!dateString) return "";
+        const date = new Date(dateString);
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        return `${month}월 ${day}일`;
+    };
+
     return (
         <SectionCard
             title="지출 내역"
             headerContent={
-                <div className="flex flex-col items-end">
-                    <span className="font-medium text-[14px] text-gray-400">
-                        총 {expenses.length}건
-                    </span>
-                    <span className="font-semibold text-[18px] md:text-[20px] text-gray-700">
-                        {formatCurrency(total)}원
-                    </span>
-                </div>
+                <span className="font-medium text-[14px] text-gray-400">
+                    총 {expenses.length}건
+                </span>
             }
         >
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2 -mt-4">
                 {/* 입력 폼 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-2">
                     {/* 날짜 */}
                     <div className="flex flex-col gap-2">
                         <label className="font-medium text-[14px] text-gray-900">
                             날짜
+                            <RequiredIndicator />
                         </label>
+                        <DatePicker
+                            value={date}
+                            onChange={(val) => {
+                                setDate(val);
+                                if (errors.date) {
+                                    setErrors((prev) => ({
+                                        ...prev,
+                                        date: undefined,
+                                    }));
+                                }
+                            }}
+                            placeholder="날짜 선택"
+                            error={errors.date}
+                        />
                         {entryDates.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mb-2">
+                            <div className="flex flex-wrap gap-2">
                                 {entryDates.map((d) => (
                                     <Button
                                         key={d}
-                                        size="lg"
+                                        size="sm"
                                         variant={
                                             date === d ? "primary" : "outline"
                                         }
                                         onClick={() => setDate(d)}
                                     >
-                                        {new Date(d).toLocaleDateString(
-                                            "ko-KR",
-                                            { month: "numeric", day: "numeric" }
-                                        )}
+                                        {formatDate(d)}
                                     </Button>
                                 ))}
                             </div>
                         )}
-                        <DatePicker
-                            value={date}
-                            onChange={setDate}
-                            placeholder="날짜 선택"
-                        />
                     </div>
 
                     {/* 분류 */}
                     <div className="flex flex-col gap-2">
                         <label className="font-medium text-[14px] text-gray-900">
                             분류
+                            <RequiredIndicator />
                         </label>
                         <div className="flex flex-wrap gap-2">
                             {EXPENSE_TYPES.map((t) => (
@@ -181,6 +221,12 @@ export default function ExpenseSection() {
                                     onClick={() => {
                                         setType(t);
                                         setTypeCustom("");
+                                        if (errors.type) {
+                                            setErrors((prev) => ({
+                                                ...prev,
+                                                type: undefined,
+                                            }));
+                                        }
                                     }}
                                 >
                                     {t}
@@ -191,7 +237,15 @@ export default function ExpenseSection() {
                                 variant={
                                     type === "OTHER" ? "primary" : "outline"
                                 }
-                                onClick={() => setType("OTHER")}
+                                onClick={() => {
+                                    setType("OTHER");
+                                    if (errors.type) {
+                                        setErrors((prev) => ({
+                                            ...prev,
+                                            type: undefined,
+                                        }));
+                                    }
+                                }}
                             >
                                 기타
                             </Button>
@@ -200,64 +254,101 @@ export default function ExpenseSection() {
                             <TextInput
                                 placeholder="분류를 직접 입력"
                                 value={typeCustom}
-                                onChange={setTypeCustom}
+                                onChange={(val) => {
+                                    setTypeCustom(val);
+                                    if (errors.type) {
+                                        setErrors((prev) => ({
+                                            ...prev,
+                                            type: undefined,
+                                        }));
+                                    }
+                                }}
+                                onKeyDown={handleKeyDown}
                             />
+                        )}
+                        {errors.type && (
+                            <p className="text-red-500 text-[12px]">
+                                {errors.type}
+                            </p>
                         )}
                     </div>
 
                     {/* 상세내용 */}
-                    <div className="flex flex-col gap-2">
-                        <TextInput
-                            label="상세내용"
-                            placeholder="상세내용 입력"
-                            value={detail}
-                            onChange={setDetail}
-                        />
-                    </div>
+                    <TextInput
+                        label="상세내용"
+                        required
+                        placeholder="상세내용 입력"
+                        value={detail}
+                        onChange={(val) => {
+                            setDetail(val);
+                            if (errors.detail) {
+                                setErrors((prev) => ({
+                                    ...prev,
+                                    detail: undefined,
+                                }));
+                            }
+                        }}
+                        onKeyDown={handleKeyDown}
+                        error={errors.detail}
+                    />
 
                     {/* 금액 */}
-                    <div className="flex flex-col gap-2">
-                        <TextInput
-                            label="금액"
-                            placeholder="0"
-                            value={amount}
-                            onChange={handleAmountChange}
-                            icon={<span className="text-gray-500">원</span>}
-                        />
-                    </div>
+                    <TextInput
+                        label="금액"
+                        required
+                        placeholder="0"
+                        value={amount}
+                        onChange={(val) => {
+                            handleAmountChange(val);
+                            if (errors.amount) {
+                                setErrors((prev) => ({
+                                    ...prev,
+                                    amount: undefined,
+                                }));
+                            }
+                        }}
+                        onKeyDown={handleKeyDown}
+                        icon={<span className="text-gray-500">원</span>}
+                        error={errors.amount}
+                    />
                 </div>
 
                 {/* 버튼들 */}
-                <div className="flex flex-wrap gap-2">
-                    <Button
-                        onClick={handleAddAllPersons}
-                        variant="outline"
-                        size="md"
-                    >
-                        인원 모두추가
-                    </Button>
-                    <Button
-                        onClick={handleAddExpense}
-                        variant="primary"
-                        size="md"
-                        className="px-6"
-                    >
-                        {editingExpenseId ? "수정 저장" : "추가"}
-                    </Button>
-                    {editingExpenseId && (
+                <div className="flex flex-col gap-5">
+                    <div className="flex justify-start">
                         <Button
-                            onClick={handleCancel}
+                            onClick={handleAddAllPersons}
                             variant="outline"
                             size="md"
                         >
-                            취소
+                            인원 모두추가
                         </Button>
-                    )}
+                    </div>
+                    <div className="flex gap-2 ㅡㅁㅁㅁ">
+                        <Button
+                            onClick={handleAddExpense}
+                            variant="primary"
+                            size="lg"
+                            fullWidth
+                        >
+                            {editingExpenseId ? "수정 저장" : "추가"}
+                        </Button>
+                        {editingExpenseId && (
+                            <Button
+                                onClick={handleCancel}
+                                variant="outline"
+                                size="lg"
+                                width={"10%"}
+                            >
+                                취소
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
                 {/* 테이블 */}
                 {expenses.length > 0 && (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto mt-4">
                         <table className="w-full border-collapse">
                             <thead>
                                 <tr className="bg-gray-100">
@@ -276,48 +367,55 @@ export default function ExpenseSection() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {expenses.map((expense) => (
-                                    <tr
-                                        key={expense.id}
-                                        onClick={() => handleEdit(expense)}
-                                        className={`cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
-                                            expense.type
-                                        )} ${
-                                            editingExpenseId === expense.id
-                                                ? "outline outline-2 outline-blue-500 -outline-offset-2"
-                                                : ""
-                                        }`}
-                                    >
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
-                                            {expense.date}
-                                        </td>
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
-                                            {expense.type}
-                                        </td>
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px]">
-                                            {expense.detail}
-                                        </td>
-                                        <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
-                                            {formatCurrency(expense.amount)}원
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (
-                                                        confirm(
-                                                            "삭제하시겠습니까?"
+                                {expenses.map((expense) => {
+                                    const isSelected = editingExpenseId === expense.id;
+                                    return (
+                                        <tr
+                                            key={expense.id}
+                                            onClick={() => handleEdit(expense)}
+                                            className={`group cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
+                                                expense.type
+                                            )} ${
+                                                isSelected
+                                                    ? "outline outline-2 outline-blue-500 -outline-offset-2"
+                                                    : ""
+                                            }`}
+                                        >
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
+                                                {formatDate(expense.date)}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
+                                                {expense.type}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px]">
+                                                {expense.detail}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
+                                                {formatCurrency(expense.amount)}원
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (
+                                                            confirm(
+                                                                "삭제하시겠습니까?"
+                                                            )
                                                         )
-                                                    )
-                                                        deleteExpense(
-                                                            expense.id
-                                                        );
-                                                }}
-                                                className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 opacity-0 hover:opacity-100"
-                                            >
-                                                ✕
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                                            deleteExpense(
+                                                                expense.id
+                                                            );
+                                                    }}
+                                                    className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${
+                                                        isSelected
+                                                            ? "opacity-100"
+                                                            : "opacity-0 group-hover:opacity-100"
+                                                    }`}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                             <tfoot>
                                 <tr>

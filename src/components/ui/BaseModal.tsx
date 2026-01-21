@@ -62,21 +62,21 @@ export default function BaseModal({
             role="dialog"
         >
             {/* Overlay */}
-            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+            <div className="absolute inset-0 bg-black/35" onClick={onClose} />
 
             {/* Modal */}
-            <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="absolute inset-0 flex items-center justify-center">
                 <div
-                    className={`w-full ${maxWidth} bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden ${className}`}
+                    className={`w-full ${maxWidth} bg-white p-6 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden ${className}`}
                 >
                     {/* Header */}
-                    <div className="px-6 py-6 flex items-center justify-between">
+                    <div className=" flex items-center justify-between">
                         <h2 className="text-[22px] font-semibold text-gray-900">
                             {title}
                         </h2>
                         <button
                             onClick={onClose}
-                            className="w-9 h-9 rounded-xl hover:bg-gray-100 text-gray-700 flex items-center justify-center transition-colors"
+                            className="w-9 h-9 rounded-full hover:bg-gray-100 text-gray-700 flex items-center justify-center transition-colors"
                             aria-label="close"
                         >
                             <IconClose />
@@ -84,13 +84,13 @@ export default function BaseModal({
                     </div>
 
                     {/* Body */}
-                    <div className="px-6 pb-4 flex-1 overflow-y-auto">
+                    <div className="pb-4 flex-1 overflow-y-auto">
                         {children}
                     </div>
 
                     {/* Footer */}
                     {footer && (
-                        <div className="flex justify-center gap-2 px-6 py-3">
+                        <div className="flex justify-center gap-2">
                             {footer}
                         </div>
                     )}

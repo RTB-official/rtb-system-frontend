@@ -1,9 +1,11 @@
+// src/components/modals/AddMemberModal.tsx
 import { useState, useEffect } from "react";
 import BaseModal from "../ui/BaseModal";
 import Button from "../common/Button";
 import DatePicker from "../ui/DatePicker";
 import Input from "../common/Input";
 import Select from "../common/Select";
+import Avatar from "../common/Avatar";
 
 type Props = {
     isOpen: boolean;
@@ -45,11 +47,53 @@ export default function AddMemberModal({
     const [passportNo, setPassportNo] = useState("");
     const [passportExpiry, setPassportExpiry] = useState("");
 
+    const normalizeDateForPicker = (v?: string | null) => {
+        const s = (v || "").trim();
+        if (!s) return "";
+
+        // 이미 ISO면 그대로
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+        // "YYYY. MM. DD." -> ISO
+        const dot = s.match(/^(\d{4})\.\s?(\d{1,2})\.\s?(\d{1,2})\.?$/);
+        if (dot) {
+            const y = dot[1];
+            const m = String(dot[2]).padStart(2, "0");
+            const d = String(dot[3]).padStart(2, "0");
+            return `${y}-${m}-${d}`;
+        }
+
+        // YYMMDD -> ISO(세기 자동판별: 현재 연도 기준)
+        if (/^\d{6}$/.test(s)) {
+            const yy = parseInt(s.slice(0, 2), 10);
+            const mm = s.slice(2, 4);
+            const dd = s.slice(4, 6);
+
+            const nowYY = new Date().getFullYear() % 100;
+            const century = yy > nowYY ? 1900 : 2000;
+
+            const yyyy = String(century + yy);
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        // YYYYMMDD -> ISO
+        if (/^\d{8}$/.test(s)) {
+            const y = s.slice(0, 4);
+            const m = s.slice(4, 6);
+            const d = s.slice(6, 8);
+            return `${y}-${m}-${d}`;
+        }
+
+        // 그 외는 빈값 처리( NaN 방지 )
+        return "";
+    };
+
+
     useEffect(() => {
         if (member) {
-            setJoinDate(member.joinDate || "");
-            setBirthDate(member.birth || "");
-            setEmailPrefix(member.username || "");
+            setJoinDate(normalizeDateForPicker(member.joinDate));
+            setBirthDate(normalizeDateForPicker(member.birth));
+            setEmailPrefix(member.email || "");
             setPhone(member.phone || "");
             setAddress(member.address1 || "");
             setTeam(member.team || "");
@@ -72,6 +116,7 @@ export default function AddMemberModal({
             setPassportExpiry("");
         }
     }, [member, isOpen]);
+
 
     const handleSubmit = () => {
         const payload = {
@@ -113,9 +158,7 @@ export default function AddMemberModal({
                 {/* 수정 중인 구성원 표시 */}
                 {member && (
                     <div className="p-4 rounded-2xl border border-blue-100 bg-blue-50/50 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white text-[14px] font-semibold shrink-0">
-                            {member.name?.slice(0, 1) || "U"}
-                        </div>
+                        <Avatar email={member.email} size={40} position={member.role} />
                         <div>
                             <div className="text-[14px] font-bold text-gray-900">
                                 {member.name}
@@ -126,6 +169,7 @@ export default function AddMemberModal({
                         </div>
                     </div>
                 )}
+
 
                 {/* 기본 정보 */}
                 <div className="mt-4">
@@ -228,7 +272,7 @@ export default function AddMemberModal({
                                 { value: "과장", label: "과장" },
                                 { value: "대리", label: "대리" },
                                 { value: "주임", label: "주임" },
-                                { value: "사원", label: "사원" },
+                                { value: "인턴", label: "인턴" },
                             ]}
                             placeholder="직급 선택"
                         />
@@ -246,14 +290,18 @@ export default function AddMemberModal({
                                 label="성 (Last Name)"
                                 labelClassName="text-[12px] font-medium text-gray-900"
                                 value={passportLastName}
-                                onChange={setPassportLastName}
+                                onChange={(v) =>
+                                    setPassportLastName(v.toUpperCase())
+                                }
                                 placeholder="성 (Last Name)"
                             />
                             <Input
                                 label="이름 (First Name)"
                                 labelClassName="text-[12px] font-medium text-gray-900"
                                 value={passportFirstName}
-                                onChange={setPassportFirstName}
+                                onChange={(v) =>
+                                    setPassportFirstName(v.toUpperCase())
+                                }
                                 placeholder="이름 (First Name)"
                             />
                         </div>
@@ -264,7 +312,9 @@ export default function AddMemberModal({
                                 label="여권 번호"
                                 labelClassName="text-[12px] font-medium text-gray-900"
                                 value={passportNo}
-                                onChange={setPassportNo}
+                                onChange={(v) =>
+                                    setPassportNo(v.toUpperCase())
+                                }
                                 placeholder="예) M12345678"
                             />
                             <Input

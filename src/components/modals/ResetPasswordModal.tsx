@@ -1,3 +1,4 @@
+// src/components/modals/ResetPasswordModal.tsx
 import { useState } from "react";
 import BaseModal from "../ui/BaseModal";
 import Button from "../common/Button";
@@ -9,7 +10,7 @@ type Props = {
     onSubmit?: (payload: {
         newPassword: string;
         confirmPassword: string;
-    }) => void;
+    }) => Promise<boolean> | boolean | void;
 };
 
 export default function ResetPasswordModal({
@@ -41,8 +42,8 @@ export default function ResetPasswordModal({
 
         if (!newPassword) {
             newErrors.newPassword = "새 비밀번호를 입력해주세요.";
-        } else if (newPassword.length < 4) {
-            newErrors.newPassword = "비밀번호는 최소 4자 이상이어야 합니다.";
+        } else if (newPassword.length < 8) {
+            newErrors.newPassword = "비밀번호는 최소 8자 이상이어야 합니다.";
         }
 
         if (!confirmPassword) {
@@ -55,15 +56,20 @@ export default function ResetPasswordModal({
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!validate()) return;
 
-        onSubmit?.({
+        const result = await onSubmit?.({
             newPassword,
             confirmPassword,
         });
+
+        // onSubmit이 false를 리턴하면(실패) 모달 유지
+        if (result === false) return;
+
         handleClose();
     };
+
 
     return (
         <BaseModal

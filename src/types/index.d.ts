@@ -17,4 +17,5 @@ export interface CalendarEvent {
     endDate: string; // YYYY-MM-DD 형식
     isHoliday?: boolean;
     attendees?: string[];
+    userId?: string; // 일정 생성자 ID
 }

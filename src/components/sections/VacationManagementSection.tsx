@@ -5,6 +5,7 @@ import type {
 import Select from "../common/Select";
 import Tabs from "../common/Tabs";
 import Table from "../common/Table";
+import Chip from "../ui/Chip";
 
 interface Summary {
     myAnnual: number; // 내 연차
@@ -43,22 +44,22 @@ interface Props {
 function StatusPill({ status }: { status: VacationStatus }) {
     if (status === "승인 완료") {
         return (
-            <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-green-700 bg-green-50">
+            <Chip color="green-700" variant="solid" size="sm">
                 승인 완료
-            </span>
+            </Chip>
         );
     }
     if (status === "대기 중") {
         return (
-            <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-blue-600 bg-blue-50">
+            <Chip color="blue-600" variant="solid" size="sm">
                 대기 중
-            </span>
+            </Chip>
         );
     }
     return (
-        <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-red-700 bg-red-50">
+        <Chip color="red-700" variant="solid" size="sm">
             반려
-        </span>
+        </Chip>
     );
 }
 
@@ -93,7 +94,7 @@ export default function VacationManagementSection({
         },
         {
             label: "사용",
-            value: `-${summary.used}일`,
+            value: `- ${summary.used}일`,
             color: "text-gray-900",
         },
         {
@@ -131,9 +132,8 @@ export default function VacationManagementSection({
                 </div>
                 <Select
                     options={[
+                        { value: "2026", label: "2026년" },
                         { value: "2025", label: "2025년" },
-                        { value: "2024", label: "2024년" },
-                        { value: "2023", label: "2023년" },
                     ]}
                     value={year}
                     onChange={onYearChange}
@@ -186,11 +186,10 @@ export default function VacationManagementSection({
                             align: "left",
                             render: (_value, row: VacationRow) => (
                                 <span
-                                    className={`font-medium ${
-                                        row.usedDays < 0
+                                    className={`font-medium ${row.usedDays < 0
                                             ? "text-red-600"
                                             : "text-gray-800"
-                                    }`}
+                                        }`}
                                 >
                                     {formatUsedDays(row.usedDays)}
                                 </span>
@@ -276,11 +275,10 @@ function GrantExpireTable({
                     width: "16.67%",
                     render: (_value, row: GrantExpireRow) => (
                         <span
-                            className={`font-medium ${
-                                row.granted && row.granted > 0
+                            className={`font-medium ${row.granted && row.granted > 0
                                     ? "text-gray-900"
                                     : "text-gray-400"
-                            }`}
+                                }`}
                         >
                             {formatDaysOrDash(row.granted)}
                         </span>
@@ -292,11 +290,10 @@ function GrantExpireTable({
                     width: "16.67%",
                     render: (_value, row: GrantExpireRow) => (
                         <span
-                            className={`font-medium ${
-                                row.expired && row.expired < 0
+                            className={`font-medium ${row.expired && row.expired < 0
                                     ? "text-gray-900"
                                     : "text-gray-400"
-                            }`}
+                                }`}
                         >
                             {formatDaysOrDash(row.expired)}
                         </span>
@@ -308,11 +305,10 @@ function GrantExpireTable({
                     width: "16.67%",
                     render: (_value, row: GrantExpireRow) => (
                         <span
-                            className={`font-medium ${
-                                row.used && row.used < 0
+                            className={`font-medium ${row.used && row.used < 0
                                     ? "text-gray-900"
                                     : "text-gray-400"
-                            }`}
+                                }`}
                         >
                             {formatDaysOrDash(row.used)}
                         </span>

@@ -18,6 +18,12 @@ export default function ConsumablesSection() {
     const [customMaterial, setCustomMaterial] = useState("");
     const [quantity, setQuantity] = useState("1");
 
+    // 에러 상태
+    const [errors, setErrors] = useState<{
+        material?: string;
+        quantity?: string;
+    }>({});
+
     // 선택된 자재명
     const materialName =
         selectedMaterial === "OTHER" ? customMaterial : selectedMaterial;
@@ -35,15 +41,22 @@ export default function ConsumablesSection() {
     ];
 
     const handleAdd = () => {
+        // 유효성 검사
+        const newErrors: typeof errors = {};
         if (!materialName) {
-            alert("자재명을 선택하거나 입력하세요.");
-            return;
+            newErrors.material = "자재명을 선택하거나 입력해주세요";
         }
         const qty = Number(quantity);
         if (qty <= 0) {
-            alert("수량을 입력하세요.");
+            newErrors.quantity = "수량을 입력해주세요";
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
             return;
         }
+
+        setErrors({});
 
         addMaterial({
             name: materialName,
@@ -54,6 +67,13 @@ export default function ConsumablesSection() {
         setSelectedMaterial("");
         setCustomMaterial("");
         setQuantity("1");
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handleAdd();
+        }
     };
 
     // 표시용 라벨 생성
@@ -73,39 +93,66 @@ export default function ConsumablesSection() {
                         label="자재명"
                         placeholder="선택"
                         fullWidth
+                        required
                         options={materialOptions}
                         value={selectedMaterial}
                         onChange={(v) => {
                             setSelectedMaterial(v);
                             if (v !== "OTHER") setCustomMaterial("");
+                            if (errors.material) {
+                                setErrors((prev) => ({
+                                    ...prev,
+                                    material: undefined,
+                                }));
+                            }
                         }}
+                        error={selectedMaterial !== "OTHER" ? errors.material : undefined}
                     />
                     {selectedMaterial === "OTHER" && (
                         <TextInput
                             placeholder="자재명을 직접 입력"
                             value={customMaterial}
-                            onChange={setCustomMaterial}
+                            onChange={(val) => {
+                                setCustomMaterial(val);
+                                if (errors.material) {
+                                    setErrors((prev) => ({
+                                        ...prev,
+                                        material: undefined,
+                                    }));
+                                }
+                            }}
+                            onKeyDown={handleKeyDown}
+                            error={errors.material}
                         />
                     )}
                 </div>
 
                 {/* 수량 */}
-                <div className="flex flex-col gap-2">
-                    <TextInput
-                        label="수량"
-                        type="number"
-                        value={quantity}
-                        onChange={setQuantity}
-                        className="relative"
-                        icon={
-                            unit ? (
-                                <span className="text-[14px] text-[#6a7282] bg-[#f9fafb] px-2 py-1 rounded-lg border border-[#e5e7eb]">
-                                    {unit}
-                                </span>
-                            ) : undefined
+                <TextInput
+                    label="수량"
+                    required
+                    type="number"
+                    value={quantity}
+                    onChange={(val) => {
+                        setQuantity(val);
+                        if (errors.quantity) {
+                            setErrors((prev) => ({
+                                ...prev,
+                                quantity: undefined,
+                            }));
                         }
-                    />
-                </div>
+                    }}
+                    onKeyDown={handleKeyDown}
+                    className="relative"
+                    icon={
+                        unit ? (
+                            <span className="text-[14px] text-[#6a7282] bg-[#f9fafb] px-2 py-1 rounded-lg border border-[#e5e7eb]">
+                                {unit}
+                            </span>
+                        ) : undefined
+                    }
+                    error={errors.quantity}
+                />
 
                 {/* 추가 버튼 */}
                 <Button
@@ -120,17 +167,15 @@ export default function ConsumablesSection() {
                 {/* 추가된 자재 목록 */}
                 {materials.length > 0 && (
                     <div className="flex flex-col gap-3">
-                        <div className="flex flex-wrap gap-2 p-4 border border-dashed border-[#e5e7eb] rounded-xl min-h-[60px]">
+                        <div className="flex flex-wrap gap-2">
                             {materials.map((item) => (
                                 <Button
                                     key={item.id}
                                     variant="secondary"
                                     size="md"
                                     onClick={() => {
-                                        if (confirm("삭제하시겠습니까?"))
-                                            removeMaterial(item.id);
+                                        removeMaterial(item.id);
                                     }}
-                                    className="text-[15px] font-semibold"
                                 >
                                     {formatLabel(
                                         item.name,

@@ -1,74 +1,108 @@
-import { useState } from 'react';
+// src/pages/Login/LoginPage.tsx
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/store/auth";
+import { IconEye, IconEyeOff } from "@/components/icons/Icons";
+import { supabase } from "@/lib/supabase";
 
 function LoginPage() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
+  const nav = useNavigate();
+  const { signInWithUsername } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [username, setUsername] = useState(""); // username으로 로그인
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [errors, setErrors] = useState<{ username?: string; password?: string; common?: string }>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const newErrors: { username?: string; password?: string } = {};
-    
-    if (!username.trim()) {
-      newErrors.username = '사용자명을 입력해 주세요';
-    }
-    
+
+    const newErrors: { username?: string; password?: string; common?: string } = {};
+
+    if (!username.trim()) newErrors.username = "사용자명을 입력해 주세요";
     if (!password.trim()) {
-      newErrors.password = '비밀번호를 입력해 주세요';
+      newErrors.password = "비밀번호를 입력해 주세요";
+    } else if (password.length < 6) {
+      newErrors.password = "비밀번호는 최소 6자 이상이어야 합니다.";
     }
-    
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
-    
+
     setErrors({});
-    // TODO: 실제 로그인 로직 구현
-    console.log('로그인 시도:', { username, password, rememberMe });
+    setSubmitting(true);
+
+    // ✅ Supabase Username 로그인 (username으로 profiles에서 email 찾아서 로그인)
+    const res = await signInWithUsername(username.trim(), password);
+
+    setSubmitting(false);
+
+    if (!res.ok) {
+      setErrors({ common: res.message ?? "로그인에 실패했습니다." });
+      return;
+    }
+
+    // rememberMe는 Supabase 기본 persistSession(true)로 이미 유지됨.
+    // (정말 rememberMe로 분기하려면, localStorage 기반 custom 처리로 확장 가능)
+    nav("/dashboard", { replace: true });
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetEmail.trim()) {
+      setErrors({ common: "이메일을 입력해 주세요." });
+      return;
+    }
+
+    // username으로 email 찾기
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("username", resetEmail.trim())
+      .maybeSingle();
+
+    const emailToReset = profile?.email || resetEmail.trim();
+
+    const { error } = await supabase.auth.resetPasswordForEmail(emailToReset, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      setErrors({ common: error.message });
+      return;
+    }
+
+    setResetSent(true);
   };
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] font-pretendard">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center gap-3">
-          <img 
-            src="/images/RTBlogo.png" 
-            alt="RTB Logo" 
-            className="h-8 w-auto"
-          />
+          <img src="/images/RTBlogo.png" alt="RTB Logo" className="h-8 w-auto" />
           <div className="flex flex-col">
-            <span className="text-[#1E3A5F] font-semibold text-sm">
-              RTB 통합 관리 시스템
-            </span>
-            <span className="text-gray-400 text-xs">
-              Integrated Management System
-            </span>
+            <span className="text-[#1E3A5F] font-semibold text-sm">RTB 통합 관리 시스템</span>
+            <span className="text-gray-400 text-xs">Integrated Management System</span>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="flex items-center justify-center min-h-[calc(100vh-73px)] px-4">
         <div className="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-8">
-          {/* Login Title */}
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Login</h1>
-            <p className="text-sm text-gray-500">
-              RTB 통합 관리 시스템에 로그인하세요
-            </p>
+            <p className="text-sm text-gray-500">RTB 통합 관리 시스템에 로그인하세요</p>
           </div>
 
-          {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Username Field */}
             <div>
-              <label 
-                htmlFor="username" 
-                className="block text-sm font-medium text-gray-700 mb-1.5"
-              >
+              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1.5">
                 사용자명
               </label>
               <input
@@ -76,54 +110,52 @@ function LoginPage() {
                 id="username"
                 value={username}
                 onChange={(e) => {
-                  setUsername(e.target.value);
-                  if (errors.username) {
-                    setErrors(prev => ({ ...prev, username: undefined }));
-                  }
+                  const lowerValue = e.target.value.toLowerCase();
+                  setUsername(lowerValue);
+                  if (errors.username) setErrors((prev) => ({ ...prev, username: undefined }));
                 }}
-                placeholder="사용자명을 입력해 주세요"
+                placeholder="사용자명을 입력해 주세요 (예: ck.kim)"
                 className={`w-full px-4 py-3 border rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20 focus:border-[#1E3A5F] transition-colors ${
-                  errors.username 
-                    ? 'border-red-500 bg-red-50' 
-                    : 'border-gray-300 bg-white'
+                  errors.username ? "border-red-500 bg-red-50" : "border-gray-300 bg-white"
                 }`}
               />
-              {errors.username && (
-                <p className="mt-1.5 text-xs text-red-500">{errors.username}</p>
-              )}
+              {errors.username && <p className="mt-1.5 text-xs text-red-500">{errors.username}</p>}
             </div>
 
-            {/* Password Field */}
             <div>
-              <label 
-                htmlFor="password" 
-                className="block text-sm font-medium text-gray-700 mb-1.5"
-              >
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
                 비밀번호
               </label>
-              <input
-                type="password"
-                id="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (errors.password) {
-                    setErrors(prev => ({ ...prev, password: undefined }));
-                  }
-                }}
-                placeholder="비밀번호를 입력해 주세요"
-                className={`w-full px-4 py-3 border rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20 focus:border-[#1E3A5F] transition-colors ${
-                  errors.password 
-                    ? 'border-red-500 bg-red-50' 
-                    : 'border-gray-300 bg-white'
-                }`}
-              />
-              {errors.password && (
-                <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>
-              )}
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  id="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+                  }}
+                  placeholder="비밀번호를 입력해 주세요"
+                  className={`w-full px-4 py-3 pr-11 border rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20 focus:border-[#1E3A5F] transition-colors ${
+                    errors.password ? "border-red-500 bg-red-50" : "border-gray-300 bg-white"
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors focus:outline-none"
+                  aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+                >
+                  {showPassword ? (
+                    <IconEyeOff className="w-5 h-5" />
+                  ) : (
+                    <IconEye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+              {errors.password && <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>}
             </div>
 
-            {/* Remember Me Checkbox */}
             <div className="flex items-center">
               <input
                 type="checkbox"
@@ -132,21 +164,73 @@ function LoginPage() {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="w-4 h-4 text-[#1E3A5F] border-gray-300 rounded focus:ring-[#1E3A5F] cursor-pointer"
               />
-              <label 
-                htmlFor="rememberMe" 
-                className="ml-2 text-sm text-gray-600 cursor-pointer select-none"
-              >
+              <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-600 cursor-pointer select-none">
                 로그인 상태유지
               </label>
             </div>
 
-            {/* Login Button */}
+            {errors.common && <div className="text-sm text-red-600">{errors.common}</div>}
+
             <button
               type="submit"
-              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] text-white font-medium py-3 px-4 rounded-md transition-colors duration-200 text-sm"
+              disabled={submitting}
+              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] disabled:opacity-60 text-white font-medium py-3 px-4 rounded-md transition-colors duration-200 text-sm"
             >
-              로그인
+              {submitting ? "로그인 중..." : "로그인"}
             </button>
+
+            {!showResetPassword ? (
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setShowResetPassword(true)}
+                  className="text-sm text-[#1E3A5F] hover:underline"
+                >
+                  비밀번호를 잊으셨나요?
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 p-4 bg-gray-50 rounded-md">
+                {resetSent ? (
+                  <div className="text-sm text-green-600">
+                    비밀번호 재설정 이메일이 발송되었습니다. 이메일을 확인해 주세요.
+                  </div>
+                ) : (
+                  <>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      사용자명 또는 이메일
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={resetEmail}
+                        onChange={(e) => setResetEmail(e.target.value)}
+                        placeholder="사용자명 또는 이메일 입력"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20 focus:border-[#1E3A5F]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleResetPassword}
+                        className="px-4 py-2 bg-[#1E3A5F] text-white rounded-md text-sm hover:bg-[#152a45] transition-colors"
+                      >
+                        발송
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowResetPassword(false);
+                        setResetEmail("");
+                        setResetSent(false);
+                      }}
+                      className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      취소
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </form>
         </div>
       </main>
@@ -155,8 +239,3 @@ function LoginPage() {
 }
 
 export default LoginPage;
-
-
-
-
-

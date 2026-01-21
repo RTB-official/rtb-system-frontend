@@ -31,13 +31,20 @@ export interface MaterialEntry {
   unit: string;
 }
 
-export type FileCategory = '숙박영수증' | '자재영수증' | '식비영수증' | '기타';
+export type FileCategory = '숙박영수증' | '자재구매영수증' | '식비및유대영수증' | '기타';
 
 export interface UploadedFile {
   id: number;
-  file: File;
+  file?: File; // 새로 업로드하는 파일
   preview?: string;
   category: FileCategory;
+  // 기존 영수증 정보 (DB에서 로드된 경우)
+  receiptId?: number; // DB의 receipt id
+  storagePath?: string;
+  originalName?: string;
+  fileUrl?: string; // Storage 공개 URL
+  mimeType?: string;
+  isExisting?: boolean; // 기존 영수증인지 여부
 }
 
 // 직급별 직원 데이터
@@ -47,8 +54,7 @@ export const STAFF_DATA: Record<string, string[]> = {
   '과장': [],
   '대리': ['이종훈', '조용남', '고두형'],
   '주임': ['박영성', '문채훈', '김민규', '김상민', '박민욱'],
-  '사원': [],
-  '인턴': [],
+  '인턴': ['강민지'],
 };
 
 // 지역별 인원 매핑
@@ -132,10 +138,12 @@ interface WorkReportState {
   setLocation: (location: string) => void;
   setLocationCustom: (custom: string) => void;
   toggleVehicle: (vehicle: string) => void;
+  setVehicles: (vehicles: string[]) => void;
   setSubject: (subject: string) => void;
   
   // Actions - 작업자
   addWorker: (name: string) => void;
+  setWorkers: (workers: string[]) => void;
   removeWorker: (name: string) => void;
   addWorkersByRegion: (region: string) => void;
   
@@ -146,12 +154,14 @@ interface WorkReportState {
   addAllCurrentEntryPersons: () => void;
   addRegionPersonsToEntry: (region: string) => void;
   saveWorkLogEntry: () => void;
+  setWorkLogEntries: (entries: WorkLogEntry[]) => void;
   deleteWorkLogEntry: (id: number) => void;
   editWorkLogEntry: (id: number) => void;
   cancelEditEntry: () => void;
   
   // Actions - 지출내역
   addExpense: (expense: Omit<ExpenseEntry, 'id'>) => void;
+  setExpenses: (expenses: ExpenseEntry[]) => void;
   updateExpense: (id: number, expense: Partial<ExpenseEntry>) => void;
   deleteExpense: (id: number) => void;
   editExpense: (id: number) => void;
@@ -159,10 +169,19 @@ interface WorkReportState {
   
   // Actions - 소모자재
   addMaterial: (material: Omit<MaterialEntry, 'id'>) => void;
+  setMaterials: (materials: MaterialEntry[]) => void;
   removeMaterial: (id: number) => void;
   
   // Actions - 첨부파일
   addFiles: (files: File[], category: FileCategory) => void;
+  addExistingReceipt: (receipt: {
+    receiptId: number;
+    category: FileCategory;
+    storagePath: string;
+    originalName: string | null;
+    fileUrl?: string;
+    mimeType?: string | null;
+  }) => void;
   removeFile: (id: number) => void;
   
   // Actions - 전체
@@ -217,6 +236,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       ? state.vehicles.filter((v) => v !== vehicle)
       : [...state.vehicles, vehicle],
   })),
+  setVehicles: (vehicles) => set({ vehicles }),
   setSubject: (subject) => set({ subject }),
   
   // 작업자 Actions
@@ -227,6 +247,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     }
     return { workers: [...state.workers, trimmed] };
   }),
+  setWorkers: (workers) => set({ workers }),
   removeWorker: (name) => set((state) => ({
     workers: state.workers.filter((w) => w !== name),
   })),
@@ -305,6 +326,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       currentEntryPersons: [],
     };
   }),
+  setWorkLogEntries: (entries) => set({ workLogEntries: entries }),
   deleteWorkLogEntry: (id) => set((state) => ({
     workLogEntries: state.workLogEntries.filter((e) => e.id !== id),
   })),
@@ -339,6 +361,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     expenses: [...state.expenses, { ...expense, id: Date.now() }],
     editingExpenseId: null,
   })),
+  setExpenses: (expenses) => set({ expenses }),
   updateExpense: (id, expense) => set((state) => ({
     expenses: state.expenses.map((e) => (e.id === id ? { ...e, ...expense } : e)),
     editingExpenseId: null,
@@ -353,6 +376,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   addMaterial: (material) => set((state) => ({
     materials: [...state.materials, { ...material, id: Date.now() }],
   })),
+  setMaterials: (materials) => set({ materials }),
   removeMaterial: (id) => set((state) => ({
     materials: state.materials.filter((m) => m.id !== id),
   })),
@@ -364,12 +388,38 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       file,
       preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
       category,
+      isExisting: false,
     }));
     return { uploadedFiles: [...state.uploadedFiles, ...newFiles] };
   }),
+  addExistingReceipt: (receipt) => set((state) => {
+    // 중복 체크: 이미 같은 receiptId가 있는지 확인
+    const alreadyExists = state.uploadedFiles.some(
+      (f) => f.isExisting && f.receiptId === receipt.receiptId
+    );
+    
+    if (alreadyExists) {
+      console.log("이미 존재하는 영수증, 추가하지 않음:", receipt.receiptId);
+      return state; // 이미 있으면 추가하지 않음
+    }
+    
+    const newReceipt: UploadedFile = {
+      id: Date.now(),
+      category: receipt.category,
+      receiptId: receipt.receiptId,
+      storagePath: receipt.storagePath,
+      originalName: receipt.originalName || undefined,
+      fileUrl: receipt.fileUrl,
+      mimeType: receipt.mimeType || undefined,
+      preview: receipt.fileUrl && (receipt.mimeType?.startsWith('image/') || !receipt.mimeType) ? receipt.fileUrl : undefined,
+      isExisting: true,
+    };
+    console.log("새 영수증 추가:", newReceipt);
+    return { uploadedFiles: [...state.uploadedFiles, newReceipt] };
+  }),
   removeFile: (id) => set((state) => {
     const file = state.uploadedFiles.find((f) => f.id === id);
-    if (file?.preview) URL.revokeObjectURL(file.preview);
+    if (file?.preview && !file.isExisting) URL.revokeObjectURL(file.preview);
     return { uploadedFiles: state.uploadedFiles.filter((f) => f.id !== id) };
   }),
   

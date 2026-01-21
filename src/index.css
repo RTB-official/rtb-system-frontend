@@ -2,124 +2,126 @@
 
 /* Pretendard JP 폰트 정의 */
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 100;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-Thin.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 100;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-Thin.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 200;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-ExtraLight.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 200;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-ExtraLight.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 300;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-Light.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 300;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-Light.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-Regular.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-Regular.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-Medium.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-Medium.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-SemiBold.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-SemiBold.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-Bold.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-Bold.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 800;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-ExtraBold.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 800;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-ExtraBold.woff") format("woff");
 }
 
 @font-face {
-  font-family: "Pretendard JP";
-  font-weight: 900;
-  font-style: normal;
-  font-display: swap;
-  src: url("/fonts/PretendardJP-Black.woff") format("woff");
+    font-family: "Pretendard JP";
+    font-weight: 900;
+    font-style: normal;
+    font-display: swap;
+    src: url("/fonts/PretendardJP-Black.woff") format("woff");
 }
 
 @theme {
-  /* Color tokens */
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f3f4f6;
-  --color-gray-200: #e5e7eb;
-  --color-gray-300: #d1d5dc;
-  --color-gray-400: #99a1af;
-  --color-gray-500: #6a7282;
-  --color-gray-600: #4a5565;
-  --color-gray-700: #364153;
-  --color-gray-800: #1f2937;
-  --color-gray-900: #101828;
-  --color-gray-950: #030712;
-  
-  --color-blue-50: #eff6ff;
-  --color-blue-500: #2b7fff;
-  
-  --color-red-600: #e7000b;
-  --color-sky-500: #00a6f4;
-  
-  /* Font family */
-  --font-pretendard: "Pretendard JP", sans-serif;
+    /* Color tokens */
+    --color-gray-50: #f9fafb;
+    --color-gray-100: #f3f4f6;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5dc;
+    --color-gray-400: #99a1af;
+    --color-gray-500: #6a7282;
+    --color-gray-600: #4a5565;
+    --color-gray-700: #364153;
+    --color-gray-800: #1f2937;
+    --color-gray-900: #101828;
+    --color-gray-950: #030712;
+
+    --color-blue-50: #eff6ff;
+    --color-blue-500: #2b7fff;
+
+    --color-red-600: #e7000b;
+    --color-sky-500: #00a6f4;
+
+    /* Font family */
+    --font-pretendard: "Pretendard JP", sans-serif;
 }
 
 body {
-  font-family: "Pretendard JP", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    font-family: "Pretendard JP", -apple-system, BlinkMacSystemFont, system-ui,
+        Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo",
+        "Noto Sans KR", "Malgun Gothic", sans-serif;
 }
 
 /* date input 기본 달력 아이콘 제거 (Chrome / Edge / Safari) */
 input[type="date"]::-webkit-calendar-picker-indicator {
-  opacity: 0;
-  display: none;
-  -webkit-appearance: none;
+    opacity: 0;
+    display: none;
+    -webkit-appearance: none;
 }
 
 /* 내부 스핀 버튼 제거 */
 input[type="date"]::-webkit-inner-spin-button,
 input[type="date"]::-webkit-clear-button {
-  display: none;
-  -webkit-appearance: none;
+    display: none;
+    -webkit-appearance: none;
 }
 
 /* 버튼 클릭 시 발생하는 검은 테두리 제거 */
 button:focus {
-  outline: none !important;
-  box-shadow: none !important;
+    outline: none !important;
+    box-shadow: none !important;
 }
 *:focus {
-  outline: none !important;
+    outline: none !important;
 }

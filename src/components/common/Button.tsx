@@ -1,10 +1,11 @@
 import React from "react";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-    variant?: "primary" | "secondary" | "outline" | "ghost";
+    variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
     size?: "sm" | "md" | "lg";
     icon?: React.ReactNode;
     fullWidth?: boolean;
+    width?: string | number; // 예: "50%", "200px", 50 (숫자면 %로 처리)
 }
 
 export default function Button({
@@ -12,34 +13,49 @@ export default function Button({
     size = "md",
     icon,
     fullWidth = false,
+    width,
     className = "",
     children,
+    style,
     ...props
 }: ButtonProps) {
     const baseStyles =
-        "inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+        "flex whitespace-nowrap items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
     const variantStyles = {
         primary:
-            "bg-[#364153] text-white hover:bg-[#2d3545] focus:ring-[#364153]",
+            "bg-gray-700 text-white hover:bg-gray-600 focus:ring-gray-600",
         secondary:
             "bg-[#eef7ff] text-[#3b82f6] hover:bg-[#dbeafe] focus:ring-[#3b82f6]",
         outline:
             "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:ring-gray-500",
         ghost: "bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-500",
+        danger: "bg-red-600 text-white hover:bg-red-600 focus:ring-red-500",
     };
 
     const sizeStyles = {
-        sm: "h-[30px] px-2 text-[13px] rounded-[8px]",
-        md: "h-9 px-2.5 text-[15px] rounded-[10px]",
-        lg: "h-12 px-4 text-base rounded-xl",
+        sm: "h-[30px] px-2 text-[13px] rounded-[8px] gap-0.5",
+        md: "h-[36px] px-3 text-[14px] rounded-[10px] gap-0.5",
+        lg: "h-12 px-4 text-[16px] rounded-xl gap-1",
     };
 
     const widthStyle = fullWidth ? "w-full" : "";
+    
+    // width prop 처리
+    const widthValue = width 
+        ? typeof width === "number" 
+            ? `${width}%` 
+            : width
+        : undefined;
+    
+    const buttonStyle = widthValue 
+        ? { ...style, width: widthValue }
+        : style;
 
     return (
         <button
             className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyle} ${className}`}
+            style={buttonStyle}
             {...props}
         >
             {icon && <span className={children ? "mr-1" : ""}>{icon}</span>}

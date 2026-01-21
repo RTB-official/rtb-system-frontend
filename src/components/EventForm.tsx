@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { IconCalendar } from "./icons/Icons";
 import { IconClock } from "./icons/Icons";
 import DatePicker from "./ui/DatePicker";
@@ -7,19 +7,7 @@ import Input from "./common/Input";
 import Select from "./common/Select";
 import Chip from "./ui/Chip";
 import { CalendarEvent } from "../types";
-
-const dummyMembers = [
-    "강민지",
-    "홍길동",
-    "김철수",
-    "이영희",
-    "박지민",
-    "최수연",
-    "정우성",
-    "한소희",
-    "김태리",
-    "남주혁",
-];
+import { supabase } from "../lib/supabase";
 
 interface EventFormProps {
     onClose?: () => void;
@@ -51,10 +39,37 @@ export default function EventForm({
         editingEvent?.attendees || []
     );
     const [showResults, setShowResults] = useState(false);
-    const filteredMembers = dummyMembers.filter(
+    const [allMembers, setAllMembers] = useState<Array<{ name: string; username: string }>>([]);
+
+    // 회원 정보 가져오기
+    useEffect(() => {
+        const fetchMembers = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("profiles")
+                    .select("name, username")
+                    .order("name", { ascending: true });
+
+                if (error) {
+                    console.error("Error fetching members:", error);
+                    return;
+                }
+
+                if (data) {
+                    setAllMembers(data.map((p) => ({ name: p.name || "", username: p.username || "" })));
+                }
+            } catch (error) {
+                console.error("Error fetching members:", error);
+            }
+        };
+
+        fetchMembers();
+    }, []);
+
+    const filteredMembers = allMembers.filter(
         (m) =>
-            m.includes(attendeeInput) &&
-            !attendees.includes(m) &&
+            (m.name.includes(attendeeInput) || m.username.includes(attendeeInput)) &&
+            !attendees.includes(m.name) &&
             attendeeInput.length > 0
     );
 
@@ -109,8 +124,17 @@ export default function EventForm({
         }
     }, [editingEvent]);
 
-    const handleAddAttendee = (name?: string) => {
-        const targetName = name || attendeeInput;
+    const handleAddAttendee = (member?: { name: string; username: string } | string) => {
+        let targetName: string;
+        
+        if (typeof member === "object" && member) {
+            targetName = member.name;
+        } else if (typeof member === "string") {
+            targetName = member;
+        } else {
+            targetName = attendeeInput;
+        }
+        
         if (targetName && !attendees.includes(targetName)) {
             setAttendees((prev) => [...prev, targetName]);
             setAttendeeInput("");
@@ -257,8 +281,8 @@ export default function EventForm({
                                     e.preventDefault();
                                     if (filteredMembers.length > 0) {
                                         handleAddAttendee(filteredMembers[0]);
-                                    } else {
-                                        handleAddAttendee();
+                                    } else if (attendeeInput.trim()) {
+                                        handleAddAttendee(attendeeInput.trim());
                                     }
                                 }
                             }}
@@ -278,11 +302,16 @@ export default function EventForm({
                         <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
                             {filteredMembers.map((member) => (
                                 <div
-                                    key={member}
+                                    key={member.username || member.name}
                                     className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
                                     onClick={() => handleAddAttendee(member)}
                                 >
-                                    {member}
+                                    {member.name}
+                                    {member.username && (
+                                        <span className="text-gray-400 ml-2">
+                                            ({member.username})
+                                        </span>
+                                    )}
                                 </div>
                             ))}
                         </div>

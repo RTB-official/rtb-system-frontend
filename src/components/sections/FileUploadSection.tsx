@@ -1,6 +1,8 @@
-import { useState, useRef } from "react";
-import { useWorkReportStore, FileCategory } from "../../store/workReportStore";
+import { useState, useRef, useEffect } from "react";
+import { useWorkReportStore, FileCategory, UploadedFile } from "../../store/workReportStore";
 import Button from "../common/Button";
+import { getWorkLogReceipts, deleteWorkLogReceipt } from "../../lib/workLogApi";
+import { useToast } from "../ui/ToastProvider";
 
 // 아이콘들
 const IconBed = () => (
@@ -113,13 +115,58 @@ interface FileCardProps {
     title: string;
     category: FileCategory;
     onPreview: (url: string, name: string, type: string) => void;
+    workLogId?: number | null;
 }
 
-function FileCard({ icon, title, category, onPreview }: FileCardProps) {
-    const { uploadedFiles, addFiles, removeFile } = useWorkReportStore();
+function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps) {
+    const { uploadedFiles, addFiles, removeFile, addExistingReceipt } = useWorkReportStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const { showError, showSuccess } = useToast();
+    const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [loadedReceiptIds, setLoadedReceiptIds] = useState<Set<number>>(new Set());
 
     const categoryFiles = uploadedFiles.filter((f) => f.category === category);
+
+    // 기존 영수증 로드 (한 번만 실행)
+    useEffect(() => {
+        if (!workLogId) return;
+
+        const loadReceipts = async () => {
+            try {
+                const receipts = await getWorkLogReceipts(workLogId);
+                const currentUploadedFiles = uploadedFiles; // 클로저로 현재 상태 캡처
+                
+                receipts.forEach((receipt) => {
+                    // 이미 uploadedFiles에 있는지 확인 (중복 방지)
+                    const alreadyExists = currentUploadedFiles.some(
+                        (f) => f.isExisting && f.receiptId === receipt.id
+                    );
+                    
+                    // 이미 로드된 영수증인지 확인
+                    const alreadyLoaded = loadedReceiptIds.has(receipt.id);
+                    
+                    // 카테고리가 일치하고, 아직 추가되지 않은 경우만 추가
+                    if (!alreadyExists && !alreadyLoaded && receipt.category === category) {
+                        console.log("기존 영수증 추가:", receipt);
+                        addExistingReceipt({
+                            receiptId: receipt.id,
+                            category: receipt.category as FileCategory,
+                            storagePath: receipt.storage_path,
+                            originalName: receipt.original_name,
+                            fileUrl: receipt.file_url,
+                            mimeType: receipt.mime_type,
+                        });
+                        setLoadedReceiptIds((prev) => new Set(prev).add(receipt.id));
+                    }
+                });
+            } catch (error: any) {
+                console.error("Error loading receipts:", error);
+            }
+        };
+
+        loadReceipts();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [workLogId, category]); // uploadedFiles를 dependency에서 제거하여 무한 루프 방지
 
     const handleFiles = (files: FileList | null) => {
         if (!files) return;
@@ -133,17 +180,45 @@ function FileCard({ icon, title, category, onPreview }: FileCardProps) {
         }
     };
 
-    const handleDelete = (e: React.MouseEvent, id: number) => {
+    const handleDelete = async (e: React.MouseEvent, id: number) => {
         e.stopPropagation();
-        removeFile(id);
+        
+        const file = uploadedFiles.find((f) => f.id === id);
+        if (!file) return;
+
+        // 기존 영수증인 경우 DB와 Storage에서 삭제
+        if (file.isExisting && file.receiptId && file.storagePath) {
+            setDeletingId(id);
+            try {
+                await deleteWorkLogReceipt(file.receiptId, file.storagePath);
+                removeFile(id);
+                showSuccess("영수증이 삭제되었습니다.");
+            } catch (error: any) {
+                console.error("Error deleting receipt:", error);
+                showError(`영수증 삭제 실패: ${error.message || "알 수 없는 오류"}`);
+            } finally {
+                setDeletingId(null);
+            }
+        } else {
+            // 새로 추가한 파일인 경우 로컬에서만 삭제
+            removeFile(id);
+        }
     };
 
-    const handleThumbnailClick = (item: { preview?: string; file: File }) => {
-        if (item.preview) {
-            onPreview(item.preview, item.file.name, item.file.type);
-        } else if (item.file.type === "application/pdf") {
-            const url = URL.createObjectURL(item.file);
-            onPreview(url, item.file.name, item.file.type);
+    const handleThumbnailClick = (item: UploadedFile) => {
+        if (item.isExisting && item.fileUrl) {
+            // 기존 영수증
+            const mimeType = item.mimeType || "image/jpeg";
+            const fileName = item.originalName || "영수증";
+            onPreview(item.fileUrl, fileName, mimeType);
+        } else if (item.file) {
+            // 새로 업로드한 파일
+            if (item.preview) {
+                onPreview(item.preview, item.file.name, item.file.type);
+            } else if (item.file.type === "application/pdf") {
+                const url = URL.createObjectURL(item.file);
+                onPreview(url, item.file.name, item.file.type);
+            }
         }
     };
 
@@ -191,15 +266,29 @@ function FileCard({ icon, title, category, onPreview }: FileCardProps) {
                                 className="w-12 h-12 bg-[#1f2937] rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer hover:opacity-80 hover:ring-2 hover:ring-blue-400 transition-all"
                                 onClick={() => handleThumbnailClick(item)}
                             >
-                                {item.preview ? (
+                                {item.isExisting && item.fileUrl ? (
+                                    // 기존 영수증: Storage URL 사용
+                                    <img
+                                        src={item.fileUrl}
+                                        alt={item.originalName || "영수증"}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            console.error("Image load error:", item.fileUrl);
+                                            // 이미지 로드 실패 시 대체 표시
+                                            e.currentTarget.style.display = 'none';
+                                        }}
+                                    />
+                                ) : item.preview ? (
+                                    // 새로 업로드한 이미지 파일
                                     <img
                                         src={item.preview}
-                                        alt={item.file.name}
+                                        alt={item.file?.name || ""}
                                         className="w-full h-full object-cover"
                                     />
                                 ) : (
+                                    // PDF 또는 이미지 로드 실패
                                     <span className="text-white text-[10px] font-bold">
-                                        PDF
+                                        {item.isExisting ? "IMG" : "PDF"}
                                     </span>
                                 )}
                             </div>
@@ -207,16 +296,42 @@ function FileCard({ icon, title, category, onPreview }: FileCardProps) {
                             {/* 파일명 */}
                             <div className="flex-1 min-w-0">
                                 <p className="text-[13px] text-[#374151] truncate">
-                                    {item.file.name}
+                                    {item.isExisting
+                                        ? item.originalName || "영수증"
+                                        : item.file?.name || ""}
                                 </p>
                             </div>
 
                             {/* 삭제 버튼 */}
                             <button
                                 onClick={(e) => handleDelete(e, item.id)}
-                                className="w-6 h-6 flex items-center justify-center text-[#9ca3af] hover:text-[#ef4444] transition-colors"
+                                disabled={deletingId === item.id}
+                                className="w-6 h-6 flex items-center justify-center text-[#9ca3af] hover:text-[#ef4444] transition-colors disabled:opacity-50"
                             >
-                                <IconClose />
+                                {deletingId === item.id ? (
+                                    <svg
+                                        className="animate-spin h-4 w-4"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <circle
+                                            className="opacity-25"
+                                            cx="12"
+                                            cy="12"
+                                            r="10"
+                                            stroke="currentColor"
+                                            strokeWidth="4"
+                                        ></circle>
+                                        <path
+                                            className="opacity-75"
+                                            fill="currentColor"
+                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                        ></path>
+                                    </svg>
+                                ) : (
+                                    <IconClose />
+                                )}
                             </button>
                         </div>
                     ))}
@@ -230,7 +345,11 @@ function FileCard({ icon, title, category, onPreview }: FileCardProps) {
     );
 }
 
-export default function FileUploadSection() {
+interface FileUploadSectionProps {
+    workLogId?: number | null;
+}
+
+export default function FileUploadSection({ workLogId }: FileUploadSectionProps) {
     const [previewFile, setPreviewFile] = useState<{
         url: string;
         name: string;
@@ -267,24 +386,28 @@ export default function FileUploadSection() {
                     title="숙박 영수증"
                     category="숙박영수증"
                     onPreview={openPreview}
+                    workLogId={workLogId}
                 />
                 <FileCard
                     icon={<IconTool />}
                     title="자재 영수증"
-                    category="자재영수증"
+                    category="자재구매영수증"
                     onPreview={openPreview}
+                    workLogId={workLogId}
                 />
                 <FileCard
                     icon={<IconRestaurant />}
                     title="식비 및 유대 영수증"
-                    category="식비영수증"
+                    category="식비및유대영수증"
                     onPreview={openPreview}
+                    workLogId={workLogId}
                 />
                 <FileCard
                     icon={<IconFolder />}
                     title="기타 (TBM사진 등)"
                     category="기타"
                     onPreview={openPreview}
+                    workLogId={workLogId}
                 />
             </div>
 

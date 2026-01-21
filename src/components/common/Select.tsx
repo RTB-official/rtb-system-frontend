@@ -1,4 +1,5 @@
 import React from "react";
+import RequiredIndicator from "../ui/RequiredIndicator";
 
 interface SelectProps
     extends Omit<
@@ -70,7 +71,7 @@ export default function Select({
                         </option>
                     ))}
                 </select>
-                {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+                {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
             </div>
         );
     }
@@ -81,13 +82,13 @@ export default function Select({
                 fullWidth ? "w-full" : "w-fit"
             } ${className}`}
         >
-            <div className="flex gap-2 items-center">
+            <div className="flex items-center">
                 <label
                     className={`block text-sm font-medium text-gray-700 ${labelClassName}`}
                 >
                     {label}
                 </label>
-                {required && <span className="text-red-600 text-sm">*</span>}
+                {required && <RequiredIndicator />}
             </div>
             <div className="relative">
                 <select
@@ -112,7 +113,7 @@ export default function Select({
                     ))}
                 </select>
             </div>
-            {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+            {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
         </div>
     );
 }

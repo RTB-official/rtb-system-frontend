@@ -12,6 +12,7 @@ interface UseCalendarWheelNavigationOptions {
 
 interface UseCalendarWheelNavigationResult {
     handleWheel: (event: React.WheelEvent) => void;
+    wheelRef: React.RefObject<HTMLDivElement>;
     motionStyle: React.CSSProperties;
     isTransitioning: boolean;
 }
@@ -133,8 +134,10 @@ export function useCalendarWheelNavigation({
         ]
     );
 
+    const wheelRef = useRef<HTMLDivElement>(null);
+
     const handleWheel = useCallback(
-        (event: React.WheelEvent) => {
+        (event: WheelEvent) => {
             event.preventDefault();
             if (isTransitioningRef.current) return;
 
@@ -154,11 +157,18 @@ export function useCalendarWheelNavigation({
         [clamp, sensitivity, threshold, triggerMonthChange, scheduleInertia]
     );
 
+    // 직접 이벤트 리스너 등록 (passive: false로 설정)
     useEffect(() => {
+        const element = wheelRef.current;
+        if (!element) return;
+
+        element.addEventListener("wheel", handleWheel, { passive: false });
+
         return () => {
+            element.removeEventListener("wheel", handleWheel);
             clearInertia();
         };
-    }, [clearInertia]);
+    }, [handleWheel, clearInertia]);
 
     const motionStyle = useMemo(() => {
         const normalized = Math.min(1, Math.abs(offset) / previewDistance);
@@ -172,7 +182,8 @@ export function useCalendarWheelNavigation({
     }, [offset, previewDistance]);
 
     return {
-        handleWheel,
+        handleWheel: handleWheel as unknown as (event: React.WheelEvent) => void, // 타입 호환성을 위한 캐스팅
+        wheelRef,
         motionStyle,
         isTransitioning,
     };

@@ -1,6 +1,6 @@
 // CalendarTag.tsx
 import React from "react";
-import { IconStar } from "../icons/Icons";
+import { IconStar, IconVacation, IconReport } from "../icons/Icons";
 
 interface CalendarTagProps {
     title: string;
@@ -9,8 +9,7 @@ interface CalendarTagProps {
     isStart?: boolean;
     isEnd?: boolean;
     width?: string;
-    left?: string;
-    top?: string;
+    style?: React.CSSProperties;
     onEdit?: () => void;
     onDelete?: () => void;
     onClick?: (e: React.MouseEvent) => void;
@@ -25,8 +24,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
     isStart = true,
     isEnd = true,
     width = "100%",
-    left = "0%",
-    top,
+    style,
     onEdit,
     onDelete,
     onClick,
@@ -34,25 +32,29 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
     isFirstInRow = false,
 }) => {
     const isHoliday = variant === "holiday";
+    const isVacation = title.includes("휴가");
+    const isWorkLog =
+        title.startsWith("출장보고서 - ") || title.startsWith("출장 보고서 - ");
 
     const [isHovered, setIsHovered] = React.useState(false);
 
     return (
         <div
-            className={`absolute h-6 flex items-center truncate pointer-events-auto group z-10 cursor-pointer transition-all
+            className={`h-6 flex items-center truncate pointer-events-auto group z-10 cursor-pointer transition-all
                 ${isHoliday ? "bg-red-100 hover:bg-red-200" : "text-gray-900"} 
-                ${isStart ? "ml-2 rounded-l-sm" : "rounded-l-none"}
-                ${isEnd ? "mr-2 rounded-r-sm" : "rounded-r-none"}
+                ${isStart ? "rounded-l-sm" : "rounded-l-none"}
+                ${isEnd ? "rounded-r-sm" : "rounded-r-none"}
             `}
             style={{
-                left,
                 width,
-                top,
+                position: style?.position,
+                top: style?.top,
+                left: style?.left,
                 backgroundColor: isHoliday
                     ? undefined
                     : isHovered
-                    ? `${color}40`
-                    : `${color}20`,
+                        ? `${color}40`
+                        : `${color}20`,
             }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -65,13 +67,21 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
         >
             <div
                 className={`flex items-center w-full h-full
-                    ${!isStart && isFirstInRow ? "pl-9" : "pl-1"}
-                    ${isEnd ? "pr-1" : "pr-0"}
+                    // ${!isStart && isFirstInRow ? "pl-9" : "pl-1"}
+                    ${isEnd ? "pr-1" : "pr-9"}
                 `}
             >
                 {isHoliday ? (
                     <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center mr-1.5 shrink-0">
                         <IconStar className="w-3.5 h-3.5 text-red-500" />
+                    </div>
+                ) : isVacation ? (
+                    <div className="w-4 h-4 flex items-center justify-center mr-1 shrink-0">
+                        <IconVacation className="w-4 h-4 text-blue-500" />
+                    </div>
+                ) : isWorkLog ? (
+                    <div className="w-4 h-4 flex items-center justify-center mr-1 shrink-0">
+                        <IconReport className="w-4 h-4 text-green-600" />
                     </div>
                 ) : (
                     isStart && (
@@ -84,11 +94,10 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                     )
                 )}
                 <span
-                    className={`text-[15px] truncate leading-none ${
-                        isHoliday
-                            ? "font-medium text-red-600"
-                            : "font-medium text-gray-800"
-                    }`}
+                    className={`text-[15px] truncate leading-none ${isHoliday
+                        ? "font-medium text-red-600"
+                        : "font-medium text-gray-800"
+                        }`}
                 >
                     {title}
                 </span>

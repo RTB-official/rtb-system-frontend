@@ -5,7 +5,22 @@ import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import VacationManagementSection from "../../components/sections/VacationManagementSection";
 import VacationRequestModal from "../../components/ui/VacationRequestModal";
-import { IconMore, IconPlus } from "../../components/icons/Icons";
+import VacationSkeleton from "../../components/common/VacationSkeleton";
+import { IconPlus } from "../../components/icons/Icons";
+import { useAuth } from "../../store/auth";
+import {
+    createVacation,
+    getVacations,
+    getVacationStats,
+    getVacationGrantHistory,
+    getCurrentTotalAnnualLeave,
+    statusToKorean,
+    leaveTypeToKorean,
+    formatVacationDate,
+    type Vacation,
+    type VacationStatus as ApiVacationStatus,
+} from "../../lib/vacationApi";
+import type { VacationGrantHistory } from "../../lib/vacationCalculator";
 
 export type VacationStatus = "대기 중" | "승인 완료" | "반려";
 
@@ -19,224 +34,195 @@ export interface VacationRow {
     remainDays: number; // 12, 13.5
 }
 
+export interface GrantExpireRow {
+    id: string;
+    monthLabel: string;
+    granted?: number;
+    expired?: number;
+    used?: number;
+    balance?: number;
+}
+
 export default function VacationPage() {
+    const { user } = useAuth();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
 
     // 연도 필터 / 탭 상태
-    const [year, setYear] = useState("2025");
+    const [year, setYear] = useState(() => {
+        return String(new Date().getFullYear());
+    });
     const [tab, setTab] = useState<"사용 내역" | "지급/소멸 내역">("사용 내역");
     const [page, setPage] = useState(1);
 
     const [modalOpen, setModalOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [vacations, setVacations] = useState<Vacation[]>([]);
+    const [summary, setSummary] = useState({
+        myAnnual: 0,
+        granted: 0,
+        used: 0,
+        expired: 0,
+    });
+    const [grantHistory, setGrantHistory] = useState<VacationGrantHistory[]>([]);
 
     // URL 파라미터로 모달 열기
     useEffect(() => {
         if (searchParams.get("openModal") === "true") {
             setModalOpen(true);
-            // URL에서 파라미터 제거
             searchParams.delete("openModal");
             setSearchParams(searchParams, { replace: true });
         }
     }, [searchParams, setSearchParams]);
 
-    // 스샷과 유사한 mock
-    const rows: VacationRow[] = useMemo(
-        () => [
-            {
-                id: "1",
-                period: "2025. 12. 18.(목)",
-                item: "연차",
-                reason: "개인 사유",
-                status: "대기 중",
-                usedDays: -1,
-                remainDays: 12,
-            },
-            {
-                id: "2",
-                period: "2025. 12. 18.(목)",
-                item: "오전 반차",
-                reason: "병원 방문",
-                status: "대기 중",
-                usedDays: -0.5,
-                remainDays: 13,
-            },
-            {
-                id: "3",
-                period: "2025. 12. 18.(목)",
-                item: "오후 반차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -0.5,
-                remainDays: 13.5,
-            },
-            {
-                id: "4",
-                period: "2025. 12. 18.(목)",
-                item: "오후 반차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -0.5,
-                remainDays: 14,
-            },
-            {
-                id: "5",
-                period: "2025. 12. 18.(목)",
-                item: "연차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -1,
-                remainDays: 15,
-            },
-            {
-                id: "6",
-                period: "2025. 12. 18.(목)",
-                item: "연차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -1,
-                remainDays: 16,
-            },
-            {
-                id: "7",
-                period: "2025. 12. 18.(목)",
-                item: "연차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -1,
-                remainDays: 17,
-            },
-            {
-                id: "8",
-                period: "2025. 12. 18.(목)",
-                item: "연차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -1,
-                remainDays: 18,
-            },
-            {
-                id: "9",
-                period: "2025. 12. 18.(목)",
-                item: "연차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -1,
-                remainDays: 19,
-            },
-            {
-                id: "10",
-                period: "2025. 12. 18.(목)",
-                item: "연차",
-                reason: "개인 사유",
-                status: "승인 완료",
-                usedDays: -1,
-                remainDays: 20,
-            },
-        ],
-        []
-    );
+    // 휴가 목록 조회
+    useEffect(() => {
+        if (!user?.id) return;
 
-    const grantExpireRows = useMemo(() => {
-        return [
-            {
-                id: "m1",
-                monthLabel: "2025년 1월",
-                granted: 15,
-                expired: -3,
-                used: undefined,
-                balance: 15,
-            },
-            {
-                id: "m2",
-                monthLabel: "2025년 2월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 15,
-            },
-            {
-                id: "m3",
-                monthLabel: "2025년 3월",
-                granted: undefined,
-                expired: undefined,
-                used: -3,
-                balance: 12,
-            },
-            {
-                id: "m4",
-                monthLabel: "2025년 4월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 12,
-            },
-            {
-                id: "m5",
-                monthLabel: "2025년 5월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 12,
-            },
-            {
-                id: "m6",
-                monthLabel: "2025년 6월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 12,
-            },
-            {
-                id: "m7",
-                monthLabel: "2025년 7월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 12,
-            },
-            {
-                id: "m8",
-                monthLabel: "2025년 8월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 12,
-            },
-            {
-                id: "m9",
-                monthLabel: "2025년 9월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 12,
-            },
-            {
-                id: "m10",
-                monthLabel: "2025년 10월",
-                granted: undefined,
-                expired: undefined,
-                used: undefined,
-                balance: 12,
-            },
-        ];
-    }, []);
+        const fetchVacations = async () => {
+            setLoading(true);
+            try {
+                const yearNum = parseInt(year);
+                const data = await getVacations(user.id, { year: yearNum });
+                setVacations(data);
 
-    // 간단 페이징(1페이지 10개 고정으로 mock)
-    const totalPages = 3;
-
-    // 카드 요약(스샷 숫자 형태)
-    const summary = useMemo(() => {
-        return {
-            myAnnual: 11,
-            granted: 20,
-            used: 3,
-            expired: 3,
+                // 통계 조회
+                const stats = await getVacationStats(user.id, yearNum);
+                
+                // 지급/소멸 내역 조회 (해당 연도만)
+                const history = await getVacationGrantHistory(user.id, yearNum);
+                setGrantHistory(history);
+                
+                // 지급 총합 계산 (해당 연도만)
+                const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
+                const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
+                
+                // 현재 날짜 기준 총 연차 계산 (연도 무관)
+                const currentTotal = await getCurrentTotalAnnualLeave(user.id);
+                
+                setSummary({
+                    myAnnual: currentTotal, // 항상 현재 날짜 기준 총 연차
+                    granted: totalGranted || stats.total || 0, // 해당 연도 지급
+                    used: stats.used, // 해당 연도 사용
+                    expired: totalExpired, // 해당 연도 소멸
+                });
+            } catch (error) {
+                console.error("휴가 목록 조회 실패:", error);
+                alert("휴가 목록을 불러오는데 실패했습니다.");
+            } finally {
+                setLoading(false);
+            }
         };
-    }, []);
+
+        fetchVacations();
+    }, [user?.id, year]);
+
+    // API 데이터를 VacationRow 형식으로 변환
+    const rows: VacationRow[] = useMemo(() => {
+        return vacations.map((vacation, index) => {
+            const usedDays = vacation.leave_type === "FULL" ? -1 : -0.5;
+
+            // 남은 연차 계산 (간단한 로직, 실제로는 누적 계산 필요)
+            const approvedVacations = vacations
+                .filter(
+                    (v) =>
+                        v.status === "approved" && vacations.indexOf(v) <= index
+                )
+                .reduce(
+                    (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
+                    0
+                );
+            const remainDays = summary.myAnnual - approvedVacations;
+
+            return {
+                id: vacation.id,
+                period: formatVacationDate(vacation.date),
+                item: leaveTypeToKorean(vacation.leave_type),
+                reason: vacation.reason,
+                status: statusToKorean(vacation.status) as VacationStatus,
+                usedDays,
+                remainDays: Math.max(0, remainDays),
+            };
+        });
+    }, [vacations, summary.myAnnual]);
+
+    // 지급/소멸 내역 변환
+    const grantExpireRows = useMemo<GrantExpireRow[]>(() => {
+        return grantHistory.map((h, index) => {
+            const date = new Date(h.date);
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            
+            return {
+                id: `grant-${index}`,
+                monthLabel: `${month}월 ${day}일`,
+                granted: h.granted,
+                expired: h.expired,
+            };
+        });
+    }, [grantHistory]);
+
+    // 간단 페이징(1페이지 10개 고정)
+    const itemsPerPage = 10;
+    const totalPages = Math.ceil(rows.length / itemsPerPage);
+    const paginatedRows = rows.slice(
+        (page - 1) * itemsPerPage,
+        page * itemsPerPage
+    );
 
     const handleRegister = () => {
         setModalOpen(true);
+    };
+
+    const handleVacationSubmit = async (payload: {
+        date: string;
+        leaveType: "FULL" | "AM" | "PM";
+        reason: string;
+    }) => {
+        if (!user?.id) {
+            alert("로그인이 필요합니다.");
+            return;
+        }
+
+        try {
+            setLoading(true);
+            await createVacation({
+                user_id: user.id,
+                date: payload.date,
+                leave_type: payload.leaveType,
+                reason: payload.reason,
+            });
+
+            alert("휴가 신청이 완료되었습니다.");
+            setModalOpen(false);
+
+            // 목록 새로고침
+            const yearNum = parseInt(year);
+            const data = await getVacations(user.id, { year: yearNum });
+            setVacations(data);
+
+            const stats = await getVacationStats(user.id, yearNum);
+            
+            // 지급/소멸 내역 조회
+            const history = await getVacationGrantHistory(user.id, yearNum);
+            setGrantHistory(history);
+            
+            // 지급 총합 계산
+            const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
+            const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
+            
+            setSummary({
+                myAnnual: stats.total || 0,
+                granted: totalGranted || stats.total || 0,
+                used: stats.used,
+                expired: totalExpired,
+            });
+        } catch (error: any) {
+            console.error("휴가 신청 실패:", error);
+            alert(error.message || "휴가 신청에 실패했습니다.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -275,8 +261,8 @@ export default function VacationPage() {
                             variant="primary"
                             size="lg"
                             onClick={handleRegister}
-                            icon={ <IconPlus />
-                            }
+                            icon={<IconPlus />}
+                            disabled={loading || !user}
                         >
                             휴가 등록
                         </Button>
@@ -286,31 +272,31 @@ export default function VacationPage() {
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto px-9 py-6 md:py-9">
                     <div className="flex flex-col gap-4 md:gap-6 w-full">
-                        <VacationManagementSection
-                            summary={summary}
-                            year={year}
-                            onYearChange={setYear}
-                            tab={tab}
-                            onTabChange={setTab}
-                            rows={rows}
-                            grantExpireRows={grantExpireRows}
-                            page={page}
-                            totalPages={totalPages}
-                            onPageChange={setPage}
-                        />
+                        {loading ? (
+                            <VacationSkeleton />
+                        ) : (
+                            <>
+                                <VacationManagementSection
+                                    summary={summary}
+                                    year={year}
+                                    onYearChange={setYear}
+                                    tab={tab}
+                                    onTabChange={setTab}
+                                    rows={paginatedRows}
+                                    grantExpireRows={grantExpireRows}
+                                    page={page}
+                                    totalPages={totalPages}
+                                    onPageChange={setPage}
+                                />
 
-                        <VacationRequestModal
-                            isOpen={modalOpen}
-                            onClose={() => setModalOpen(false)}
-                            availableDays={summary.myAnnual} // 지금은 11일, 원하면 12로
-                            onSubmit={(payload) => {
-                                console.log("휴가 신청 payload:", payload);
-                                alert(
-                                    "휴가 신청이 추가되었습니다. (콘솔 확인)"
-                                );
-                                // TODO: 여기서 API 호출 or store 업데이트
-                            }}
-                        />
+                                <VacationRequestModal
+                                    isOpen={modalOpen}
+                                    onClose={() => setModalOpen(false)}
+                                    availableDays={summary.myAnnual}
+                                    onSubmit={handleVacationSubmit}
+                                />
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
