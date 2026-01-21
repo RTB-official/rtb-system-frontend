@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { IconCalendar } from "./icons/Icons";
-import { IconClock } from "./icons/Icons";
+import { IconCalendar, IconClock, IconClose } from "./icons/Icons";
 import DatePicker from "./ui/DatePicker";
 import Button from "./common/Button";
 import Input from "./common/Input";
 import Select from "./common/Select";
-import Chip from "./ui/Chip";
 import { CalendarEvent } from "../types";
 import { supabase } from "../lib/supabase";
 
@@ -98,8 +96,8 @@ export default function EventForm({
         initialEndDate
             ? formatDateForInput(initialEndDate)
             : initialDate
-            ? formatDateForInput(initialDate)
-            : ""
+                ? formatDateForInput(initialDate)
+                : ""
     );
     const [endHour, setEndHour] = useState<string>("18");
     const [endMinute, setEndMinute] = useState<string>("00");
@@ -126,7 +124,7 @@ export default function EventForm({
 
     const handleAddAttendee = (member?: { name: string; username: string } | string) => {
         let targetName: string;
-        
+
         if (typeof member === "object" && member) {
             targetName = member.name;
         } else if (typeof member === "string") {
@@ -134,7 +132,7 @@ export default function EventForm({
         } else {
             targetName = attendeeInput;
         }
-        
+
         if (targetName && !attendees.includes(targetName)) {
             setAttendees((prev) => [...prev, targetName]);
             setAttendeeInput("");
@@ -319,13 +317,15 @@ export default function EventForm({
                 </div>
                 <div className="flex flex-wrap gap-2">
                     {attendees.map((attendee) => (
-                        <Chip
+                        <Button
                             key={attendee}
-                            onRemove={() => handleRemoveAttendee(attendee)}
-                            size="sm"
+                            variant="secondary"
+                            size="md"
+                            onClick={() => handleRemoveAttendee(attendee)}
                         >
                             {attendee}
-                        </Chip>
+                            <IconClose className="ml-1 w-4 h-4" />
+                        </Button>
                     ))}
                 </div>
             </div>

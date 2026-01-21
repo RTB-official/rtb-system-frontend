@@ -149,7 +149,6 @@ function App() {
                                 path="*"
                                 element={<Navigate to="/dashboard" replace />}
                             />
-
                         </Routes>
                     </Suspense>
                 </BrowserRouter>
