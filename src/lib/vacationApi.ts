@@ -4,6 +4,12 @@ import {
     getGongmuTeamUserIds,
     createNotificationsForUsers,
 } from "./notificationApi";
+import { 
+    calculateAnnualLeave, 
+    getVacationGrantHistory as calculateGrantHistory, 
+    type VacationGrantHistory,
+    updateVacationBalances
+} from "./vacationCalculator";
 
 // ==================== 타입 정의 ====================
 
@@ -315,13 +321,149 @@ export async function getVacationStats(
         if (balance) {
             stats.total = balance.total_days;
             stats.remaining = stats.total - stats.used;
+        } else {
+            // 잔액 테이블에 없으면 입사일 기준으로 계산
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("join_date")
+                .eq("id", userId)
+                .single();
+            
+            if (profile?.join_date) {
+                // 현재 날짜까지 지급받은 연차만 계산
+                stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
+                stats.remaining = stats.total - stats.used;
+            } else {
+                // 입사일이 없으면 기본값 15일
+                stats.total = 15;
+                stats.remaining = stats.total - stats.used;
+            }
         }
     } catch (error) {
-        // 잔액 테이블이 없거나 데이터가 없는 경우 무시
-        console.warn("Vacation balance not found, using calculated values");
+        // 잔액 테이블이 없거나 데이터가 없는 경우 입사일 기준으로 계산
+        try {
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("join_date")
+                .eq("id", userId)
+                .single();
+            
+            if (profile?.join_date) {
+                // 현재 날짜까지 지급받은 연차만 계산
+                stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
+                stats.remaining = stats.total - stats.used;
+            } else {
+                // 입사일이 없으면 기본값 15일
+                stats.total = 15;
+                stats.remaining = stats.total - stats.used;
+            }
+        } catch (profileError) {
+            console.warn("프로필 조회 실패, 기본값 사용:", profileError);
+            stats.total = 15;
+            stats.remaining = stats.total - stats.used;
+        }
     }
 
     return stats;
+}
+
+/**
+ * 사용자의 연도별 연차 지급/소멸 내역 조회
+ */
+export async function getVacationGrantHistory(
+    userId: string,
+    year: number
+): Promise<VacationGrantHistory[]> {
+    // 프로필에서 입사일 가져오기
+    const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("join_date")
+        .eq("id", userId)
+        .single();
+    
+    if (profileError || !profile?.join_date) {
+        console.warn("프로필 조회 실패 또는 입사일 없음:", profileError);
+        return [];
+    }
+    
+    // 지급/소멸 내역 계산
+    return calculateGrantHistory(profile.join_date, year);
+}
+
+/**
+ * 모든 직원의 연차를 특정 연도부터 현재 연도까지 계산하고 업데이트
+ * @param startYear 시작 연도 (기본값: 2025)
+ */
+export async function calculateAllEmployeesVacation(startYear: number = 2025): Promise<void> {
+    const currentYear = new Date().getFullYear();
+    
+    console.log(`모든 직원의 연차 계산 시작: ${startYear}년 ~ ${currentYear}년`);
+    
+    // 각 연도별로 모든 직원의 연차 계산
+    for (let year = startYear; year <= currentYear; year++) {
+        console.log(`${year}년 연차 계산 중...`);
+        try {
+            await updateVacationBalances(undefined, year);
+            console.log(`${year}년 연차 계산 완료`);
+        } catch (error) {
+            console.error(`${year}년 연차 계산 실패:`, error);
+            throw error;
+        }
+    }
+    
+    console.log(`모든 연차 계산 완료: ${startYear}년 ~ ${currentYear}년`);
+}
+
+/**
+ * 사용자의 현재 날짜 기준 총 연차 계산 (연도 무관)
+ */
+export async function getCurrentTotalAnnualLeave(userId: string): Promise<number> {
+    // 프로필에서 입사일 가져오기
+    const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("join_date")
+        .eq("id", userId)
+        .single();
+    
+    if (profileError || !profile?.join_date) {
+        console.warn("프로필 조회 실패 또는 입사일 없음:", profileError);
+        return 0;
+    }
+    
+    const currentDate = new Date();
+    
+    // 입사일부터 현재까지 지급받은 모든 연차 내역 가져오기
+    const join = new Date(profile.join_date);
+    const joinYear = join.getFullYear();
+    const currentYear = currentDate.getFullYear();
+    
+    // 2025년부터만 계산 (2024년 이전 연차는 모두 소멸 처리)
+    const startYear = Math.max(joinYear, 2025);
+    
+    // 모든 연도의 지급 내역을 합산
+    let totalGranted = 0;
+    for (let year = startYear; year <= currentYear; year++) {
+        const history = calculateGrantHistory(profile.join_date, year, currentDate);
+        const yearGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
+        const yearExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
+        totalGranted += yearGranted - yearExpired;
+    }
+    
+    // 사용한 연차 차감
+    const { data: vacations } = await supabase
+        .from("vacations")
+        .select("leave_type, status")
+        .eq("user_id", userId)
+        .eq("status", "approved");
+    
+    if (vacations) {
+        const usedDays = vacations.reduce((sum, v) => {
+            return sum + (v.leave_type === "FULL" ? 1 : 0.5);
+        }, 0);
+        totalGranted -= usedDays;
+    }
+    
+    return Math.max(0, totalGranted);
 }
 
 // ==================== 유틸리티 함수 ====================

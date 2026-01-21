@@ -132,9 +132,8 @@ export default function VacationManagementSection({
                 </div>
                 <Select
                     options={[
+                        { value: "2026", label: "2026년" },
                         { value: "2025", label: "2025년" },
-                        { value: "2024", label: "2024년" },
-                        { value: "2023", label: "2023년" },
                     ]}
                     value={year}
                     onChange={onYearChange}

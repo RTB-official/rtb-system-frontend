@@ -57,6 +57,17 @@ export interface WorkLogWithPersons {
     date_to?: string;
 }
 
+// ==================== 유틸리티 함수 ====================
+
+/**
+ * 특정 연도와 월의 마지막 날짜를 반환
+ */
+function getLastDayOfMonth(year: number, month: number): number {
+    // month는 0-11 (0 = 1월, 11 = 12월)
+    // 다음 달의 0일은 이번 달의 마지막 날
+    return new Date(year, month + 1, 0).getDate();
+}
+
 // ==================== 일정 관리 ====================
 
 /**
@@ -222,14 +233,10 @@ export async function getCalendarEvents(filters?: {
     }
 
     if (filters?.month !== undefined && filters?.year) {
-        const startDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-01`;
-        const endDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-31`;
+        const month = filters.month + 1; // 0-11 -> 1-12
+        const lastDay = getLastDayOfMonth(filters.year, filters.month);
+        const startDate = `${filters.year}-${String(month).padStart(2, "0")}-01`;
+        const endDate = `${filters.year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
         query = query.gte("start_date", startDate).lte("end_date", endDate);
     }
 
@@ -263,14 +270,10 @@ export async function getWorkLogsForDashboard(
         .limit(1000);
 
     if (filters?.year && filters?.month !== undefined) {
-        const startDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-01`;
-        const endDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-31`;
+        const month = filters.month + 1; // 0-11 -> 1-12
+        const lastDay = getLastDayOfMonth(filters.year, filters.month);
+        const startDate = `${filters.year}-${String(month).padStart(2, "0")}-01`;
+        const endDate = `${filters.year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
         entriesQuery = entriesQuery
             .gte("date_from", startDate)
             .lte("date_from", endDate);
