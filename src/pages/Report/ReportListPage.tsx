@@ -10,7 +10,7 @@ import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
 import ReportListSkeleton from "../../components/common/ReportListSkeleton";
-import { IconMore, IconPlus } from "../../components/icons/Icons";
+import { IconMore, IconPlus, IconReport } from "../../components/icons/Icons";
 import EmptyValueIndicator from "../Expense/components/EmptyValueIndicator";
 import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -467,9 +467,7 @@ export default function ReportListPage() {
                                                     <IconMore className="w-[18px] h-[18px]" />
                                                 </button>
                                                 <ActionMenu
-                                                    isOpen={
-                                                        openMenuId === row.id
-                                                    }
+                                                    isOpen={openMenuId === row.id}
                                                     anchorEl={menuAnchor}
                                                     onClose={() => {
                                                         setOpenMenuId(null);
@@ -479,12 +477,8 @@ export default function ReportListPage() {
                                                         navigate(`/report/${row.id}/edit`);
                                                     }}
                                                     onDelete={() => {
-                                                        setDeleteTargetId(
-                                                            row.id
-                                                        );
-                                                        setDeleteConfirmOpen(
-                                                            true
-                                                        );
+                                                        setDeleteTargetId(row.id);
+                                                        setDeleteConfirmOpen(true);
                                                     }}
                                                     onDownload={() => {
                                                         // ✅ 새 "창"으로 PDF 인쇄(저장) 페이지 열기 (예시 브라우저처럼)
@@ -509,10 +503,24 @@ export default function ReportListPage() {
                                                             ].join(",")
                                                         );
                                                     }}
-
-                                                    
                                                     width="w-44"
-                                                />
+                                                >
+                                                    {/* ✅ (제일 위) 보고서 보기 */}
+                                                    <button
+                                                        className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                                                        onClick={() => {
+                                                            navigate(`/report/${row.id}`);
+                                                        }}
+                                                    >
+                                                        <div className="w-5 flex justify-center text-gray-500">
+                                                            <IconReport />
+                                                        </div>
+                                                        보고서 보기
+                                                    </button>
+
+
+                                                </ActionMenu>
+
                                             </div>
                                         ),
                                     },

@@ -108,7 +108,7 @@ interface WorkReportState {
   vehicles: string[];
   subject: string;
   
-  // 작업자 명단 (전체)
+  // 전체 인원원 (전체)
   workers: string[];
   
   // 상세정보 (출장 업무 일지)

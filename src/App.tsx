@@ -16,6 +16,7 @@ const WorkloadDetailPage = lazy(
 const CreationPage = lazy(() => import("./pages/Creation/CreationPage"));
 const ReportListPage = lazy(() => import("./pages/Report/ReportListPage"));
 const ReportEditPage = lazy(() => import("./pages/Report/ReportEditPage"));
+const ReportViewPage = lazy(() => import("./pages/Report/ReportViewPage"));
 const VacationPage = lazy(() => import("./pages/Vacation/VacationPage"));
 const AdminVacationPage = lazy(
     () => import("./pages/Vacation/AdminVacationPage")
@@ -61,6 +62,10 @@ function App() {
                                 <Route
                                     path="/report"
                                     element={<ReportListPage />}
+                                />
+                                <Route
+                                    path="/report/:id"
+                                    element={<ReportViewPage />}
                                 />
                                 <Route
                                     path="/report/:id/edit"
@@ -114,7 +119,10 @@ function App() {
                                     path="/report"
                                     element={<ReportListPage />}
                                 />
-
+                                <Route
+                                    path="/report/:id"
+                                    element={<ReportViewPage />}
+                                />
                                 {/* ✅ PDF 페이지도 protected 안에 넣기 + 경로를 쿼리 방식에 맞춤 */}
                                 <Route path="/report/pdf" element={<ReportPdfPage />} />
 

@@ -99,7 +99,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
     // ✅ notification 브랜치 기능 이식: 알림 패널 토글
     const [showNotifications, setShowNotifications] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
-    const [unreadCount, setUnreadCount] = useState(0);
+    const [unreadCount, setUnreadCount] = useState<number>(() => {
+        const cached = localStorage.getItem("sidebarUnreadCount");
+        const n = cached ? Number(cached) : 0;
+        return Number.isFinite(n) ? n : 0;
+    });
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
     // 사용자 메뉴 상태
@@ -232,6 +236,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 ]);
                 setNotifications(notificationList);
                 setUnreadCount(count);
+                setNotifications(notificationList);
+                setUnreadCount(count);
+                localStorage.setItem("sidebarUnreadCount", String(count));
             } catch (error) {
                 console.error("알림 로드 실패:", error);
             }
@@ -549,6 +556,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                                 ]);
                                             setNotifications(notificationList);
                                             setUnreadCount(count);
+                                            setNotifications(notificationList);
+                                            setUnreadCount(count);
+                                            localStorage.setItem("sidebarUnreadCount", String(count));
+
                                         } catch (error) {
                                             console.error("알림 업데이트 실패:", error);
                                         }
@@ -572,6 +583,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                                 ]);
                                             setNotifications(notificationList);
                                             setUnreadCount(count);
+                                            setNotifications(notificationList);
+                                            setUnreadCount(count);
+                                            localStorage.setItem("sidebarUnreadCount", String(count));
+
                                         } catch (error) {
                                             console.error(
                                                 "모두 읽음 처리 실패:",
