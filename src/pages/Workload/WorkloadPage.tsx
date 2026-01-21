@@ -15,6 +15,7 @@ import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
+import { supabase } from "../../lib/supabase";
 import {
     getWorkloadData,
     getWorkloadTargetProfiles,
@@ -77,11 +78,42 @@ export default function WorkloadPage() {
     const [loading, setLoading] = useState(true);
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [userDepartment, setUserDepartment] = useState<string | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [userName, setUserName] = useState<string | null>(null);
 
     const itemsPerPage = 10;
 
+    // 사용자 정보 로드
+    useEffect(() => {
+        const fetchUserInfo = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                setCurrentUserId(user.id);
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("role, department, name")
+                    .eq("id", user.id)
+                    .single();
+                if (profile) {
+                    setUserRole(profile.role);
+                    setUserDepartment(profile.department);
+                    setUserName(profile.name);
+                }
+            }
+        };
+        fetchUserInfo();
+    }, []);
+
     // 행 클릭 핸들러
     const handleRowClick = (row: WorkloadTableRow) => {
+        const isStaff = userRole === "staff" || userDepartment === "공사팀";
+        // 공사팀(스태프)인 경우 본인 ID와 일치하는 경우만 상세 페이지로 이동
+        // (이미 자동 리다이렉트되므로 이 핸들러는 사실상 사용되지 않지만, 안전장치로 유지)
+        if (isStaff && row.id !== currentUserId) {
+            return;
+        }
         navigate(`/workload/detail/${encodeURIComponent(row.name)}`);
     };
 
@@ -131,6 +163,18 @@ export default function WorkloadPage() {
 
         loadData();
     }, [selectedYear, selectedMonth]);
+
+    // 공사팀(스태프)인 경우 본인 상세 페이지로 자동 리다이렉트
+    useEffect(() => {
+        const isStaff = userRole === "staff" || userDepartment === "공사팀";
+        if (isStaff && userName && tableData.length > 0 && !loading) {
+            // 본인 데이터 찾기
+            const ownData = tableData.find(row => row.id === currentUserId || row.name === userName);
+            if (ownData) {
+                navigate(`/workload/detail/${encodeURIComponent(ownData.name)}`, { replace: true });
+            }
+        }
+    }, [userRole, userDepartment, userName, tableData, currentUserId, loading, navigate]);
 
     // 페이지네이션 계산
     const totalPages = useMemo(() => {

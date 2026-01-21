@@ -1,5 +1,6 @@
 // DashboardPage.tsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import ScheduleModal from "../../components/common/ScheduleModal";
 import Sidebar from "../../components/Sidebar";
 import CalendarMenu from "../../components/CalendarMenu";
@@ -10,6 +11,7 @@ import { IconMenu } from "../../components/icons/Icons";
 import { CalendarEvent } from "../../types";
 import useCalendarWheelNavigation from "../../hooks/useCalendarWheelNavigation";
 import { useAuth } from "../../store/auth";
+import { supabase } from "../../lib/supabase";
 import {
     getCalendarEvents,
     createCalendarEvent,
@@ -35,10 +37,36 @@ import CalendarGrid from "./components/CalendarGrid";
 
 export default function DashboardPage() {
     const { user } = useAuth();
+    const navigate = useNavigate();
     const today = new Date();
 
     const [year, setYear] = useState(today.getFullYear());
     const [month, setMonth] = useState(today.getMonth());
+
+    // 권한 체크: 공사팀(스태프)은 접근 불가
+    useEffect(() => {
+        const checkAccess = async () => {
+            if (!user?.id) return;
+            
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("role, department, position")
+                .eq("id", user.id)
+                .single();
+            
+            if (profile) {
+                const isStaff = profile.role === "staff" || profile.department === "공사팀";
+                const isCEO = profile.position === "대표";
+                const isAdmin = profile.role === "admin" || profile.department === "공무팀";
+                
+                // 공사팀(스태프)만 접근 불가 - 조용히 리다이렉트
+                if (isStaff && !isCEO && !isAdmin) {
+                    navigate("/report", { replace: true });
+                }
+            }
+        };
+        checkAccess();
+    }, [user?.id, navigate]);
 
     // 공휴일 데이터
     const holidays = useHolidays(year, month);
@@ -283,6 +311,7 @@ export default function DashboardPage() {
                             start_time: data.startTime || undefined,
                             end_time: data.endTime || undefined,
                             all_day: data.allDay,
+                            attendees: data.attendees || [],
                         },
                         user.id
                     );
@@ -302,6 +331,7 @@ export default function DashboardPage() {
                     start_time: data.startTime,
                     end_time: data.endTime,
                     all_day: data.allDay ?? true,
+                    attendees: data.attendees || [],
                 });
             }
 

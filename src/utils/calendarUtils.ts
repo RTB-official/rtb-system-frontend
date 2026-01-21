@@ -87,9 +87,11 @@ export function getWeekEventRows(
         duration: number;
     }[];
 
-    // 슬롯(행) 할당
-    const rows: (typeof segments)[] = [];
-    segments.forEach((segment) => {
+    // 슬롯(행) 할당 (공휴일 제외)
+    // 공휴일 태그는 rowIndex를 차지하지 않음
+    const nonHolidaySegments = segments.filter(seg => !seg.event.isHoliday);
+    const rows: (typeof nonHolidaySegments)[] = [];
+    nonHolidaySegments.forEach((segment) => {
         let assigned = false;
         for (let i = 0; i < rows.length; i++) {
             const canFit = !rows[i].some(
@@ -110,11 +112,46 @@ export function getWeekEventRows(
     });
 
     // 각 세그먼트에 rowIndex를 추가하여 반환
-    return rows
+    const result = rows
         .map((row, rowIndex) =>
             row.map((segment) => ({ ...segment, rowIndex }))
         )
         .flat();
+    
+    // 공휴일 세그먼트도 결과에 포함 (rowIndex는 -1로 설정하여 rowIndex 계산에서 제외)
+    const holidaySegments = segments
+        .filter(seg => seg.event.isHoliday)
+        .map(seg => ({ ...seg, rowIndex: -1 }));
+    
+    return [...result, ...holidaySegments];
+    
+    // 디버깅: 1월 1일과 1월 2일의 모든 일정 초기 rowIndex 확인
+    const weekStartDate = getSafeDateKey(week[0].date);
+    const weekEndDate = getSafeDateKey(week[6].date);
+    const hasJan1Or2 = result.some(seg => {
+        const segStartDate = getSafeDateKey(week[seg.startOffset]?.date || week[0].date);
+        return segStartDate === "2026-01-01" || segStartDate === "2026-01-02";
+    });
+    
+    if (hasJan1Or2) {
+        console.log(`\n=== [getWeekEventRows] 주: ${weekStartDate} ~ ${weekEndDate} ===`);
+        result.forEach(seg => {
+            const segStartDate = getSafeDateKey(week[seg.startOffset]?.date || week[0].date);
+            if (segStartDate === "2026-01-01" || segStartDate === "2026-01-02" || 
+                seg.event.title.includes("출장") || seg.event.title === "가") {
+                console.log(`일정: "${seg.event.title}"`);
+                console.log(`  - 초기 rowIndex: ${seg.rowIndex}`);
+                console.log(`  - startOffset: ${seg.startOffset}`);
+                console.log(`  - duration: ${seg.duration}`);
+                console.log(`  - 시작날짜: ${segStartDate}`);
+                console.log(`  - event.id: ${seg.event.id}`);
+                console.log(`  - startDate: ${seg.event.startDate}`);
+                console.log(`  - endDate: ${seg.event.endDate}`);
+            }
+        });
+    }
+    
+    return result;
 }
 
 /**

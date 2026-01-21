@@ -58,7 +58,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
     onDragEnter,
     onHiddenCountClick,
 }) => {
-    const TAG_LAYER_TOP = 54; // 날짜 숫자(30px) + 상단 패딩(12px) + 간격(10px) = 52px (여유 2px)
+    const TAG_LAYER_TOP = 42; // 셀 상단 패딩(8px) + 날짜 숫자 영역(30px) + 여백(4px) = 42px
     const HIDDEN_COUNT_HEIGHT = 24;
 
     // 각 날짜별로 보여줄 태그와 숨길 태그 계산
@@ -74,96 +74,101 @@ const WeekRow: React.FC<WeekRowProps> = ({
 
         const cellHeight = cellHeights[dateKey] || 0;
 
-        // 해당 날짜에 해당하는 세그먼트 필터링
+        // 해당 날짜에 해당하는 세그먼트 필터링 (공휴일 제외)
+        // 공휴일 태그는 rowIndex를 차지하지 않음
         const daySegments = weekEventRows
             .filter(
                 (seg) =>
                     seg.startOffset <= dayIdx &&
-                    dayIdx < seg.startOffset + seg.duration
-            )
-            .sort((a, b) => a.rowIndex - b.rowIndex);
-
-        // 셀 높이가 측정되지 않았으면 모든 태그 표시
-        if (cellHeight === 0) {
-            dateTagInfo.set(dateKey, {
-                visibleSegments: daySegments,
-                hiddenCount: 0,
-            });
-            return;
-        }
-
-        // 태그가 하나도 없으면 처리할 필요 없음
-        if (daySegments.length === 0) {
-            dateTagInfo.set(dateKey, {
-                visibleSegments: [],
-                hiddenCount: 0,
-            });
-            return;
-        }
-
-        // cellHeight는 ResizeObserver로 측정된 셀의 실제 높이 (content box)
-        // 태그 컨테이너는 top: TAG_LAYER_TOP (54px)에서 시작
-
-        // 태그가 들어갈 수 있는 공간 (태그 컨테이너 시작점부터 셀 하단까지)
-        const availableHeight = cellHeight - TAG_LAYER_TOP;
-
-        // availableHeight가 0 이하이면 태그를 표시할 수 없음
-        if (availableHeight <= 0) {
-            dateTagInfo.set(dateKey, {
-                visibleSegments: [],
-                hiddenCount: daySegments.length,
-            });
-            return;
-        }
-
-        // 각 태그의 위치 계산 (태그 컨테이너 기준 - 0부터 시작)
-        // 태그는 컨테이너 내부에서 rowIndex * (tagHeight + tagSpacing)에 위치
-        const tagPositions = daySegments.map((seg) => {
-            const tagTop = seg.rowIndex * (tagHeight + tagSpacing);
-            const tagBottom = tagTop + tagHeight;
-            return { seg, tagTop, tagBottom };
+                    dayIdx < seg.startOffset + seg.duration &&
+                    !seg.event.isHoliday // 공휴일 제외
+            );
+        
+        // 며칠에 걸친 일정(duration >= 2)과 단일 일정(duration === 1)을 분리
+        const multiDaySegments = daySegments.filter(seg => seg.duration >= 2);
+        const singleDaySegments = daySegments.filter(seg => seg.duration === 1);
+        
+        // 며칠에 걸친 일정은 원래 rowIndex를 그대로 유지 (같은 줄에 표시되도록)
+        // 단일 일정은 며칠에 걸친 일정과 겹치지 않도록 배치
+        
+        // 며칠에 걸친 일정의 rowIndex 집합
+        const multiDayRowIndices = new Set(multiDaySegments.map(seg => seg.rowIndex));
+        
+        // 각 일정에 실제 rowIndex 할당 (겹치지 않도록)
+        const assignedRows: Map<number, typeof daySegments> = new Map();
+        
+        // 며칠에 걸친 일정 배치: 원래 rowIndex를 그대로 사용 (같은 줄에 표시)
+        multiDaySegments.forEach((segment) => {
+            const targetRowIndex = segment.rowIndex;
+            const existing = assignedRows.get(targetRowIndex) || [];
+            assignedRows.set(targetRowIndex, [...existing, segment]);
         });
-
-        // 마지막 태그의 하단 위치
-        const lastTagBottom = tagPositions.length > 0
-            ? Math.max(...tagPositions.map(p => p.tagBottom))
-            : 0;
-
-        // +N개 공간을 확보한 최대 높이
-        const maxVisibleHeightWithHidden = availableHeight - HIDDEN_COUNT_HEIGHT;
-
-        // 모든 태그가 availableHeight 안에 들어가는지 확인
-        if (lastTagBottom <= availableHeight) {
-            // 모든 태그가 들어가지만, +N개 공간을 미리 확보하지 않음
-            dateTagInfo.set(dateKey, {
-                visibleSegments: daySegments,
-                hiddenCount: 0,
+        
+        // 단일 일정 배치: 며칠에 걸친 일정과 겹치지 않도록
+        singleDaySegments.sort((a, b) => a.rowIndex - b.rowIndex).forEach((segment) => {
+            let targetRowIndex = segment.rowIndex;
+            
+            // 며칠에 걸친 일정이 해당 rowIndex를 사용 중이면 아래로 내림
+            while (multiDayRowIndices.has(targetRowIndex) || 
+                   (assignedRows.has(targetRowIndex) && assignedRows.get(targetRowIndex)!.length > 0)) {
+                targetRowIndex++;
+            }
+            
+            const existing = assignedRows.get(targetRowIndex) || [];
+            assignedRows.set(targetRowIndex, [...existing, segment]);
+        });
+        
+        // 최종 rowIndex 할당
+        const finalDaySegments = Array.from(assignedRows.entries())
+            .sort((a, b) => a[0] - b[0]) // rowIndex로 정렬
+            .flatMap(([rowIndex, segments]) => 
+                segments.map(segment => ({ ...segment, rowIndex }))
+            );
+        
+        // 디버깅: 1월 1일과 1월 2일의 모든 일정 rowIndex 확인
+        if (dateKey === "2026-01-01" || dateKey === "2026-01-02") {
+            console.log(`\n=== [${dateKey}] 일정 정보 ===`);
+            finalDaySegments.forEach(seg => {
+                const originalSeg = weekEventRows.find(s => s.event.id === seg.event.id);
+                console.log(`일정: "${seg.event.title}"`);
+                console.log(`  - 원래 rowIndex: ${originalSeg?.rowIndex ?? 'N/A'}`);
+                console.log(`  - 최종 rowIndex: ${seg.rowIndex}`);
+                console.log(`  - startOffset: ${seg.startOffset}`);
+                console.log(`  - duration: ${seg.duration}`);
+                console.log(`  - event.id: ${seg.event.id}`);
+                console.log(`  - startDate: ${seg.event.startDate}`);
+                console.log(`  - endDate: ${seg.event.endDate}`);
             });
-            return;
-        }
-
-        // 태그가 넘어가는 경우, +N개 공간(24px)을 확보하고 보여줄 태그 계산
-        // 태그가 들어갈 수 있는 최대 높이 (태그 컨테이너 기준)
-        const maxVisibleHeight = maxVisibleHeightWithHidden;
-
-        // 보여줄 수 있는 태그들 선택 (완전히 들어가는 것만)
-        // 태그의 하단이 maxVisibleHeight 이하이면 완전히 보임
-        const visibleSegments: WeekEventSegment[] = [];
-        for (const { seg, tagBottom } of tagPositions) {
-            if (tagBottom <= maxVisibleHeight) {
-                visibleSegments.push(seg);
-            } else {
-                // 태그가 잘리면 더 이상 추가하지 않음
-                break;
+            if (finalDaySegments.length === 0) {
+                console.log(`  (일정 없음)`);
             }
         }
 
-        // 숨겨진 태그 개수 = 전체 세그먼트 수 - 보이는 세그먼트 수
-        const hiddenCount = daySegments.length - visibleSegments.length;
+        // 태그가 하나도 없으면 처리할 필요 없음
+        if (finalDaySegments.length === 0) {
+            dateTagInfo.set(dateKey, {
+                visibleSegments: [],
+                hiddenCount: 0,
+            });
+            return;
+        }
 
-        dateTagInfo.set(dateKey, {
-            visibleSegments,
-            hiddenCount,
+        // 일정이 4개 이상이면 3개만 보여주고 나머지는 "+n개"로 표시
+        const MAX_VISIBLE_EVENTS = 3;
+
+        if (finalDaySegments.length > MAX_VISIBLE_EVENTS) {
+            // 처음 3개만 보여주고 나머지는 숨김
+            dateTagInfo.set(dateKey, {
+                visibleSegments: finalDaySegments.slice(0, MAX_VISIBLE_EVENTS),
+                hiddenCount: finalDaySegments.length - MAX_VISIBLE_EVENTS,
+            });
+            return;
+        }
+
+        // 3개 이하면 모두 보여주기 (셀 높이와 관계없이)
+            dateTagInfo.set(dateKey, {
+            visibleSegments: finalDaySegments,
+                hiddenCount: 0,
         });
     });
 
@@ -213,15 +218,52 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         tagSpacing={tagSpacing}
                         tagLayerTop={TAG_LAYER_TOP}
                         visibleSegments={
-                            cellHeight > 0
-                                ? weekEventRows.filter((segment) => {
-                                    const segmentEnd = segment.startOffset + segment.duration;
-                                    const overlaps = segment.startOffset <= dayIdx && dayIdx < segmentEnd;
-                                    if (!overlaps) return false;
-                                    return tagInfo?.visibleSegments.some(
-                                        (s) => s.event.id === segment.event.id
-                                    );
-                                })
+                            cellHeight > 0 && tagInfo
+                                ? (() => {
+                                    // dateTagInfo에서 재계산된 visibleSegments 사용
+                                    const visibleFromTagInfo = tagInfo.visibleSegments;
+                                    
+                                    // 며칠에 걸친 일정의 연속된 부분도 포함
+                                    const result: typeof weekEventRows = [];
+                                    
+                                    // 이미 추가된 이벤트 ID 추적
+                                    const addedEventIds = new Set<string>();
+                                    
+                                    // 먼저 해당 날짜의 visibleSegments 추가
+                                    visibleFromTagInfo.forEach(visibleSeg => {
+                                        result.push(visibleSeg);
+                                        addedEventIds.add(visibleSeg.event.id);
+                                    });
+                                    
+                                    // 며칠에 걸친 일정(duration >= 2)의 연속된 부분 추가
+                                    // 시작 날짜가 아닌 경우, 시작 날짜의 visibleSegments에서 rowIndex 가져오기
+                                    weekEventRows
+                                        .filter(seg => 
+                                            seg.duration >= 2 &&
+                                            seg.startOffset !== dayIdx &&
+                                            seg.startOffset <= dayIdx &&
+                                            dayIdx < seg.startOffset + seg.duration &&
+                                            !addedEventIds.has(seg.event.id) // 중복 제거
+                                        )
+                                        .forEach(seg => {
+                                            // 시작 날짜의 dateTagInfo에서 rowIndex 가져오기
+                                            const startDateKey = `${week[seg.startOffset]?.date.getFullYear()}-${pad(
+                                                week[seg.startOffset]?.date.getMonth() + 1 || 1
+                                            )}-${pad(week[seg.startOffset]?.date.getDate() || 1)}`;
+                                            const startTagInfo = dateTagInfo.get(startDateKey);
+                                            const startVisibleSeg = startTagInfo?.visibleSegments.find(
+                                                s => s.event.id === seg.event.id
+                                            );
+                                            
+                                            if (startVisibleSeg) {
+                                                // 시작 날짜의 rowIndex 사용 (같은 줄에 표시)
+                                                result.push({ ...seg, rowIndex: startVisibleSeg.rowIndex });
+                                                addedEventIds.add(seg.event.id);
+                                            }
+                                        });
+                                    
+                                    return result;
+                                })()
                                 : weekEventRows.filter(
                                     (seg) =>
                                         seg.startOffset <= dayIdx &&
@@ -230,6 +272,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         }
                         week={week}
                         getSafeDateKey={getSafeDateKey}
+                        getEventsForDate={getEventsForDate}
                         onEditEvent={onEditEvent}
                         onDeleteEvent={onDeleteEvent}
                         onEventClick={onEventClick}

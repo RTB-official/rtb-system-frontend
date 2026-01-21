@@ -4,16 +4,20 @@ import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
 import AdminVacationSkeleton from "../../components/common/AdminVacationSkeleton";
+import Select from "../../components/common/Select";
 import {
     getVacations,
     updateVacationStatus,
     formatVacationDate,
     leaveTypeToKorean,
     statusToKorean,
+    calculateAllEmployeesVacation,
+    getCurrentTotalAnnualLeave,
     type Vacation,
 } from "../../lib/vacationApi";
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
+import { calculateAnnualLeave } from "../../lib/vacationCalculator";
 
 // 직원별 통계
 interface EmployeeStats {
@@ -22,6 +26,7 @@ interface EmployeeStats {
     usedDays: number;
     pendingDays: number;
     remainingDays: number;
+    totalDays: number;
 }
 
 // 휴가 신청 행 데이터
@@ -59,18 +64,18 @@ export default function AdminVacationPage() {
     const itemsPerPage = 10;
 
     // 직원 목록 가져오기 (vacations 테이블에서 user_id 추출 후 profiles에서 이름 조회)
-    const fetchEmployees = async (allVacations: Vacation[]): Promise<{ id: string; name: string }[]> => {
+    const fetchEmployees = async (allVacations: Vacation[]): Promise<{ id: string; name: string; joinDate?: string }[]> => {
         try {
             // vacations 테이블에서 고유한 user_id 추출
             const userIds = new Set(allVacations.map(v => v.user_id));
-            const employeeList: { id: string; name: string }[] = [];
+            const employeeList: { id: string; name: string; joinDate?: string }[] = [];
             
             // 각 user_id에 대해 profiles 테이블에서 이름 가져오기
             for (const userId of Array.from(userIds)) {
                 try {
                     const { data: profile } = await supabase
                         .from("profiles")
-                        .select("id, name, email")
+                        .select("id, name, email, join_date")
                         .eq("id", userId)
                         .single();
                     
@@ -78,6 +83,7 @@ export default function AdminVacationPage() {
                         employeeList.push({
                             id: profile.id,
                             name: profile.name || profile.email || "알 수 없음",
+                            joinDate: profile.join_date,
                         });
                     } else {
                         employeeList.push({
@@ -114,34 +120,64 @@ export default function AdminVacationPage() {
                 // 직원 목록 가져오기 (vacations에서 user_id 추출)
                 const employees = await fetchEmployees(allVacations);
                 const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
+                const employeeJoinDateMap = new Map(employees.map(emp => [emp.id, emp.joinDate]));
                 setEmployeeMap(employeeNameMap);
 
                 // 직원별 통계 계산
                 const statsMap = new Map<string, EmployeeStats>();
                 
-                employees.forEach(emp => {
+                // 모든 직원의 현재 총 연차 계산 (모든 연도 합산)
+                for (const emp of employees) {
+                    const joinDate = emp.joinDate;
+                    let totalDays = 15; // 기본값
+                    
+                    if (joinDate) {
+                        // 현재 날짜 기준으로 모든 연도의 연차 합산
+                        try {
+                            totalDays = await getCurrentTotalAnnualLeave(emp.id);
+                        } catch (error) {
+                            console.error(`직원 ${emp.id} 연차 계산 실패:`, error);
+                            // 실패 시 해당 연도만 계산
+                            totalDays = calculateAnnualLeave(joinDate, yearNum);
+                        }
+                    }
+                    
                     statsMap.set(emp.id, {
                         userId: emp.id,
                         userName: emp.name,
                         usedDays: 0,
                         pendingDays: 0,
-                        remainingDays: 15, // 기본 연차 15일
+                        remainingDays: totalDays,
+                        totalDays: totalDays,
                     });
-                });
+                }
 
                 // 기존 통계에 없는 직원도 추가 (휴가 기록이 없는 직원)
-                allVacations.forEach(vacation => {
+                for (const vacation of allVacations) {
                     if (!statsMap.has(vacation.user_id)) {
                         const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
+                        const joinDate = employeeJoinDateMap.get(vacation.user_id);
+                        let totalDays = 15;
+                        
+                        if (joinDate) {
+                            try {
+                                totalDays = await getCurrentTotalAnnualLeave(vacation.user_id);
+                            } catch (error) {
+                                console.error(`직원 ${vacation.user_id} 연차 계산 실패:`, error);
+                                totalDays = calculateAnnualLeave(joinDate, yearNum);
+                            }
+                        }
+                        
                         statsMap.set(vacation.user_id, {
                             userId: vacation.user_id,
                             userName: name,
                             usedDays: 0,
                             pendingDays: 0,
-                            remainingDays: 15,
+                            remainingDays: totalDays,
+                            totalDays: totalDays,
                         });
                     }
-                });
+                }
 
                 allVacations.forEach(vacation => {
                     const days = vacation.leave_type === "FULL" ? 1 : 0.5;
@@ -153,7 +189,8 @@ export default function AdminVacationPage() {
                         } else if (vacation.status === "pending") {
                             stats.pendingDays += days;
                         }
-                        stats.remainingDays = 15 - stats.usedDays;
+                        // remainingDays는 모든 연도의 총 연차에서 사용한 연차를 뺀 값
+                        stats.remainingDays = Math.max(0, stats.totalDays - stats.usedDays - stats.pendingDays);
                     }
                 });
 
@@ -234,6 +271,81 @@ export default function AdminVacationPage() {
         }
     };
 
+    // 모든 직원의 연차 계산 (2025년부터)
+    const handleCalculateAllVacations = async () => {
+        if (!confirm("모든 직원의 연차를 2025년부터 현재 연도까지 계산하시겠습니까?\n이 작업은 시간이 걸릴 수 있습니다.")) {
+            return;
+        }
+
+        try {
+            setLoading(true);
+            await calculateAllEmployeesVacation(2025);
+            alert("모든 직원의 연차 계산이 완료되었습니다.");
+            // 데이터 새로고침
+            const yearNum = parseInt(year);
+            const allVacations = await getVacations(undefined, { year: yearNum });
+            const employees = await fetchEmployees(allVacations);
+            const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
+            const employeeJoinDateMap = new Map(employees.map(emp => [emp.id, emp.joinDate]));
+            setEmployeeMap(employeeNameMap);
+            
+            // 통계 재계산
+            const statsMap = new Map<string, EmployeeStats>();
+            employees.forEach(emp => {
+                const joinDate = emp.joinDate;
+                const totalDays = joinDate 
+                    ? calculateAnnualLeave(joinDate, yearNum)
+                    : 15;
+                statsMap.set(emp.id, {
+                    userId: emp.id,
+                    userName: emp.name,
+                    usedDays: 0,
+                    pendingDays: 0,
+                    remainingDays: totalDays,
+                    totalDays: totalDays,
+                });
+            });
+            
+            allVacations.forEach(vacation => {
+                if (!statsMap.has(vacation.user_id)) {
+                    const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
+                    const joinDate = employeeJoinDateMap.get(vacation.user_id);
+                    const totalDays = joinDate 
+                        ? calculateAnnualLeave(joinDate, yearNum)
+                        : 15;
+                    statsMap.set(vacation.user_id, {
+                        userId: vacation.user_id,
+                        userName: name,
+                        usedDays: 0,
+                        pendingDays: 0,
+                        remainingDays: totalDays,
+                        totalDays: totalDays,
+                    });
+                }
+                
+                const stats = statsMap.get(vacation.user_id)!;
+                const days = vacation.leave_type === "FULL" ? 1 : 0.5;
+                
+                if (vacation.status === "approved") {
+                    stats.usedDays += days;
+                } else if (vacation.status === "pending") {
+                    stats.pendingDays += days;
+                }
+                stats.remainingDays = stats.totalDays - stats.usedDays - stats.pendingDays;
+            });
+            
+            setEmployeeStats(Array.from(statsMap.values()));
+            
+            const pending = allVacations.filter(v => v.status === "pending");
+            setPendingVacations(pending);
+        } catch (error: any) {
+            console.error("연차 계산 실패:", error);
+            alert(error.message || "연차 계산에 실패했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // 통계 카드
 
     return (
@@ -267,6 +379,16 @@ export default function AdminVacationPage() {
                 <Header
                     title="휴가 관리 (대표)"
                     onMenuClick={() => setSidebarOpen(true)}
+                    rightContent={
+                        <Button
+                            variant="secondary"
+                            size="lg"
+                            onClick={handleCalculateAllVacations}
+                            disabled={loading}
+                        >
+                            연차 일괄 계산 (2025년~)
+                        </Button>
+                    }
                 />
 
                 {/* Content */}
@@ -280,16 +402,16 @@ export default function AdminVacationPage() {
                             <div className="text-[24px] font-semibold text-gray-900">
                                 조회 기간
                             </div>
-                            <select
+                            <Select
+                                options={[
+                                    { value: "2026", label: "2026년" },
+                                    { value: "2025", label: "2025년" },
+                                    { value: "2024", label: "2024년" },
+                                    { value: "2023", label: "2023년" },
+                                ]}
                                 value={year}
-                                onChange={(e) => setYear(e.target.value)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm"
-                            >
-                                <option value="2026">2026년</option>
-                                <option value="2025">2025년</option>
-                                <option value="2024">2024년</option>
-                                <option value="2023">2023년</option>
-                            </select>
+                                onChange={setYear}
+                            />
                         </div>
 
                         {/* 직원별 통계 테이블 */}

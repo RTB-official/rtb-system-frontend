@@ -32,6 +32,7 @@ interface DayCellProps {
     onMouseDown: (e: React.MouseEvent) => void;
     onMouseEnter: () => void;
     onClick: (e: React.MouseEvent) => void;
+    getEventsForDate: (dateKey: string) => CalendarEvent[];
 }
 
 const DayCell: React.FC<DayCellProps> = ({
@@ -57,7 +58,13 @@ const DayCell: React.FC<DayCellProps> = ({
     onMouseDown,
     onMouseEnter,
     onClick,
+    getEventsForDate,
 }) => {
+    // 공휴일 이벤트 찾기 (날짜 옆에 작은 태그로 표시)
+    const holidayEvent = getEventsForDate(dateKey).find(event => event.isHoliday);
+    
+    // 공휴일이 아닌 이벤트만 태그로 표시
+    const nonHolidaySegments = visibleSegments.filter(seg => !seg.event.isHoliday);
     return (
         <div
             key={dayIdx}
@@ -72,7 +79,7 @@ const DayCell: React.FC<DayCellProps> = ({
             onMouseDown={onMouseDown}
             onMouseEnter={onMouseEnter}
             onClick={onClick}
-            className={`p-4 relative ${dayIdx < 6 ? "border-r border-gray-200" : ""
+            className={`pt-2 pb-3 px-4 relative ${dayIdx < 6 ? "border-r border-gray-200" : ""
                 } ${inMonth ? "cursor-pointer" : "cursor-default"
                 } transition-colors select-none flex flex-col ${isInDragRange
                     ? "bg-blue-50"
@@ -86,7 +93,8 @@ const DayCell: React.FC<DayCellProps> = ({
                 isolation: 'isolate',
             }}
         >
-            <div className={`${columnPadding} flex items-start`}>
+            {/* 날짜 숫자 영역 - 높이 고정하여 일정 시작 위치 통일 */}
+            <div className={`${columnPadding} relative h-[30px]`}>
                 <div className="w-7.5 h-7.5 flex items-center justify-center relative">
                     {isToday && (
                         <div className="absolute inset-0 rounded-full bg-blue-500" />
@@ -107,13 +115,29 @@ const DayCell: React.FC<DayCellProps> = ({
                         {date.getDate()}
                     </div>
                 </div>
+                {/* 공휴일 태그를 날짜 숫자 옆에 배치 (이전 위치로 복원) */}
+                {holidayEvent && (
+                    <div 
+                        className="absolute top-0 left-[calc(1rem+30px)] flex items-center pointer-events-auto z-20"
+                        style={{ pointerEvents: 'auto' }}
+                    >
+                        <CalendarTag
+                            title={holidayEvent.title}
+                            variant="holiday"
+                            isStart={true}
+                            isEnd={true}
+                            width="auto"
+                        />
+                    </div>
+                )}
             </div>
 
             {/* 태그 영역 - absolute로 배치하여 셀 높이 변경 없음, overflow로 클리핑 */}
+            {/* 공휴일 태그 유무와 관계없이 일정 태그는 항상 같은 위치에서 시작 */}
             <div
                 className="absolute left-0 right-0 pointer-events-none"
                 style={{
-                    top: `${tagLayerTop}px`,
+                    top: `${tagLayerTop}px`, // 항상 같은 위치에서 시작
                     left: 0,
                     right: 0,
                     overflow: 'hidden',
@@ -122,7 +146,7 @@ const DayCell: React.FC<DayCellProps> = ({
                         : `calc(100% - ${tagLayerTop}px)`,
                 }}
             >
-                {visibleSegments.map((segment) => {
+                {nonHolidaySegments.map((segment) => {
                     const isStartInCell = segment.startOffset === dayIdx;
                     const isEndInCell = segment.startOffset + segment.duration - 1 === dayIdx;
 
@@ -159,6 +183,8 @@ const DayCell: React.FC<DayCellProps> = ({
                     }
 
                     // rowIndex로 위치 계산
+                    // 공휴일 태그 유무와 관계없이 일정 태그는 항상 같은 위치에서 시작하므로
+                    // 단순히 rowIndex로 계산하면 됨
                     const top = segment.rowIndex * (tagHeight + tagSpacing);
 
                     return (
