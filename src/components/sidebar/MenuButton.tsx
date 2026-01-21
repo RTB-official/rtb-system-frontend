@@ -1,3 +1,6 @@
+// src/components/sidebar/MenuButton.tsx
+import React from "react";
+
 interface MenuButtonProps {
   icon: React.ReactNode;
   label: string;
@@ -13,11 +16,16 @@ export default function MenuButton({
 }: MenuButtonProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full flex gap-6 items-center p-3 rounded-xl transition-colors duration-200 ease-in-out ${isActive
-          ? "bg-gray-700 text-white"
-          : "text-gray-900 hover:bg-gray-200"
-        }`}
+      className={[
+        "w-full flex gap-6 items-center p-3 rounded-xl",
+        "transition-all duration-200 ease-out",
+        "active:scale-[0.99]",
+        isActive
+          ? "bg-gray-700 text-white shadow-sm"
+          : "text-gray-900 hover:bg-gray-200",
+      ].join(" ")}
     >
       <div className="flex gap-3 items-center w-[162px]">
         {icon}
