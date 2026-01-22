@@ -20,9 +20,11 @@ import BaseModal from "../../components/ui/BaseModal";
 import EmptyValueIndicator from "./components/EmptyValueIndicator";
 import Avatar from "../../components/common/Avatar";
 import { supabase } from "../../lib/supabase";
+import { useToast } from "../../components/ui/ToastProvider";
 
 export default function MemberExpensePage() {
     const navigate = useNavigate();
+    const { showError } = useToast();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const currentDate = new Date();
     const [year, setYear] = useState(`${currentDate.getFullYear()}년`);
@@ -193,7 +195,7 @@ export default function MemberExpensePage() {
                 setEmployeeProfiles(profileMap);
             } catch (error) {
                 console.error("데이터 로드 실패:", error);
-                alert("데이터를 불러오는데 실패했습니다.");
+                showError("데이터를 불러오는데 실패했습니다.");
             } finally {
                 setLoading(false);
             }
@@ -230,7 +232,7 @@ export default function MemberExpensePage() {
                 setCardDetails(cardData);
             } catch (error) {
                 console.error("상세 내역 로드 실패:", error);
-                alert("상세 내역을 불러오는데 실패했습니다.");
+                showError("상세 내역을 불러오는데 실패했습니다.");
             }
         };
 

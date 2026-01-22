@@ -6,6 +6,7 @@ import {
     type EmployeeCardExpenseDetail,
 } from "../../../lib/personalExpenseApi";
 import { generateExpenseReportPDF } from "../../../lib/pdfUtils";
+import { useToast } from "../../../components/ui/ToastProvider";
 
 interface EmployeeDetailViewProps {
     employeeName: string;
@@ -34,6 +35,7 @@ export default function EmployeeDetailView({
     variant = "default",
     onHeaderClick,
 }: EmployeeDetailViewProps) {
+    const { showError } = useToast();
     const containerClass =
         variant === "dropdown"
             ? "p-6 bg-gray-50"
@@ -48,11 +50,10 @@ export default function EmployeeDetailView({
                         {year} {month}
                     </p>
                     <h2
-                        className={`text-xl font-semibold text-gray-800 ${
-                            onHeaderClick && variant === "dropdown"
+                        className={`text-xl font-semibold text-gray-800 ${onHeaderClick && variant === "dropdown"
                                 ? "cursor-pointer transition-colors hover:text-gray-500"
                                 : ""
-                        }`}
+                            }`}
                         onClick={(e) => {
                             if (onHeaderClick && variant === "dropdown") {
                                 e.stopPropagation();
@@ -67,6 +68,7 @@ export default function EmployeeDetailView({
                     type="button"
                     onClick={async () => {
                         await generateExpenseReportPDF({
+                            onError: showError,
                             employeeName,
                             year,
                             month,
@@ -90,11 +92,10 @@ export default function EmployeeDetailView({
                         }
                         onTabChange("mileage");
                     }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                        activeTab === "mileage"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === "mileage"
                             ? "text-gray-900 border-b-2 border-gray-900"
                             : "text-gray-500 hover:text-gray-700"
-                    }`}
+                        }`}
                 >
                     마일리지 내역 ({mileageDetails.length}건)
                 </button>
@@ -105,11 +106,10 @@ export default function EmployeeDetailView({
                         }
                         onTabChange("card");
                     }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                        activeTab === "card"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === "card"
                             ? "text-gray-900 border-b-2 border-gray-900"
                             : "text-gray-500 hover:text-gray-700"
-                    }`}
+                        }`}
                 >
                     카드 지출 내역 ({cardDetails.length}건)
                 </button>

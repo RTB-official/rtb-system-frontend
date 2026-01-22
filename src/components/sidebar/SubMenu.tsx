@@ -1,5 +1,5 @@
 // src/components/sidebar/SubMenu.tsx
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SubLink from "./SubLink";
 
 type MenuFocus = "REPORT" | "EXPENSE" | null;
@@ -12,8 +12,6 @@ interface SubMenuProps {
   onMenuClick?: (focus: MenuFocus) => void;
 }
 
-type Phase = "CLOSED" | "OPENING" | "OPEN" | "CLOSING";
-
 export default function SubMenu({
   isOpen,
   items,
@@ -23,99 +21,132 @@ export default function SubMenu({
 }: SubMenuProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const prevOpenRef = useRef<boolean>(isOpen);
-
   const [shouldRender, setShouldRender] = useState<boolean>(isOpen);
-  const [phase, setPhase] = useState<Phase>(isOpen ? "OPEN" : "CLOSED");
   const [maxH, setMaxH] = useState<number>(0);
+  const [isAnimating, setIsAnimating] = useState<boolean>(false);
 
-  // 높이 측정 (필요할 때만)
+  // 높이 측정
   const measure = () => contentRef.current?.scrollHeight ?? 0;
 
-  // open 상태가 바뀔 때만 애니메이션 "시퀀스"를 탄다
+  // 초기 렌더링 시 높이 설정
+  useEffect(() => {
+    if (isOpen && shouldRender && !isAnimating) {
+      const h = measure();
+      if (h > 0 && maxH === 0) {
+        setMaxH(h);
+      }
+    }
+  }, []);
+
+  // isOpen 상태가 변경될 때만 애니메이션 실행
   useEffect(() => {
     const prevOpen = prevOpenRef.current;
-    prevOpenRef.current = isOpen;
 
-    // ✅ 같은 open 상태에서 라우트만 바뀌는 경우(= 하위메뉴 내부 이동)
-    // -> 애니메이션 절대 재실행 안 함
-    if (prevOpen === isOpen) return;
+    // 같은 상태면 높이만 업데이트 (같은 서브메뉴 내 이동)
+    if (prevOpen === isOpen) {
+      if (isOpen && shouldRender && !isAnimating) {
+        requestAnimationFrame(() => {
+          const h = measure();
+          if (h > 0 && h !== maxH) {
+            setMaxH(h);
+          }
+        });
+      }
+      return;
+    }
 
-    if (isOpen) {
-      // CLOSED -> OPENING
+    // 상태 변경 감지 - prevOpenRef를 먼저 업데이트하지 않고 애니메이션 실행
+    const wasOpen = prevOpen;
+    const isNowOpen = isOpen;
+
+    // 열림/닫힘 상태 변경 시 애니메이션 실행
+    if (isNowOpen && !wasOpen) {
+      // 열림: 애니메이션 실행
       setShouldRender(true);
-      setPhase("OPENING");
-
-      // 0에서 시작
+      setIsAnimating(true);
       setMaxH(0);
 
-      // 다음 프레임에 실제 높이로 확장
       requestAnimationFrame(() => {
         const h = measure();
+        if (h > 0) {
+          setMaxH(h);
+        }
+
+        setTimeout(() => {
+          setIsAnimating(false);
+          prevOpenRef.current = isOpen;
+        }, 300);
+      });
+    } else if (!isNowOpen && wasOpen) {
+      // 닫힘: 애니메이션 실행 (다른 메뉴로 이동할 때 포함)
+      const h = measure();
+      if (h > 0) {
+        setIsAnimating(true);
         setMaxH(h);
 
-        // 열림 애니메이션 끝나면 max-height 제한을 풀어 OPEN 상태로 고정
-        window.setTimeout(() => {
-          setPhase("OPEN");
-        }, 220);
-      });
+        // 더 부드러운 닫힘을 위해 약간의 지연 후 애니메이션 시작
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setMaxH(0);
+
+            setTimeout(() => {
+              setShouldRender(false);
+              setIsAnimating(false);
+              prevOpenRef.current = isOpen;
+            }, 600);
+          });
+        });
+      } else {
+        // 높이가 0이면 즉시 닫기
+        setShouldRender(false);
+        prevOpenRef.current = isOpen;
+      }
     } else {
-      // OPEN -> CLOSING
-      const h = measure();
-      setPhase("CLOSING");
+      // 예상치 못한 경우
+      prevOpenRef.current = isOpen;
+    }
+  }, [isOpen, shouldRender, isAnimating, maxH]);
 
-      // 현재 높이를 명시하고
-      setMaxH(h);
-
-      // 다음 프레임에 0으로 닫기
+  // 열려있을 때 높이 동기화 (내부 항목 변경 시) - 애니메이션 없이
+  // items가 변경되어도 isOpen이 true로 유지되면 애니메이션 없이 높이만 업데이트
+  useEffect(() => {
+    if (isOpen && shouldRender && !isAnimating && prevOpenRef.current === isOpen) {
+      // requestAnimationFrame을 사용하여 부드럽게 업데이트
       requestAnimationFrame(() => {
-        setMaxH(0);
-
-        window.setTimeout(() => {
-          setPhase("CLOSED");
-          setShouldRender(false);
-        }, 220);
+        const h = measure();
+        if (h > 0 && h !== maxH) {
+          // 높이가 변경되었을 때만 업데이트 (애니메이션 없이)
+          setMaxH(h);
+        }
       });
     }
-  }, [isOpen]);
-
-  // OPEN 상태일 때는 max-height를 풀어둬서(=none) 내부 이동/리렌더 시 애니메이션 재발동 방지
-  // (phase가 OPEN이면 스타일에서 maxHeight를 undefined로 처리)
-  useLayoutEffect(() => {
-    if (phase !== "OPEN") return;
-    // OPEN으로 들어올 때 혹시라도 height가 변했으면, 그냥 즉시 반영(애니메이션 없이)
-    // max-height를 쓰지 않으니 사실상 영향 없음. 안전장치 느낌.
-  }, [phase, items]);
+  }, [items, isOpen, shouldRender, isAnimating, maxH]);
 
   if (!shouldRender) return null;
 
-  const wrapStyle: React.CSSProperties =
-    phase === "OPEN"
+  const wrapStyle: React.CSSProperties = isAnimating
+    ? {
+      maxHeight: maxH,
+      overflow: "hidden",
+      transition: "max-height 600ms cubic-bezier(0.4, 0, 0.2, 1)",
+    }
+    : maxH > 0
       ? {
-          // ✅ 열린 상태는 제한을 풀어서 내부 이동에도 전환이 안 생김
-          maxHeight: "none",
-          overflow: "visible",
-        }
+        maxHeight: maxH,
+        overflow: "visible",
+        transition: "none", // 애니메이션 없이 즉시 적용
+      }
       : {
-          maxHeight: maxH,
-          overflow: "hidden",
-          transition: "max-height 220ms ease",
-        };
-
-  const innerClass =
-    phase === "OPEN"
-      ? "flex flex-col gap-1 opacity-100 translate-y-0"
-      : [
-          "flex flex-col gap-1",
-          "transition-[opacity,transform] duration-150 ease-out",
-          isOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1 pointer-events-none",
-        ].join(" ");
+        maxHeight: "none",
+        overflow: "visible",
+      };
 
   return (
-    <div className="ml-4 -my-1" style={wrapStyle}>
-      <div ref={contentRef} className={innerClass}>
+    <div className="ml-3" style={wrapStyle}>
+      <div ref={contentRef} className="flex flex-col gap-1">
         {items.map((item) => (
           <SubLink
-            key={item.to} // ✅ 라우트 이동 때 재마운트/깜빡임 최소화
+            key={item.to}
             to={item.to}
             label={item.label}
             focus={focus}

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { IconCalendar, IconVacation, IconReport } from "../icons/Icons";
+import { IconCalendar, IconVacation, IconReport, IconDownload } from "../icons/Icons";
 import { CalendarEvent } from "../../types";
 import Button from "./Button";
 import Avatar from "./Avatar";
@@ -272,8 +272,8 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                     <div className="shrink-0">
                         <IconReport className="w-6 h-6 text-gray-700" />
                     </div>
-                    <div className="flex-1 flex flex-col gap-2">
-                        <h3 className="text-lg font-semibold text-gray-900 leading-tight wrap-break-word text-left">
+                    <div className="flex-1 flex flex-col gap-2 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words text-left">
                             {title}
                         </h3>
                         {createdDate ? (
@@ -289,18 +289,39 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                 </div>
                 <div className="flex gap-3">
                     <div className="w-6 shrink-0"></div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            const workLogId = event.id.replace("worklog-", "");
-                            navigate(`/reportcreate?id=${workLogId}`);
-                            onClose();
-                        }}
-                    >
-                        자세히 보기
-                    </Button>
+                    <div className="flex gap-2 flex-1">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const workLogId = event.id.replace("worklog-", "");
+                                navigate(`/report/${workLogId}`);
+                                onClose();
+                            }}
+                        >
+                            자세히 보기
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const workLogId = event.id.replace("worklog-", "");
+                                // PDF 페이지를 새 창으로 열기
+                                const url = `/report/pdf?id=${workLogId}&autoPrint=1`;
+                                window.open(
+                                    url,
+                                    "report_pdf_window",
+                                    "width=800,height=600,scrollbars=yes"
+                                );
+                                onClose();
+                            }}
+                            icon={<IconDownload className="w-4 h-4" />}
+                        >
+                            PDF 저장
+                        </Button>
+                    </div>
                 </div>
             </div>
         );
@@ -333,8 +354,8 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                     <div className="shrink-0">
                         <IconCalendar className="w-6 h-6 text-gray-700" />
                     </div>
-                    <div className="flex-1 flex flex-col gap-2">
-                        <h3 className="text-lg font-semibold text-gray-900 leading-tight">
+                    <div className="flex-1 flex flex-col gap-2 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words">
                             {event.title}
                         </h3>
                         <div className="text-sm text-gray-500 font-medium">

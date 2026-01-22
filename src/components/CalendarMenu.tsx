@@ -46,7 +46,8 @@ export default function CalendarMenu({
             <button
                 className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer font-medium"
                 onClick={() => {
-                    navigate("/vacation?openModal=true");
+                    const dateParam = selectedDate ? `&date=${encodeURIComponent(selectedDate)}` : "";
+                    navigate(`/vacation?openModal=true${dateParam}`);
                     onClose();
                 }}
             >

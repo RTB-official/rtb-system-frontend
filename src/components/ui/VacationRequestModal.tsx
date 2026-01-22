@@ -4,6 +4,7 @@ import Input from "../common/Input";
 import Button from "../common/Button";
 import DatePicker from "./DatePicker"; // DatePicker 임포트
 import type { Vacation } from "../../lib/vacationApi";
+import { useToast } from "./ToastProvider";
 
 type LeaveType = "FULL" | "AM" | "PM";
 
@@ -17,6 +18,7 @@ interface Props {
     reason: string;
   }) => void;
   editingVacation?: Vacation | null;
+  initialDate?: string | null; // 초기 날짜 (캘린더에서 선택한 날짜)
 }
 
 // formatKoreanDate 함수는 DatePicker 컴포넌트 내부에서 처리될 것이므로 제거
@@ -27,7 +29,9 @@ export default function VacationRequestModal({
   availableDays,
   onSubmit,
   editingVacation,
+  initialDate,
 }: Props) {
+  const { showError } = useToast();
   const todayISO = useMemo(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -45,17 +49,23 @@ export default function VacationRequestModal({
         setLeaveType(editingVacation.leave_type);
         setReason(editingVacation.reason || "개인 사유");
       } else {
-        // 신청 모드: 초기값
-        setDateISO(todayISO);
+        // 신청 모드: 초기 날짜가 있으면 사용, 없으면 오늘 날짜
+        setDateISO(initialDate || todayISO);
         setLeaveType("FULL");
         setReason("개인 사유");
       }
     }
-  }, [isOpen, todayISO, editingVacation]);
+  }, [isOpen, todayISO, editingVacation, initialDate]);
 
   const handleAdd = () => {
-    if (!dateISO) return alert("날짜를 선택해주세요.");
-    if (!reason.trim()) return alert("상세내용을 입력해주세요.");
+    if (!dateISO) {
+      showError("날짜를 선택해주세요.");
+      return;
+    }
+    if (!reason.trim()) {
+      showError("상세내용을 입력해주세요.");
+      return;
+    }
 
     onSubmit({
       date: dateISO,

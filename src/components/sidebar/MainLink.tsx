@@ -34,10 +34,13 @@ export default function MainLink({
         const forcedInactive = shouldForceInactive?.(kind) || false;
         const active = forcedInactive ? false : isActive;
 
-        return `flex gap-6 items-center p-3 rounded-xl transition-colors duration-200 ease-in-out ${active
+        return `flex gap-6 items-center p-3 rounded-xl transition-all duration-300 ${active
             ? "bg-gray-700 text-white"
             : "text-gray-900 hover:bg-gray-200"
           }`;
+      }}
+      style={{
+        transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       <div className="flex gap-3 items-center w-[162px]">

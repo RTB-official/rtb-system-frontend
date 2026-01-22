@@ -26,14 +26,16 @@ export default function SubLink({
         onClose?.();
       }}
       className={({ isActive }) =>
-        `flex items-center gap-2 px-3 py-2 rounded-lg transition-colors duration-200 ease-in-out text-left ${isActive
-          ? "text-blue-600 font-medium"
-          : "text-gray-500 hover:text-gray-900 hover:bg-gray-200"
+        `flex items-center py-2 transition-all duration-300 ${isActive
+          ? "text-gray-800 font-semibold"
+          : "text-gray-500 hover:text-gray-600 hover:font-semibold"
         }`
       }
+      style={{
+        transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
     >
-      <span className="text-gray-400">ㄴ</span>
-      <p className="text-[14px]">{label}</p>
+      <p className="text-[14px]">ㄴ {label}</p>
     </NavLink>
   );
 }
