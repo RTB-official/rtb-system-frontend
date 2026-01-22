@@ -6,6 +6,9 @@ import Select from "../common/Select";
 import Tabs from "../common/Tabs";
 import Table from "../common/Table";
 import Chip from "../ui/Chip";
+import ActionMenu from "../common/ActionMenu";
+import { IconMore } from "../icons/Icons";
+import { useState } from "react";
 
 interface Summary {
     myAnnual: number; // 내 연차
@@ -39,6 +42,9 @@ interface Props {
     page: number;
     totalPages: number;
     onPageChange: (p: number) => void;
+
+    onEdit?: (row: VacationRow) => void;
+    onDelete?: (row: VacationRow) => void;
 }
 
 function StatusPill({ status }: { status: VacationStatus }) {
@@ -80,7 +86,11 @@ export default function VacationManagementSection({
     page,
     totalPages,
     onPageChange,
+    onEdit,
+    onDelete,
 }: Props) {
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const summaryCards = [
         {
             label: "내 연차",
@@ -198,12 +208,61 @@ export default function VacationManagementSection({
                         {
                             key: "remainDays",
                             label: "잔여",
-                            width: "16%",
+                            width: "12%",
                             align: "left",
                             render: (_value, row: VacationRow) => (
                                 <span className="font-medium text-gray-900">
                                     {row.remainDays}일
                                 </span>
+                            ),
+                        },
+                        {
+                            key: "actions",
+                            label: "",
+                            width: "8%",
+                            align: "right",
+                            render: (_value, row: VacationRow) => (
+                                <div className="relative inline-flex">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(
+                                                openMenuId === row.id
+                                                    ? null
+                                                    : row.id
+                                            );
+                                            setMenuAnchor(
+                                                openMenuId === row.id
+                                                    ? null
+                                                    : e.currentTarget
+                                            );
+                                        }}
+                                        className="p-2 rounded hover:bg-gray-100 text-gray-600"
+                                        aria-label="행 메뉴"
+                                    >
+                                        <IconMore className="w-[18px] h-[18px]" />
+                                    </button>
+                                    <ActionMenu
+                                        isOpen={openMenuId === row.id}
+                                        anchorEl={menuAnchor}
+                                        onClose={() => {
+                                            setOpenMenuId(null);
+                                            setMenuAnchor(null);
+                                        }}
+                                        onEdit={row.status === "대기 중" ? () => {
+                                            onEdit?.(row);
+                                            setOpenMenuId(null);
+                                            setMenuAnchor(null);
+                                        } : undefined} // 대기 중인 휴가만 수정 가능
+                                        onDelete={row.status === "대기 중" ? () => {
+                                            onDelete?.(row);
+                                            setOpenMenuId(null);
+                                            setMenuAnchor(null);
+                                        } : undefined} // 대기 중인 휴가만 삭제 가능
+                                        width="w-44"
+                                        showDelete={row.status === "대기 중"} // 대기 중인 휴가만 삭제 가능
+                                    />
+                                </div>
                             ),
                         },
                     ]}

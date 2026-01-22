@@ -41,6 +41,7 @@ export interface WorkloadEntry {
     person_name: string;
     vessel: string | null;
     subject: string | null;
+    work_hours: number | null;
 }
 
 export interface PersonWorkloadSummary {
@@ -177,11 +178,12 @@ export async function getWorkloadData(filters?: {
 
         // 2. 업무 일지 조회 (모든 entry 조회 후 필터링)
         const { data: entries, error: entriesError } = await supabase
-            .from("work_log_entries")
-            .select("id, work_log_id, date_from, time_from, date_to, time_to, desc_type")
-            .in("work_log_id", workLogIds)
-            .order("date_from", { ascending: true })
-            .order("time_from", { ascending: true });
+        .from("work_log_entries_with_hours")
+        .select("id, work_log_id, date_from, time_from, date_to, time_to, desc_type, work_hours")
+        .in("work_log_id", workLogIds)
+        .order("date_from", { ascending: true })
+        .order("time_from", { ascending: true });
+    
 
         if (entriesError) {
             console.error("Error fetching work log entries:", entriesError);
@@ -265,7 +267,9 @@ export async function getWorkloadData(filters?: {
                     person_name: personName,
                     vessel: workLogInfo?.vessel || null,
                     subject: workLogInfo?.subject || null,
+                    work_hours: (entry as any).work_hours ?? null,
                 });
+                
             }
         }
 
@@ -300,12 +304,10 @@ export function aggregatePersonWorkload(
         }
 
         const summary = personMap.get(personName)!;
-        const hours = calculateHours(
-            entry.date_from,
-            entry.time_from,
-            entry.date_to,
-            entry.time_to
-        );
+        const hours =
+        (entry.work_hours ?? 0) ||
+        calculateHours(entry.date_from, entry.time_from, entry.date_to, entry.time_to);
+    
 
         // desc_type에 따라 분류
         if (entry.desc_type === "작업") {

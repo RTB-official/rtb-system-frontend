@@ -1,5 +1,6 @@
 // DashboardPage.tsx
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import ScheduleModal from "../../components/common/ScheduleModal";
 import Sidebar from "../../components/Sidebar";
 import CalendarMenu from "../../components/CalendarMenu";
@@ -10,6 +11,7 @@ import { IconMenu } from "../../components/icons/Icons";
 import { CalendarEvent } from "../../types";
 import useCalendarWheelNavigation from "../../hooks/useCalendarWheelNavigation";
 import { useAuth } from "../../store/auth";
+import { supabase } from "../../lib/supabase";
 import {
     getCalendarEvents,
     createCalendarEvent,
@@ -24,6 +26,8 @@ import {
     useMergedHolidays,
     useSortedEvents,
 } from "../../hooks/useDashboardEvents";
+import { useCellHeights } from "../../hooks/useCellHeights";
+import { useToast } from "../../components/ui/ToastProvider";
 import {
     splitIntoWeeks,
     formatDateRange,
@@ -35,10 +39,37 @@ import CalendarGrid from "./components/CalendarGrid";
 
 export default function DashboardPage() {
     const { user } = useAuth();
+    const navigate = useNavigate();
+    const { showError } = useToast();
     const today = new Date();
 
     const [year, setYear] = useState(today.getFullYear());
     const [month, setMonth] = useState(today.getMonth());
+
+    // 권한 체크: 공사팀(스태프)은 접근 불가
+    useEffect(() => {
+        const checkAccess = async () => {
+            if (!user?.id) return;
+
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("role, department, position")
+                .eq("id", user.id)
+                .single();
+
+            if (profile) {
+                const isStaff = profile.role === "staff" || profile.department === "공사팀";
+                const isCEO = profile.position === "대표";
+                const isAdmin = profile.role === "admin" || profile.department === "공무팀";
+
+                // 공사팀(스태프)만 접근 불가 - 조용히 리다이렉트
+                if (isStaff && !isCEO && !isAdmin) {
+                    navigate("/report", { replace: true });
+                }
+            }
+        };
+        checkAccess();
+    }, [user?.id, navigate]);
 
     // 공휴일 데이터
     const holidays = useHolidays(year, month);
@@ -82,7 +113,7 @@ export default function DashboardPage() {
     const menuDateRef = React.useRef(menuDate);
 
     const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
-    const [cellHeights, setCellHeights] = useState<Record<string, number>>({});
+    const { cellHeights, handleCellHeightChange } = useCellHeights(cellRefs, weeks);
 
     React.useEffect(() => {
         menuOpenRef.current = menuOpen;
@@ -181,36 +212,6 @@ export default function DashboardPage() {
     const [selectedEndDateForModal, setSelectedEndDateForModal] =
         useState<string>("");
 
-    // 셀 높이 측정을 위한 ResizeObserver
-    useEffect(() => {
-        const observer = new ResizeObserver((entries) => {
-            const newHeights: Record<string, number> = {};
-            for (let entry of entries) {
-                if (entry.target instanceof HTMLElement) {
-                    const dateKey = entry.target.dataset.dateKey;
-                    if (dateKey) {
-                        newHeights[dateKey] = entry.contentRect.height;
-                    }
-                }
-            }
-            setCellHeights((prev) => ({
-                ...prev,
-                ...newHeights,
-            }));
-        });
-
-        // 모든 셀 관찰
-        for (const dateKey in cellRefs.current) {
-            const cell = cellRefs.current[dateKey];
-            if (cell) {
-                observer.observe(cell);
-            }
-        }
-
-        return () => {
-            observer.disconnect();
-        };
-    }, [weeks]);
 
     // 드래그 선택 상태
     const [dragStart, setDragStart] = useState<string | null>(null);
@@ -283,6 +284,7 @@ export default function DashboardPage() {
                             start_time: data.startTime || undefined,
                             end_time: data.endTime || undefined,
                             all_day: data.allDay,
+                            attendees: data.attendees || [],
                         },
                         user.id
                     );
@@ -302,6 +304,7 @@ export default function DashboardPage() {
                     start_time: data.startTime,
                     end_time: data.endTime,
                     all_day: data.allDay ?? true,
+                    attendees: data.attendees || [],
                 });
             }
 
@@ -322,7 +325,7 @@ export default function DashboardPage() {
         } catch (err: any) {
             console.error("Error saving event:", err);
             const errorMessage = err?.message || "일정 저장에 실패했습니다.";
-            alert(errorMessage);
+            showError(errorMessage);
         }
     };
 
@@ -336,7 +339,7 @@ export default function DashboardPage() {
             } else {
                 // 다른 타입의 이벤트는 삭제 불가
                 console.warn("Cannot delete this type of event");
-                alert("이 일정은 삭제할 수 없습니다.");
+                showError("이 일정은 삭제할 수 없습니다.");
                 return;
             }
 
@@ -358,7 +361,7 @@ export default function DashboardPage() {
         } catch (err: any) {
             console.error("Error deleting event:", err);
             const errorMessage = err?.message || "일정 삭제에 실패했습니다.";
-            alert(errorMessage);
+            showError(errorMessage);
         }
     };
 
@@ -430,6 +433,7 @@ export default function DashboardPage() {
                                         isDragging={isDragging}
                                         cellRefs={cellRefs}
                                         cellHeights={cellHeights}
+                                        onCellHeightChange={handleCellHeightChange}
                                         onEditEvent={(event) => {
                                             setEditingEvent(event);
                                             setSelectedDateForModal(
@@ -567,18 +571,19 @@ export default function DashboardPage() {
                                         setEventDetailMenuOpen(true);
                                     }}
                                 >
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-start gap-4">
                                         <div
-                                            className="w-1 h-12 rounded-[2px] shrink-0"
+                                            className="w-1 rounded-[2px] shrink-0 self-stretch"
                                             style={{
                                                 backgroundColor: event.color,
+                                                minHeight: '48px',
                                             }}
                                         />
-                                        <div className="flex-1">
-                                            <p className="font-medium text-gray-900">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-gray-900 break-words">
                                                 {event.title}
                                             </p>
-                                            <p className="text-sm text-gray-500">
+                                            <p className="text-sm text-gray-500 mt-1">
                                                 {formatDateRange(
                                                     event.startDate,
                                                     event.endDate

@@ -1,3 +1,4 @@
+//workerSection.tsx
 import { useState, useRef, useEffect } from "react";
 import SectionCard from "../ui/SectionCard";
 import TextInput from "../ui/TextInput";
@@ -28,6 +29,7 @@ type StaffMember = {
 export default function WorkerSection() {
     const { workers, addWorker, removeWorker } = useWorkReportStore();
     const [showDirectInput, setShowDirectInput] = useState(false);
+    const [adminTeamOpen, setAdminTeamOpen] = useState(false); // 공무팀 기본 숨김(접힘)
     const [inputValue, setInputValue] = useState("");
     const [isAdding, setIsAdding] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +109,18 @@ export default function WorkerSection() {
         (m) => m.department !== "공무팀"
     );
 
+    // 공무팀: 직급 높은 순 → 이름순 정렬
+    const sortedAdminTeamMembers = [...adminTeamMembers].sort((a, b) => {
+        const orderA = ROLE_ORDER[a.position] ?? 999;
+        const orderB = ROLE_ORDER[b.position] ?? 999;
+
+        if (orderA !== orderB) {
+            return orderA - orderB; // 직급 높은 순
+        }
+        return a.name.localeCompare(b.name); // 같은 직급이면 이름순
+    });
+
+
     // 직급별 그룹화
     const roleGroups = regularMembers.reduce(
         (acc, member) => {
@@ -139,7 +153,7 @@ export default function WorkerSection() {
         });
 
     return (
-        <SectionCard title="작업자 명단">
+        <SectionCard title="전체 인원">
             <div className="flex flex-col gap-4">
                 {loading ? (
                     <div className="text-center text-gray-500 py-4">
@@ -147,36 +161,6 @@ export default function WorkerSection() {
                     </div>
                 ) : (
                     <>
-                        {/* 공무팀 (항상 표시) */}
-                        {adminTeamMembers.length > 0 && (
-                            <div className="border border-blue-200 border-dashed rounded-2xl p-4 flex flex-col gap-2 bg-blue-50/30">
-                                <p className="font-semibold text-[15px] text-blue-800">
-                                    공무팀
-                                </p>
-                                <div className="flex gap-2 flex-wrap">
-                                    {adminTeamMembers.map((member) => (
-                                        <Button
-                                            key={member.name}
-                                            size="md"
-                                            variant={
-                                                workers.includes(member.name)
-                                                    ? "primary"
-                                                    : "outline"
-                                            }
-                                            onClick={() =>
-                                                workers.includes(member.name)
-                                                    ? removeWorker(
-                                                          member.name
-                                                      )
-                                                    : addWorker(member.name)
-                                            }
-                                        >
-                                            {member.name}
-                                        </Button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
 
                         {/* 직급별 카탈로그 */}
                         {staffGroups.map(([rank, names]) => (
@@ -209,6 +193,54 @@ export default function WorkerSection() {
                                 </div>
                             </div>
                         ))}
+
+                        {/* 공무팀 (맨 아래 / 박스 전체 클릭 토글 / 기본 숨김) */}
+                        {adminTeamMembers.length > 0 && (
+                            <div
+                                onClick={() => setAdminTeamOpen((v) => !v)}
+                                className="border border-blue-200 border-dashed rounded-2xl p-4 flex flex-col gap-2 bg-blue-50/30 cursor-pointer"
+                            >
+                                {/* 헤더 */}
+                                <div className="flex items-center justify-between">
+                                    <p className="font-semibold text-[15px] text-blue-800">
+                                        공무팀
+                                    </p>
+                                    <span className="text-[13px] text-blue-600">
+                                        {adminTeamOpen ? "숨기기" : "보기"} ({adminTeamMembers.length})
+                                    </span>
+                                </div>
+
+                                {/* 인원 목록 */}
+                                {adminTeamOpen && (
+                                    <div
+                                        className="flex gap-2 flex-wrap mt-1"
+                                        onClick={(e) => e.stopPropagation()} // 👈 버튼 클릭 시 토글 방지
+                                    >
+                                            {sortedAdminTeamMembers.map((member) => (
+                                            <Button
+                                                key={member.name}
+                                                size="md"
+                                                variant={
+                                                    workers.includes(member.name)
+                                                        ? "primary"
+                                                        : "outline"
+                                                }
+                                                onClick={() =>
+                                                    workers.includes(member.name)
+                                                        ? removeWorker(member.name)
+                                                        : addWorker(member.name)
+                                                }
+                                            >
+                                                {member.name}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+
+
                     </>
                 )}
 

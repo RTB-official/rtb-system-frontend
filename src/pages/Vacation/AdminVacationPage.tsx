@@ -4,6 +4,7 @@ import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
 import AdminVacationSkeleton from "../../components/common/AdminVacationSkeleton";
+import Select from "../../components/common/Select";
 import {
     getVacations,
     updateVacationStatus,
@@ -17,6 +18,7 @@ import {
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
 import { calculateAnnualLeave } from "../../lib/vacationCalculator";
+import { useToast } from "../../components/ui/ToastProvider";
 
 // 직원별 통계
 interface EmployeeStats {
@@ -42,16 +44,17 @@ interface VacationRequestRow {
 
 export default function AdminVacationPage() {
     const { user } = useAuth();
+    const { showSuccess, showError } = useToast();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [year, setYear] = useState(() => String(new Date().getFullYear()));
     const [loading, setLoading] = useState(false);
 
     // 직원별 통계
     const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
-    
+
     // 직원 이름 매핑
     const [employeeMap, setEmployeeMap] = useState<Map<string, string>>(new Map());
-    
+
     // 선택된 직원 ID (필터링용)
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
@@ -68,7 +71,7 @@ export default function AdminVacationPage() {
             // vacations 테이블에서 고유한 user_id 추출
             const userIds = new Set(allVacations.map(v => v.user_id));
             const employeeList: { id: string; name: string; joinDate?: string }[] = [];
-            
+
             // 각 user_id에 대해 profiles 테이블에서 이름 가져오기
             for (const userId of Array.from(userIds)) {
                 try {
@@ -77,7 +80,7 @@ export default function AdminVacationPage() {
                         .select("id, name, email, join_date")
                         .eq("id", userId)
                         .single();
-                    
+
                     if (profile) {
                         employeeList.push({
                             id: profile.id,
@@ -98,7 +101,7 @@ export default function AdminVacationPage() {
                     });
                 }
             }
-            
+
             return employeeList.sort((a, b) => a.name.localeCompare(b.name));
         } catch (error) {
             console.error("직원 목록 조회 실패:", error);
@@ -112,10 +115,10 @@ export default function AdminVacationPage() {
             setLoading(true);
             try {
                 const yearNum = parseInt(year);
-                
+
                 // 모든 직원의 휴가 조회
                 const allVacations = await getVacations(undefined, { year: yearNum });
-                
+
                 // 직원 목록 가져오기 (vacations에서 user_id 추출)
                 const employees = await fetchEmployees(allVacations);
                 const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
@@ -124,12 +127,12 @@ export default function AdminVacationPage() {
 
                 // 직원별 통계 계산
                 const statsMap = new Map<string, EmployeeStats>();
-                
+
                 // 모든 직원의 현재 총 연차 계산 (모든 연도 합산)
                 for (const emp of employees) {
                     const joinDate = emp.joinDate;
                     let totalDays = 15; // 기본값
-                    
+
                     if (joinDate) {
                         // 현재 날짜 기준으로 모든 연도의 연차 합산
                         try {
@@ -140,7 +143,7 @@ export default function AdminVacationPage() {
                             totalDays = calculateAnnualLeave(joinDate, yearNum);
                         }
                     }
-                    
+
                     statsMap.set(emp.id, {
                         userId: emp.id,
                         userName: emp.name,
@@ -157,7 +160,7 @@ export default function AdminVacationPage() {
                         const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
                         const joinDate = employeeJoinDateMap.get(vacation.user_id);
                         let totalDays = 15;
-                        
+
                         if (joinDate) {
                             try {
                                 totalDays = await getCurrentTotalAnnualLeave(vacation.user_id);
@@ -166,7 +169,7 @@ export default function AdminVacationPage() {
                                 totalDays = calculateAnnualLeave(joinDate, yearNum);
                             }
                         }
-                        
+
                         statsMap.set(vacation.user_id, {
                             userId: vacation.user_id,
                             userName: name,
@@ -181,7 +184,7 @@ export default function AdminVacationPage() {
                 allVacations.forEach(vacation => {
                     const days = vacation.leave_type === "FULL" ? 1 : 0.5;
                     const stats = statsMap.get(vacation.user_id);
-                    
+
                     if (stats) {
                         if (vacation.status === "approved") {
                             stats.usedDays += days;
@@ -201,7 +204,7 @@ export default function AdminVacationPage() {
                 setPendingVacations(pending);
             } catch (error) {
                 console.error("데이터 로드 실패:", error);
-                alert("데이터를 불러오는데 실패했습니다.");
+                showError("데이터를 불러오는데 실패했습니다.");
             } finally {
                 setLoading(false);
             }
@@ -215,7 +218,7 @@ export default function AdminVacationPage() {
         const filtered = selectedEmployeeId
             ? pendingVacations.filter(v => v.user_id === selectedEmployeeId)
             : pendingVacations;
-        
+
         return filtered.map(vacation => ({
             id: vacation.id,
             employeeName: employeeMap.get(vacation.user_id) || "알 수 없음",
@@ -253,7 +256,7 @@ export default function AdminVacationPage() {
                 user.id
             );
 
-            alert(approved ? "휴가가 승인되었습니다." : "휴가가 반려되었습니다.");
+            showSuccess(approved ? "휴가가 승인되었습니다." : "휴가가 반려되었습니다.");
             setDetailModalOpen(false);
             setSelectedVacation(null);
 
@@ -264,7 +267,7 @@ export default function AdminVacationPage() {
             setPendingVacations(pending);
         } catch (error: any) {
             console.error("처리 실패:", error);
-            alert(error.message || "처리에 실패했습니다.");
+            showError(error.message || "처리에 실패했습니다.");
         } finally {
             setLoading(false);
         }
@@ -279,7 +282,7 @@ export default function AdminVacationPage() {
         try {
             setLoading(true);
             await calculateAllEmployeesVacation(2025);
-            alert("모든 직원의 연차 계산이 완료되었습니다.");
+            showSuccess("모든 직원의 연차 계산이 완료되었습니다.");
             // 데이터 새로고침
             const yearNum = parseInt(year);
             const allVacations = await getVacations(undefined, { year: yearNum });
@@ -287,12 +290,12 @@ export default function AdminVacationPage() {
             const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
             const employeeJoinDateMap = new Map(employees.map(emp => [emp.id, emp.joinDate]));
             setEmployeeMap(employeeNameMap);
-            
+
             // 통계 재계산
             const statsMap = new Map<string, EmployeeStats>();
             employees.forEach(emp => {
                 const joinDate = emp.joinDate;
-                const totalDays = joinDate 
+                const totalDays = joinDate
                     ? calculateAnnualLeave(joinDate, yearNum)
                     : 15;
                 statsMap.set(emp.id, {
@@ -304,12 +307,12 @@ export default function AdminVacationPage() {
                     totalDays: totalDays,
                 });
             });
-            
+
             allVacations.forEach(vacation => {
                 if (!statsMap.has(vacation.user_id)) {
                     const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
                     const joinDate = employeeJoinDateMap.get(vacation.user_id);
-                    const totalDays = joinDate 
+                    const totalDays = joinDate
                         ? calculateAnnualLeave(joinDate, yearNum)
                         : 15;
                     statsMap.set(vacation.user_id, {
@@ -321,10 +324,10 @@ export default function AdminVacationPage() {
                         totalDays: totalDays,
                     });
                 }
-                
+
                 const stats = statsMap.get(vacation.user_id)!;
                 const days = vacation.leave_type === "FULL" ? 1 : 0.5;
-                
+
                 if (vacation.status === "approved") {
                     stats.usedDays += days;
                 } else if (vacation.status === "pending") {
@@ -332,14 +335,14 @@ export default function AdminVacationPage() {
                 }
                 stats.remainingDays = stats.totalDays - stats.usedDays - stats.pendingDays;
             });
-            
+
             setEmployeeStats(Array.from(statsMap.values()));
-            
+
             const pending = allVacations.filter(v => v.status === "pending");
             setPendingVacations(pending);
         } catch (error: any) {
             console.error("연차 계산 실패:", error);
-            alert(error.message || "연차 계산에 실패했습니다.");
+            showError(error.message || "연차 계산에 실패했습니다.");
         } finally {
             setLoading(false);
         }
@@ -363,11 +366,10 @@ export default function AdminVacationPage() {
           fixed lg:static inset-y-0 left-0 z-30
           w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
-          ${
-              sidebarOpen
-                  ? "translate-x-0"
-                  : "-translate-x-full lg:translate-x-0"
-          }
+          ${sidebarOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full lg:translate-x-0"
+                    }
         `}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -396,161 +398,160 @@ export default function AdminVacationPage() {
                         <AdminVacationSkeleton />
                     ) : (
                         <div className="flex flex-col gap-6 w-full">
-                        {/* 연도 선택 */}
-                        <div className="flex items-center gap-4">
-                            <div className="text-[24px] font-semibold text-gray-900">
-                                조회 기간
+                            {/* 연도 선택 */}
+                            <div className="flex items-center gap-4">
+                                <div className="text-[24px] font-semibold text-gray-900">
+                                    조회 기간
+                                </div>
+                                <Select
+                                    options={[
+                                        { value: "2026", label: "2026년" },
+                                        { value: "2025", label: "2025년" },
+                                        { value: "2024", label: "2024년" },
+                                        { value: "2023", label: "2023년" },
+                                    ]}
+                                    value={year}
+                                    onChange={setYear}
+                                />
                             </div>
-                            <select
-                                value={year}
-                                onChange={(e) => setYear(e.target.value)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm"
-                            >
-                                <option value="2026">2026년</option>
-                                <option value="2025">2025년</option>
-                                <option value="2024">2024년</option>
-                                <option value="2023">2023년</option>
-                            </select>
-                        </div>
 
-                        {/* 직원별 통계 테이블 */}
-                        <div>
-                            <h2 className="text-[20px] font-semibold text-gray-900 mb-4">
-                                직원별 휴가 사용 현황
-                            </h2>
-                            <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-                                <table className="w-full text-[14px]">
-                                    <thead className="bg-gray-100 border-b border-gray-200">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left font-semibold text-gray-600">
-                                                직원명
-                                            </th>
-                                            <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                사용 일수
-                                            </th>
-                                            <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                대기 중
-                                            </th>
-                                            <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                잔여 일수
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {employeeStats.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
-                                                    데이터가 없습니다.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            employeeStats.map((stat) => {
-                                                const isSelected = selectedEmployeeId === stat.userId;
-                                                return (
-                                                    <tr
-                                                        key={stat.userId}
-                                                        className={`border-b border-gray-100 transition-colors ${
-                                                            isSelected
-                                                                ? "bg-blue-50 hover:bg-blue-100"
-                                                                : "hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        <td
-                                                            className="px-4 py-3 cursor-pointer font-medium text-blue-600 hover:text-blue-700"
-                                                            onClick={() => {
-                                                                setSelectedEmployeeId(isSelected ? null : stat.userId);
-                                                                setPage(1); // 필터 변경 시 첫 페이지로
-                                                            }}
-                                                        >
-                                                            {stat.userName}
-                                                        </td>
-                                                    <td className="px-4 py-3 text-right">{stat.usedDays.toFixed(1)}일</td>
-                                                    <td className="px-4 py-3 text-right text-yellow-600">
-                                                        {stat.pendingDays > 0 ? `${stat.pendingDays.toFixed(1)}일` : "-"}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right">{stat.remainingDays.toFixed(1)}일</td>
-                                                </tr>
-                                            );
-                                            })
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        {/* 휴가 신청 목록 */}
-                        <div>
-                            <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-[20px] font-semibold text-gray-900">
-                                    휴가 신청 내역
-                                    {selectedEmployeeId && (
-                                        <span className="ml-2 text-sm font-normal text-blue-600">
-                                            ({employeeMap.get(selectedEmployeeId) || "선택된 직원"})
-                                        </span>
-                                    )}
+                            {/* 직원별 통계 테이블 */}
+                            <div>
+                                <h2 className="text-[20px] font-semibold text-gray-900 mb-4">
+                                    직원별 휴가 사용 현황
                                 </h2>
-                                {selectedEmployeeId && (
-                                    <button
-                                        onClick={() => {
-                                            setSelectedEmployeeId(null);
-                                            setPage(1); // 필터 해제 시 첫 페이지로
-                                        }}
-                                        className="text-sm text-gray-500 hover:text-gray-700 underline"
-                                    >
-                                        필터 해제
-                                    </button>
-                                )}
+                                <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                                    <table className="w-full text-[14px]">
+                                        <thead className="bg-gray-100 border-b border-gray-200">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left font-semibold text-gray-600">
+                                                    직원명
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
+                                                    사용 일수
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
+                                                    대기 중
+                                                </th>
+                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
+                                                    잔여 일수
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {employeeStats.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
+                                                        데이터가 없습니다.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                employeeStats.map((stat) => {
+                                                    const isSelected = selectedEmployeeId === stat.userId;
+                                                    return (
+                                                        <tr
+                                                            key={stat.userId}
+                                                            className={`border-b border-gray-100 transition-colors ${isSelected
+                                                                    ? "bg-blue-50 hover:bg-blue-100"
+                                                                    : "hover:bg-gray-50"
+                                                                }`}
+                                                        >
+                                                            <td
+                                                                className="px-4 py-3 cursor-pointer font-medium text-blue-600 hover:text-blue-700"
+                                                                onClick={() => {
+                                                                    setSelectedEmployeeId(isSelected ? null : stat.userId);
+                                                                    setPage(1); // 필터 변경 시 첫 페이지로
+                                                                }}
+                                                            >
+                                                                {stat.userName}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right">{stat.usedDays.toFixed(1)}일</td>
+                                                            <td className="px-4 py-3 text-right text-yellow-600">
+                                                                {stat.pendingDays > 0 ? `${stat.pendingDays.toFixed(1)}일` : "-"}
+                                                            </td>
+                                                            <td className="px-4 py-3 text-right">{stat.remainingDays.toFixed(1)}일</td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
-                            <Table
-                                columns={[
-                                    {
-                                        key: "employeeName",
-                                        label: "직원명",
-                                        width: "15%",
-                                    },
-                                    {
-                                        key: "period",
-                                        label: "기간",
-                                        width: "20%",
-                                    },
-                                    {
-                                        key: "item",
-                                        label: "항목",
-                                        width: "12%",
-                                    },
-                                    {
-                                        key: "reason",
-                                        label: "사유",
-                                        width: "30%",
-                                    },
-                                    {
-                                        key: "createdAt",
-                                        label: "신청일",
-                                        width: "13%",
-                                    },
-                                    {
-                                        key: "status",
-                                        label: "상태",
-                                        width: "10%",
-                                        render: (_value, row: VacationRequestRow) => (
-                                            <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-blue-600 bg-blue-50">
-                                                {row.status}
+
+                            {/* 휴가 신청 목록 */}
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-[20px] font-semibold text-gray-900">
+                                        휴가 신청 내역
+                                        {selectedEmployeeId && (
+                                            <span className="ml-2 text-sm font-normal text-blue-600">
+                                                ({employeeMap.get(selectedEmployeeId) || "선택된 직원"})
                                             </span>
-                                        ),
-                                    },
-                                ]}
-                                data={paginatedRows}
-                                rowKey="id"
-                                onRowClick={(row: VacationRequestRow) => handleRowClick(row)}
-                                className="cursor-pointer"
-                                pagination={{
-                                    currentPage: page,
-                                    totalPages,
-                                    onPageChange: setPage,
-                                }}
-                            />
+                                        )}
+                                    </h2>
+                                    {selectedEmployeeId && (
+                                        <button
+                                            onClick={() => {
+                                                setSelectedEmployeeId(null);
+                                                setPage(1); // 필터 해제 시 첫 페이지로
+                                            }}
+                                            className="text-sm text-gray-500 hover:text-gray-700 underline"
+                                        >
+                                            필터 해제
+                                        </button>
+                                    )}
+                                </div>
+                                <Table
+                                    columns={[
+                                        {
+                                            key: "employeeName",
+                                            label: "직원명",
+                                            width: "15%",
+                                        },
+                                        {
+                                            key: "period",
+                                            label: "기간",
+                                            width: "20%",
+                                        },
+                                        {
+                                            key: "item",
+                                            label: "항목",
+                                            width: "12%",
+                                        },
+                                        {
+                                            key: "reason",
+                                            label: "사유",
+                                            width: "30%",
+                                        },
+                                        {
+                                            key: "createdAt",
+                                            label: "신청일",
+                                            width: "13%",
+                                        },
+                                        {
+                                            key: "status",
+                                            label: "상태",
+                                            width: "10%",
+                                            render: (_value, row: VacationRequestRow) => (
+                                                <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-blue-600 bg-blue-50">
+                                                    {row.status}
+                                                </span>
+                                            ),
+                                        },
+                                    ]}
+                                    data={paginatedRows}
+                                    rowKey="id"
+                                    onRowClick={(row: VacationRequestRow) => handleRowClick(row)}
+                                    className="cursor-pointer"
+                                    pagination={{
+                                        currentPage: page,
+                                        totalPages,
+                                        onPageChange: setPage,
+                                    }}
+                                />
+                            </div>
                         </div>
-                    </div>
                     )}
                 </div>
             </div>
@@ -562,7 +563,7 @@ export default function AdminVacationPage() {
                         <h3 className="text-[20px] font-semibold text-gray-900 mb-4">
                             휴가 신청 상세
                         </h3>
-                        
+
                         <div className="space-y-3 mb-6">
                             <div>
                                 <div className="text-sm text-gray-500">직원명</div>

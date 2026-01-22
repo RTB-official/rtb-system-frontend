@@ -40,7 +40,7 @@ export default function ActionMenu({
     onResetPassword,
     onLogout,
     onDownload,
-    downloadLabel = "PDF 다운로드",
+    downloadLabel = "PDF",
     showDelete = true,
     headerContent,
     showLogout = true,

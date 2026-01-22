@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { IconCalendar, IconVacation, IconReport } from "../icons/Icons";
+import { IconCalendar, IconVacation, IconReport, IconDownload } from "../icons/Icons";
 import { CalendarEvent } from "../../types";
 import Button from "./Button";
 import Avatar from "./Avatar";
@@ -272,8 +272,8 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                     <div className="shrink-0">
                         <IconReport className="w-6 h-6 text-gray-700" />
                     </div>
-                    <div className="flex-1 flex flex-col gap-2">
-                        <h3 className="text-lg font-semibold text-gray-900 leading-tight wrap-break-word text-left">
+                    <div className="flex-1 flex flex-col gap-2 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words text-left">
                             {title}
                         </h3>
                         {createdDate ? (
@@ -289,18 +289,39 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                 </div>
                 <div className="flex gap-3">
                     <div className="w-6 shrink-0"></div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            const workLogId = event.id.replace("worklog-", "");
-                            navigate(`/reportcreate?id=${workLogId}`);
-                            onClose();
-                        }}
-                    >
-                        자세히 보기
-                    </Button>
+                    <div className="flex gap-2 flex-1">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const workLogId = event.id.replace("worklog-", "");
+                                navigate(`/report/${workLogId}`);
+                                onClose();
+                            }}
+                        >
+                            자세히 보기
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const workLogId = event.id.replace("worklog-", "");
+                                // PDF 페이지를 새 창으로 열기
+                                const url = `/report/pdf?id=${workLogId}&autoPrint=1`;
+                                window.open(
+                                    url,
+                                    "report_pdf_window",
+                                    "width=800,height=600,scrollbars=yes"
+                                );
+                                onClose();
+                            }}
+                            icon={<IconDownload className="w-4 h-4" />}
+                        >
+                            PDF 저장
+                        </Button>
+                    </div>
                 </div>
             </div>
         );
@@ -333,8 +354,8 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                     <div className="shrink-0">
                         <IconCalendar className="w-6 h-6 text-gray-700" />
                     </div>
-                    <div className="flex-1 flex flex-col gap-2">
-                        <h3 className="text-lg font-semibold text-gray-900 leading-tight">
+                    <div className="flex-1 flex flex-col gap-2 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words">
                             {event.title}
                         </h3>
                         <div className="text-sm text-gray-500 font-medium">
@@ -344,55 +365,57 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             )}
                         </div>
                         {event.attendees && event.attendees.length > 0 && (
-                            <div className="flex flex-wrap gap-2 items-center mt-2">
-                                {event.attendees.map((attendeeId, i) => (
-                                    <AttendeeAvatar
-                                        key={i}
-                                        userId={attendeeId}
-                                    />
-                                ))}
+                            <div className="flex flex-col gap-2 mt-2">
+                                <span className="text-xs text-gray-500 font-medium">
+                                    참여자
+                                </span>
+                                <div className="flex flex-col gap-2">
+                                    {event.attendees.map((attendeeName, i) => (
+                                        <AttendeeProfile
+                                            key={i}
+                                            attendeeName={attendeeName}
+                                        />
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
                 </div>
                 {/* 생성자만 수정/삭제 버튼 표시 */}
                 {event.userId === currentUserId && (
-                    <>
-                        <div className="h-px bg-gray-100" />
-                        <div className="flex gap-2">
-                            <Button
-                                variant="primary"
-                                size="sm"
-                                fullWidth
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onEdit(event);
-                                    onClose();
-                                }}
-                            >
-                                수정
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                fullWidth
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDelete(event.id);
-                                    onClose();
-                                }}
-                            >
-                                삭제
-                            </Button>
-                        </div>
-                    </>
+                    <div className="flex gap-2 mt-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            fullWidth
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onEdit(event);
+                                onClose();
+                            }}
+                        >
+                            수정
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            fullWidth
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(event.id);
+                                onClose();
+                            }}
+                        >
+                            삭제
+                        </Button>
+                    </div>
                 )}
             </div>
         );
     };
 
-    // 참가자 Avatar 컴포넌트
-    const AttendeeAvatar: React.FC<{ userId: string }> = ({ userId }) => {
+    // 참여자 프로필 컴포넌트
+    const AttendeeProfile: React.FC<{ attendeeName: string }> = ({ attendeeName }) => {
         const [profile, setProfile] = useState<any>(null);
 
         useEffect(() => {
@@ -401,7 +424,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                     const { data } = await supabase
                         .from("profiles")
                         .select("name, email, position")
-                        .eq("id", userId)
+                        .eq("name", attendeeName)
                         .single();
 
                     if (data) {
@@ -413,18 +436,27 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
             };
 
             loadProfile();
-        }, [userId]);
+        }, [attendeeName]);
 
-        if (!profile) return null;
+        if (!profile) {
+            // 프로필을 찾지 못한 경우 이름만 표시
+            return (
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">
+                        {attendeeName}
+                    </span>
+                </div>
+            );
+        }
 
         return (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
                 <Avatar
                     email={profile.email || null}
-                    size={20}
+                    size={24}
                     position={profile.position || null}
                 />
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-base font-medium text-gray-700">
                     {profile.name}
                 </span>
             </div>

@@ -513,6 +513,9 @@ export default function TimelineSummarySection({
 
                                     // 날짜 포맷팅
                                     const d = new Date(dateKey);
+                                    const isSunday = d.getDay() === 0;
+                                    const isSaturday = d.getDay() === 6;
+
 
                                     return (
                                         <div
@@ -521,9 +524,18 @@ export default function TimelineSummarySection({
                                             style={{ width: "100%" }}
                                         >
                                             {/* ✅ 날짜 (막대 왼쪽, M/D) */}
-                                            <div className="w-[44px] shrink-0 text-[14px] font-semibold text-slate-700 leading-[28px] pt-[18px]">
+                                            <div
+                                                className={`w-[44px] shrink-0 text-[14px] font-semibold leading-[28px] pt-[18px] ${
+                                                    isSunday
+                                                        ? "text-rose-500"
+                                                        : isSaturday
+                                                        ? "text-blue-500"
+                                                        : "text-slate-700"
+                                                }`}
+                                            >
                                                 {d.getMonth() + 1}/{d.getDate()}
                                             </div>
+
 
                                             {/* ✅ 트랙 영역 */}
                                             <div className="flex-1" style={{ minWidth: 0, width: "100%" }}>
@@ -708,9 +720,9 @@ export default function TimelineSummarySection({
                                             "금",
                                             "토",
                                         ][d.getDay()];
-                                        const isWeekend =
-                                            d.getDay() === 0 ||
-                                            d.getDay() === 6;
+                                        const isSunday = d.getDay() === 0;
+                                        const isSaturday = d.getDay() === 6;
+                                        
                                         return (
                                             <th
                                                 key={date}
@@ -721,10 +733,12 @@ export default function TimelineSummarySection({
                                                 }`}
                                             >
                                                 <div className="flex flex-col items-center">
-                                                    <span
+                                                <span
                                                         className={`text-[14px] font-bold ${
-                                                            isWeekend
+                                                            isSunday
                                                                 ? "text-rose-500"
+                                                                : isSaturday
+                                                                ? "text-blue-500"
                                                                 : "text-slate-700"
                                                         }`}
                                                     >
@@ -732,12 +746,14 @@ export default function TimelineSummarySection({
                                                         {d.getDate()}
                                                     </span>
                                                     <span
-                                                        className={`text-[11px] ${
-                                                            isWeekend
-                                                                ? "text-rose-400"
-                                                                : "text-slate-400"
-                                                        }`}
-                                                    >
+                                                            className={`text-[11px] ${
+                                                                isSunday
+                                                                    ? "text-rose-400"
+                                                                    : isSaturday
+                                                                    ? "text-blue-400"
+                                                                    : "text-slate-400"
+                                                            }`}
+                                                        >
                                                         ({weekday})
                                                     </span>
                                                 </div>

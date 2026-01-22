@@ -15,9 +15,7 @@ function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string; common?: string }>({});
   const [submitting, setSubmitting] = useState(false);
-  const [showResetPassword, setShowResetPassword] = useState(false);
-  const [resetEmail, setResetEmail] = useState("");
-  const [resetSent, setResetSent] = useState(false);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,32 +52,7 @@ function LoginPage() {
     nav("/dashboard", { replace: true });
   };
 
-  const handleResetPassword = async () => {
-    if (!resetEmail.trim()) {
-      setErrors({ common: "이메일을 입력해 주세요." });
-      return;
-    }
 
-    // username으로 email 찾기
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("email")
-      .eq("username", resetEmail.trim())
-      .maybeSingle();
-
-    const emailToReset = profile?.email || resetEmail.trim();
-
-    const { error } = await supabase.auth.resetPasswordForEmail(emailToReset, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-
-    if (error) {
-      setErrors({ common: error.message });
-      return;
-    }
-
-    setResetSent(true);
-  };
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] font-pretendard">
@@ -179,58 +152,7 @@ function LoginPage() {
               {submitting ? "로그인 중..." : "로그인"}
             </button>
 
-            {!showResetPassword ? (
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => setShowResetPassword(true)}
-                  className="text-sm text-[#1E3A5F] hover:underline"
-                >
-                  비밀번호를 잊으셨나요?
-                </button>
-              </div>
-            ) : (
-              <div className="mt-4 p-4 bg-gray-50 rounded-md">
-                {resetSent ? (
-                  <div className="text-sm text-green-600">
-                    비밀번호 재설정 이메일이 발송되었습니다. 이메일을 확인해 주세요.
-                  </div>
-                ) : (
-                  <>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      사용자명 또는 이메일
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={resetEmail}
-                        onChange={(e) => setResetEmail(e.target.value)}
-                        placeholder="사용자명 또는 이메일 입력"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20 focus:border-[#1E3A5F]"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleResetPassword}
-                        className="px-4 py-2 bg-[#1E3A5F] text-white rounded-md text-sm hover:bg-[#152a45] transition-colors"
-                      >
-                        발송
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowResetPassword(false);
-                        setResetEmail("");
-                        setResetSent(false);
-                      }}
-                      className="mt-2 text-xs text-gray-500 hover:text-gray-700"
-                    >
-                      취소
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+
           </form>
         </div>
       </main>

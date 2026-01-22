@@ -3,6 +3,8 @@ import BaseModal from "./BaseModal";
 import Input from "../common/Input";
 import Button from "../common/Button";
 import DatePicker from "./DatePicker"; // DatePicker 임포트
+import type { Vacation } from "../../lib/vacationApi";
+import { useToast } from "./ToastProvider";
 
 type LeaveType = "FULL" | "AM" | "PM";
 
@@ -15,6 +17,8 @@ interface Props {
     leaveType: LeaveType;
     reason: string;
   }) => void;
+  editingVacation?: Vacation | null;
+  initialDate?: string | null; // 초기 날짜 (캘린더에서 선택한 날짜)
 }
 
 // formatKoreanDate 함수는 DatePicker 컴포넌트 내부에서 처리될 것이므로 제거
@@ -24,7 +28,10 @@ export default function VacationRequestModal({
   onClose,
   availableDays,
   onSubmit,
+  editingVacation,
+  initialDate,
 }: Props) {
+  const { showError } = useToast();
   const todayISO = useMemo(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -36,15 +43,29 @@ export default function VacationRequestModal({
 
   useEffect(() => {
     if (isOpen) {
-      setDateISO(todayISO);
-      setLeaveType("FULL");
-      setReason("개인 사유");
+      if (editingVacation) {
+        // 수정 모드: 기존 데이터 표시
+        setDateISO(editingVacation.date);
+        setLeaveType(editingVacation.leave_type);
+        setReason(editingVacation.reason || "개인 사유");
+      } else {
+        // 신청 모드: 초기 날짜가 있으면 사용, 없으면 오늘 날짜
+        setDateISO(initialDate || todayISO);
+        setLeaveType("FULL");
+        setReason("개인 사유");
+      }
     }
-  }, [isOpen, todayISO]);
+  }, [isOpen, todayISO, editingVacation, initialDate]);
 
   const handleAdd = () => {
-    if (!dateISO) return alert("날짜를 선택해주세요.");
-    if (!reason.trim()) return alert("상세내용을 입력해주세요.");
+    if (!dateISO) {
+      showError("날짜를 선택해주세요.");
+      return;
+    }
+    if (!reason.trim()) {
+      showError("상세내용을 입력해주세요.");
+      return;
+    }
 
     onSubmit({
       date: dateISO,
@@ -60,10 +81,12 @@ export default function VacationRequestModal({
       onClose={onClose}
       title={
         <div className="flex items-baseline gap-2">
-          <span>휴가 신청</span>
-          <span className="text-[13px] font-bold text-gray-400">
-            총 {availableDays}일 사용 가능
-          </span>
+          <span>{editingVacation ? "휴가 수정" : "휴가 신청"}</span>
+          {!editingVacation && (
+            <span className="text-[13px] font-bold text-gray-400">
+              총 {availableDays}일 사용 가능
+            </span>
+          )}
         </div>
       }
       maxWidth="max-w-[640px]"
@@ -122,7 +145,7 @@ export default function VacationRequestModal({
         {/* 제출 버튼 */}
         <div className="pt-2">
           <Button variant="primary" size="lg" fullWidth onClick={handleAdd}>
-            추가
+            {editingVacation ? "수정" : "추가"}
           </Button>
         </div>
       </div>

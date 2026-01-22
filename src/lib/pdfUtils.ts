@@ -172,9 +172,11 @@ export interface GeneratePDFParams {
     month: string; // "12월"
     mileageDetails: EmployeeMileageDetail[];
     cardDetails: EmployeeCardExpenseDetail[];
+    onError?: (message: string) => void;
 }
 
 export async function generateExpenseReportPDF({
+    onError,
     employeeName,
     year,
     month,
@@ -596,6 +598,10 @@ export async function generateExpenseReportPDF({
         doc.save(fileName);
     } catch (error) {
         console.error("PDF 생성 오류:", error);
-        alert(`PDF 생성 실패: ${error instanceof Error ? error.message : String(error)}`);
+        const errorMessage = `PDF 생성 실패: ${error instanceof Error ? error.message : String(error)}`;
+        if (onError) {
+            onError(errorMessage);
+        }
+        // onError가 없으면 에러만 로깅 (alert 제거)
     }
 }

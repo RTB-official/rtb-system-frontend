@@ -7,6 +7,7 @@ import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkeleton";
 import { IconArrowBack } from "../../components/icons/Icons";
+import { supabase } from "../../lib/supabase";
 import {
     getWorkerWorkloadDetail,
     formatHours,
@@ -71,6 +72,32 @@ export default function WorkloadDetailPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loading, setLoading] = useState(true);
+    // 공사팀은 자동 리다이렉트되므로, 상세 페이지에 접근했다면 공사팀일 가능성이 높음
+    // 초기값을 true로 설정하여 깜빡임 방지
+    const [isStaff, setIsStaff] = useState(true);
+
+    // 공사팀(스태프) 여부 확인
+    useEffect(() => {
+        const checkUserRole = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("role, department")
+                    .eq("id", user.id)
+                    .single();
+                if (profile) {
+                    setIsStaff(profile.role === "staff" || profile.department === "공사팀");
+                } else {
+                    // 프로필이 없으면 일반 사용자로 간주
+                    setIsStaff(false);
+                }
+            } else {
+                setIsStaff(false);
+            }
+        };
+        checkUserRole();
+    }, []);
     const [summary, setSummary] = useState<{
         name: string;
         totalWork: number;
@@ -81,6 +108,12 @@ export default function WorkloadDetailPage() {
 
     const itemsPerPage = 10;
     const personName = id ? decodeURIComponent(id) : "";
+
+    // 날짜별 내역 클릭 → 해당 출장보고서(ReportViewPage)로 이동
+    const handleRowClick = (row: WorkloadDetailEntry) => {
+        if (!row?.workLogId) return;
+        navigate(`/report/${row.workLogId}`);
+    };
 
     // 데이터 로드
     useEffect(() => {
@@ -95,7 +128,8 @@ export default function WorkloadDetailPage() {
                 const yearNum = parseInt(selectedYear.replace("년", ""));
                 const monthNum = parseInt(selectedMonth.replace("월", ""));
 
-                const entries = await getWorkloadData({
+                // ✅ 개인별 상세 데이터는 이 API를 사용해야 함
+                const data = await getWorkerWorkloadDetail(personName, {
                     year: yearNum,
                     month: monthNum,
                 });
@@ -112,6 +146,7 @@ export default function WorkloadDetailPage() {
 
         loadData();
     }, [personName, selectedYear, selectedMonth]);
+
 
     // 페이지네이션 계산
     const totalPages = useMemo(() => {
@@ -150,16 +185,18 @@ export default function WorkloadDetailPage() {
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <Header
-                    title={`${personName} 작업자 워크로드`}
+                    title={isStaff ? "워크로드" : `${personName} 작업자 워크로드`}
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
-                        <button
-                            onClick={() => navigate("/workload")}
-                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
-                            title="목록으로 돌아가기"
-                        >
-                            <IconArrowBack />
-                        </button>
+                        !isStaff && (
+                            <button
+                                onClick={() => navigate("/workload")}
+                                className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                                title="목록으로 돌아가기"
+                            >
+                                <IconArrowBack />
+                            </button>
+                        )
                     }
                 />
 
@@ -296,6 +333,7 @@ export default function WorkloadDetailPage() {
                                         ]}
                                         data={currentTableData}
                                         rowKey="id"
+                                        onRowClick={handleRowClick}
                                         pagination={
                                             totalPages > 1
                                                 ? {

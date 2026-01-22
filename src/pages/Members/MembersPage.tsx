@@ -13,6 +13,7 @@ import { IconMore } from "../../components/icons/Icons";
 import Avatar from "../../components/common/Avatar";
 import MembersSkeleton from "../../components/common/MembersSkeleton";
 import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
+import { useToast } from "../../components/ui/ToastProvider";
 
 type Member = {
     id: string;
@@ -39,6 +40,7 @@ type Member = {
 };
 
 export default function MembersPage() {
+    const { showSuccess, showError } = useToast();
     const [activeTab, setActiveTab] = useState<"ALL" | "ADMIN" | "STAFF">(
         "ALL"
     );
@@ -142,6 +144,8 @@ export default function MembersPage() {
     const fetchMembers = async (opts?: {
         isAdmin?: boolean;
         myUserId?: string | null;
+        isStaff?: boolean;
+        isCEO?: boolean;
     }) => {
         setLoadError(null);
         const admin = opts?.isAdmin ?? isAdmin;
@@ -215,6 +219,9 @@ export default function MembersPage() {
 
         const mapped: Member[] = (data ?? []).map((p: any) => {
             const pp = passportsMap.get(p.id);
+            const isOwnProfile = opts?.myUserId === p.id;
+            // 공사팀(스태프)이고 본인이 아닌 경우 여권정보 마스킹
+            const shouldMaskPassport = opts?.isStaff && !isOwnProfile;
 
             return {
                 id: p.id,
@@ -231,14 +238,14 @@ export default function MembersPage() {
                 joinDate: p.join_date ? toYYMMDD(p.join_date) : "",
                 birth: p.birth_date ? toYYMMDD(p.birth_date) : "",
 
-                // ✅ 모든 사용자가 모든 여권정보를 볼 수 있음
-                passportNo: pp?.passport_number ?? "",
-                passportLastName: pp?.passport_last_name ?? "",
-                passportFirstName: pp?.passport_first_name ?? "",
-                passportExpiry: pp?.passport_expiry_date
+                // 공사팀(스태프)이고 본인이 아닌 경우 여권정보 마스킹
+                passportNo: shouldMaskPassport ? "" : (pp?.passport_number ?? ""),
+                passportLastName: shouldMaskPassport ? "" : (pp?.passport_last_name ?? ""),
+                passportFirstName: shouldMaskPassport ? "" : (pp?.passport_first_name ?? ""),
+                passportExpiry: shouldMaskPassport ? "" : (pp?.passport_expiry_date
                     ? toYYMMDD(pp.passport_expiry_date)
-                    : "",
-                passportExpiryISO: pp?.passport_expiry_date ?? "",
+                    : ""),
+                passportExpiryISO: shouldMaskPassport ? "" : (pp?.passport_expiry_date ?? ""),
             };
         });
 
@@ -259,16 +266,25 @@ export default function MembersPage() {
 
             // 방금 role은 state로 들어갔을 수 있으니, profiles에서 다시 role 체크해서 fetchMembers에 전달(깜빡임/경쟁 방지)
             let admin = false;
+            let isStaff = false;
+            let isCEO = false;
             if (user) {
                 const { data } = await supabase
                     .from("profiles")
-                    .select("role")
+                    .select("role, position, department")
                     .eq("id", user.id)
                     .single();
-                admin = data?.role === "admin";
+                admin = data?.role === "admin" || data?.department === "공무팀";
+                isStaff = data?.role === "staff" || data?.department === "공사팀";
+                isCEO = data?.position === "대표";
             }
 
-            await fetchMembers({ isAdmin: admin, myUserId: user?.id ?? null });
+            await fetchMembers({ 
+                isAdmin: admin, 
+                myUserId: user?.id ?? null,
+                isStaff: isStaff,
+                isCEO: isCEO,
+            });
         };
 
         init();
@@ -639,7 +655,7 @@ export default function MembersPage() {
 
                     // ✅ staff는 본인만 수정 가능
                     if (!isAdmin && selectedMemberId !== myUserId) {
-                        alert("본인 계정만 수정할 수 있습니다.");
+                        showError("본인 계정만 수정할 수 있습니다.");
                         return;
                     }
 
@@ -699,18 +715,18 @@ export default function MembersPage() {
                                 "여권정보 저장 실패:",
                                 ppError.message
                             );
-                            alert("여권정보 저장에 실패했습니다.");
+                            showError("여권정보 저장에 실패했습니다.");
                             return;
                         }
                     }
 
                     if (error) {
                         console.error("구성원 수정 실패:", error.message);
-                        alert("구성원 정보 수정에 실패했습니다.");
+                        showError("구성원 정보 수정에 실패했습니다.");
                         return;
                     }
 
-                    alert("구성원 정보가 수정되었습니다.");
+                    showSuccess("구성원 정보가 수정되었습니다.");
                     setEditModalOpen(false);
 
                     // 목록 갱신
@@ -752,11 +768,11 @@ export default function MembersPage() {
 
                             if (error) {
                                 console.error("삭제 실패:", error.message);
-                                alert("삭제에 실패했습니다.");
+                                showError("삭제에 실패했습니다.");
                                 return;
                             }
 
-                            alert("삭제 완료");
+                            showSuccess("삭제 완료");
                             setActionOpen(false);
                             setActionAnchor(null);
                             await fetchMembers();
@@ -777,7 +793,7 @@ export default function MembersPage() {
 
                     // ✅ staff는 본인만 가능
                     if (!isAdmin && selectedMemberId !== myUserId) {
-                        alert("본인 비밀번호만 변경할 수 있습니다.");
+                        showError("본인 비밀번호만 변경할 수 있습니다.");
                         return false;
                     }
 
@@ -789,11 +805,11 @@ export default function MembersPage() {
 
                         if (error) {
                             console.error("비밀번호 변경 실패:", error.message);
-                            alert("비밀번호 변경에 실패했습니다.");
+                            showError("비밀번호 변경에 실패했습니다.");
                             return false;
                         }
 
-                        alert("비밀번호가 변경되었습니다.");
+                        showSuccess("비밀번호가 변경되었습니다.");
                         return true;
                     }
 
@@ -811,13 +827,13 @@ export default function MembersPage() {
                         } = await supabase.auth.getSession();
 
                         if (!session?.access_token) {
-                            alert("로그인 정보가 없습니다.");
+                            showError("로그인 정보가 없습니다.");
                             return false;
                         }
 
                         // 비밀번호 길이 검증 (Edge Function과 일치)
                         if (payload.newPassword.length < 8) {
-                            alert("비밀번호는 최소 8자 이상이어야 합니다.");
+                            showError("비밀번호는 최소 8자 이상이어야 합니다.");
                             return false;
                         }
 
@@ -851,12 +867,12 @@ export default function MembersPage() {
                                 errorMessage = String(error.error);
                             }
 
-                            alert(errorMessage);
+                            showError(errorMessage);
                             return false;
                         }
 
                         console.log("비밀번호 재설정 성공:", data);
-                        alert("비밀번호가 재설정되었습니다.");
+                        showSuccess("비밀번호가 재설정되었습니다.");
                         return true;
                     }
 

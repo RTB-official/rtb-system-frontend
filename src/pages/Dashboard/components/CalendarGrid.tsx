@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import WeekRow from "../../../components/calendar/WeekRow";
 import { CalendarEvent } from "../../../types";
 import { getWeekEventRows, getEventsForDate, getSafeDateKey, getColumnPadding } from "../../../utils/calendarUtils";
@@ -19,6 +19,7 @@ interface CalendarGridProps {
     onDragStart: (dateKey: string, e: React.MouseEvent) => void;
     onDragEnter: (dateKey: string) => void;
     onHiddenCountClick: (dateKey: string, threshold: number) => void;
+    onCellHeightChange?: (dateKey: string, height: number) => void;
 }
 
 export default function CalendarGrid({
@@ -37,16 +38,38 @@ export default function CalendarGrid({
     onDragStart,
     onDragEnter,
     onHiddenCountClick,
+    onCellHeightChange,
 }: CalendarGridProps) {
     const dateHeaderHeight = 48;
     const bottomPadding = 18;
-    const tagHeight = 24;
-    const tagSpacing = 4;
+    // 모바일 반응형: 작은 화면에서는 태그 높이와 간격을 줄임
+    const [isMobile, setIsMobile] = useState(
+        typeof window !== 'undefined' && window.innerWidth < 768
+    );
+
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // 모바일에서는 점 형태로 표시되므로 높이와 간격을 작게 설정
+    const tagHeight = isMobile ? 8 : 22; // 모바일: 점 높이(8px), 데스크톱: 태그 높이(22px)
+    const tagSpacing = isMobile ? 4 : 6; // 모바일: 점 간격(4px), 데스크톱: 태그 간격(6px)
 
     const pad = (n: number) => (n < 10 ? "0" + n : String(n));
 
     return (
-        <div className="bg-white flex-1 flex flex-col min-h-0 overflow-visible">
+        <div
+            className="bg-white flex-1 flex flex-col min-h-0"
+            style={{
+                overflowX: 'auto', // 모바일에서 가로 스크롤 허용
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch' // iOS 부드러운 스크롤
+            }}
+        >
             {weeks.map((week, weekIdx) => {
                 // 주 단위 이벤트 행 정보 가져오기
                 const weekEventRows = getWeekEventRows(week, sortedEvents);
@@ -69,9 +92,9 @@ export default function CalendarGrid({
                 const maxVisibleRows =
                     availableHeight > 0
                         ? Math.ceil(
-                              (availableHeight + tagSpacing) /
-                                  (tagHeight + tagSpacing)
-                          )
+                            (availableHeight + tagSpacing) /
+                            (tagHeight + tagSpacing)
+                        )
                         : 3;
 
                 return (
@@ -101,6 +124,7 @@ export default function CalendarGrid({
                         onDragStart={onDragStart}
                         onDragEnter={onDragEnter}
                         onHiddenCountClick={onHiddenCountClick}
+                        onCellHeightChange={onCellHeightChange}
                     />
                 );
             })}

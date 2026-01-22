@@ -15,6 +15,7 @@ import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
+import { supabase } from "../../lib/supabase";
 import {
     getWorkloadData,
     getWorkloadTargetProfiles,
@@ -29,28 +30,29 @@ import {
 // 커스텀 툴팁
 const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+        const byKey = (key: string) =>
+            payload.find((p: any) => p?.dataKey === key)?.value ?? 0;
+
         return (
             <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-lg">
-                <p className="font-semibold text-sm text-gray-900 mb-2">
-                    {label}
-                </p>
+                <p className="font-semibold text-sm text-gray-900 mb-2">{label}</p>
                 <div className="flex flex-col gap-1.5">
                     <div className="flex items-center gap-1.5">
                         <div className="w-3.5 h-3.5 rounded bg-[#51a2ff]" />
                         <span className="text-sm text-gray-600">
-                            작업 {payload[0]?.value}시간
+                            작업 {byKey("작업")}시간
                         </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                         <div className="w-3.5 h-3.5 rounded bg-[#fd9a00]" />
                         <span className="text-sm text-gray-600">
-                            이동 {payload[1]?.value}시간
+                            이동 {byKey("이동")}시간
                         </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                         <div className="w-3.5 h-3.5 rounded bg-gray-300" />
                         <span className="text-sm text-gray-600">
-                            대기 {payload[2]?.value}시간
+                            대기 {byKey("대기")}시간
                         </span>
                     </div>
                 </div>
@@ -59,6 +61,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     }
     return null;
 };
+
 
 export default function WorkloadPage() {
     const navigate = useNavigate();
@@ -75,21 +78,66 @@ export default function WorkloadPage() {
     const [loading, setLoading] = useState(true);
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [userDepartment, setUserDepartment] = useState<string | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [userName, setUserName] = useState<string | null>(null);
+    const [redirecting, setRedirecting] = useState(false);
 
     const itemsPerPage = 10;
 
+    // 사용자 정보 로드
+    useEffect(() => {
+        const fetchUserInfo = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                setCurrentUserId(user.id);
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("role, department, name")
+                    .eq("id", user.id)
+                    .single();
+                    if (profile) {
+                        setUserRole(profile.role);
+                        setUserDepartment(profile.department);
+                        setUserName(profile.name);
+    
+                        // ✅ staff/공사팀이면 WorkloadPage 로딩 없이 즉시 본인 Detail로 이동
+                        const isStaff = profile.role === "staff" || profile.department === "공사팀";
+                        if (isStaff && profile.name) {
+                            setRedirecting(true);
+                            navigate(`/workload/detail/${encodeURIComponent(profile.name)}`, {
+                                replace: true,
+                            });
+                            return;
+                        }
+                    }
+            }
+        };
+        fetchUserInfo();
+    }, []);
+
     // 행 클릭 핸들러
     const handleRowClick = (row: WorkloadTableRow) => {
+        const isStaff = userRole === "staff" || userDepartment === "공사팀";
+        // 공사팀(스태프)인 경우 본인 ID와 일치하는 경우만 상세 페이지로 이동
+        // (이미 자동 리다이렉트되므로 이 핸들러는 사실상 사용되지 않지만, 안전장치로 유지)
+        if (isStaff && row.id !== currentUserId) {
+            return;
+        }
         navigate(`/workload/detail/${encodeURIComponent(row.name)}`);
     };
 
     // 데이터 로드
     useEffect(() => {
+        const isStaff = userRole === "staff" || userDepartment === "공사팀";
+        if (isStaff) return; // ✅ staff는 목록 화면 로딩 자체를 하지 않음
+
         const loadData = async () => {
             setLoading(true);
             try {
                 const yearNum = parseInt(selectedYear.replace("년", ""));
-                const monthNum = parseInt(selectedMonth.replace("월", "")) - 1;
+                const monthNum = parseInt(selectedMonth.replace("월", ""));
 
                 const entries = await getWorkloadData({
                     year: yearNum,
@@ -128,7 +176,9 @@ export default function WorkloadPage() {
         };
 
         loadData();
-    }, [selectedYear, selectedMonth]);
+    }, [selectedYear, selectedMonth, userRole, userDepartment]);
+
+
 
     // 페이지네이션 계산
     const totalPages = useMemo(() => {
@@ -290,10 +340,10 @@ export default function WorkloadPage() {
                                                     }}
                                                 />
                                                 <Bar
-                                                    dataKey="대기"
+                                                    dataKey="작업"
                                                     stackId="a"
-                                                    fill="#d1d5dc"
-                                                    radius={[0, 0, 0, 0]}
+                                                    fill="#51a2ff"
+                                                    radius={[4, 4, 0, 0]}
                                                 />
                                                 <Bar
                                                     dataKey="이동"
@@ -302,10 +352,10 @@ export default function WorkloadPage() {
                                                     radius={[0, 0, 0, 0]}
                                                 />
                                                 <Bar
-                                                    dataKey="작업"
+                                                    dataKey="대기"
                                                     stackId="a"
-                                                    fill="#51a2ff"
-                                                    radius={[4, 4, 4, 4]}
+                                                    fill="#d1d5dc"
+                                                    radius={[0, 0, 4, 4]}
                                                 />
                                             </BarChart>
                                         </ResponsiveContainer>

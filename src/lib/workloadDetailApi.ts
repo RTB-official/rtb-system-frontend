@@ -134,12 +134,9 @@ export async function getWorkerWorkloadDetail(
         }
 
         const dayData = dateMap.get(dateKey)!;
-        const hours = calculateHours(
-            entry.date_from,
-            entry.time_from,
-            entry.date_to,
-            entry.time_to
-        );
+        const hours =
+        ((entry as any).work_hours ?? 0) ||
+        calculateHours(entry.date_from, entry.time_from, entry.date_to, entry.time_to);
 
         if (entry.desc_type === "작업") {
             dayData.workTime += hours;

@@ -12,6 +12,7 @@ import {
 } from "../../store/workReportStore";
 import { IconEdit, IconTrash, IconClose } from "../icons/Icons";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import { useToast } from "../ui/ToastProvider";
 
 // ✅ 작업 시간(분) 계산: 점심(12:00~13:00) 제외 옵션 포함
 function calcWorkMinutesWithLunchRule(params: {
@@ -833,7 +834,7 @@ useEffect(() => {
                             }
 
                             setErrors({});
-                            saveWorkLogEntry();
+                            saveWorkLogEntry(showError);
                             setHasDetour(false);
                         }}
                         variant="primary"

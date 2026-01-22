@@ -194,3 +194,64 @@ export function getColumnPadding(index: number): string {
     return "";
 }
 
+/**
+ * 이벤트 타입 판단 유틸리티
+ */
+export function isVacationEvent(title: string): boolean {
+    return title.includes("휴가");
+}
+
+export function isWorkLogEvent(title: string): boolean {
+    return title.startsWith("출장보고서 - ") || title.startsWith("출장 보고서 - ");
+}
+
+/**
+ * 캘린더 태그 아이콘 간격 상수 (px)
+ * - 홀리데이, 휴가, 출장보고서: 6px (mr-1.5)
+ * - 기본 일정: 8px (mr-2)
+ */
+export const CALENDAR_TAG_ICON_SPACING = {
+    holiday: 6,      // 공휴일
+    vacation: 6,    // 휴가
+    workLog: 6,      // 출장보고서
+    general: 8,      // 기본 일정
+} as const;
+
+/**
+ * 캘린더 태그 아이콘 너비 (아이콘만, 간격 제외)
+ * - 공휴일: w-4(16px)
+ * - 휴가: w-4(16px)
+ * - 출장보고서: w-4(16px)
+ * - 일반 이벤트: w-1(4px)
+ */
+export const CALENDAR_TAG_ICON_SIZES = {
+    holiday: 16,      // 공휴일
+    vacation: 16,    // 휴가
+    workLog: 16,      // 출장보고서
+    general: 4,      // 일반 이벤트
+} as const;
+
+/**
+ * 캘린더 태그 아이콘 너비 (아이콘 + 간격)
+ */
+export const CALENDAR_TAG_ICON_WIDTHS = {
+    holiday: CALENDAR_TAG_ICON_SIZES.holiday + CALENDAR_TAG_ICON_SPACING.holiday,      // 22px
+    vacation: CALENDAR_TAG_ICON_SIZES.vacation + CALENDAR_TAG_ICON_SPACING.vacation,    // 22px
+    workLog: CALENDAR_TAG_ICON_SIZES.workLog + CALENDAR_TAG_ICON_SPACING.workLog,      // 22px
+    general: CALENDAR_TAG_ICON_SIZES.general + CALENDAR_TAG_ICON_SPACING.general,      // 12px
+} as const;
+
+/**
+ * 이벤트 타입에 따른 아이콘 너비 계산 (아이콘 + 간격)
+ */
+export function getCalendarTagIconWidth(
+    isHoliday: boolean,
+    isVacation: boolean,
+    isWorkLog: boolean
+): number {
+    if (isHoliday) return CALENDAR_TAG_ICON_WIDTHS.holiday;
+    if (isVacation) return CALENDAR_TAG_ICON_WIDTHS.vacation;
+    if (isWorkLog) return CALENDAR_TAG_ICON_WIDTHS.workLog;
+    return CALENDAR_TAG_ICON_WIDTHS.general;
+}
+

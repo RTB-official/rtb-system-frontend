@@ -71,6 +71,9 @@ export default function CreationPage() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [isSubmittedWorkLog, setIsSubmittedWorkLog] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+
+
+    
     
     // ✅ 최초 작성자 유지용(업데이트 시 author NOT NULL 방지)
     const [originalAuthor, setOriginalAuthor] = useState<string | null>(null);
@@ -79,8 +82,7 @@ export default function CreationPage() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
-    const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const isNavigatingRef = useRef(false);
+
     const {
         vessel,
         engine,
@@ -114,16 +116,70 @@ export default function CreationPage() {
         addCurrentEntryPerson,
     } = useWorkReportStore();
 
-    // 새로 작성 모드일 때 폼 초기화
-    useEffect(() => {
-        if (!isEditMode) {
-            // 수정 모드가 아닐 때는 항상 폼을 초기화
-            resetForm();
-            setLastSavedAt(null);
-            setHasUnsavedChanges(false);
-            setIsSubmittedWorkLog(false);
-        }
-    }, [isEditMode, resetForm]);
+    // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
+    const initialSnapshotRef = useRef<string>("");
+    const makeSnapshot = useCallback(() => {
+        return JSON.stringify({
+            vessel,
+            engine,
+            subject,
+            orderGroup,
+            orderPerson,
+            location,
+            locationCustom,
+            vehicles,
+            workers,
+            workLogEntries,
+            expenses,
+            materials,
+            uploadedFiles: uploadedFiles?.map((f: any) => ({
+                name: f?.file?.name,
+                category: f?.category,
+                isExisting: f?.isExisting,
+            })),
+        });
+    }, [
+        vessel,
+        engine,
+        subject,
+        orderGroup,
+        orderPerson,
+        location,
+        locationCustom,
+        vehicles,
+        workers,
+        workLogEntries,
+        expenses,
+        materials,
+        uploadedFiles,
+    ]);
+
+    const [isDirty, setIsDirty] = useState(false);
+
+// ✅ 최신 makeSnapshot 참조용 (비동기/timeout에서도 최신값 사용)
+const makeSnapshotRef = useRef(makeSnapshot);
+useEffect(() => {
+    makeSnapshotRef.current = makeSnapshot;
+}, [makeSnapshot]);
+
+
+// 새로 작성 모드일 때 폼 초기화
+useEffect(() => {
+    if (!isEditMode) {
+        resetForm();
+        setLastSavedAt(null);
+        setHasUnsavedChanges(false);
+        setIsSubmittedWorkLog(false);
+
+        // ✅ 초기 스냅샷(빈 폼 기준) 저장
+        // resetForm이 store를 바로 반영하지 않을 수 있어 다음 tick에 잡음
+        setTimeout(() => {
+            initialSnapshotRef.current = makeSnapshotRef.current();
+            setIsDirty(false);
+        }, 0);
+    }
+}, [isEditMode, resetForm]);
+
 
     // 수정 모드일 때 기존 데이터 로드
     useEffect(() => {
@@ -226,12 +282,19 @@ export default function CreationPage() {
                 );
                 navigate("/report");
             } finally {
+                // ✅ 로드 완료 시점을 초기 스냅샷으로 고정
+                setTimeout(() => {
+                    initialSnapshotRef.current = makeSnapshotRef.current();
+                    setIsDirty(false);
+                }, 0);
+
                 setLoading(false);
             }
         };
 
         loadWorkLogData();
     }, [isEditMode, workLogId]);
+
 
     // 실제 제출 로직
     const performSubmit = async () => {
@@ -408,7 +471,6 @@ export default function CreationPage() {
             }
 
             showSuccess("제출이 완료되었습니다!");
-            isNavigatingRef.current = true;
             resetForm();
             setLastSavedAt(null);
             setHasUnsavedChanges(false);
@@ -536,7 +598,6 @@ export default function CreationPage() {
 
                 if (!silent) {
                     showSuccess("임시저장이 완료되었습니다!");
-                    isNavigatingRef.current = true;
                     navigate("/report"); // ✅ 임시저장 후 목록으로 이동
                 }
                 
@@ -579,102 +640,74 @@ export default function CreationPage() {
         handleDraftSave(false);
     };
 
-    // 변경사항 감지 및 자동 저장
+    // ✅ 변경 감지: 초기 스냅샷과 현재 스냅샷 비교
     useEffect(() => {
-        // 변경사항이 있으면 플래그 설정
-        const hasChanges =
-            vessel ||
-            engine ||
-            subject ||
-            workers.length > 0 ||
-            workLogEntries.length > 0 ||
-            expenses.length > 0 ||
-            materials.length > 0;
+        const current = makeSnapshot();
+        const initial = initialSnapshotRef.current;
 
-        if (hasChanges) {
-            setHasUnsavedChanges(true);
+        // 초기 스냅샷이 아직 없다면 dirty false 유지
+        if (!initial) {
+            setIsDirty(false);
+            return;
         }
 
-        // 자동 저장 타이머 (30초마다)
-        if (hasChanges && !savingDraft && !submitting) {
-            if (autoSaveTimeoutRef.current) {
-                clearTimeout(autoSaveTimeoutRef.current);
-            }
+        setIsDirty(current !== initial);
+    }, [makeSnapshot]);
 
-            autoSaveTimeoutRef.current = setTimeout(() => {
-                if (hasChanges && !savingDraft && !submitting) {
-                    handleDraftSave(true); // 자동 저장은 silent 모드
-                }
-            }, 30000); // 30초
+     // ✅ dirty일 때만: 뒤로가기 / 새로고침(이탈) 확인 팝업
+     useEffect(() => {
+        // ✅ 로딩 중(초기 마운트/리프레시)엔 history 가드 걸지 않음
+        if (loading) return;
+        if (!isDirty) return;
+
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = "";
+        };
+
+        const pushState = () => {
+            window.history.pushState({ __block_back: true }, "", window.location.href);
+        };
+
+        // ✅ TDZ 방지: cleanup을 먼저 선언
+        const cleanup = () => {
+            window.removeEventListener("beforeunload", handleBeforeUnload);
+            window.removeEventListener("popstate", handlePopState);
+        };
+
+        function handlePopState() {
+            const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
+            if (!ok) {
+                // ✅ 취소면 현재 페이지 유지
+                pushState();
+                return;
+            }
+        
+            // ✅ 확인이면: (C→B는 이미 발생) 이제 B→A로 실제 이동
+            cleanup();
+            navigate(-1);
         }
-
-        return () => {
-            if (autoSaveTimeoutRef.current) {
-                clearTimeout(autoSaveTimeoutRef.current);
-            }
-        };
-    }, [
-        vessel,
-        engine,
-        subject,
-        workers,
-        workLogEntries,
-        expenses,
-        materials,
-        savingDraft,
-        submitting,
-        handleDraftSave,
-    ]);
-
-    // 페이지를 떠날 때 자동 저장
-    useEffect(() => {
-        const handleBeforeUnload = () => {
-            if (!isSubmittedWorkLog && !isNavigatingRef.current && user?.id) {
-                // 화면을 벗어날 때 마지막 임시저장
-                handleDraftSave(true);
-            }
-        };
-
-        const handleVisibilityChange = () => {
-            if (
-                document.hidden &&
-                !isSubmittedWorkLog &&
-                !isNavigatingRef.current &&
-                user?.id
-            ) {
-                // 탭이 숨겨질 때 (다른 탭으로 전환, 브라우저 최소화 등) 임시저장
-                handleDraftSave(true);
-            }
-        };
-
-        const handlePopState = () => {
-            if (!isSubmittedWorkLog && !isNavigatingRef.current && user?.id) {
-                // 뒤로 가기/앞으로 가기 시 자동 저장
-                handleDraftSave(true);
-            }
-        };
 
         window.addEventListener("beforeunload", handleBeforeUnload);
-        document.addEventListener("visibilitychange", handleVisibilityChange);
+        pushState();
         window.addEventListener("popstate", handlePopState);
 
         return () => {
-            window.removeEventListener("beforeunload", handleBeforeUnload);
-            document.removeEventListener(
-                "visibilitychange",
-                handleVisibilityChange
-            );
-            window.removeEventListener("popstate", handlePopState);
+            cleanup();
         };
-    }, [isSubmittedWorkLog, isNavigatingRef, handleDraftSave, user?.id]);
+    }, [isDirty, loading, navigate]);
 
-// 뒤로가기 버튼 클릭 시 자동 저장
-const handleBackClick = async () => {
-    if (!isSubmittedWorkLog && user?.id) {
-        isNavigatingRef.current = true;
-        await handleDraftSave(true);
+    
+
+ 
+
+// 뒤로가기 버튼 클릭 (dirty일 때만 확인)
+const handleBackClick = () => {
+    if (isDirty) {
+        const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
+        if (!ok) return;
     }
-    navigate("/report"); // ✅ 항상 목록으로 이동
+    navigate("/report");
 };
 
     return (
