@@ -1,3 +1,4 @@
+//useNotifications.ts
 import { useEffect, useState, useRef } from "react";
 import {
     getUserNotifications,

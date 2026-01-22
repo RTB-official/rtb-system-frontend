@@ -1,3 +1,4 @@
+//notificationApi.ts
 import { supabase } from "./supabase";
 
 // ==================== 타입 정의 ====================
