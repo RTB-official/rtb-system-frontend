@@ -1,3 +1,4 @@
+//consumablesSection.tsx
 import { useState } from "react";
 import SectionCard from "../ui/SectionCard";
 import Select from "../common/Select";

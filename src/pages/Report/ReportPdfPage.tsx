@@ -126,6 +126,18 @@ export default function ReportPdfPage() {
     const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
     const { setWorkLogEntries } = useWorkReportStore();
 
+    const [previewFile, setPreviewFile] = useState<{
+        url: string;
+        name: string;
+        type: string;
+    } | null>(null);
+
+    const openPreview = (url: string, name: string, type: string) => {
+        setPreviewFile({ url, name, type });
+    };
+    const closePreview = () => setPreviewFile(null);
+
+
     useEffect(() => {
         if (!id) {
             setError("잘못된 id");
@@ -557,6 +569,67 @@ export default function ReportPdfPage() {
     @media print{
       .pdf-save-fixed{ display:none !important; }
     }
+
+    /* ✅ 미리보기 모달 */
+    .preview-overlay{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+      padding: 16px;
+    }
+
+    .preview-body{
+      max-width: 92vw;
+      max-height: 92vh;
+    }
+
+    .preview-img{
+      max-width: 92vw;
+      max-height: 85vh;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+      object-fit: contain;
+      display: block;
+    }
+
+    .preview-caption{
+      color: #fff;
+      text-align: center;
+      margin-top: 10px;
+      font-size: 13px;
+      max-width: 92vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .preview-close{
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      width: 40px;
+      height: 40px;
+      border-radius: 9999px;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .preview-close:hover{ background: rgba(255,255,255,0.3); }
+
+    @media print{
+      .preview-overlay{ display:none !important; }
+      .preview-close{ display:none !important; }
+    }
+
 
     /* Header */
     .head-table{ width:100%; border-collapse:collapse; }
@@ -1103,117 +1176,209 @@ export default function ReportPdfPage() {
                     {/* 영수증 */}
                     <div className="section">
                         <h2>영수증</h2>
-                        {!receiptImgs.length ? (
-                            <p className="muted">없음</p>
-                        ) : (
-                            <table className="receipts-table">
-                                <tbody>
-                                    {Array.from({
-                                        length: Math.ceil(receiptImgs.length / 2),
-                                    }).map((_, i) => {
-                                        const a = receiptImgs[i * 2];
-                                        const b = receiptImgs[i * 2 + 1];
-                                        return (
-                                            <tr key={i}>
-                                                <td>
-                                                    {a ? (
-                                                        <div className="receipt-card" style={{ position: "relative" }}>
-                                                            <a
-                                                                href={a.url}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                            >
-                                                                {imageErrors.has(a.id) ? (
-                                                                    <div
-                                                                        className="receipt-img"
-                                                                        style={{
-                                                                            display: "flex",
-                                                                            alignItems: "center",
-                                                                            justifyContent: "center",
-                                                                            backgroundColor: "#f3f4f6",
-                                                                            color: "#6b7280",
-                                                                            fontSize: "12px",
-                                                                            textAlign: "center",
-                                                                            padding: "20px",
-                                                                        }}
-                                                                    >
-                                                                        <div>
-                                                                            <div>이미지를</div>
-                                                                            <div>불러올 수 없습니다</div>
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <img
-                                                                        className="receipt-img"
-                                                                        src={a.url}
-                                                                        alt={a.name || "receipt"}
-                                                                        onError={() => handleImageError(a.id)}
-                                                                        style={{ display: "block" }}
-                                                                    />
-                                                                )}
-                                                                <div className="receipt-caption" style={{ marginTop: "8px", fontSize: "10px", color: "#6b7280" }}>
-                                                                    {a.name ||
-                                                                        a.url
-                                                                            .split("/")
-                                                                            .pop()}
-                                                                </div>
-                                                            </a>
-                                                        </div>
-                                                    ) : null}
-                                                </td>
-                                                <td>
-                                                    {b ? (
-                                                        <div className="receipt-card" style={{ position: "relative" }}>
-                                                            <a
-                                                                href={b.url}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                            >
-                                                                {imageErrors.has(b.id) ? (
-                                                                    <div
-                                                                        className="receipt-img"
-                                                                        style={{
-                                                                            display: "flex",
-                                                                            alignItems: "center",
-                                                                            justifyContent: "center",
-                                                                            backgroundColor: "#f3f4f6",
-                                                                            color: "#6b7280",
-                                                                            fontSize: "12px",
-                                                                            textAlign: "center",
-                                                                            padding: "20px",
-                                                                        }}
-                                                                    >
-                                                                        <div>
-                                                                            <div>이미지를</div>
-                                                                            <div>불러올 수 없습니다</div>
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <img
-                                                                        className="receipt-img"
-                                                                        src={b.url}
-                                                                        alt={b.name || "receipt"}
-                                                                        onError={() => handleImageError(b.id)}
-                                                                        style={{ display: "block" }}
-                                                                    />
-                                                                )}
-                                                                <div className="receipt-caption" style={{ marginTop: "8px", fontSize: "10px", color: "#6b7280" }}>
-                                                                    {b.name ||
-                                                                        b.url
-                                                                            .split("/")
-                                                                            .pop()}
-                                                                </div>
-                                                            </a>
-                                                        </div>
-                                                    ) : null}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        )}
+
+                        {(() => {
+                            const categories = [
+                                { key: "숙박영수증", title: "숙박 영수증" },
+                                { key: "자재구매영수증", title: "자재 영수증" },
+                                { key: "식비및유대영수증", title: "식비 및 유대 영수증" },
+                                { key: "기타", title: "기타 (TBM사진 등)" },
+                            ] as const;
+
+                            const grouped = categories.map((c) => ({
+                                ...c,
+                                items: receiptImgs.filter((r) => r.category === c.key),
+                            }));
+
+                            const hasAny = grouped.some((g) => g.items.length > 0);
+
+                            if (!hasAny) {
+                                return <p className="muted">없음</p>;
+                            }
+
+                            return (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                                    {grouped.map((g) => (
+                                        <div key={g.key}>
+                                            {/* 카테고리 제목 + 개수 */}
+                                            <div
+                                                style={{
+                                                    display: "flex",
+                                                    justifyContent: "space-between",
+                                                    alignItems: "center",
+                                                    margin: "6px 0 8px",
+                                                }}
+                                            >
+                                                <div style={{ fontWeight: 700, fontSize: "11pt" }}>
+                                                    {g.title}
+                                                </div>
+                                                <div style={{ fontSize: "9pt", color: "#6b7280" }}>
+                                                    {g.items.length}개
+                                                </div>
+                                            </div>
+
+                                            {g.items.length === 0 ? (
+                                                <div className="muted" style={{ fontSize: "9pt" }}>
+                                                    해당 분류에 첨부파일이 없습니다.
+                                                </div>
+                                            ) : (
+                                                <table className="receipts-table">
+                                                    <tbody>
+                                                        {Array.from({
+                                                            length: Math.ceil(g.items.length / 2),
+                                                        }).map((_, i) => {
+                                                            const a = g.items[i * 2];
+                                                            const b = g.items[i * 2 + 1];
+
+                                                            return (
+                                                                <tr key={`${g.key}-${i}`}>
+                                                                    <td>
+                                                                        {a ? (
+                                                                            <div
+                                                                                className="receipt-card"
+                                                                                style={{ position: "relative" }}
+                                                                            >
+                                                                                {imageErrors.has(a.id) ? (
+                                                                                    <div
+                                                                                        className="receipt-img"
+                                                                                        style={{
+                                                                                            display: "flex",
+                                                                                            alignItems: "center",
+                                                                                            justifyContent: "center",
+                                                                                            backgroundColor: "#f3f4f6",
+                                                                                            color: "#6b7280",
+                                                                                            fontSize: "12px",
+                                                                                            textAlign: "center",
+                                                                                            padding: "20px",
+                                                                                        }}
+                                                                                    >
+                                                                                        <div>
+                                                                                            <div>이미지를</div>
+                                                                                            <div>불러올 수 없습니다</div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <img
+                                                                                        className="receipt-img"
+                                                                                        src={a.url}
+                                                                                        alt={a.name || "receipt"}
+                                                                                        onError={() => handleImageError(a.id)}
+                                                                                        style={{ display: "block" }}
+                                                                                    />
+                                                                                )}
+
+                                                                                <div
+                                                                                    className="receipt-caption"
+                                                                                    style={{
+                                                                                        marginTop: "8px",
+                                                                                        fontSize: "10px",
+                                                                                        color: "#6b7280",
+                                                                                    }}
+                                                                                >
+                                                                                    {a.name || a.url.split("/").pop()}
+                                                                                </div>
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </td>
+
+                                                                    <td>
+                                                                        {b ? (
+                                                                            <div
+                                                                                className="receipt-card"
+                                                                                style={{ position: "relative" }}
+                                                                            >
+                                                                                {imageErrors.has(b.id) ? (
+                                                                                    <div
+                                                                                        className="receipt-img"
+                                                                                        style={{
+                                                                                            display: "flex",
+                                                                                            alignItems: "center",
+                                                                                            justifyContent: "center",
+                                                                                            backgroundColor: "#f3f4f6",
+                                                                                            color: "#6b7280",
+                                                                                            fontSize: "12px",
+                                                                                            textAlign: "center",
+                                                                                            padding: "20px",
+                                                                                        }}
+                                                                                    >
+                                                                                        <div>
+                                                                                            <div>이미지를</div>
+                                                                                            <div>불러올 수 없습니다</div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <img
+                                                                                        className="receipt-img"
+                                                                                        src={b.url}
+                                                                                        alt={b.name || "receipt"}
+                                                                                        onError={() => handleImageError(b.id)}
+                                                                                        style={{ display: "block" }}
+                                                                                    />
+                                                                                )}
+
+                                                                                <div
+                                                                                    className="receipt-caption"
+                                                                                    style={{
+                                                                                        marginTop: "8px",
+                                                                                        fontSize: "10px",
+                                                                                        color: "#6b7280",
+                                                                                    }}
+                                                                                >
+                                                                                    {b.name || b.url.split("/").pop()}
+                                                                                </div>
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
+
+                    {previewFile && (
+                    <div
+                        className="preview-overlay"
+                        onClick={closePreview} // ✅ 바깥 클릭 시 닫힘
+                    >
+                        <button
+                            type="button"
+                            className="preview-close"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                closePreview();
+                            }}
+                            aria-label="닫기"
+                        >
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                                <path
+                                    d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"
+                                    fill="currentColor"
+                                />
+                            </svg>
+                        </button>
+
+                        <div
+                            className="preview-body"
+                            onClick={(e) => e.stopPropagation()} // ✅ 이미지 클릭은 닫힘 방지
+                        >
+                            {/* 지금은 영수증이 이미지라고 가정 */}
+                            <img
+                                src={previewFile.url}
+                                alt={previewFile.name}
+                                className="preview-img"
+                            />
+                            <div className="preview-caption">{previewFile.name}</div>
+                        </div>
+                    </div>
+                )}
+
                 </div>
             </div>
         );

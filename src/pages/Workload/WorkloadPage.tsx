@@ -82,6 +82,7 @@ export default function WorkloadPage() {
     const [userDepartment, setUserDepartment] = useState<string | null>(null);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [userName, setUserName] = useState<string | null>(null);
+    const [redirecting, setRedirecting] = useState(false);
 
     const itemsPerPage = 10;
 
@@ -96,11 +97,21 @@ export default function WorkloadPage() {
                     .select("role, department, name")
                     .eq("id", user.id)
                     .single();
-                if (profile) {
-                    setUserRole(profile.role);
-                    setUserDepartment(profile.department);
-                    setUserName(profile.name);
-                }
+                    if (profile) {
+                        setUserRole(profile.role);
+                        setUserDepartment(profile.department);
+                        setUserName(profile.name);
+    
+                        // ✅ staff/공사팀이면 WorkloadPage 로딩 없이 즉시 본인 Detail로 이동
+                        const isStaff = profile.role === "staff" || profile.department === "공사팀";
+                        if (isStaff && profile.name) {
+                            setRedirecting(true);
+                            navigate(`/workload/detail/${encodeURIComponent(profile.name)}`, {
+                                replace: true,
+                            });
+                            return;
+                        }
+                    }
             }
         };
         fetchUserInfo();
@@ -119,6 +130,9 @@ export default function WorkloadPage() {
 
     // 데이터 로드
     useEffect(() => {
+        const isStaff = userRole === "staff" || userDepartment === "공사팀";
+        if (isStaff) return; // ✅ staff는 목록 화면 로딩 자체를 하지 않음
+
         const loadData = async () => {
             setLoading(true);
             try {
@@ -162,19 +176,9 @@ export default function WorkloadPage() {
         };
 
         loadData();
-    }, [selectedYear, selectedMonth]);
+    }, [selectedYear, selectedMonth, userRole, userDepartment]);
 
-    // 공사팀(스태프)인 경우 본인 상세 페이지로 자동 리다이렉트
-    useEffect(() => {
-        const isStaff = userRole === "staff" || userDepartment === "공사팀";
-        if (isStaff && userName && tableData.length > 0 && !loading) {
-            // 본인 데이터 찾기
-            const ownData = tableData.find(row => row.id === currentUserId || row.name === userName);
-            if (ownData) {
-                navigate(`/workload/detail/${encodeURIComponent(ownData.name)}`, { replace: true });
-            }
-        }
-    }, [userRole, userDepartment, userName, tableData, currentUserId, loading, navigate]);
+
 
     // 페이지네이션 계산
     const totalPages = useMemo(() => {

@@ -109,6 +109,12 @@ export default function WorkloadDetailPage() {
     const itemsPerPage = 10;
     const personName = id ? decodeURIComponent(id) : "";
 
+    // 날짜별 내역 클릭 → 해당 출장보고서(ReportViewPage)로 이동
+    const handleRowClick = (row: WorkloadDetailEntry) => {
+        if (!row?.workLogId) return;
+        navigate(`/report/${row.workLogId}`);
+    };
+
     // 데이터 로드
     useEffect(() => {
         if (!personName) {
@@ -122,7 +128,8 @@ export default function WorkloadDetailPage() {
                 const yearNum = parseInt(selectedYear.replace("년", ""));
                 const monthNum = parseInt(selectedMonth.replace("월", ""));
 
-                const entries = await getWorkloadData({
+                // ✅ 개인별 상세 데이터는 이 API를 사용해야 함
+                const data = await getWorkerWorkloadDetail(personName, {
                     year: yearNum,
                     month: monthNum,
                 });
@@ -139,6 +146,7 @@ export default function WorkloadDetailPage() {
 
         loadData();
     }, [personName, selectedYear, selectedMonth]);
+
 
     // 페이지네이션 계산
     const totalPages = useMemo(() => {
@@ -325,6 +333,7 @@ export default function WorkloadDetailPage() {
                                         ]}
                                         data={currentTableData}
                                         rowKey="id"
+                                        onRowClick={handleRowClick}
                                         pagination={
                                             totalPages > 1
                                                 ? {

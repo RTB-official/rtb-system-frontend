@@ -49,39 +49,219 @@ export default function ReportListPage() {
     const navigate = useNavigate();
     const { showSuccess, showError, showInfo } = useToast();
 
-    // 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, "0");
+// 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
+const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}.${month}.${day}.`;
+};
+
+
+
+// ✅ 기간 표기용 (끝 점 없이)
+const formatYMD = (dateString: string) => {
+    const d = new Date(dateString);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${mm}.${dd}`;
+};
+
+
+// ✅ 기간 포맷팅 (start~end)
+// - WorkLog 필드명이 프로젝트마다 다를 수 있어서 여러 후보를 안전하게 확인합니다.
+const formatPeriod = (start?: string | null, end?: string | null) => {
+    if (!start && !end) return null;
+
+    const fmt = (d: string) => {
+        const date = new Date(d);
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
         const day = String(date.getDate()).padStart(2, "0");
-        return `${year}.${month}.${day}.`;
+        return `${y}.${m}.${day}`;
     };
 
-    // WorkLog를 ReportItem으로 변환
-    const convertToReportItem = (workLog: WorkLog): ReportItem => {
-        return {
-            id: workLog.id,
-            title: workLog.subject || "(제목 없음)",
-            place: workLog.location || "—",
-            supervisor: workLog.order_person || "—",
-            owner: workLog.author || "(작성자 없음)",
-            date: formatDate(workLog.created_at),
-            status: workLog.is_draft ? "pending" : "submitted",
-        };
+    if (start && end) return `${fmt(start)}~${fmt(end)}`;
+    if (start) return `${fmt(start)}`;
+    return `${fmt(end!)}`;
+};
+
+// WorkLog를 ReportItem으로 변환
+const convertToReportItem = (workLog: WorkLog): ReportItem => {
+    return {
+        id: workLog.id,
+        // ✅ title은 loadReports에서 "기간 / 호선 / 목적"으로 다시 조합할 예정
+        title: workLog.subject || "(제목 없음)",
+        place: workLog.location || "—",
+        supervisor: workLog.order_person || "—",
+        owner: workLog.author || "(작성자 없음)",
+        date: formatDate(workLog.created_at),
+        status: workLog.is_draft ? "pending" : "submitted",
     };
+};
+
+
 
     // 데이터 로드
     const loadReports = async () => {
         setLoading(true);
         try {
-            const workLogs = await getWorkLogs();
+            let workLogs = await getWorkLogs();
+
+            // ✅ staff면: 본인이 포함된 작업(보고서)만 필터링
+            try {
+                const { data: authData } = await supabase.auth.getUser();
+                const user = authData?.user;
+
+                if (user) {
+                    const { data: myProfile, error: myProfileError } = await supabase
+                        .from("profiles")
+                        .select("role, name")
+                        .eq("id", user.id)
+                        .single();
+
+                    if (myProfileError) {
+                        console.error("내 프로필 조회 실패:", myProfileError);
+                    } else {
+                        const isStaff = myProfile?.role === "staff";
+                        const myName = myProfile?.name?.trim();
+
+                        if (isStaff && myName) {
+                            const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
+
+                            if (workLogIds.length > 0) {
+                                // 1) 해당 workLog들의 entry id / work_log_id 조회
+                                const { data: wlEntries, error: wlEntriesError } =
+                                    await supabase
+                                        .from("work_log_entries_with_hours")
+                                        .select("id, work_log_id")
+                                        .in("work_log_id", workLogIds);
+
+                                if (wlEntriesError) {
+                                    console.error("entries 조회 실패:", wlEntriesError);
+                                    workLogs = []; // 실패 시 staff는 안전하게 빈 목록
+                                } else {
+                                    const entryIdToWorkLogId = new Map<number, number>();
+                                    const entryIds: number[] = [];
+
+                                    (wlEntries || []).forEach((e: any) => {
+                                        const entryId = Number(e.id);
+                                        const wlId = Number(e.work_log_id);
+                                        if (!entryId || !wlId) return;
+                                        entryIdToWorkLogId.set(entryId, wlId);
+                                        entryIds.push(entryId);
+                                    });
+
+                                    if (entryIds.length === 0) {
+                                        workLogs = [];
+                                    } else {
+                                        // 2) 본인이 참여한 entry만 조회
+                                        const { data: persons, error: personsError } =
+                                            await supabase
+                                                .from("work_log_entry_persons")
+                                                .select("entry_id, person_name")
+                                                .eq("person_name", myName)
+                                                .in("entry_id", entryIds);
+
+                                        if (personsError) {
+                                            console.error("entry_persons 조회 실패:", personsError);
+                                            workLogs = [];
+                                        } else {
+                                            const allowedWorkLogIds = new Set<number>();
+                                            (persons || []).forEach((p: any) => {
+                                                const entryId = Number(p.entry_id);
+                                                const wlId = entryIdToWorkLogId.get(entryId);
+                                                if (wlId) allowedWorkLogIds.add(wlId);
+                                            });
+
+                                            workLogs = workLogs.filter((w) =>
+                                                allowedWorkLogIds.has(w.id)
+                                            );
+                                        }
+                                    }
+                                }
+                            } else {
+                                workLogs = [];
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("staff 필터 처리 중 오류:", e);
+            }
+
             const reportItems = workLogs.map(convertToReportItem);
+
+
+
+
+// ✅ WorkLog id 목록
+const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
+
+// ✅ workLogId -> { start, end } 기간 맵 (entries.dateFrom/dateTo 기반)
+const periodMap = new Map<number, { start?: string; end?: string }>();
+
+if (workLogIds.length > 0) {
+    // ⚠️ 테이블명이 다르면 여기만 네 DB 테이블명으로 바꿔줘야 함
+    // (예: workLog_entries, worklog_entries 등)
+    const { data: entries, error: entriesError } = await supabase
+        .from("work_log_entries_with_hours")
+        .select("work_log_id, date_from, date_to")
+        .in("work_log_id", workLogIds);
+
+    if (entriesError) {
+        console.error("기간(entries) 조회 실패:", entriesError);
+    } else {
+        (entries || []).forEach((e: any) => {
+            const id = Number(e.work_log_id);
+            if (!id) return;
+
+            const s = e.date_from ? String(e.date_from) : "";
+            const t = e.date_to ? String(e.date_to) : "";
+
+            const prev = periodMap.get(id);
+
+            // start = 최소 dateFrom, end = 최대 dateTo
+            const nextStart =
+                !prev?.start || (s && s < prev.start) ? (s || prev?.start) : prev.start;
+            const nextEnd =
+                !prev?.end || (t && t > prev.end) ? (t || prev?.end) : prev.end;
+
+            periodMap.set(id, { start: nextStart, end: nextEnd });
+        });
+    }
+}
+
+// ✅ 제목을 "기간 / 호선(vessel) / 출장목적(subject)"으로 재조합 (라벨 없이 내용만)
+const reportsWithTitle = reportItems.map((item) => {
+    const wl = workLogs.find((w) => w.id === item.id) as any;
+
+    const vessel = wl?.vessel?.trim() ? wl.vessel.trim() : "";
+    const purpose = wl?.subject?.trim() ? wl.subject.trim() : "";
+
+    const p = periodMap.get(item.id);
+    const start = p?.start ? formatYMD(p.start) : "";
+    const end = p?.end ? formatYMD(p.end) : "";
+
+    const period =
+        start && end
+            ? start === end
+                ? start
+                : `${start}~${end}`
+            : (start || end || "");
+
+    const parts = [period, vessel, purpose].filter(Boolean);
+    const combinedTitle = parts.length ? parts.join(" / ") : "(제목 없음)";
+
+    return { ...item, title: combinedTitle };
+});
+
 
             // 작성자 이름 목록 수집
             const ownerNames = [
                 ...new Set(
-                    reportItems.map((item) => item.owner).filter(Boolean)
+                    reportsWithTitle.map((item) => item.owner).filter(Boolean)
                 ),
             ];
 
@@ -108,7 +288,7 @@ export default function ReportListPage() {
             });
 
             // ReportItem에 프로필 정보 추가
-            const reportsWithProfiles = reportItems.map((item) => {
+            const reportsWithProfiles = reportsWithTitle.map((item) => {
                 const profile = profileMap.get(item.owner);
                 return {
                     ...item,
@@ -211,7 +391,7 @@ export default function ReportListPage() {
                     ) : (
                         <div className="flex flex-col gap-4">
                             {/* 검색 및 필터 섹션 */}
-                            <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
+                            <div className="bg-white p-0">
                                 <div className="flex flex-wrap items-center gap-3 justify-between">
                                     <Input
                                         value={search}
@@ -448,86 +628,84 @@ export default function ReportListPage() {
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        setOpenMenuId(
-                                                            openMenuId ===
-                                                                row.id
-                                                                ? null
-                                                                : row.id
-                                                        );
-                                                        setMenuAnchor(
-                                                            openMenuId ===
-                                                                row.id
-                                                                ? null
-                                                                : e.currentTarget
-                                                        );
+                                                        setOpenMenuId(openMenuId === row.id ? null : row.id);
+                                                        setMenuAnchor(openMenuId === row.id ? null : e.currentTarget);
                                                     }}
                                                     className="p-2 rounded hover:bg-gray-100 text-gray-600"
                                                     aria-label="행 메뉴"
                                                 >
                                                     <IconMore className="w-[18px] h-[18px]" />
                                                 </button>
-                                                <ActionMenu
-                                                    isOpen={openMenuId === row.id}
-                                                    anchorEl={menuAnchor}
-                                                    onClose={() => {
-                                                        setOpenMenuId(null);
-                                                        setMenuAnchor(null);
-                                                    }}
-                                                    onEdit={() => {
-                                                        navigate(`/report/${row.id}/edit`);
-                                                    }}
-                                                    onDelete={() => {
-                                                        setDeleteTargetId(row.id);
-                                                        setDeleteConfirmOpen(true);
-                                                    }}
-                                                    onDownload={() => {
-                                                        // ✅ 새 "창"으로 PDF 인쇄(저장) 페이지 열기 (예시 브라우저처럼)
-                                                        const url = `/report/pdf?id=${row.id}&autoPrint=1`;
-
-                                                        window.open(
-                                                            url,
-                                                            "report_pdf_window",
-                                                            [
-                                                                "width=980",
-                                                                "height=820",
-                                                                "left=120",
-                                                                "top=60",
-                                                                "scrollbars=yes",
-                                                                "resizable=yes",
-                                                                "toolbar=yes",
-                                                                "menubar=yes",
-                                                                "location=yes",
-                                                                "status=no",
-                                                                "noopener=yes",
-                                                                "noreferrer=yes",
-                                                            ].join(",")
-                                                        );
-                                                    }}
-                                                    width="w-44"
+                                        
+                                                {/* ✅ ActionMenu 영역 클릭 시 row 클릭으로 버블링 방지 */}
+                                                <div
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    onClick={(e) => e.stopPropagation()}
                                                 >
-                                                    {/* ✅ (제일 위) 보고서 보기 */}
-                                                    <button
-                                                        className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
-                                                        onClick={() => {
-                                                            navigate(`/report/${row.id}`);
+                                                    <ActionMenu
+                                                        isOpen={openMenuId === row.id}
+                                                        anchorEl={menuAnchor}
+                                                        onClose={() => {
+                                                            setOpenMenuId(null);
+                                                            setMenuAnchor(null);
                                                         }}
+                                                        onEdit={() => {
+                                                            navigate(`/report/${row.id}/edit`);
+                                                        }}
+                                                        onDelete={() => {
+                                                            setDeleteTargetId(row.id);
+                                                            setDeleteConfirmOpen(true);
+                                                        }}
+                                                        onDownload={() => {
+                                                            const url = `/report/pdf?id=${row.id}&autoPrint=1`;
+                                        
+                                                            window.open(
+                                                                url,
+                                                                "report_pdf_window",
+                                                                [
+                                                                    "width=980",
+                                                                    "height=820",
+                                                                    "left=120",
+                                                                    "top=60",
+                                                                    "scrollbars=yes",
+                                                                    "resizable=yes",
+                                                                    "toolbar=yes",
+                                                                    "menubar=yes",
+                                                                    "location=yes",
+                                                                    "status=no",
+                                                                    "noopener=yes",
+                                                                    "noreferrer=yes",
+                                                                ].join(",")
+                                                            );
+                                                        }}
+                                                        width="w-44"
                                                     >
-                                                        <div className="w-5 flex justify-center text-gray-500">
-                                                            <IconReport />
-                                                        </div>
-                                                        보고서 보기
-                                                    </button>
-
-
-                                                </ActionMenu>
-
+                                                        {/* ✅ (제일 위) 보고서 보기 */}
+                                                        <button
+                                                            className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigate(`/report/${row.id}`);
+                                                            }}
+                                                        >
+                                                            <div className="w-5 flex justify-center text-gray-500">
+                                                                <IconReport />
+                                                            </div>
+                                                            보고서 보기
+                                                        </button>
+                                                    </ActionMenu>
+                                                </div>
                                             </div>
                                         ),
+                                        
                                     },
                                 ]}
                                 data={currentData}
                                 rowKey="id"
                                 emptyText="결과가 없습니다."
+                                onRowClick={(row: ReportItem) => {
+                                    navigate(`/report/${row.id}`);
+                                }}
                                 pagination={{
                                     currentPage,
                                     totalPages,

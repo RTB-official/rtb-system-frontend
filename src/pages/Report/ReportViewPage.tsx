@@ -272,7 +272,6 @@ try {
                     }
                     rightContent={
                         <div className="flex items-center gap-3">
-                            {/* 필요하면 여기 버튼 추가 가능 */}
                             <Button
                                 variant="outline"
                                 size="lg"
@@ -280,8 +279,51 @@ try {
                             >
                                 수정하기
                             </Button>
+                    
+                            <Button
+                                variant="primary"
+                                size="lg"
+                                onClick={() => {
+                                    // ✅ PDF 페이지로 이동 (ReportPdfPage.tsx는 ?id= 로 받음)
+                                    window.open(`/report/pdf?id=${id}`, "_blank");
+                                }}
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                        <path
+                                            d="M4 3h12l4 4v14H4V3z"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinejoin="round"
+                                        />
+                                        <path
+                                            d="M8 3v6h8V3"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinejoin="round"
+                                        />
+                                        <rect
+                                            x="8"
+                                            y="13"
+                                            width="8"
+                                            height="6"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                    PDF
+                                </span>
+                            </Button>
                         </div>
                     }
+                    
                 />
 
                 {loading ? (
@@ -679,6 +721,37 @@ try {
         <div className="text-gray-400">경비 내역이 없습니다.</div>
     )}
 </SectionCard>
+
+{/* 소모 자재 */}
+<SectionCard title="소모 자재">
+    {data?.materials?.length ? (
+        <div className="flex flex-wrap gap-2">
+            {data.materials.map((m: any, idx: number) => {
+                // 표시용 라벨 (작성 페이지 로직 반영)
+                const label =
+                    m.name === "보루"
+                        ? `${m.name} ${Number(m.qty) * 5}kg`
+                        : m.unit
+                        ? `${m.name} ${m.qty}${m.unit}`
+                        : `${m.name} ${m.qty}`;
+
+                return (
+                    <span
+                        key={m.id ?? `${m.name}-${idx}`}
+                        className="inline-flex items-center px-3 py-2 rounded-xl
+                                   bg-gray-100 text-gray-800 text-sm font-medium"
+                    >
+                        {label}
+                    </span>
+                );
+            })}
+        </div>
+    ) : (
+        <div className="text-gray-400">소모 자재가 없습니다.</div>
+    )}
+</SectionCard>
+
+
 
 {/* 첨부파일(사진) */}
 <SectionCard title="첨부파일(사진)">
