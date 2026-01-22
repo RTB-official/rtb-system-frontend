@@ -339,13 +339,13 @@ export default function WorkloadPage() {
                                                     dataKey="이동"
                                                     stackId="a"
                                                     fill="#fd9a00"
-                                                    radius={[0, 0, 0, 0]}
+                                                    radius={[4, 4, 0, 0]}
                                                 />
                                                 <Bar
                                                     dataKey="대기"
                                                     stackId="a"
                                                     fill="#d1d5dc"
-                                                    radius={[0, 0, 4, 4]}
+                                                    radius={[4, 4, 0, 0]}
                                                 />
                                             </BarChart>
                                         </ResponsiveContainer>

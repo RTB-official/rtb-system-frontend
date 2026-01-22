@@ -404,11 +404,26 @@ export function aggregatePersonWorkload(
 
 /**
  * 차트 데이터 생성
+ * 정렬: 작업시간순 → 작업시간 같으면 이동시간순 → 이동시간도 같으면 대기시간순
  */
 export function generateChartData(
     summaries: PersonWorkloadSummary[]
 ): WorkloadChartData[] {
-    return summaries.map((summary) => ({
+    // 정렬: 작업시간순 → 이동시간순 → 대기시간순 (모두 내림차순)
+    const sorted = [...summaries].sort((a, b) => {
+        // 1. 작업시간 비교
+        if (b.workHours !== a.workHours) {
+            return b.workHours - a.workHours;
+        }
+        // 2. 작업시간이 같으면 이동시간 비교
+        if (b.travelHours !== a.travelHours) {
+            return b.travelHours - a.travelHours;
+        }
+        // 3. 이동시간도 같으면 대기시간 비교
+        return b.waitHours - a.waitHours;
+    });
+
+    return sorted.map((summary) => ({
         name: summary.personName,
         작업: Math.round(summary.workHours * 10) / 10, // 소수점 첫째자리까지
         이동: Math.round(summary.travelHours * 10) / 10,
