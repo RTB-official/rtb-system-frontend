@@ -78,21 +78,17 @@ export default function WorkloadPage() {
     const [loading, setLoading] = useState(true);
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
-    const [redirecting, setRedirecting] = useState(false);
 
     const itemsPerPage = 10;
 
     // ✅ useUser 훅으로 사용자 정보 및 권한 가져오기
     const { currentUser, currentUserId, userPermissions } = useUser();
-    const userRole = currentUser?.role || null;
-    const userDepartment = currentUser?.department || null;
     const userName = currentUser?.displayName || null;
     const isStaff = userPermissions.isStaff;
 
     // ✅ staff/공사팀이면 WorkloadPage 로딩 없이 즉시 본인 Detail로 이동
     useEffect(() => {
         if (isStaff && userName) {
-            setRedirecting(true);
             navigate(`/workload/detail/${encodeURIComponent(userName)}`, {
                 replace: true,
             });
