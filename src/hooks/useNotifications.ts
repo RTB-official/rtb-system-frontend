@@ -16,31 +16,39 @@ export function useNotifications(userId: string | null) {
     });
     const notificationRef = useRef<HTMLDivElement>(null);
 
-    // 알림 데이터 로드 및 업데이트
+    // 알림 데이터 로드 및 업데이트 (초기 로딩 지연)
     useEffect(() => {
         if (!userId) return;
 
-        const loadNotifications = async () => {
-            try {
-                const [notificationList, count] = await Promise.all([
-                    getUserNotifications(userId),
-                    getUnreadNotificationCount(userId),
-                ]);
-                setNotifications(notificationList);
-                setUnreadCount(count);
-                // localStorage에 저장하여 새로고침 시 깜빡임 방지
-                localStorage.setItem("sidebarUnreadCount", String(count));
-            } catch (error) {
-                console.error("알림 로드 실패:", error);
-            }
+        let intervalId: NodeJS.Timeout | null = null;
+
+        // 초기 로딩 지연 (100ms) - 메인 콘텐츠 우선 로딩
+        const timeoutId = setTimeout(() => {
+            const loadNotifications = async () => {
+                try {
+                    const [notificationList, count] = await Promise.all([
+                        getUserNotifications(userId),
+                        getUnreadNotificationCount(userId),
+                    ]);
+                    setNotifications(notificationList);
+                    setUnreadCount(count);
+                    // localStorage에 저장하여 새로고침 시 깜빡임 방지
+                    localStorage.setItem("sidebarUnreadCount", String(count));
+                } catch (error) {
+                    console.error("알림 로드 실패:", error);
+                }
+            };
+
+            loadNotifications();
+
+            // 30초마다 알림 업데이트
+            intervalId = setInterval(loadNotifications, 30000);
+        }, 100);
+
+        return () => {
+            clearTimeout(timeoutId);
+            if (intervalId) clearInterval(intervalId);
         };
-
-        loadNotifications();
-
-        // 30초마다 알림 업데이트
-        const interval = setInterval(loadNotifications, 30000);
-
-        return () => clearInterval(interval);
     }, [userId]);
 
     const refreshNotifications = async () => {

@@ -1,11 +1,14 @@
 // src/components/Sidebar.tsx
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import NotificationPopup from "./ui/NotificationPopup";
 import ActionMenu from "./common/ActionMenu";
-import ResetPasswordModal from "./modals/ResetPasswordModal";
-import BaseModal from "./ui/BaseModal";
 import Button from "./common/Button";
+
+// 모달 컴포넌트 lazy loading
+const ResetPasswordModal = lazy(() => import("./modals/ResetPasswordModal"));
+const BaseModal = lazy(() => import("./ui/BaseModal"));
 import { supabase } from "../lib/supabase";
 import Avatar from "./common/Avatar";
 import { markAllNotificationsAsRead } from "../lib/notificationApi";
@@ -209,55 +212,63 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     />
 
                     {/* 비밀번호 재설정 모달 */}
-                    <ResetPasswordModal
-                        isOpen={resetPasswordModalOpen}
-                        onClose={() => setResetPasswordModalOpen(false)}
-                        onSubmit={async (payload) => {
-                            const { error } = await supabase.auth.updateUser({
-                                password: payload.newPassword,
-                            });
+                    {resetPasswordModalOpen && (
+                        <Suspense fallback={null}>
+                            <ResetPasswordModal
+                                isOpen={resetPasswordModalOpen}
+                                onClose={() => setResetPasswordModalOpen(false)}
+                                onSubmit={async (payload) => {
+                                    const { error } = await supabase.auth.updateUser({
+                                        password: payload.newPassword,
+                                    });
 
-                            if (error) {
-                                console.error("비밀번호 변경 실패:", error.message);
-                                showError("비밀번호 변경에 실패했습니다. 다시 시도해주세요.");
-                                return false;
-                            }
+                                    if (error) {
+                                        console.error("비밀번호 변경 실패:", error.message);
+                                        showError("비밀번호 변경에 실패했습니다. 다시 시도해주세요.");
+                                        return false;
+                                    }
 
-                            showSuccess("비밀번호가 변경되었습니다.");
-                            return true;
-                        }}
-                    />
+                                    showSuccess("비밀번호가 변경되었습니다.");
+                                    return true;
+                                }}
+                            />
+                        </Suspense>
+                    )}
 
                     {/* 로그아웃 확인 모달 */}
-                    <BaseModal
-                        isOpen={logoutConfirmModalOpen}
-                        onClose={() => setLogoutConfirmModalOpen(false)}
-                        title="로그아웃"
-                        footer={
-                            <div className="flex gap-3 w-full">
-                                <Button
-                                    variant="outline"
-                                    size="lg"
-                                    fullWidth
-                                    onClick={() => setLogoutConfirmModalOpen(false)}
-                                >
-                                    취소
-                                </Button>
-                                <Button
-                                    variant="primary"
-                                    size="lg"
-                                    fullWidth
-                                    onClick={handleLogoutClick}
-                                >
-                                    로그아웃
-                                </Button>
-                            </div>
-                        }
-                    >
-                        <p className="text-center text-lg font-medium text-gray-800">
-                            정말 로그아웃 하시겠습니까?
-                        </p>
-                    </BaseModal>
+                    {logoutConfirmModalOpen && (
+                        <Suspense fallback={null}>
+                            <BaseModal
+                                isOpen={logoutConfirmModalOpen}
+                                onClose={() => setLogoutConfirmModalOpen(false)}
+                                title="로그아웃"
+                                footer={
+                                    <div className="flex gap-3 w-full">
+                                        <Button
+                                            variant="outline"
+                                            size="lg"
+                                            fullWidth
+                                            onClick={() => setLogoutConfirmModalOpen(false)}
+                                        >
+                                            취소
+                                        </Button>
+                                        <Button
+                                            variant="primary"
+                                            size="lg"
+                                            fullWidth
+                                            onClick={handleLogoutClick}
+                                        >
+                                            로그아웃
+                                        </Button>
+                                    </div>
+                                }
+                            >
+                                <p className="text-center text-lg font-medium text-gray-800">
+                                    정말 로그아웃 하시겠습니까?
+                                </p>
+                            </BaseModal>
+                        </Suspense>
+                    )}
 
                     {/* Notifications */}
                     <div className="relative" ref={notificationRef}>

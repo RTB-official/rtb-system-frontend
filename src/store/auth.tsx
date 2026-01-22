@@ -21,13 +21,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session ?? null);
-      setLoading(false);
-    });
+    // 초기 세션 로드 (병렬 처리 최적화)
+    const initSession = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setSession(data.session ?? null);
+        setLoading(false);
+      } catch (error) {
+        console.error("세션 로드 실패:", error);
+        if (!mounted) return;
+        setLoading(false);
+      }
+    };
+
+    initSession();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!mounted) return;
       setSession(newSession ?? null);
       setLoading(false);
     });

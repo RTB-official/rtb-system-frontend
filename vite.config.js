@@ -14,6 +14,8 @@ export default defineConfig({
         },
     },
     build: {
+        // 최신 브라우저 타겟 (더 작은 번들)
+        target: "esnext",
         rollupOptions: {
             output: {
                 manualChunks: (id) => {
@@ -50,8 +52,16 @@ export default defineConfig({
         // 소스맵 생성 비활성화 (프로덕션 성능 향상)
         sourcemap: false,
         // 청크 크기 경고 임계값 증가 (큰 페이지가 있을 수 있음)
-        chunkSizeWarningLimit: 1000,
+        chunkSizeWarningLimit: 1500,
         // CSS 코드 스플리팅
         cssCodeSplit: true,
+        // 작은 에셋 인라인 처리 (4KB 이하)
+        assetsInlineLimit: 4096,
+    },
+    // 개발 서버 최적화
+    server: {
+        hmr: {
+            overlay: false, // 에러 오버레이 비활성화 (성능 향상)
+        },
     },
 });

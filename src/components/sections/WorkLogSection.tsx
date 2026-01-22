@@ -22,69 +22,69 @@ function calcWorkMinutesWithLunchRule(params: {
     timeTo?: string;
     descType: "작업" | "이동" | "대기" | "";
     noLunch?: boolean;
-  }) {
+}) {
     const { dateFrom, timeFrom, dateTo, timeTo, descType, noLunch } = params;
-  
+
     // 시간 없으면 0
     if (!dateFrom || !dateTo || !timeFrom || !timeTo) return 0;
-  
+
     const start = new Date(`${dateFrom}T${timeFrom}:00`);
     const end = new Date(`${dateTo}T${timeTo}:00`);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
     if (end <= start) return 0;
-  
+
     const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
-  
+
     // ✅ 작업이 아니면 점심 규칙 적용 X
     if (descType !== "작업") return totalMinutes;
-  
+
     // ✅ "점심 안 먹음"이면 전체 시간 카운트
     if (noLunch) return totalMinutes;
-  
+
     // ✅ 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
     let lunchOverlapMinutes = 0;
-  
+
     // 시작 날짜 00:00 기준으로 day loop
     const cur = new Date(`${dateFrom}T00:00:00`);
     const last = new Date(`${dateTo}T00:00:00`);
-  
+
     while (cur <= last) {
-      const yyyy = cur.getFullYear();
-      const mm = String(cur.getMonth() + 1).padStart(2, "0");
-      const dd = String(cur.getDate()).padStart(2, "0");
-      const d = `${yyyy}-${mm}-${dd}`;
-  
-      const lunchStart = new Date(`${d}T12:00:00`);
-      const lunchEnd = new Date(`${d}T13:00:00`);
-  
-      // 겹침 계산: [start, end] ∩ [lunchStart, lunchEnd]
-      const overlapStart = start > lunchStart ? start : lunchStart;
-      const overlapEnd = end < lunchEnd ? end : lunchEnd;
-  
-      if (overlapEnd > overlapStart) {
-        lunchOverlapMinutes += Math.floor(
-          (overlapEnd.getTime() - overlapStart.getTime()) / 60000
-        );
-      }
-  
-      // 다음날
-      cur.setDate(cur.getDate() + 1);
+        const yyyy = cur.getFullYear();
+        const mm = String(cur.getMonth() + 1).padStart(2, "0");
+        const dd = String(cur.getDate()).padStart(2, "0");
+        const d = `${yyyy}-${mm}-${dd}`;
+
+        const lunchStart = new Date(`${d}T12:00:00`);
+        const lunchEnd = new Date(`${d}T13:00:00`);
+
+        // 겹침 계산: [start, end] ∩ [lunchStart, lunchEnd]
+        const overlapStart = start > lunchStart ? start : lunchStart;
+        const overlapEnd = end < lunchEnd ? end : lunchEnd;
+
+        if (overlapEnd > overlapStart) {
+            lunchOverlapMinutes += Math.floor(
+                (overlapEnd.getTime() - overlapStart.getTime()) / 60000
+            );
+        }
+
+        // 다음날
+        cur.setDate(cur.getDate() + 1);
     }
-  
+
     const result = totalMinutes - lunchOverlapMinutes;
     return result < 0 ? 0 : result;
-  }
-  
-  function formatHoursMinutes(totalMinutes: number) {
+}
+
+function formatHoursMinutes(totalMinutes: number) {
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
     if (m === 0) return `${h}시간`;
     if (h === 0) return `${m}분`;
     return `${h}시간 ${m}분`;
-  }
-  
+}
 
-  const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
+
+const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
 
 function stripNoLunchText(note: string) {
     return (note || "")
@@ -169,27 +169,27 @@ export default function WorkLogSection() {
     );
     const [timeToHour, timeToMin] = (currentEntry.timeTo || "").split(":");
 
-// ✅ 수정 진입 시: note에 문구가 있으면 체크가 자동으로 켜지게만 처리
-// ✅ 문구 생성/삭제는 체크박스로만 가능 (textarea에서 편집 불가)
-useEffect(() => {
-    const hasNoLunchText = (currentEntry.note || "").includes(NO_LUNCH_TEXT);
+    // ✅ 수정 진입 시: note에 문구가 있으면 체크가 자동으로 켜지게만 처리
+    // ✅ 문구 생성/삭제는 체크박스로만 가능 (textarea에서 편집 불가)
+    useEffect(() => {
+        const hasNoLunchText = (currentEntry.note || "").includes(NO_LUNCH_TEXT);
 
-    // 작업이 아니면: 체크 해제 + note에서 문구 제거
-    if (currentEntry.descType !== "작업") {
-        if (currentEntry.noLunch || hasNoLunchText) {
-            setCurrentEntry({
-                noLunch: false,
-                note: stripNoLunchText(currentEntry.note || ""),
-            });
+        // 작업이 아니면: 체크 해제 + note에서 문구 제거
+        if (currentEntry.descType !== "작업") {
+            if (currentEntry.noLunch || hasNoLunchText) {
+                setCurrentEntry({
+                    noLunch: false,
+                    note: stripNoLunchText(currentEntry.note || ""),
+                });
+            }
+            return;
         }
-        return;
-    }
 
-    // 작업인데 note에 문구가 있으면 체크만 켜주기(복원)
-    if (hasNoLunchText && !currentEntry.noLunch) {
-        setCurrentEntry({ noLunch: true });
-    }
-}, [currentEntry.descType, currentEntry.noLunch, currentEntry.note, setCurrentEntry]);
+        // 작업인데 note에 문구가 있으면 체크만 켜주기(복원)
+        if (hasNoLunchText && !currentEntry.noLunch) {
+            setCurrentEntry({ noLunch: true });
+        }
+    }, [currentEntry.descType, currentEntry.noLunch, currentEntry.note, setCurrentEntry]);
 
 
 
@@ -299,7 +299,7 @@ useEffect(() => {
                                     </p>
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                <DatePicker
+                                    <DatePicker
                                         value={currentEntry.dateFrom || ""}
                                         onChange={(val) => {
                                             setCurrentEntry({
@@ -448,43 +448,43 @@ useEffect(() => {
                         </div>
                     </div>
 
-{/* 작업 분류 */}
-<div className="flex flex-col gap-3">
-    <div className="flex items-center">
-        <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
-            유형
-        </label>
-        <RequiredIndicator />
-    </div>
+                    {/* 작업 분류 */}
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center">
+                            <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
+                                유형
+                            </label>
+                            <RequiredIndicator />
+                        </div>
 
-    <div className="flex gap-2">
-        {(["작업", "이동", "대기"] as const).map((t) => (
-            <Button
-                key={t}
-                type="button"
-                size="lg"
-                fullWidth
-                variant={currentEntry.descType === t ? "primary" : "outline"}
-                onClick={() => {
-                    setCurrentEntry({ descType: t });
+                        <div className="flex gap-2">
+                            {(["작업", "이동", "대기"] as const).map((t) => (
+                                <Button
+                                    key={t}
+                                    type="button"
+                                    size="lg"
+                                    fullWidth
+                                    variant={currentEntry.descType === t ? "primary" : "outline"}
+                                    onClick={() => {
+                                        setCurrentEntry({ descType: t });
 
-                    if (errors.descType) {
-                        setErrors((prev) => ({
-                            ...prev,
-                            descType: undefined,
-                        }));
-                    }
-                }}
-            >
-                {t}
-            </Button>
-        ))}
-    </div>
+                                        if (errors.descType) {
+                                            setErrors((prev) => ({
+                                                ...prev,
+                                                descType: undefined,
+                                            }));
+                                        }
+                                    }}
+                                >
+                                    {t}
+                                </Button>
+                            ))}
+                        </div>
 
-    {errors.descType && (
-        <p className="text-[12px] text-red-500">{errors.descType}</p>
-    )}
-</div>
+                        {errors.descType && (
+                            <p className="text-[12px] text-red-500">{errors.descType}</p>
+                        )}
+                    </div>
 
                     {/* 이동일 때 From/To 선택 */}
                     {currentEntry.descType === "이동" && (
@@ -505,7 +505,7 @@ useEffect(() => {
                                                 size="md"
                                                 variant={
                                                     currentEntry.moveFrom ===
-                                                    resolvedPlace
+                                                        resolvedPlace
                                                         ? "primary"
                                                         : "outline"
                                                 }
@@ -540,7 +540,7 @@ useEffect(() => {
                                                 size="md"
                                                 variant={
                                                     currentEntry.moveTo ===
-                                                    resolvedPlace
+                                                        resolvedPlace
                                                         ? "primary"
                                                         : "outline"
                                                 }
@@ -570,26 +570,25 @@ useEffect(() => {
 
                     {/* 상세내용 */}
                     <div className="flex flex-col gap-2">
-                    <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
-                        상세 내용
-                        <RequiredIndicator />
-                    </label>
-                    <textarea
-                        placeholder="수행한 업무 내용을 자세히 기록해주세요"
-                        value={currentEntry.details || ""}
-                        onChange={(e) => {
-                            setCurrentEntry({ details: e.target.value });
-                            if (errors.details) {
-                                setErrors((prev) => ({ ...prev, details: undefined }));
-                            }
-                        }}
-                        className={`w-full min-h-[80px] p-3 border rounded-xl text-[16px] resize-none outline-none focus:border-[#9ca3af] ${
-                            errors.details ? "border-red-500" : "border-[#e5e7eb]"
-                        }`}
-                    />
-                    {errors.details && (
-                        <p className="text-[12px] text-red-500 mt-1">{errors.details}</p>
-                    )}
+                        <label className="font-medium text-[14px] md:text-[15px] text-[#101828]">
+                            상세 내용
+                            <RequiredIndicator />
+                        </label>
+                        <textarea
+                            placeholder="수행한 업무 내용을 자세히 기록해주세요"
+                            value={currentEntry.details || ""}
+                            onChange={(e) => {
+                                setCurrentEntry({ details: e.target.value });
+                                if (errors.details) {
+                                    setErrors((prev) => ({ ...prev, details: undefined }));
+                                }
+                            }}
+                            className={`w-full min-h-[80px] p-3 border rounded-xl text-[16px] resize-none outline-none focus:border-[#9ca3af] ${errors.details ? "border-red-500" : "border-[#e5e7eb]"
+                                }`}
+                        />
+                        {errors.details && (
+                            <p className="text-[12px] text-red-500 mt-1">{errors.details}</p>
+                        )}
                     </div>
 
                     {/* 참여 인원 선택 */}
@@ -670,12 +669,11 @@ useEffect(() => {
                             </Button>
                         </div>
 
-                            {/* 선택된 인원 */}
-                            <div
-                                className={`border-2 rounded-2xl px-4 py-3 mt-2 ${
-                                    errors.persons ? "border-red-500" : "border-blue-300"
+                        {/* 선택된 인원 */}
+                        <div
+                            className={`border-2 rounded-2xl px-4 py-3 mt-2 ${errors.persons ? "border-red-500" : "border-blue-300"
                                 }`}
-                            >
+                        >
                             <div className="flex items-center gap-1 mb-3">
                                 <svg
                                     width="20"
@@ -700,7 +698,7 @@ useEffect(() => {
                                     <p className="text-[#99a1af] text-sm">
                                         인원을 선택해주세요
                                     </p>
-                                    
+
                                 ) : (
                                     currentEntryPersons.map((person) => (
                                         <Button
@@ -724,27 +722,27 @@ useEffect(() => {
                         {/* 작업일 때 점심 체크박스 */}
                         {currentEntry.descType === "작업" && (
                             <label className="flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
-                        <input
-                            type="checkbox"
-                            checked={currentEntry.noLunch || false}
-                            onChange={(e) => {
-                                const checked = e.target.checked;
-                                const baseNote = stripNoLunchText(currentEntry.note || "");
+                                <input
+                                    type="checkbox"
+                                    checked={currentEntry.noLunch || false}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        const baseNote = stripNoLunchText(currentEntry.note || "");
 
-                                if (checked) {
-                                    setCurrentEntry({
-                                        noLunch: true,
-                                        note: baseNote ? `${baseNote}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
-                                    });
-                                } else {
-                                    setCurrentEntry({
-                                        noLunch: false,
-                                        note: baseNote,
-                                    });
-                                }
-                            }}
-                            className="w-5 h-5 mt-0.5 accent-amber-500"
-                        />
+                                        if (checked) {
+                                            setCurrentEntry({
+                                                noLunch: true,
+                                                note: baseNote ? `${baseNote}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
+                                            });
+                                        } else {
+                                            setCurrentEntry({
+                                                noLunch: false,
+                                                note: baseNote,
+                                            });
+                                        }
+                                    }}
+                                    className="w-5 h-5 mt-0.5 accent-amber-500"
+                                />
 
 
                                 <div className="flex flex-col">
@@ -866,21 +864,21 @@ useEffect(() => {
                     <div className="flex flex-col gap-3">
                         <div className="h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
                         {sortedEntries.map((entry, index) => {
-                        const noLunchText = "점심 안 먹고 작업진행(12:00~13:00)";
-                        const effectiveNoLunch =
-                            !!entry.noLunch || (entry.note || "").includes(noLunchText);
+                            const noLunchText = "점심 안 먹고 작업진행(12:00~13:00)";
+                            const effectiveNoLunch =
+                                !!entry.noLunch || (entry.note || "").includes(noLunchText);
 
-                        const minutes = calcWorkMinutesWithLunchRule({
-                            dateFrom: entry.dateFrom,
-                            timeFrom: entry.timeFrom,
-                            dateTo: entry.dateTo,
-                            timeTo: entry.timeTo,
-                            descType: entry.descType,
-                            noLunch: effectiveNoLunch, // ✅ 특이사항 문구가 있으면 점심 제외 안함
-                        });
+                            const minutes = calcWorkMinutesWithLunchRule({
+                                dateFrom: entry.dateFrom,
+                                timeFrom: entry.timeFrom,
+                                dateTo: entry.dateTo,
+                                timeTo: entry.timeTo,
+                                descType: entry.descType,
+                                noLunch: effectiveNoLunch, // ✅ 특이사항 문구가 있으면 점심 제외 안함
+                            });
 
-                        const hoursLabel = formatHoursMinutes(minutes);
-                        const isExpanded = expandedCards[entry.id] ?? false;
+                            const hoursLabel = formatHoursMinutes(minutes);
+                            const isExpanded = expandedCards[entry.id] ?? false;
 
 
                             // 유형별 스타일 설정
@@ -909,7 +907,7 @@ useEffect(() => {
                             };
                             const style =
                                 typeStyles[
-                                    entry.descType as keyof typeof typeStyles
+                                entry.descType as keyof typeof typeStyles
                                 ] || typeStyles["작업"];
 
                             // 날짜 변경 체크
@@ -929,9 +927,9 @@ useEffect(() => {
                                             <div className="flex-1 h-px bg-gradient-to-l from-transparent to-rose-300" />
                                         </div>
                                     )}
-                                        <div
-                                            className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
-                                        >
+                                    <div
+                                        className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
+                                    >
                                         {/* 상단 컬러바 */}
                                         <div
                                             className={`h-1 bg-gradient-to-r ${style.gradient}`}
@@ -1024,11 +1022,10 @@ useEffect(() => {
 
                                                 {/* 확장 아이콘 */}
                                                 <div
-                                                    className={`w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shadow-sm transition-transform ${
-                                                        isExpanded
-                                                            ? "rotate-180"
-                                                            : ""
-                                                    }`}
+                                                    className={`w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shadow-sm transition-transform ${isExpanded
+                                                        ? "rotate-180"
+                                                        : ""
+                                                        }`}
                                                 >
                                                     <svg
                                                         width="20"
@@ -1051,13 +1048,12 @@ useEffect(() => {
 
                                         {/* 본문 (확장 시) */}
                                         <div
-                                            className={`overflow-hidden transition-all duration-300 ${
-                                                isExpanded
-                                                    ? "max-h-[500px] opacity-100"
-                                                    : "max-h-0 opacity-0"
-                                            }`}
+                                            className={`overflow-hidden transition-all duration-300 ${isExpanded
+                                                ? "max-h-[500px] opacity-100"
+                                                : "max-h-0 opacity-0"
+                                                }`}
                                         >
-                                            
+
                                             <div className="px-4 pb-4 border-t border-white/50">
                                                 <div className="pt-4 space-y-3">
                                                     {/* 상세내용 */}

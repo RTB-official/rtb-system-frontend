@@ -70,7 +70,7 @@ export default function AdminVacationPage() {
         try {
             // vacations 테이블에서 고유한 user_id 추출
             const userIds = Array.from(new Set(allVacations.map(v => v.user_id).filter(Boolean)));
-            
+
             if (userIds.length === 0) {
                 return [];
             }
@@ -474,8 +474,8 @@ export default function AdminVacationPage() {
                                                         <tr
                                                             key={stat.userId}
                                                             className={`border-b border-gray-100 transition-colors ${isSelected
-                                                                    ? "bg-blue-50 hover:bg-blue-100"
-                                                                    : "hover:bg-gray-50"
+                                                                ? "bg-blue-50 hover:bg-blue-100"
+                                                                : "hover:bg-gray-50"
                                                                 }`}
                                                         >
                                                             <td
