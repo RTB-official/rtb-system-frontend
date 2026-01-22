@@ -55,8 +55,9 @@ export default function CalendarGrid({
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    const tagHeight = isMobile ? 20 : 22; // 데스크톱에서도 약간 줄임 (24px → 22px)
-    const tagSpacing = 6; // 모든 화면에서 3px로 통일 (더 많은 태그 표시)
+    // 모바일에서는 점 형태로 표시되므로 높이와 간격을 작게 설정
+    const tagHeight = isMobile ? 8 : 22; // 모바일: 점 높이(8px), 데스크톱: 태그 높이(22px)
+    const tagSpacing = isMobile ? 4 : 6; // 모바일: 점 간격(4px), 데스크톱: 태그 간격(6px)
 
     const pad = (n: number) => (n < 10 ? "0" + n : String(n));
 

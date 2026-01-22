@@ -59,7 +59,7 @@ export default function VacationPage() {
     useEffect(() => {
         const checkUserRole = async () => {
             if (!user?.id) return;
-            
+
             const { data: profile } = await supabase
                 .from("profiles")
                 .select("position, role, department")
@@ -104,7 +104,7 @@ export default function VacationPage() {
 
     // URL 파라미터로 모달 열기 및 날짜 설정
     const [initialDate, setInitialDate] = useState<string | null>(null);
-    
+
     useEffect(() => {
         if (searchParams.get("openModal") === "true") {
             setModalOpen(true);
@@ -131,18 +131,18 @@ export default function VacationPage() {
 
                 // 통계 조회
                 const stats = await getVacationStats(user.id, yearNum);
-                
+
                 // 지급/소멸 내역 조회 (해당 연도만)
                 const history = await getVacationGrantHistory(user.id, yearNum);
                 setGrantHistory(history);
-                
+
                 // 지급 총합 계산 (해당 연도만)
                 const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
                 const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
-                
+
                 // 현재 날짜 기준 총 연차 계산 (연도 무관)
                 const currentTotal = await getCurrentTotalAnnualLeave(user.id);
-                
+
                 setSummary({
                     myAnnual: currentTotal, // 항상 현재 날짜 기준 총 연차
                     granted: totalGranted || stats.total || 0, // 해당 연도 지급
@@ -195,7 +195,7 @@ export default function VacationPage() {
             const date = new Date(h.date);
             const month = date.getMonth() + 1;
             const day = date.getDate();
-            
+
             return {
                 id: `grant-${index}`,
                 monthLabel: `${month}월 ${day}일`,
@@ -247,15 +247,15 @@ export default function VacationPage() {
             setVacations(data);
 
             const stats = await getVacationStats(user.id, yearNum);
-            
+
             // 지급/소멸 내역 조회
             const history = await getVacationGrantHistory(user.id, yearNum);
             setGrantHistory(history);
-            
+
             // 지급 총합 계산
             const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
             const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
-            
+
             setSummary({
                 myAnnual: stats.total || 0,
                 granted: totalGranted || stats.total || 0,
@@ -282,7 +282,7 @@ export default function VacationPage() {
 
         try {
             setLoading(true);
-            
+
             if (editingVacation) {
                 // 수정 모드
                 await updateVacation(
@@ -345,11 +345,10 @@ export default function VacationPage() {
           fixed lg:static inset-y-0 left-0 z-30
           w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
-          ${
-              sidebarOpen
-                  ? "translate-x-0"
-                  : "-translate-x-full lg:translate-x-0"
-          }
+          ${sidebarOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full lg:translate-x-0"
+                    }
         `}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />

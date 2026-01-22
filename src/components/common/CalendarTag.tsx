@@ -56,8 +56,52 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
 
     // 모바일 반응형: 작은 화면에서는 태그 높이와 텍스트 크기 조정
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-    const tagHeight = isMobile ? 'h-5' : 'h-[24px]'; // 데스크톱에서 22px로 조정
+    const tagHeight = isMobile ? 'h-4' : 'h-[22px]'; // 데스크톱에서 22px로 조정
     const textSize = isMobile ? 'text-[13px]' : 'text-[14px]';
+
+    // 모바일에서는 점 형태로 표시
+    if (isMobile) {
+        // 점 색상 결정
+        const dotColor = isHoliday
+            ? "rgb(239 68 68)" // red-500
+            : isVacation
+                ? "rgb(59 130 246)" // blue-500
+                : isWorkLog
+                    ? "rgb(34 197 94)" // green-500
+                    : color;
+
+        // 모바일에서 점 위치 계산 (여러 개의 점이 겹치지 않도록)
+        const topOffset = style?.top ? parseFloat(String(style.top)) : 0;
+        const dotTop = topOffset + 6; // 태그 영역 상단에서 6px 아래
+
+        return (
+            <div
+                className="absolute pointer-events-auto z-10 cursor-pointer"
+                style={{
+                    position: style?.position,
+                    top: `${dotTop}px`,
+                    left: style?.left,
+                    width: width,
+                }}
+                onClick={(e) => {
+                    if (onClick && !isHoliday) {
+                        e.stopPropagation();
+                        onClick(e);
+                    }
+                }}
+            >
+                {/* 모바일: 작은 점으로 표시 (더 보기 좋게 그림자 추가) */}
+                <div
+                    className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm border border-white/50"
+                    style={{
+                        backgroundColor: dotColor,
+                        marginLeft: isStart ? '10px' : '0px',
+                    }}
+                    title={title} // 툴팁으로 제목 표시
+                />
+            </div>
+        );
+    }
 
     return (
         <div

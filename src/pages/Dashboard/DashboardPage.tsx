@@ -1,5 +1,5 @@
 // DashboardPage.tsx
-import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ScheduleModal from "../../components/common/ScheduleModal";
 import Sidebar from "../../components/Sidebar";
@@ -26,6 +26,7 @@ import {
     useMergedHolidays,
     useSortedEvents,
 } from "../../hooks/useDashboardEvents";
+import { useCellHeights } from "../../hooks/useCellHeights";
 import {
     splitIntoWeeks,
     formatDateRange,
@@ -110,21 +111,7 @@ export default function DashboardPage() {
     const menuDateRef = React.useRef(menuDate);
 
     const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
-    const [cellHeights, setCellHeights] = useState<Record<string, number>>({});
-
-    // 셀 높이 변경 핸들러 (useCallback으로 메모이제이션)
-    const handleCellHeightChange = useCallback((dateKey: string, height: number) => {
-        setCellHeights((prev) => {
-            // 높이가 실제로 변경되었을 때만 업데이트
-            if (prev[dateKey] === height) {
-                return prev;
-            }
-            return {
-                ...prev,
-                [dateKey]: height,
-            };
-        });
-    }, []);
+    const { cellHeights, handleCellHeightChange } = useCellHeights(cellRefs, weeks);
 
     React.useEffect(() => {
         menuOpenRef.current = menuOpen;
@@ -223,76 +210,6 @@ export default function DashboardPage() {
     const [selectedEndDateForModal, setSelectedEndDateForModal] =
         useState<string>("");
 
-    // 셀 높이 측정을 위한 ResizeObserver
-    useEffect(() => {
-        const observer = new ResizeObserver((entries) => {
-            const newHeights: Record<string, number> = {};
-            for (let entry of entries) {
-                if (entry.target instanceof HTMLElement) {
-                    const dateKey = entry.target.dataset.dateKey;
-                    if (dateKey) {
-                        newHeights[dateKey] = entry.contentRect.height;
-                        console.log(`[ResizeObserver] ${dateKey}: height=${entry.contentRect.height}`);
-                    }
-                }
-            }
-            if (Object.keys(newHeights).length > 0) {
-                console.log(`[ResizeObserver] 업데이트된 셀 높이:`, newHeights);
-            }
-            setCellHeights((prev) => ({
-                ...prev,
-                ...newHeights,
-            }));
-        });
-
-        // 셀 refs가 설정될 때까지 대기 후 관찰 시작
-        const setupObserver = () => {
-            let observedCount = 0;
-            const refs = cellRefs.current;
-            
-            // 모든 셀 관찰
-            for (const dateKey in refs) {
-                const cell = refs[dateKey];
-                if (cell) {
-                    observer.observe(cell);
-                    observedCount++;
-                }
-            }
-            
-            console.log(`[ResizeObserver] ${observedCount}개의 셀을 관찰 시작`, Object.keys(refs));
-            
-            // 셀이 없으면 다음 틱에 다시 시도 (최대 10번)
-            if (observedCount === 0) {
-                console.warn(`[ResizeObserver] 관찰할 셀이 없습니다. 다음 틱에 다시 시도합니다.`);
-                let retryCount = 0;
-                const retryInterval = setInterval(() => {
-                    retryCount++;
-                    const refs = cellRefs.current;
-                    let count = 0;
-                    for (const dateKey in refs) {
-                        const cell = refs[dateKey];
-                        if (cell) {
-                            observer.observe(cell);
-                            count++;
-                        }
-                    }
-                    if (count > 0 || retryCount >= 10) {
-                        clearInterval(retryInterval);
-                        if (count > 0) {
-                            console.log(`[ResizeObserver] 재시도 성공: ${count}개의 셀 관찰 시작`);
-                        }
-                    }
-                }, 100);
-            }
-        };
-
-        // 다음 틱에 실행하여 DOM이 완전히 렌더링된 후 관찰 시작
-        setTimeout(setupObserver, 0);
-
-        return () => {
-            observer.disconnect();
-        };
-    }, [weeks]);
 
     // 드래그 선택 상태
     const [dragStart, setDragStart] = useState<string | null>(null);
