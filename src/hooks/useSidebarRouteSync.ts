@@ -1,0 +1,100 @@
+import { useEffect, useRef } from "react";
+import { UserPermissions } from "./useUser";
+
+interface UseSidebarRouteSyncParams {
+    isReportRoute: boolean;
+    isExpenseRoute: boolean;
+    expenseSubMenuItems: Array<{ label: string; to: string }>;
+    prevReportRouteRef: React.MutableRefObject<boolean>;
+    prevExpenseRouteRef: React.MutableRefObject<boolean>;
+    reportOpenRef: React.RefObject<boolean>;
+    expenseOpenRef: React.RefObject<boolean>;
+    setReportOpen: (value: boolean) => void;
+    setExpenseOpen: (value: boolean) => void;
+    setMenuFocus: (focus: "REPORT" | "EXPENSE" | null) => void;
+    setShowNotifications: (value: boolean) => void;
+}
+
+/**
+ * 라우트 변경에 따른 서브메뉴 상태 동기화
+ */
+export function useSidebarRouteSync({
+    isReportRoute,
+    isExpenseRoute,
+    expenseSubMenuItems,
+    prevReportRouteRef,
+    prevExpenseRouteRef,
+    reportOpenRef,
+    expenseOpenRef,
+    setReportOpen,
+    setExpenseOpen,
+    setMenuFocus,
+    setShowNotifications,
+}: UseSidebarRouteSyncParams) {
+    useEffect(() => {
+        const prevIsReportRoute = prevReportRouteRef.current;
+        const prevIsExpenseRoute = prevExpenseRouteRef.current;
+        const currentReportOpen = reportOpenRef.current;
+        const currentExpenseOpen = expenseOpenRef.current;
+
+        // 보고서 라우트 처리
+        if (isReportRoute) {
+            const isSameSubmenuNavigation = prevIsReportRoute && currentReportOpen;
+            if (isSameSubmenuNavigation) {
+                prevReportRouteRef.current = true;
+            } else {
+                setMenuFocus("REPORT");
+                if (!currentReportOpen) {
+                    setReportOpen(true);
+                }
+                prevReportRouteRef.current = true;
+            }
+        } else {
+            if (currentReportOpen) {
+                setReportOpen(false);
+            }
+            prevReportRouteRef.current = false;
+        }
+
+        // 지출 라우트 처리
+        if (isExpenseRoute) {
+            if (expenseSubMenuItems.length > 1) {
+                const isSameSubmenuNavigation = prevIsExpenseRoute && currentExpenseOpen;
+                if (isSameSubmenuNavigation) {
+                    prevExpenseRouteRef.current = true;
+                } else {
+                    setMenuFocus("EXPENSE");
+                    if (!currentExpenseOpen) {
+                        setExpenseOpen(true);
+                    }
+                    prevExpenseRouteRef.current = true;
+                }
+            } else {
+                if (currentExpenseOpen) {
+                    setExpenseOpen(false);
+                }
+                prevExpenseRouteRef.current = true;
+            }
+        } else {
+            if (currentExpenseOpen) {
+                setExpenseOpen(false);
+            }
+            prevExpenseRouteRef.current = false;
+        }
+
+        setShowNotifications(false);
+    }, [
+        isReportRoute,
+        isExpenseRoute,
+        expenseSubMenuItems.length,
+        setShowNotifications,
+        prevReportRouteRef,
+        prevExpenseRouteRef,
+        reportOpenRef,
+        expenseOpenRef,
+        setReportOpen,
+        setExpenseOpen,
+        setMenuFocus,
+    ]);
+}
+

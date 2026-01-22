@@ -27,6 +27,7 @@ import {
     useSortedEvents,
 } from "../../hooks/useDashboardEvents";
 import { useCellHeights } from "../../hooks/useCellHeights";
+import { useToast } from "../../components/ui/ToastProvider";
 import {
     splitIntoWeeks,
     formatDateRange,
@@ -39,6 +40,7 @@ import CalendarGrid from "./components/CalendarGrid";
 export default function DashboardPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { showError } = useToast();
     const today = new Date();
 
     const [year, setYear] = useState(today.getFullYear());
@@ -48,18 +50,18 @@ export default function DashboardPage() {
     useEffect(() => {
         const checkAccess = async () => {
             if (!user?.id) return;
-            
+
             const { data: profile } = await supabase
                 .from("profiles")
                 .select("role, department, position")
                 .eq("id", user.id)
                 .single();
-            
+
             if (profile) {
                 const isStaff = profile.role === "staff" || profile.department === "공사팀";
                 const isCEO = profile.position === "대표";
                 const isAdmin = profile.role === "admin" || profile.department === "공무팀";
-                
+
                 // 공사팀(스태프)만 접근 불가 - 조용히 리다이렉트
                 if (isStaff && !isCEO && !isAdmin) {
                     navigate("/report", { replace: true });
@@ -323,7 +325,7 @@ export default function DashboardPage() {
         } catch (err: any) {
             console.error("Error saving event:", err);
             const errorMessage = err?.message || "일정 저장에 실패했습니다.";
-            alert(errorMessage);
+            showError(errorMessage);
         }
     };
 
@@ -337,7 +339,7 @@ export default function DashboardPage() {
             } else {
                 // 다른 타입의 이벤트는 삭제 불가
                 console.warn("Cannot delete this type of event");
-                alert("이 일정은 삭제할 수 없습니다.");
+                showError("이 일정은 삭제할 수 없습니다.");
                 return;
             }
 
@@ -359,7 +361,7 @@ export default function DashboardPage() {
         } catch (err: any) {
             console.error("Error deleting event:", err);
             const errorMessage = err?.message || "일정 삭제에 실패했습니다.";
-            alert(errorMessage);
+            showError(errorMessage);
         }
     };
 

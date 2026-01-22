@@ -209,11 +209,13 @@ export function useUser() {
                 : currentUser.department || localStorage.getItem("sidebarDepartment");
 
         // 권한 계산 (한 번만 계산하고 절대 변경되지 않음)
+        // 대표는 예외로 모든 권한 가짐
         const isCEO = position === "대표";
-        const isAdmin = role === "admin" || department === "공무팀";
-        const isStaff = role === "staff" || department === "공사팀";
+        // role만으로 판단 (공무팀/공사팀 구분 제거)
+        const isAdmin = role === "admin";
+        const isStaff = role === "staff";
         const showHomeMenu = isCEO || isAdmin;
-        const showVacationMenu = !isStaff;
+        const showVacationMenu = isCEO || !isStaff;
 
         console.log("[useUser] 권한 계산:", {
             position,

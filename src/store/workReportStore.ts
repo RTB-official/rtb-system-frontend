@@ -153,7 +153,7 @@ interface WorkReportState {
   removeCurrentEntryPerson: (name: string) => void;
   addAllCurrentEntryPersons: () => void;
   addRegionPersonsToEntry: (region: string) => void;
-  saveWorkLogEntry: () => void;
+  saveWorkLogEntry: (onError?: (message: string) => void) => void;
   setWorkLogEntries: (entries: WorkLogEntry[]) => void;
   deleteWorkLogEntry: (id: number) => void;
   editWorkLogEntry: (id: number) => void;
@@ -280,11 +280,15 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     );
     return { currentEntryPersons: [...state.currentEntryPersons, ...validWorkers] };
   }),
-  saveWorkLogEntry: () => set((state) => {
+  saveWorkLogEntry: (onError?: (message: string) => void) => set((state) => {
     const { currentEntry, currentEntryPersons, editingEntryId, workLogEntries } = state;
     
     if (!currentEntry.dateFrom || !currentEntry.dateTo || !currentEntry.descType || !currentEntry.details || currentEntryPersons.length === 0) {
-      alert('필수 항목을 모두 입력해주세요.');
+      const errorMessage = '필수 항목을 모두 입력해주세요.';
+      if (onError) {
+        onError(errorMessage);
+      }
+      // onError가 없으면 에러만 무시 (alert 제거)
       return state;
     }
     

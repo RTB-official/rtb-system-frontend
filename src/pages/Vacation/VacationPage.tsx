@@ -24,6 +24,7 @@ import {
     type VacationStatus as ApiVacationStatus,
 } from "../../lib/vacationApi";
 import type { VacationGrantHistory } from "../../lib/vacationCalculator";
+import { useToast } from "../../components/ui/ToastProvider";
 
 export type VacationStatus = "대기 중" | "승인 완료" | "반려";
 
@@ -49,6 +50,7 @@ export interface GrantExpireRow {
 export default function VacationPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { showSuccess, showError } = useToast();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const [userPosition, setUserPosition] = useState<string | null>(null);
@@ -151,7 +153,7 @@ export default function VacationPage() {
                 });
             } catch (error) {
                 console.error("휴가 목록 조회 실패:", error);
-                alert("휴가 목록을 불러오는데 실패했습니다.");
+                showError("휴가 목록을 불러오는데 실패했습니다.");
             } finally {
                 setLoading(false);
             }
@@ -237,7 +239,7 @@ export default function VacationPage() {
         try {
             setLoading(true);
             await deleteVacation(deleteTargetId, user.id);
-            alert("휴가가 삭제되었습니다.");
+            showSuccess("휴가가 삭제되었습니다.");
             setDeleteConfirmOpen(false);
             setDeleteTargetId(null);
 
@@ -264,7 +266,7 @@ export default function VacationPage() {
             });
         } catch (error: any) {
             console.error("휴가 삭제 실패:", error);
-            alert(error.message || "휴가 삭제에 실패했습니다.");
+            showError(error.message || "휴가 삭제에 실패했습니다.");
         } finally {
             setLoading(false);
         }
@@ -276,7 +278,7 @@ export default function VacationPage() {
         reason: string;
     }) => {
         if (!user?.id) {
-            alert("로그인이 필요합니다.");
+            showError("로그인이 필요합니다.");
             return;
         }
 
@@ -294,7 +296,7 @@ export default function VacationPage() {
                     },
                     user.id
                 );
-                alert("휴가가 수정되었습니다.");
+                showSuccess("휴가가 수정되었습니다.");
             } else {
                 // 신청 모드
                 await createVacation({
@@ -303,7 +305,7 @@ export default function VacationPage() {
                     leave_type: payload.leaveType,
                     reason: payload.reason,
                 });
-                alert("휴가 신청이 완료되었습니다.");
+                showSuccess("휴가 신청이 완료되었습니다.");
             }
 
             setModalOpen(false);
@@ -323,7 +325,7 @@ export default function VacationPage() {
             });
         } catch (error: any) {
             console.error("휴가 처리 실패:", error);
-            alert(error.message || (editingVacation ? "휴가 수정에 실패했습니다." : "휴가 신청에 실패했습니다."));
+            showError(error.message || (editingVacation ? "휴가 수정에 실패했습니다." : "휴가 신청에 실패했습니다."));
         } finally {
             setLoading(false);
         }

@@ -4,6 +4,7 @@ import Input from "../common/Input";
 import Button from "../common/Button";
 import DatePicker from "./DatePicker"; // DatePicker 임포트
 import type { Vacation } from "../../lib/vacationApi";
+import { useToast } from "./ToastProvider";
 
 type LeaveType = "FULL" | "AM" | "PM";
 
@@ -30,6 +31,7 @@ export default function VacationRequestModal({
   editingVacation,
   initialDate,
 }: Props) {
+  const { showError } = useToast();
   const todayISO = useMemo(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -56,8 +58,14 @@ export default function VacationRequestModal({
   }, [isOpen, todayISO, editingVacation, initialDate]);
 
   const handleAdd = () => {
-    if (!dateISO) return alert("날짜를 선택해주세요.");
-    if (!reason.trim()) return alert("상세내용을 입력해주세요.");
+    if (!dateISO) {
+      showError("날짜를 선택해주세요.");
+      return;
+    }
+    if (!reason.trim()) {
+      showError("상세내용을 입력해주세요.");
+      return;
+    }
 
     onSubmit({
       date: dateISO,

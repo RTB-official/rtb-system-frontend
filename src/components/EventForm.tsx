@@ -6,6 +6,7 @@ import Input from "./common/Input";
 import Select from "./common/Select";
 import { CalendarEvent } from "../types";
 import { supabase } from "../lib/supabase";
+import { useToast } from "./ui/ToastProvider";
 
 interface EventFormProps {
     onClose?: () => void;
@@ -340,7 +341,7 @@ export default function EventForm({
                     size="lg"
                     onClick={() => {
                         if (!title || !startDate || !endDate) {
-                            alert("일정 제목, 시작일, 종료일을 입력해주세요.");
+                            showError("일정 제목, 시작일, 종료일을 입력해주세요.");
                             return;
                         }
                         const startTime = allDay

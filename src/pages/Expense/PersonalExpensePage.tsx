@@ -25,9 +25,11 @@ import {
     type PersonalExpense,
     type PersonalMileage,
 } from "../../lib/personalExpenseApi";
+import { useToast } from "../../components/ui/ToastProvider";
 
 export default function PersonalExpensePage() {
     const { user } = useAuth();
+    const { showSuccess, showError } = useToast();
     const location = useLocation();
     const params = new URLSearchParams(location.search);
     const preselectedDate = params.get("date") || null;
@@ -111,7 +113,7 @@ export default function PersonalExpensePage() {
                 ]);
             } catch (error) {
                 console.error("데이터 로드 실패:", error);
-                alert("데이터를 불러오는데 실패했습니다.");
+                showError("데이터를 불러오는데 실패했습니다.");
             } finally {
                 setLoading(false);
             }
@@ -150,7 +152,7 @@ export default function PersonalExpensePage() {
         cost: number;
     }) => {
         if (!user?.id) {
-            alert("로그인이 필요합니다.");
+            showError("로그인이 필요합니다.");
             return;
         }
 
@@ -179,7 +181,7 @@ export default function PersonalExpensePage() {
             setMileages(data);
         } catch (error: any) {
             console.error("마일리지 등록 실패:", error);
-            alert(error.message || "마일리지 등록에 실패했습니다.");
+            showError(error.message || "마일리지 등록에 실패했습니다.");
         }
     };
 
@@ -194,14 +196,14 @@ export default function PersonalExpensePage() {
         file?: File | null;
     }) => {
         if (!user?.id) {
-            alert("로그인이 필요합니다.");
+            showError("로그인이 필요합니다.");
             return;
         }
 
         try {
             const amountNum = parseInt(item.amount || "0");
             if (amountNum <= 0) {
-                alert("금액을 입력해주세요.");
+                showError("금액을 입력해주세요.");
                 return;
             }
 
@@ -215,7 +217,7 @@ export default function PersonalExpensePage() {
                     );
                 } catch (uploadError: any) {
                     console.error("영수증 업로드 실패:", uploadError);
-                    alert(`영수증 업로드 실패: ${uploadError.message}`);
+                    showError(`영수증 업로드 실패: ${uploadError.message}`);
                     return;
                 }
             }
@@ -239,14 +241,14 @@ export default function PersonalExpensePage() {
             setExpenses(data);
         } catch (error: any) {
             console.error("지출 등록 실패:", error);
-            alert(error.message || "지출 등록에 실패했습니다.");
+            showError(error.message || "지출 등록에 실패했습니다.");
         }
     };
 
     // 마일리지 삭제 핸들러
     const handleRemoveMileage = async (id: number) => {
         if (!user?.id) {
-            alert("로그인이 필요합니다.");
+            showError("로그인이 필요합니다.");
             return;
         }
 
@@ -258,14 +260,14 @@ export default function PersonalExpensePage() {
             setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
         } catch (error: any) {
             console.error("마일리지 삭제 실패:", error);
-            alert(error.message || "마일리지 삭제에 실패했습니다.");
+            showError(error.message || "마일리지 삭제에 실패했습니다.");
         }
     };
 
     // 지출 삭제 핸들러
     const handleRemoveExpense = async (id: number) => {
         if (!user?.id) {
-            alert("로그인이 필요합니다.");
+            showError("로그인이 필요합니다.");
             return;
         }
 
@@ -277,7 +279,7 @@ export default function PersonalExpensePage() {
             setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
         } catch (error: any) {
             console.error("지출 삭제 실패:", error);
-            alert(error.message || "지출 삭제에 실패했습니다.");
+            showError(error.message || "지출 삭제에 실패했습니다.");
         }
     };
 
@@ -348,7 +350,7 @@ export default function PersonalExpensePage() {
     // 모두 제출 핸들러
     const handleSubmitAll = async () => {
         if (!user?.id) {
-            alert("로그인이 필요합니다.");
+            showError("로그인이 필요합니다.");
             return;
         }
 
@@ -363,7 +365,7 @@ export default function PersonalExpensePage() {
             unsubmittedExpenses.length + unsubmittedMileages.length;
 
         if (currentItemsToSubmitCount === 0) {
-            alert("제출할 항목이 없습니다.");
+            showError("제출할 항목이 없습니다.");
             return;
         }
 
@@ -422,10 +424,10 @@ export default function PersonalExpensePage() {
                 .map((m) => m.id);
             setSubmittedIds([...submittedExpenseIds, ...submittedMileageIds]);
 
-            alert(`총 ${currentItemsToSubmitCount}개의 항목이 제출되었습니다.`);
+            showSuccess(`총 ${currentItemsToSubmitCount}개의 항목이 제출되었습니다.`);
         } catch (error: any) {
             console.error("제출 실패:", error);
-            alert(error.message || "제출에 실패했습니다.");
+            showError(error.message || "제출에 실패했습니다.");
         }
     };
 

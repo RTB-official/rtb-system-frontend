@@ -1,6 +1,6 @@
 // src/components/Sidebar.tsx
-import { useEffect, useMemo, useState, useRef } from "react";
-import { useLocation, matchPath, useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import NotificationPopup from "./ui/NotificationPopup";
 import ActionMenu from "./common/ActionMenu";
 import ResetPasswordModal from "./modals/ResetPasswordModal";
@@ -21,6 +21,11 @@ import {
 } from "./icons/Icons";
 import { useUser } from "../hooks/useUser";
 import { useNotifications } from "../hooks/useNotifications";
+import { useToast } from "./ui/ToastProvider";
+import { useSidebarRoutes } from "../hooks/useSidebarRoutes";
+import { useSidebarMenuItems } from "../hooks/useSidebarMenuItems";
+import { useSidebarSubMenuState } from "../hooks/useSidebarSubMenuState";
+import { useSidebarRouteSync } from "../hooks/useSidebarRouteSync";
 import { PATHS } from "../utils/paths";
 import MainLink from "./sidebar/MainLink";
 import MenuButton from "./sidebar/MenuButton";
@@ -33,12 +38,26 @@ interface SidebarProps {
 type MenuFocus = "REPORT" | "EXPENSE" | null;
 
 export default function Sidebar({ onClose }: SidebarProps) {
-    const location = useLocation();
     const navigate = useNavigate();
+    const { showSuccess, showError } = useToast();
 
     // 사용자 정보 및 권한
     const { currentUser, currentUserId, sidebarLoginId, userPermissions, handleLogout } =
         useUser();
+
+    // 권한 정보를 ref로 저장하여 깜빡임 방지
+    const userPermissionsRef = useRef(userPermissions);
+    useEffect(() => {
+        // 권한이 한 번 설정되면 유지 (초기값이 false가 아닐 때만 업데이트)
+        if (userPermissions.isCEO || userPermissions.isAdmin || userPermissions.isStaff) {
+            userPermissionsRef.current = userPermissions;
+        }
+    }, [userPermissions]);
+
+    // 안정화된 권한 사용 (깜빡임 방지)
+    const stablePermissions = userPermissionsRef.current.isCEO || userPermissionsRef.current.isAdmin || userPermissionsRef.current.isStaff
+        ? userPermissionsRef.current
+        : userPermissions;
 
     // 알림 관련
     const {
@@ -52,8 +71,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     // 메뉴 포커스 및 상태
     const [menuFocus, setMenuFocus] = useState<MenuFocus>(null);
-    const [reportOpen, setReportOpen] = useState(false);
-    const [expenseOpen, setExpenseOpen] = useState(false);
 
     // 사용자 메뉴 상태
     const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -61,84 +78,49 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
     const usernameRef = useRef<HTMLDivElement>(null);
 
-    // 경로 매칭 함수
-    const isMatch = (pattern: string) =>
-        !!matchPath({ path: pattern, end: false }, location.pathname);
+    // 라우트 감지
+    const { isReportRoute, isExpenseRoute, isReportEditRoute, location: routeLocation } = useSidebarRoutes();
 
-    // 보고서 수정 진입 감지
-    const searchParams = new URLSearchParams(location.search);
-    const isReportEditByQuery = isMatch(PATHS.reportCreate) && !!searchParams.get("id");
-    const isReportEditByPath =
-        !!matchPath({ path: "/report/edit/:id", end: false }, location.pathname) ||
-        !!matchPath({ path: "/report/:id/edit", end: false }, location.pathname);
-    const isReportEditRoute = isReportEditByQuery || isReportEditByPath;
+    // 이전 라우트 추적 (같은 서브메뉴 내 이동 감지)
+    const prevReportRouteRef = useRef<boolean>(isReportRoute);
+    const prevExpenseRouteRef = useRef<boolean>(isExpenseRoute);
 
-    const isReportRoute =
-        isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate) || isReportEditRoute;
-    const isExpenseRoute = isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
+    // 서브메뉴 상태 관리
+    const {
+        setReportOpen,
+        reportOpenRef,
+        setExpenseOpen,
+        expenseOpenRef,
+        stableReportOpen,
+        stableExpenseOpen,
+    } = useSidebarSubMenuState(isReportRoute, isExpenseRoute, prevReportRouteRef, prevExpenseRouteRef);
 
     // 메뉴 활성 상태
     const reportActive = isReportRoute || menuFocus === "REPORT";
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
 
-    // 하위메뉴 아이템
-    const reportSubMenuItems = useMemo(
-        () => [
-            { label: "보고서 목록", to: PATHS.reportList },
-            {
-                label: isReportEditRoute ? "보고서 작성(수정)" : "보고서 작성",
-                to: isReportEditRoute ? `${location.pathname}${location.search}` : PATHS.reportCreate,
-            },
-        ],
-        [isReportEditRoute, location.pathname, location.search]
+    // 메뉴 아이템
+    const { reportSubMenuItems, expenseSubMenuItems } = useSidebarMenuItems(
+        stablePermissions,
+        isReportEditRoute,
+        routeLocation
     );
 
-    // 권한별 지출 관리 서브메뉴
-    const expenseSubMenuItems = useMemo(() => {
-        if (userPermissions.isCEO || userPermissions.isAdmin) {
-            return [
-                { label: "개인 지출 기록", to: PATHS.expensePersonal },
-                { label: "구성원 지출 관리", to: PATHS.expenseTeam },
-            ];
-        } else if (userPermissions.isStaff) {
-            return [{ label: "개인 지출 기록", to: PATHS.expensePersonal }];
-        }
-        return [];
-    }, [userPermissions.isCEO, userPermissions.isAdmin, userPermissions.isStaff]);
 
-    /**
-     * ✅ 라우트 기준으로 "열림 상태"를 강제
-     * - 보고서 라우트면 reportOpen은 항상 true
-     * - 지출 라우트면 (서브메뉴 2개 이상일 때) expenseOpen 항상 true
-     * - 다른 메뉴로 이동하면 닫힘
-     * 이렇게 하면 상위메뉴 1번 클릭만 해도 하위메뉴가 즉시 보임.
-     */
-    useEffect(() => {
-        if (isReportRoute) {
-            setMenuFocus("REPORT");
-            setReportOpen(true);
-        } else {
-            setReportOpen(false);
-        }
-
-        if (isExpenseRoute) {
-            setMenuFocus("EXPENSE");
-            if (expenseSubMenuItems.length > 1) {
-                setExpenseOpen(true);
-            } else {
-                setExpenseOpen(false);
-            }
-        } else {
-            setExpenseOpen(false);
-        }
-
-        setShowNotifications(false);
-    }, [
+    // 라우트 변경에 따른 서브메뉴 상태 동기화
+    useSidebarRouteSync({
         isReportRoute,
         isExpenseRoute,
-        expenseSubMenuItems.length,
+        expenseSubMenuItems,
+        prevReportRouteRef,
+        prevExpenseRouteRef,
+        reportOpenRef,
+        expenseOpenRef,
+        setReportOpen,
+        setExpenseOpen,
+        setMenuFocus,
         setShowNotifications,
-    ]);
+    });
 
     // 메뉴 클릭 핸들러
     const handleMenuClick = (focus: MenuFocus | null) => {
@@ -237,11 +219,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                             if (error) {
                                 console.error("비밀번호 변경 실패:", error.message);
-                                alert("비밀번호 변경에 실패했습니다. 다시 시도해주세요.");
+                                showError("비밀번호 변경에 실패했습니다. 다시 시도해주세요.");
                                 return false;
                             }
 
-                            alert("비밀번호가 변경되었습니다.");
+                            showSuccess("비밀번호가 변경되었습니다.");
                             return true;
                         }}
                     />
@@ -332,8 +314,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     <div className="h-px bg-gray-200 rounded-full" />
 
                     <nav className="flex flex-col gap-2">
-                        {/* 대시보드 - 대표님, 공무팀만 */}
-                        {(userPermissions.isCEO || userPermissions.isAdmin) && (
+                        {/* 대시보드 - 대표님, admin만 */}
+                        {(stablePermissions.isCEO || stablePermissions.isAdmin) && (
                             <MainLink
                                 to={PATHS.dashboard}
                                 icon={<IconHome />}
@@ -352,14 +334,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             isActive={reportActive}
                             onClick={() => {
                                 handleMenuClick("REPORT");
-                                setReportOpen(true);
                                 setExpenseOpen(false);
+                                // 이미 열려있고 같은 서브메뉴 내 이동이면 상태 변경하지 않음
+                                if (!reportOpenRef.current) {
+                                    setReportOpen(true);
+                                }
                                 navigate(PATHS.reportList);
                             }}
                         />
 
                         <SubMenu
-                            isOpen={reportOpen}
+                            isOpen={stableReportOpen}
                             items={reportSubMenuItems}
                             focus="REPORT"
                             onClose={onClose}
@@ -390,7 +375,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                     navigate(expenseSubMenuItems[0].to);
                                     setExpenseOpen(false);
                                 } else if (expenseSubMenuItems.length > 1) {
-                                    setExpenseOpen(true);
+                                    // 이미 열려있고 같은 서브메뉴 내 이동이면 상태 변경하지 않음
+                                    if (!expenseOpenRef.current) {
+                                        setExpenseOpen(true);
+                                    }
                                     navigate(PATHS.expensePersonal);
                                 }
                             }}
@@ -399,7 +387,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         {/* 하위메뉴 */}
                         {expenseSubMenuItems.length > 1 && (
                             <SubMenu
-                                isOpen={expenseOpen}
+                                isOpen={stableExpenseOpen}
                                 items={expenseSubMenuItems}
                                 focus="EXPENSE"
                                 onClose={onClose}
@@ -407,8 +395,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             />
                         )}
 
-                        {/* 휴가 관리 - 공사팀 제외 */}
-                        {!userPermissions.isStaff && (
+                        {/* 휴가 관리 - 대표님, admin만 (staff 제외) */}
+                        {(stablePermissions.isCEO || !stablePermissions.isStaff) && (
                             <MainLink
                                 to={PATHS.vacation}
                                 icon={<IconVacation />}

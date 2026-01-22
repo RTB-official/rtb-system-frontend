@@ -191,7 +191,7 @@ export default function ReportListPage() {
 
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
-                    title="출장 보고서"
+                    title="출장 보고서 목록"
                     onMenuClick={() => setSidebarOpen(true)}
                     rightContent={
                         <Button
