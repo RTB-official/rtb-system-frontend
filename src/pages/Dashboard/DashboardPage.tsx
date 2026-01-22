@@ -519,7 +519,6 @@ export default function DashboardPage() {
                 isOpen={scheduleModalOpen}
                 onClose={() => setScheduleModalOpen(false)}
                 onSave={(payload) => {
-                    console.log("새 일정:", payload);
                     setScheduleModalOpen(false);
                 }}
             />

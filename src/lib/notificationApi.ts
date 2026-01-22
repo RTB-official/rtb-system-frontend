@@ -128,20 +128,14 @@ export async function createNotificationsForUsers(
             
             const failed = functionResults.filter(result => result.status === 'rejected');
             
-            if (failed.length > 0) {
-                console.warn(`⚠️ [알림] ${failed.length}개 함수 호출 실패:`, failed.map(r => r.status === 'rejected' ? r.reason : null));
-            }
-            
             if (successful.length > 0) {
-                console.log(`✅ [알림] 함수를 통해 ${successful.length}/${userIds.length}개 알림 생성 완료`);
                 return successful;
             }
         } catch (funcError) {
-            console.error("❌ [알림] 함수 생성 전체 실패:", funcError);
+            console.error("알림 함수 생성 실패:", funcError);
         }
         
         // 방법 3: 개별 INSERT 시도
-        console.warn("⚠️ [알림] 개별 생성 시도 중...");
         const individualResults = await Promise.allSettled(
             userIds.map(async (user_id) => {
                 const { data: indData, error: indError } = await supabase
@@ -164,7 +158,6 @@ export async function createNotificationsForUsers(
             .map(result => result.value);
         
         if (successful.length > 0) {
-            console.log(`✅ [알림] 개별 생성으로 ${successful.length}/${userIds.length}개 알림 생성 완료`);
             return successful;
         }
         

@@ -64,8 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async signInWithUsername(username, password) {
         const trimmedUsername = username.trim();
         
-        console.log("🔍 [LOGIN] 시작 - username:", trimmedUsername);
-        
         // username으로 profiles 테이블에서 email 찾기
         // username이 "brian.ko_01b7a9" 형식으로 저장되어 있을 수 있으므로
         // 정확히 일치하거나, 입력한 username으로 시작하는 경우를 모두 확인
@@ -91,31 +89,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (profileError) {
-          console.error("❌ [LOGIN] Profile lookup error:", profileError);
           return { ok: false, message: "사용자명 조회 중 오류가 발생했습니다." };
         }
 
         if (!profile || !profile.email) {
-          console.log("❌ [LOGIN] Profile not found for username:", trimmedUsername);
           return { ok: false, message: `사용자명 "${trimmedUsername}"을(를) 찾을 수 없습니다. 사용자명을 확인해 주세요.` };
         }
 
-        console.log("✅ [LOGIN] Found profile:", { name: profile.name, username: profile.username, email: profile.email });
-
         // 찾은 email로 로그인
-        console.log("🔐 [LOGIN] signInWithPassword 호출 시작 - email:", profile.email);
-        const { error, data } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email: profile.email,
           password,
         });
 
         if (error) {
-          console.error("❌ [LOGIN] Login error:", error);
-          console.error("❌ [LOGIN] Error details:", JSON.stringify(error, null, 2));
-          console.error("❌ [LOGIN] Error status:", error.status);
-          console.error("❌ [LOGIN] Error code:", error.code);
-          console.error("❌ [LOGIN] Error message:", error.message);
-          
           // 500 에러인 경우 특별 처리
           if (error.status === 500) {
             return { ok: false, message: "서버 오류가 발생했습니다. Supabase Dashboard의 Logs를 확인해주세요." };
@@ -128,8 +115,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { ok: false, message: error.message };
         }
 
-        console.log("✅ [LOGIN] Login successful:", data);
-        console.log("✅ [LOGIN] Session:", data.session);
         return { ok: true };
       },
 

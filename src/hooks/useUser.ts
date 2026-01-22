@@ -171,13 +171,6 @@ export function useUser() {
                     department: data?.department ?? null,
                 });
 
-                console.log("[useUser] 사용자 정보 로드:", {
-                    "DB 데이터": data,
-                    position: data?.position,
-                    role: data?.role,
-                    department: data?.department,
-                });
-
                 if (id) {
                     setSidebarLoginId(id);
                     localStorage.setItem("sidebarLoginId", id);
@@ -221,21 +214,6 @@ export function useUser() {
         const isStaff = role === "staff";
         const showHomeMenu = isCEO || isAdmin;
         const showVacationMenu = isCEO || !isStaff;
-
-        console.log("[useUser] 권한 계산:", {
-            position,
-            role,
-            department,
-            userRole,
-            userDepartment,
-            currentUserRole: currentUser.role,
-            currentUserDepartment: currentUser.department,
-            isCEO,
-            isAdmin,
-            isStaff,
-            showHomeMenu,
-            showVacationMenu,
-        });
 
         // ref에 저장 (절대 변경되지 않음)
         userPermissionsRef.current = {

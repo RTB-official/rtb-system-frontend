@@ -386,17 +386,6 @@ useEffect(() => {
 
                 // receipts 저장
                 if (receipts.length > 0) {
-                    // 디버깅: 사용자 정보 확인
-                    console.log("=== 영수증 저장 디버깅 (수정 페이지) ===");
-                    console.log("User ID:", user?.id);
-                    console.log("Work Log ID:", workLog.id);
-                    console.log("Receipts to insert:", receipts);
-                    
-                    // 인증 상태 확인
-                    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-                    console.log("Auth User:", authUser);
-                    console.log("Auth Error:", authError);
-                    
                     const insertDataList = receipts.map((r) => {
                         // 명시적으로 필드 지정 (스프레드 연산자 대신)
                         const insertData: any = {
@@ -415,25 +404,15 @@ useEffect(() => {
                         return insertData;
                     });
                     
-                    console.log("Insert Data List:", JSON.stringify(insertDataList, null, 2));
-                    
-                    const { data: insertData, error: receiptsError } = await supabase
+                    const { error: receiptsError } = await supabase
                         .from("work_log_receipt")
                         .insert(insertDataList)
                         .select();
 
                     if (receiptsError) {
-                        console.error("=== 영수증 저장 에러 상세 (수정 페이지) ===");
-                        console.error("Error Code:", receiptsError.code);
-                        console.error("Error Message:", receiptsError.message);
-                        console.error("Error Details:", receiptsError.details);
-                        console.error("Error Hint:", receiptsError.hint);
-                        console.error("Full Error:", JSON.stringify(receiptsError, null, 2));
                         showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`);
                         throw receiptsError; // ✅ DB 저장 실패면 제출도 실패 처리
                     }
-                    
-                    console.log("영수증 저장 성공:", insertData);
                 }
             }
 
