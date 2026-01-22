@@ -17,6 +17,7 @@ interface Props {
     reason: string;
   }) => void;
   editingVacation?: Vacation | null;
+  initialDate?: string | null; // 초기 날짜 (캘린더에서 선택한 날짜)
 }
 
 // formatKoreanDate 함수는 DatePicker 컴포넌트 내부에서 처리될 것이므로 제거
@@ -27,6 +28,7 @@ export default function VacationRequestModal({
   availableDays,
   onSubmit,
   editingVacation,
+  initialDate,
 }: Props) {
   const todayISO = useMemo(() => {
     const now = new Date();
@@ -45,13 +47,13 @@ export default function VacationRequestModal({
         setLeaveType(editingVacation.leave_type);
         setReason(editingVacation.reason || "개인 사유");
       } else {
-        // 신청 모드: 초기값
-        setDateISO(todayISO);
+        // 신청 모드: 초기 날짜가 있으면 사용, 없으면 오늘 날짜
+        setDateISO(initialDate || todayISO);
         setLeaveType("FULL");
         setReason("개인 사유");
       }
     }
-  }, [isOpen, todayISO, editingVacation]);
+  }, [isOpen, todayISO, editingVacation, initialDate]);
 
   const handleAdd = () => {
     if (!dateISO) return alert("날짜를 선택해주세요.");

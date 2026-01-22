@@ -102,11 +102,18 @@ export default function VacationPage() {
     });
     const [grantHistory, setGrantHistory] = useState<VacationGrantHistory[]>([]);
 
-    // URL 파라미터로 모달 열기
+    // URL 파라미터로 모달 열기 및 날짜 설정
+    const [initialDate, setInitialDate] = useState<string | null>(null);
+    
     useEffect(() => {
         if (searchParams.get("openModal") === "true") {
             setModalOpen(true);
+            const dateParam = searchParams.get("date");
+            if (dateParam) {
+                setInitialDate(dateParam);
+            }
             searchParams.delete("openModal");
+            searchParams.delete("date");
             setSearchParams(searchParams, { replace: true });
         }
     }, [searchParams, setSearchParams]);
@@ -393,10 +400,12 @@ export default function VacationPage() {
                                     onClose={() => {
                                         setModalOpen(false);
                                         setEditingVacation(null);
+                                        setInitialDate(null);
                                     }}
                                     availableDays={summary.myAnnual}
                                     onSubmit={handleVacationSubmit}
                                     editingVacation={editingVacation ? vacations.find(v => v.id === editingVacation.id) || null : null}
+                                    initialDate={initialDate}
                                 />
 
                                 {deleteConfirmOpen && (
