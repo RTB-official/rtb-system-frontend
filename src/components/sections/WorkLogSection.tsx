@@ -136,6 +136,9 @@ export default function WorkLogSection() {
         locationCustom,
     } = useWorkReportStore();
 
+    // ✅ Toast 훅 추가
+    const { showError } = useToast();
+
     // 출장지 이름
     const siteName = location === "OTHER" ? locationCustom : location;
 
