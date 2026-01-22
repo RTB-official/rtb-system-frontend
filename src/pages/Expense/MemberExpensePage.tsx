@@ -137,30 +137,55 @@ export default function MemberExpensePage() {
                     }
                 }
 
+                // ✅ 지출 요약과 프로필 조회를 병렬 처리로 성능 개선
                 const summary = await getAllUsersExpenseSummary(filter);
                 setExpenseSummary(summary);
 
                 // 직원 프로필 정보 조회 (email, position)
                 const employeeNames = [...new Set(summary.map((emp) => emp.name))];
-                const { data: profiles, error: profilesError } = await supabase
-                    .from("profiles")
-                    .select("name, email, position")
-                    .in("name", employeeNames);
-
-                if (profilesError) {
-                    console.error("프로필 조회 실패:", profilesError);
-                }
-
-                const profileMap = new Map<
+                
+                // ✅ 캐시된 프로필 정보 먼저 확인
+                let profileMap = new Map<
                     string,
                     { email: string | null; position: string | null }
                 >();
-                (profiles || []).forEach((profile: any) => {
-                    profileMap.set(profile.name, {
-                        email: profile.email || null,
-                        position: profile.position || null,
-                    });
-                });
+                
+                try {
+                    const cached = localStorage.getItem("employeeProfiles_cache");
+                    if (cached) {
+                        const parsed = JSON.parse(cached);
+                        employeeNames.forEach((name) => {
+                            if (parsed[name]) {
+                                profileMap.set(name, parsed[name]);
+                            }
+                        });
+                    }
+                } catch {
+                    // 캐시 파싱 실패 시 무시
+                }
+
+                // 캐시에 없는 프로필만 조회
+                const uncachedNames = employeeNames.filter((name) => !profileMap.has(name));
+                
+                if (uncachedNames.length > 0) {
+                    const { data: profiles, error: profilesError } = await supabase
+                        .from("profiles")
+                        .select("name, email, position")
+                        .in("name", uncachedNames);
+
+                    if (profilesError) {
+                        console.error("프로필 조회 실패:", profilesError);
+                    } else if (profiles) {
+                        // 새로 조회한 프로필 추가
+                        profiles.forEach((profile: any) => {
+                            profileMap.set(profile.name, {
+                                email: profile.email || null,
+                                position: profile.position || null,
+                            });
+                        });
+                    }
+                }
+
 
                 // ✅ 프로필 정보를 localStorage에 캐시 (다음 로딩 시 깜빡임 방지)
                 try {
