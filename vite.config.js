@@ -16,15 +16,42 @@ export default defineConfig({
     build: {
         rollupOptions: {
             output: {
-                manualChunks: {
-                    // vendor: React, React DOM 등 큰 라이브러리 분리
-                    vendor: ["react", "react-dom", "react-router-dom"],
-                    // supabase 클라이언트 분리
-                    supabase: ["@supabase/supabase-js"],
+                manualChunks: (id) => {
+                    // node_modules에서 큰 라이브러리들을 분리
+                    if (id.includes("node_modules")) {
+                        // React 관련
+                        if (id.includes("react") || id.includes("react-dom") || id.includes("react-router")) {
+                            return "vendor-react";
+                        }
+                        // Supabase 클라이언트
+                        if (id.includes("@supabase")) {
+                            return "vendor-supabase";
+                        }
+                        // 차트 라이브러리
+                        if (id.includes("recharts")) {
+                            return "vendor-charts";
+                        }
+                        // PDF 관련
+                        if (id.includes("jspdf")) {
+                            return "vendor-pdf";
+                        }
+                        // Zustand
+                        if (id.includes("zustand")) {
+                            return "vendor-state";
+                        }
+                        // 나머지 node_modules
+                        return "vendor";
+                    }
                 },
             },
         },
+        // 빌드 최적화 옵션
+        minify: "esbuild",
+        // 소스맵 생성 비활성화 (프로덕션 성능 향상)
+        sourcemap: false,
         // 청크 크기 경고 임계값 증가 (큰 페이지가 있을 수 있음)
         chunkSizeWarningLimit: 1000,
+        // CSS 코드 스플리팅
+        cssCodeSplit: true,
     },
 });

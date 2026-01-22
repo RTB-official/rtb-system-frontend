@@ -18,31 +18,6 @@ export function useDashboardEvents(year: number, month: number) {
     const { user } = useAuth();
     const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState(true);
-    const [userDepartment, setUserDepartment] = useState<string | null>(null);
-
-    // 사용자 department 정보 로드
-    useEffect(() => {
-        if (!user?.id) return;
-
-        const fetchUserDepartment = async () => {
-            const { data, error } = await supabase
-                .from("profiles")
-                .select("department")
-                .eq("id", user.id)
-                .single();
-
-            if (error) {
-                console.error("유저 department 조회 실패:", error.message);
-                return;
-            }
-
-            if (data?.department) {
-                setUserDepartment(data.department);
-            }
-        };
-
-        fetchUserDepartment();
-    }, [user]);
 
     // 실제 데이터 가져오기
     useEffect(() => {
@@ -149,13 +124,12 @@ export function useDashboardEvents(year: number, month: number) {
         };
 
         loadEvents();
-    }, [user?.id, year, month, userDepartment]);
+    }, [user?.id, year, month]);
 
     return {
         allEvents,
         setAllEvents,
         loading,
-        userDepartment,
     };
 }
 
