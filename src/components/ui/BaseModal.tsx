@@ -69,7 +69,7 @@ export default function BaseModal({
             {/* Modal */}
             <div className="absolute inset-0 flex items-center justify-center">
                 <div
-                    className={`w-full ${maxWidth} bg-white p-6 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden ${className}`}
+                    className={`w-full ${maxWidth} bg-white p-5 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden ${className}`}
                 >
                     {/* Header */}
                     <div className={`flex items-center ${showCloseButton ? 'justify-between' : 'justify-start'}`}>
