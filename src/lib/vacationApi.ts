@@ -275,16 +275,17 @@ export async function deleteVacation(
  */
 export async function getVacationStats(
     userId: string,
-    year: number
+    year: number,
+    vacations?: Vacation[] // 이미 가져온 휴가 데이터가 있으면 재사용
 ): Promise<{
     total: number;
     used: number;
     pending: number;
     remaining: number;
 }> {
-    const vacations = await getVacations(userId, { year });
+    const vacationData = vacations || await getVacations(userId, { year });
 
-    const stats = vacations.reduce(
+    const stats = vacationData.reduce(
         (acc, vacation) => {
             const days = vacation.leave_type === "FULL" ? 1 : 0.5;
 
@@ -300,58 +301,33 @@ export async function getVacationStats(
     );
 
     // 연차 잔액 조회 (있다면)
-    try {
-        const { data: balance } = await supabase
-            .from("vacation_balances")
-            .select("total_days")
-            .eq("user_id", userId)
-            .eq("year", year)
-            .single();
+    // 406 에러나 RLS 정책 문제를 방지하기 위해 maybeSingle 사용
+    const { data: balance, error: balanceError } = await supabase
+        .from("vacation_balances")
+        .select("total_days")
+        .eq("user_id", userId)
+        .eq("year", year)
+        .maybeSingle();
 
-        if (balance) {
-            stats.total = balance.total_days;
+    // 406 에러나 다른 에러 발생 시 fallback 처리 (에러를 조용히 처리)
+    if (balanceError || !balance) {
+        // 잔액 테이블에 없거나 접근 불가능하면 입사일 기준으로 계산
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("join_date")
+            .eq("id", userId)
+            .single();
+        
+        if (profile?.join_date) {
+            stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
             stats.remaining = stats.total - stats.used;
         } else {
-            // 잔액 테이블에 없으면 입사일 기준으로 계산
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("join_date")
-                .eq("id", userId)
-                .single();
-            
-            if (profile?.join_date) {
-                // 현재 날짜까지 지급받은 연차만 계산
-                stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
-                stats.remaining = stats.total - stats.used;
-            } else {
-                // 입사일이 없으면 기본값 15일
-                stats.total = 15;
-                stats.remaining = stats.total - stats.used;
-            }
-        }
-    } catch (error) {
-        // 잔액 테이블이 없거나 데이터가 없는 경우 입사일 기준으로 계산
-        try {
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("join_date")
-                .eq("id", userId)
-                .single();
-            
-            if (profile?.join_date) {
-                // 현재 날짜까지 지급받은 연차만 계산
-                stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
-                stats.remaining = stats.total - stats.used;
-            } else {
-                // 입사일이 없으면 기본값 15일
-                stats.total = 15;
-                stats.remaining = stats.total - stats.used;
-            }
-        } catch (profileError) {
-            console.warn("프로필 조회 실패, 기본값 사용:", profileError);
-            stats.total = 15;
+            stats.total = 0;
             stats.remaining = stats.total - stats.used;
         }
+    } else {
+        stats.total = balance.total_days;
+        stats.remaining = stats.total - stats.used;
     }
 
     return stats;

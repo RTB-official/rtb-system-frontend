@@ -6,25 +6,44 @@ type ProfileDeptRow = {
     department: string | null;
 };
 
-// ✅ 워크로드 대상 인원(공사팀/공무팀) 조회
+// ✅ 워크로드 대상 인원(공사팀/공무팀) 조회 (캐싱으로 성능 개선)
+let profilesCache: { name: string; department: "공사팀" | "공무팀" }[] | null = null;
+let profilesCacheTime: number = 0;
+const PROFILES_CACHE_DURATION = 5 * 60 * 1000; // 5분
+
 export async function getWorkloadTargetProfiles(): Promise<
     { name: string; department: "공사팀" | "공무팀" }[]
 > {
+    // 캐시가 있고 유효하면 캐시 반환
+    const now = Date.now();
+    if (profilesCache && (now - profilesCacheTime) < PROFILES_CACHE_DURATION) {
+        return profilesCache;
+    }
+
     const { data, error } = await supabase
         .from("profiles")
         .select("name, department")
         .in("department", ["공사팀", "공무팀"]);
 
     if (error) {
-        console.error("profiles 조회 실패:", error);
+        // 에러 발생 시 캐시가 있으면 캐시 반환
+        if (profilesCache) {
+            return profilesCache;
+        }
         throw new Error(`profiles 조회 실패: ${error.message}`);
     }
 
-    return (data as ProfileDeptRow[] | null | undefined)
+    const result = (data as ProfileDeptRow[] | null | undefined)
         ? (data as ProfileDeptRow[])
               .filter((x) => !!x.name && (x.department === "공사팀" || x.department === "공무팀"))
               .map((x) => ({ name: x.name!.trim(), department: x.department as "공사팀" | "공무팀" }))
         : [];
+
+    // 캐시 업데이트
+    profilesCache = result;
+    profilesCacheTime = now;
+
+    return result;
 }
 
 
@@ -330,15 +349,24 @@ export function aggregatePersonWorkload(
         }
     }
 
-    // 작업 일수 계산 (work_log_id별로 날짜 범위 계산)
+    // 작업 일수 계산 (work_log_id별로 날짜 범위 계산) - 최적화
+    // entries를 person_name과 work_log_id로 그룹화하여 필터링 최소화
+    const entriesByPersonAndLog = new Map<string, WorkloadEntry[]>();
+    for (const entry of entries) {
+        const key = `${entry.person_name}_${entry.work_log_id}`;
+        if (!entriesByPersonAndLog.has(key)) {
+            entriesByPersonAndLog.set(key, []);
+        }
+        entriesByPersonAndLog.get(key)!.push(entry);
+    }
+
     for (const summary of personMap.values()) {
         const workLogIds = Array.from(summary.workLogIds);
         const dateSet = new Set<string>();
 
         for (const workLogId of workLogIds) {
-            const workLogEntries = entries.filter(
-                (e) => e.work_log_id === workLogId && e.person_name === summary.personName
-            );
+            const key = `${summary.personName}_${workLogId}`;
+            const workLogEntries = entriesByPersonAndLog.get(key) || [];
 
             for (const entry of workLogEntries) {
                 if (entry.date_from) {

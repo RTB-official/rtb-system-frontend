@@ -5,6 +5,7 @@ import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import VacationManagementSection from "../../components/sections/VacationManagementSection";
 import VacationRequestModal from "../../components/ui/VacationRequestModal";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import VacationSkeleton from "../../components/common/VacationSkeleton";
 import { IconPlus } from "../../components/icons/Icons";
 import { useAuth } from "../../store/auth";
@@ -28,6 +29,17 @@ import { useToast } from "../../components/ui/ToastProvider";
 
 export type VacationStatus = "대기 중" | "승인 완료" | "반려";
 
+// 날짜 포맷팅 함수 (2028년 1월 23일 (금) 형식)
+function formatDateWithWeekday(dateString: string): string {
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+    const weekday = weekdays[date.getDay()];
+    return `${year}년 ${month}월 ${day}일 (${weekday})`;
+}
+
 export interface VacationRow {
     id: string;
     period: string;
@@ -36,6 +48,7 @@ export interface VacationRow {
     status: VacationStatus;
     usedDays: number; // -1, -0.5
     remainDays: number; // 12, 13.5
+    date: string; // YYYY-MM-DD (날짜 체크용)
 }
 
 export interface GrantExpireRow {
@@ -120,7 +133,7 @@ export default function VacationPage() {
         }
     }, [searchParams, setSearchParams]);
 
-    // 휴가 목록 조회
+    // 휴가 목록 조회 (병렬 처리로 최적화)
     useEffect(() => {
         if (!user?.id) return;
 
@@ -128,22 +141,23 @@ export default function VacationPage() {
             setLoading(true);
             try {
                 const yearNum = parseInt(year);
+
+                // 휴가 목록을 먼저 가져온 후, 나머지를 병렬로 실행
                 const data = await getVacations(user.id, { year: yearNum });
+
+                // 휴가 목록을 재사용하여 통계 계산 (중복 호출 방지)
+                const [stats, history, currentTotal] = await Promise.all([
+                    getVacationStats(user.id, yearNum, data),
+                    getVacationGrantHistory(user.id, yearNum),
+                    getCurrentTotalAnnualLeave(user.id),
+                ]);
+
                 setVacations(data);
-
-                // 통계 조회
-                const stats = await getVacationStats(user.id, yearNum);
-
-                // 지급/소멸 내역 조회 (해당 연도만)
-                const history = await getVacationGrantHistory(user.id, yearNum);
                 setGrantHistory(history);
 
                 // 지급 총합 계산 (해당 연도만)
                 const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
                 const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
-
-                // 현재 날짜 기준 총 연차 계산 (연도 무관)
-                const currentTotal = await getCurrentTotalAnnualLeave(user.id);
 
                 setSummary({
                     myAnnual: currentTotal, // 항상 현재 날짜 기준 총 연차
@@ -161,6 +175,20 @@ export default function VacationPage() {
 
         fetchVacations();
     }, [user?.id, year]);
+
+    // 삭제 확인 메시지 생성
+    const deleteConfirmMessage = useMemo(() => {
+        const targetVacation = deleteTargetId
+            ? vacations.find(v => v.id === deleteTargetId)
+            : null;
+
+        if (!targetVacation) {
+            return "정말 이 휴가를 취소하시겠습니까?";
+        }
+
+        const vacationDate = formatDateWithWeekday(targetVacation.date);
+        return `${vacationDate} 휴가를 취소하시겠습니까?`;
+    }, [deleteTargetId, vacations]);
 
     // API 데이터를 VacationRow 형식으로 변환
     const rows: VacationRow[] = useMemo(() => {
@@ -187,6 +215,7 @@ export default function VacationPage() {
                 status: statusToKorean(vacation.status) as VacationStatus,
                 usedDays,
                 remainDays: Math.max(0, remainDays),
+                date: vacation.date, // 날짜 체크용
             };
         });
     }, [vacations, summary.myAnnual]);
@@ -409,38 +438,20 @@ export default function VacationPage() {
                                     initialDate={initialDate}
                                 />
 
-                                {deleteConfirmOpen && (
-                                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                                        <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-                                            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                                                휴가 삭제
-                                            </h3>
-                                            <p className="text-gray-600 mb-6">
-                                                정말로 이 휴가를 삭제하시겠습니까?
-                                            </p>
-                                            <div className="flex gap-3 justify-end">
-                                                <Button
-                                                    variant="outline"
-                                                    size="lg"
-                                                    onClick={() => {
-                                                        setDeleteConfirmOpen(false);
-                                                        setDeleteTargetId(null);
-                                                    }}
-                                                >
-                                                    취소
-                                                </Button>
-                                                <Button
-                                                    variant="primary"
-                                                    size="lg"
-                                                    onClick={confirmDelete}
-                                                    disabled={loading}
-                                                >
-                                                    삭제
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+                                <ConfirmDialog
+                                    isOpen={deleteConfirmOpen}
+                                    onClose={() => {
+                                        setDeleteConfirmOpen(false);
+                                        setDeleteTargetId(null);
+                                    }}
+                                    onConfirm={confirmDelete}
+                                    title="휴가를 취소할까요?"
+                                    message={deleteConfirmMessage}
+                                    confirmText="네, 취소할게요"
+                                    cancelText="아니요"
+                                    confirmVariant="primary"
+                                    isLoading={loading}
+                                />
                             </>
                         )}
                     </div>

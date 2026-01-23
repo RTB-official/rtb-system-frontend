@@ -102,21 +102,7 @@ export function useUser() {
                     localStorage.setItem("sidebarLoginId", sessionId);
                 }
 
-                // DB 조회 전에 먼저 렌더링 값 확보 (깜빡임 방지)
-                const cachedPosition = localStorage.getItem("sidebarPosition") || "";
-                const cachedRole = localStorage.getItem("sidebarRole");
-                const cachedDepartment = localStorage.getItem("sidebarDepartment");
-
-                // 즉시 currentUser 업데이트하여 메뉴 깜빡임 방지
-                setCurrentUser({
-                    displayName: sessionId || "사용자",
-                    email: sessionEmail,
-                    position: cachedPosition || null,
-                    role: userRole || cachedRole || null,
-                    department: userDepartment || cachedDepartment || null,
-                });
-
-                // 프로필 조회 (에러 처리 강화)
+                // 프로필 조회를 먼저 수행 (가장 빠르게 직급 정보 확보)
                 const { data, error } = await supabase
                     .from("profiles")
                     .select("name, email, username, position, role, department")
@@ -184,7 +170,8 @@ export function useUser() {
         };
 
         fetchUser();
-    }, [userRole, userDepartment]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // 초기 마운트 시에만 실행
 
     // 사용자 권한 계산
     useEffect(() => {

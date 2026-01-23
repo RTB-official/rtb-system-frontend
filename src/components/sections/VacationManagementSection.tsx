@@ -197,8 +197,8 @@ export default function VacationManagementSection({
                             render: (_value, row: VacationRow) => (
                                 <span
                                     className={`font-medium ${row.usedDays < 0
-                                            ? "text-red-600"
-                                            : "text-gray-800"
+                                        ? "text-red-600"
+                                        : "text-gray-800"
                                         }`}
                                 >
                                     {formatUsedDays(row.usedDays)}
@@ -221,49 +221,66 @@ export default function VacationManagementSection({
                             label: "",
                             width: "8%",
                             align: "right",
-                            render: (_value, row: VacationRow) => (
-                                <div className="relative inline-flex">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setOpenMenuId(
-                                                openMenuId === row.id
-                                                    ? null
-                                                    : row.id
-                                            );
-                                            setMenuAnchor(
-                                                openMenuId === row.id
-                                                    ? null
-                                                    : e.currentTarget
-                                            );
-                                        }}
-                                        className="p-2 rounded hover:bg-gray-100 text-gray-600"
-                                        aria-label="행 메뉴"
-                                    >
-                                        <IconMore className="w-[18px] h-[18px]" />
-                                    </button>
-                                    <ActionMenu
-                                        isOpen={openMenuId === row.id}
-                                        anchorEl={menuAnchor}
-                                        onClose={() => {
-                                            setOpenMenuId(null);
-                                            setMenuAnchor(null);
-                                        }}
-                                        onEdit={row.status === "대기 중" ? () => {
-                                            onEdit?.(row);
-                                            setOpenMenuId(null);
-                                            setMenuAnchor(null);
-                                        } : undefined} // 대기 중인 휴가만 수정 가능
-                                        onDelete={row.status === "대기 중" ? () => {
-                                            onDelete?.(row);
-                                            setOpenMenuId(null);
-                                            setMenuAnchor(null);
-                                        } : undefined} // 대기 중인 휴가만 삭제 가능
-                                        width="w-44"
-                                        showDelete={row.status === "대기 중"} // 대기 중인 휴가만 삭제 가능
-                                    />
-                                </div>
-                            ),
+                            render: (_value, row: VacationRow) => {
+                                // 오늘 날짜
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+
+                                // 휴가 날짜
+                                const vacationDate = new Date(row.date);
+                                vacationDate.setHours(0, 0, 0, 0);
+
+                                // 지난 날짜의 승인 완료 휴가는 액션 메뉴 표시 안 함
+                                const isPastApproved = row.status === "승인 완료" && vacationDate < today;
+
+                                if (isPastApproved) {
+                                    return null;
+                                }
+
+                                return (
+                                    <div className="relative inline-flex">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setOpenMenuId(
+                                                    openMenuId === row.id
+                                                        ? null
+                                                        : row.id
+                                                );
+                                                setMenuAnchor(
+                                                    openMenuId === row.id
+                                                        ? null
+                                                        : e.currentTarget
+                                                );
+                                            }}
+                                            className="p-2 rounded hover:bg-gray-100 text-gray-600"
+                                            aria-label="행 메뉴"
+                                        >
+                                            <IconMore className="w-[18px] h-[18px]" />
+                                        </button>
+                                        <ActionMenu
+                                            isOpen={openMenuId === row.id}
+                                            anchorEl={menuAnchor}
+                                            onClose={() => {
+                                                setOpenMenuId(null);
+                                                setMenuAnchor(null);
+                                            }}
+                                            onEdit={row.status === "대기 중" ? () => {
+                                                onEdit?.(row);
+                                                setOpenMenuId(null);
+                                                setMenuAnchor(null);
+                                            } : undefined} // 대기 중인 휴가만 수정 가능
+                                            onDelete={row.status === "대기 중" ? () => {
+                                                onDelete?.(row);
+                                                setOpenMenuId(null);
+                                                setMenuAnchor(null);
+                                            } : undefined} // 대기 중인 휴가만 삭제 가능
+                                            width="w-44"
+                                            showDelete={row.status === "대기 중"} // 대기 중인 휴가만 삭제 가능
+                                        />
+                                    </div>
+                                );
+                            },
                         },
                     ]}
                     data={rows}
@@ -326,17 +343,17 @@ function GrantExpireTable({
                 {
                     key: "monthLabel",
                     label: "날짜",
-                    width: "25%",
+                    width: "20%",
                 },
                 {
                     key: "granted",
                     label: "지급",
-                    width: "16.67%",
+                    width: "20%",
                     render: (_value, row: GrantExpireRow) => (
                         <span
                             className={`font-medium ${row.granted && row.granted > 0
-                                    ? "text-gray-900"
-                                    : "text-gray-400"
+                                ? "text-gray-900"
+                                : "text-gray-400"
                                 }`}
                         >
                             {formatDaysOrDash(row.granted)}
@@ -346,12 +363,12 @@ function GrantExpireTable({
                 {
                     key: "expired",
                     label: "소멸",
-                    width: "16.67%",
+                    width: "20%",
                     render: (_value, row: GrantExpireRow) => (
                         <span
                             className={`font-medium ${row.expired && row.expired < 0
-                                    ? "text-gray-900"
-                                    : "text-gray-400"
+                                ? "text-gray-900"
+                                : "text-gray-400"
                                 }`}
                         >
                             {formatDaysOrDash(row.expired)}
@@ -361,12 +378,12 @@ function GrantExpireTable({
                 {
                     key: "used",
                     label: "사용",
-                    width: "16.67%",
+                    width: "20%",
                     render: (_value, row: GrantExpireRow) => (
                         <span
                             className={`font-medium ${row.used && row.used < 0
-                                    ? "text-gray-900"
-                                    : "text-gray-400"
+                                ? "text-gray-900"
+                                : "text-gray-400"
                                 }`}
                         >
                             {formatDaysOrDash(row.used)}
@@ -376,8 +393,7 @@ function GrantExpireTable({
                 {
                     key: "balance",
                     label: "잔여",
-                    width: "25%",
-                    align: "right",
+                    width: "20%",
                     render: (_value, row: GrantExpireRow) => (
                         <span className="font-medium text-gray-900">
                             {formatBalanceOrDash(row.balance)}

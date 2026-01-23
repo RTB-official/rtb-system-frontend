@@ -3,14 +3,14 @@
  */
 export default function DashboardSkeleton() {
     return (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 animate-pulse">
             {/* 캘린더 헤더 - 실제처럼 보이게 */}
             <div className="flex items-center justify-between mb-6 shrink-0 px-9">
-                <div className="h-9 w-48 bg-gray-200 rounded animate-pulse" />
+                <div className="h-9 w-48 bg-gray-200 rounded" />
                 <div className="flex items-center gap-1">
-                    <div className="h-9 w-9 bg-gray-200 rounded animate-pulse" />
-                    <div className="h-9 w-12 bg-gray-200 rounded animate-pulse" />
-                    <div className="h-9 w-9 bg-gray-200 rounded animate-pulse" />
+                    <div className="h-9 w-9 bg-gray-200 rounded" />
+                    <div className="h-9 w-12 bg-gray-200 rounded" />
+                    <div className="h-9 w-9 bg-gray-200 rounded" />
                 </div>
             </div>
 
@@ -23,7 +23,7 @@ export default function DashboardSkeleton() {
                             key={i}
                             className="py-3 px-4 border-r border-gray-200 last:border-r-0"
                         >
-                            <div className="h-5 w-8 bg-gray-200 rounded animate-pulse" />
+                            <div className="h-5 w-8 bg-gray-200 rounded" />
                         </div>
                     ))}
                 </div>
@@ -40,14 +40,12 @@ export default function DashboardSkeleton() {
                                     key={dayIdx}
                                     className="p-3 border-r border-gray-200 last:border-r-0 flex flex-col"
                                 >
-                                    <div className="h-6 w-6 bg-gray-200 rounded-full mb-2 animate-pulse shrink-0" />
-                                    {Math.random() > 0.6 && (
+                                    <div className="h-6 w-6 bg-gray-200 rounded-full mb-2 shrink-0" />
+                                    {weekIdx % 2 === 0 && dayIdx % 3 === 0 && (
                                         <div
-                                            className="h-6 bg-gray-200 rounded mb-1 animate-pulse shrink-0"
+                                            className="h-6 bg-gray-200 rounded mb-1 shrink-0"
                                             style={{
-                                                width: `${
-                                                    60 + Math.random() * 30
-                                                }%`,
+                                                width: `${70 + (dayIdx * 5)}%`,
                                             }}
                                         />
                                     )}

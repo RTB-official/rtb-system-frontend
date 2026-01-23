@@ -137,7 +137,7 @@ export default function MemberExpensePage() {
                     }
                 }
 
-                // ✅ 지출 요약과 프로필 조회를 병렬 처리로 성능 개선
+                // ✅ 지출 요약 조회
                 const summary = await getAllUsersExpenseSummary(filter);
                 setExpenseSummary(summary);
 
@@ -164,25 +164,33 @@ export default function MemberExpensePage() {
                     // 캐시 파싱 실패 시 무시
                 }
 
-                // 캐시에 없는 프로필만 조회
+                // 캐시에 없는 프로필만 조회 (배치 처리로 성능 개선)
                 const uncachedNames = employeeNames.filter((name) => !profileMap.has(name));
                 
                 if (uncachedNames.length > 0) {
-                    const { data: profiles, error: profilesError } = await supabase
-                        .from("profiles")
-                        .select("name, email, position")
-                        .in("name", uncachedNames);
+                    // ✅ Promise.allSettled로 에러 처리 개선
+                    const profilesResult = await Promise.allSettled([
+                        supabase
+                            .from("profiles")
+                            .select("name, email, position")
+                            .in("name", uncachedNames),
+                    ]);
 
-                    if (profilesError) {
-                        console.error("프로필 조회 실패:", profilesError);
-                    } else if (profiles) {
-                        // 새로 조회한 프로필 추가
-                        profiles.forEach((profile: any) => {
-                            profileMap.set(profile.name, {
-                                email: profile.email || null,
-                                position: profile.position || null,
+                    if (profilesResult[0].status === "fulfilled") {
+                        const { data: profiles, error: profilesError } = profilesResult[0].value;
+                        if (profilesError) {
+                            console.error("프로필 조회 실패:", profilesError);
+                        } else if (profiles) {
+                            // 새로 조회한 프로필 추가
+                            profiles.forEach((profile: any) => {
+                                profileMap.set(profile.name, {
+                                    email: profile.email || null,
+                                    position: profile.position || null,
+                                });
                             });
-                        });
+                        }
+                    } else {
+                        console.error("프로필 조회 실패:", profilesResult[0].reason);
                     }
                 }
 

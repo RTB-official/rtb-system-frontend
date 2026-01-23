@@ -1,5 +1,5 @@
 //workloadPage.tsx
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
     BarChart,
@@ -118,6 +118,8 @@ export default function WorkloadPage() {
     const [loading, setLoading] = useState(true);
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
+    const chartContainerRef = useRef<HTMLDivElement>(null);
+    const [chartSize, setChartSize] = useState({ width: 0, height: 300 });
 
     const itemsPerPage = 10;
 
@@ -134,6 +136,59 @@ export default function WorkloadPage() {
             });
         }
     }, [isStaff, userName, navigate]);
+
+    // 차트 컨테이너 크기 측정 (성능 최적화: 즉시 측정)
+    useEffect(() => {
+        if (!chartData.length) return;
+
+        let resizeTimer: NodeJS.Timeout | null = null;
+        let lastWidth = 0;
+
+        const updateChartSize = () => {
+            if (!chartContainerRef.current) return;
+
+            const rect = chartContainerRef.current.getBoundingClientRect();
+            const newWidth = Math.round(rect.width);
+
+            // 크기가 실제로 변경된 경우에만 업데이트 (10px 이상 차이)
+            if (newWidth > 0 && Math.abs(lastWidth - newWidth) >= 10) {
+                lastWidth = newWidth;
+                setChartSize({ width: newWidth, height: 300 });
+            }
+        };
+
+        // 초기 크기 확인 (즉시 측정으로 로딩 속도 개선)
+        if (chartContainerRef.current) {
+            const rect = chartContainerRef.current.getBoundingClientRect();
+            const width = Math.round(rect.width);
+            if (width > 0) {
+                lastWidth = width;
+                setChartSize({ width, height: 300 });
+            } else {
+                // 크기가 0이면 약간 지연 후 재시도
+                const timeout = setTimeout(() => {
+                    updateChartSize();
+                }, 100);
+                return () => clearTimeout(timeout);
+            }
+        }
+
+        // resize 이벤트에 debounce 적용 (500ms로 증가하여 성능 개선)
+        const handleResize = () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                updateChartSize();
+                resizeTimer = null;
+            }, 500);
+        };
+
+        window.addEventListener('resize', handleResize, { passive: true });
+
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            if (resizeTimer) clearTimeout(resizeTimer);
+        };
+    }, [chartData.length]);
 
     // 행 클릭 핸들러 (메모이제이션)
     const handleRowClick = useCallback(
@@ -167,7 +222,7 @@ export default function WorkloadPage() {
 
                 // entries 처리
                 if (entries.status === "rejected") {
-                    console.error("워크로드 데이터 로드 실패:", entries.reason);
+                    // 워크로드 데이터 로드 실패
                     throw entries.reason;
                 }
 
@@ -176,7 +231,7 @@ export default function WorkloadPage() {
                 if (profilesResult.status === "fulfilled") {
                     profiles = profilesResult.value;
                 } else {
-                    console.error("워크로드 대상자(profiles) 조회 실패 - fallback 처리:", profilesResult.reason);
+                    // 워크로드 대상자(profiles) 조회 실패 - fallback 처리
                     profiles = []; // ✅ 대상자 필터 없이 전체 집계
                 }
 
@@ -186,14 +241,16 @@ export default function WorkloadPage() {
                     profiles
                 );
 
-                // 차트 및 테이블 데이터 생성
-                setChartData(generateChartData(summaries));
-                setTableData(generateTableData(summaries));
+                // 차트 및 테이블 데이터 생성 (즉시 업데이트로 로딩 속도 개선)
+                const newChartData = generateChartData(summaries);
+                const newTableData = generateTableData(summaries);
 
-                // 페이지 초기화
+                // 즉시 상태 업데이트 (setTimeout 제거로 로딩 속도 개선)
+                setChartData(newChartData);
+                setTableData(newTableData);
                 setCurrentPage(1);
             } catch (error) {
-                console.error("워크로드 데이터 로드 실패:", error);
+                // 워크로드 데이터 로드 실패
             } finally {
                 setLoading(false);
             }
@@ -311,69 +368,76 @@ export default function WorkloadPage() {
                                     </div>
                                 </div>
 
-                                {loading ? (
-                                    <div className="h-[300px] flex items-center justify-center">
-                                        <div className="text-gray-500">
-                                            데이터 로딩 중...
-                                        </div>
-                                    </div>
-                                ) : chartData.length === 0 ? (
+                                {chartData.length === 0 ? (
                                     <div className="h-[300px] flex items-center justify-center">
                                         <div className="text-gray-500">
                                             데이터가 없습니다.
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="h-[300px] w-full">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <BarChart
-                                                data={chartData}
-                                                margin={CHART_MARGIN}
+                                    <div
+                                        ref={chartContainerRef}
+                                        className="w-full"
+                                        style={{
+                                            height: '300px',
+                                            minHeight: '300px',
+                                            position: 'relative',
+                                            width: '100%'
+                                        }}
+                                    >
+                                        {chartSize.width > 0 ? (
+                                            <ResponsiveContainer
+                                                width={chartSize.width}
+                                                height={300}
                                             >
-                                                <CartesianGrid
-                                                    strokeDasharray="3 3"
-                                                    vertical={false}
-                                                    stroke="#e5e7eb"
-                                                />
-                                                <XAxis
-                                                    dataKey="name"
-                                                    tick={{
-                                                        fontSize: 12,
-                                                        fill: "#6a7282",
-                                                    }}
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                />
-                                                <YAxis
-                                                    tick={{
-                                                        fontSize: 14,
-                                                        fill: "#99a1af",
-                                                    }}
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                    domain={[0, maxYValue]}
-                                                    ticks={yAxisTicks}
-                                                />
-                                                <Tooltip
-                                                    content={<CustomTooltip />}
-                                                    cursor={{
-                                                        fill: "rgba(0,0,0,0.05)",
-                                                    }}
-                                                />
-                                                {WORKLOAD_TYPES.map((type) => (
-                                                    <Bar
-                                                        key={type.key}
-                                                        dataKey={type.dataKey}
-                                                        stackId="a"
-                                                        fill={type.color}
-                                                        shape={CustomBarShape}
+                                                <BarChart
+                                                    data={chartData}
+                                                    margin={CHART_MARGIN}
+                                                >
+                                                    <CartesianGrid
+                                                        strokeDasharray="3 3"
+                                                        vertical={false}
+                                                        stroke="#e5e7eb"
                                                     />
-                                                ))}
-                                            </BarChart>
-                                        </ResponsiveContainer>
+                                                    <XAxis
+                                                        dataKey="name"
+                                                        tick={{
+                                                            fontSize: 12,
+                                                            fill: "#6a7282",
+                                                        }}
+                                                        axisLine={false}
+                                                        tickLine={false}
+                                                    />
+                                                    <YAxis
+                                                        tick={{
+                                                            fontSize: 14,
+                                                            fill: "#99a1af",
+                                                        }}
+                                                        axisLine={false}
+                                                        tickLine={false}
+                                                        domain={[0, maxYValue]}
+                                                        ticks={yAxisTicks}
+                                                    />
+                                                    <Tooltip
+                                                        content={<CustomTooltip />}
+                                                        cursor={{
+                                                            fill: "rgba(0,0,0,0.05)",
+                                                        }}
+                                                    />
+                                                    {WORKLOAD_TYPES.map((type) => (
+                                                        <Bar
+                                                            key={type.key}
+                                                            dataKey={type.dataKey}
+                                                            stackId="a"
+                                                            fill={type.color}
+                                                            shape={CustomBarShape}
+                                                        />
+                                                    ))}
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <div className="h-[300px] w-full bg-gray-100 rounded-xl animate-pulse" />
+                                        )}
                                     </div>
                                 )}
                             </div>

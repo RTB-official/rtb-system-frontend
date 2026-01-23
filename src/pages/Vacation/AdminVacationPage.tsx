@@ -157,8 +157,19 @@ export default function AdminVacationPage() {
                     let totalDays = 15; // 기본값
 
                     if (joinDate) {
+                        // 현재 날짜 기준으로 모든 연도의 지급받은 연차 합산 (사용한 것 제외하지 않음)
                         try {
                             totalDays = await getCurrentTotalAnnualLeave(empId);
+                            // getCurrentTotalAnnualLeave는 승인된 휴가를 차감하므로, 
+                            // 지급받은 총 연차를 구하려면 승인된 휴가를 다시 더해야 함
+                            const approvedVacations = allVacations.filter(
+                                v => v.user_id === empId && v.status === "approved"
+                            );
+                            const usedDays = approvedVacations.reduce(
+                                (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
+                                0
+                            );
+                            totalDays = totalDays + usedDays; // 지급받은 총 연차
                         } catch (error) {
                             console.error(`직원 ${empId} 연차 계산 실패:`, error);
                             // 실패 시 해당 연도만 계산
@@ -190,7 +201,26 @@ export default function AdminVacationPage() {
                 for (const vacation of allVacations) {
                     if (!statsMap.has(vacation.user_id)) {
                         const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
-                        const totalDays = annualLeaveMap.get(vacation.user_id) || 15;
+                        const joinDate = employeeJoinDateMap.get(vacation.user_id);
+                        let totalDays = 15;
+
+                        if (joinDate) {
+                            try {
+                                totalDays = await getCurrentTotalAnnualLeave(vacation.user_id);
+                                // 지급받은 총 연차 계산
+                                const approvedVacations = allVacations.filter(
+                                    v => v.user_id === vacation.user_id && v.status === "approved"
+                                );
+                                const usedDays = approvedVacations.reduce(
+                                    (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
+                                    0
+                                );
+                                totalDays = totalDays + usedDays;
+                            } catch (error) {
+                                console.error(`직원 ${vacation.user_id} 연차 계산 실패:`, error);
+                                totalDays = calculateAnnualLeave(joinDate, yearNum);
+                            }
+                        }
 
                         statsMap.set(vacation.user_id, {
                             userId: vacation.user_id,
@@ -213,9 +243,12 @@ export default function AdminVacationPage() {
                         } else if (vacation.status === "pending") {
                             stats.pendingDays += days;
                         }
-                        // remainingDays는 모든 연도의 총 연차에서 사용한 연차를 뺀 값
-                        stats.remainingDays = Math.max(0, stats.totalDays - stats.usedDays - stats.pendingDays);
                     }
+                });
+
+                // 모든 직원의 잔여일수 재계산 (사용한 것과 대기 중인 것을 모두 차감)
+                statsMap.forEach((stats) => {
+                    stats.remainingDays = Math.max(0, stats.totalDays - stats.usedDays - stats.pendingDays);
                 });
 
                 const employeeStatsList = Array.from(statsMap.values());
@@ -272,24 +305,99 @@ export default function AdminVacationPage() {
 
         try {
             setLoading(true);
+
+            // 휴가 상태 업데이트
             await updateVacationStatus(
                 selectedVacation.id,
                 approved ? "approved" : "rejected",
                 user.id
             );
 
-            showSuccess(approved ? "휴가가 승인되었습니다." : "휴가가 반려되었습니다.");
+            // 즉시 목록에서 제거 (UI 즉시 반영)
+            const updatedPending = pendingVacations.filter(v => v.id !== selectedVacation.id);
+            setPendingVacations(updatedPending);
+
+            // 모달 닫기
             setDetailModalOpen(false);
             setSelectedVacation(null);
 
-            // 목록 새로고침
+            showSuccess(approved ? "휴가가 승인되었습니다." : "휴가가 반려되었습니다.");
+
+            // 백그라운드에서 전체 데이터 다시 로드 (통계 업데이트)
             const yearNum = parseInt(year);
+
+            // 잠시 대기 후 DB에서 최신 데이터 조회 (업데이트 반영 시간 확보)
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // 모든 직원의 휴가 조회
             const allVacations = await getVacations(undefined, { year: yearNum });
+
+            // 대기 중인 휴가만 필터링 (최신 데이터로 업데이트)
             const pending = allVacations.filter(v => v.status === "pending");
             setPendingVacations(pending);
+
+            // 직원 목록 가져오기
+            const employees = await fetchEmployees(allVacations);
+            const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
+            const employeeJoinDateMap = new Map(employees.map(emp => [emp.id, emp.joinDate]));
+            setEmployeeMap(employeeNameMap);
+
+            // 직원별 통계 재계산
+            const statsMap = new Map<string, EmployeeStats>();
+
+            for (const emp of employees) {
+                const joinDate = emp.joinDate;
+                let totalDays = 15; // 기본값
+
+                if (joinDate) {
+                    try {
+                        totalDays = await getCurrentTotalAnnualLeave(emp.id);
+                        // 지급받은 총 연차 계산
+                        const approvedVacations = allVacations.filter(
+                            v => v.user_id === emp.id && v.status === "approved"
+                        );
+                        const usedDays = approvedVacations.reduce(
+                            (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
+                            0
+                        );
+                        totalDays = totalDays + usedDays;
+                    } catch (error) {
+                        console.error(`직원 ${emp.id} 연차 계산 실패:`, error);
+                        totalDays = calculateAnnualLeave(joinDate, yearNum);
+                    }
+                }
+
+                // 해당 직원의 휴가 통계 계산
+                const empVacations = allVacations.filter(v => v.user_id === emp.id);
+                const usedDays = empVacations
+                    .filter(v => v.status === "approved")
+                    .reduce((sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5), 0);
+                const pendingDays = empVacations
+                    .filter(v => v.status === "pending")
+                    .reduce((sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5), 0);
+
+                statsMap.set(emp.id, {
+                    userId: emp.id,
+                    userName: emp.name,
+                    usedDays,
+                    pendingDays,
+                    remainingDays: Math.max(0, totalDays - usedDays - pendingDays),
+                    totalDays,
+                });
+            }
+
+            setEmployeeStats(Array.from(statsMap.values()));
         } catch (error: any) {
             console.error("처리 실패:", error);
             showError(error.message || "처리에 실패했습니다.");
+
+            // 에러 발생 시 목록 다시 조회
+            if (user?.id) {
+                const yearNum = parseInt(year);
+                const allVacations = await getVacations(undefined, { year: yearNum });
+                const pending = allVacations.filter(v => v.status === "pending");
+                setPendingVacations(pending);
+            }
         } finally {
             setLoading(false);
         }
@@ -402,16 +510,6 @@ export default function AdminVacationPage() {
                 <Header
                     title="휴가 관리 (대표)"
                     onMenuClick={() => setSidebarOpen(true)}
-                    rightContent={
-                        <Button
-                            variant="secondary"
-                            size="lg"
-                            onClick={handleCalculateAllVacations}
-                            disabled={loading}
-                        >
-                            연차 일괄 계산 (2025년~)
-                        </Button>
-                    }
                 />
 
                 {/* Content */}

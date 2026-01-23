@@ -183,34 +183,43 @@ export default function MembersPage() {
 
         const { data, error } = await query;
 
-        const ids = (data ?? []).map((p: any) => p.id);
-
-        // ✅ 여권정보는 분리 테이블에서 조회 (모든 사용자가 모든 여권정보 조회 가능)
-        const { data: passportsData, error: passportsError } = await supabase
-            .from("profile_passports")
-            .select(
-                "user_id, passport_last_name, passport_first_name, passport_number, passport_expiry_date"
-            )
-            .in("user_id", ids);
-
-        if (passportsError) {
-            console.error(
-                "profile_passports 조회 실패:",
-                passportsError.message
-            );
-        }
-
-        const passportsMap = new Map<string, any>();
-        (passportsData ?? []).forEach((pp: any) => {
-            passportsMap.set(pp.user_id, pp);
-        });
-
         if (error) {
             console.error("profiles 조회 실패:", error.message);
             // ✅ 기존 목록 유지(캐시/이전 데이터가 있으면 그대로 보여줌)
             setLoading(false);
             return;
         }
+
+        const ids = (data ?? []).map((p: any) => p.id);
+
+        // ✅ profiles와 passports를 병렬로 조회하여 성능 개선
+        const [passportsResult] = await Promise.allSettled([
+            supabase
+                .from("profile_passports")
+                .select(
+                    "user_id, passport_last_name, passport_first_name, passport_number, passport_expiry_date"
+                )
+                .in("user_id", ids),
+        ]);
+
+        let passportsData: any[] = [];
+        if (passportsResult.status === "fulfilled") {
+            if (passportsResult.value.error) {
+                console.error(
+                    "profile_passports 조회 실패:",
+                    passportsResult.value.error.message
+                );
+            } else {
+                passportsData = passportsResult.value.data ?? [];
+            }
+        } else {
+            console.error("profile_passports 조회 실패:", passportsResult.reason);
+        }
+
+        const passportsMap = new Map<string, any>();
+        passportsData.forEach((pp: any) => {
+            passportsMap.set(pp.user_id, pp);
+        });
 
         const mapped: Member[] = (data ?? []).map((p: any) => {
             const pp = passportsMap.get(p.id);
@@ -274,8 +283,8 @@ export default function MembersPage() {
                 isCEO = data?.position === "대표";
             }
 
-            await fetchMembers({ 
-                isAdmin: admin, 
+            await fetchMembers({
+                isAdmin: admin,
                 myUserId: user?.id ?? null,
                 isStaff: isStaff,
                 isCEO: isCEO,
@@ -407,7 +416,7 @@ export default function MembersPage() {
                             </div>
                         )}
 
-                        {loading && members.length === 0 ? (
+                        {loading ? (
                             <MembersSkeleton />
                         ) : (
                             <div className="overflow-x-auto">
