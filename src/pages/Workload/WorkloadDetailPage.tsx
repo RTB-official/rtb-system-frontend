@@ -7,7 +7,7 @@ import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkeleton";
 import { IconArrowBack } from "../../components/icons/Icons";
-import { supabase } from "../../lib/supabase";
+import { useUser } from "../../hooks/useUser";
 import {
     getWorkerWorkloadDetail,
     formatHours,
@@ -72,32 +72,10 @@ export default function WorkloadDetailPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loading, setLoading] = useState(true);
-    // 공사팀은 자동 리다이렉트되므로, 상세 페이지에 접근했다면 공사팀일 가능성이 높음
-    // 초기값을 true로 설정하여 깜빡임 방지
-    const [isStaff, setIsStaff] = useState(true);
 
-    // 공사팀(스태프) 여부 확인
-    useEffect(() => {
-        const checkUserRole = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: profile } = await supabase
-                    .from("profiles")
-                    .select("role, department")
-                    .eq("id", user.id)
-                    .single();
-                if (profile) {
-                    setIsStaff(profile.role === "staff" || profile.department === "공사팀");
-                } else {
-                    // 프로필이 없으면 일반 사용자로 간주
-                    setIsStaff(false);
-                }
-            } else {
-                setIsStaff(false);
-            }
-        };
-        checkUserRole();
-    }, []);
+    // ✅ useUser 훅으로 권한 정보 가져오기
+    const { userPermissions } = useUser();
+    const isStaff = userPermissions.isStaff;
     const [summary, setSummary] = useState<{
         name: string;
         totalWork: number;

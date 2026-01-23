@@ -147,7 +147,6 @@ function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps
                     
                     // 카테고리가 일치하고, 아직 추가되지 않은 경우만 추가
                     if (!alreadyExists && !alreadyLoaded && receipt.category === category) {
-                        console.log("기존 영수증 추가:", receipt);
                         addExistingReceipt({
                             receiptId: receipt.id,
                             category: receipt.category as FileCategory,

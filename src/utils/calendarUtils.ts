@@ -133,24 +133,6 @@ export function getWeekEventRows(
         return segStartDate === "2026-01-01" || segStartDate === "2026-01-02";
     });
     
-    if (hasJan1Or2) {
-        console.log(`\n=== [getWeekEventRows] 주: ${weekStartDate} ~ ${weekEndDate} ===`);
-        result.forEach(seg => {
-            const segStartDate = getSafeDateKey(week[seg.startOffset]?.date || week[0].date);
-            if (segStartDate === "2026-01-01" || segStartDate === "2026-01-02" || 
-                seg.event.title.includes("출장") || seg.event.title === "가") {
-                console.log(`일정: "${seg.event.title}"`);
-                console.log(`  - 초기 rowIndex: ${seg.rowIndex}`);
-                console.log(`  - startOffset: ${seg.startOffset}`);
-                console.log(`  - duration: ${seg.duration}`);
-                console.log(`  - 시작날짜: ${segStartDate}`);
-                console.log(`  - event.id: ${seg.event.id}`);
-                console.log(`  - startDate: ${seg.event.startDate}`);
-                console.log(`  - endDate: ${seg.event.endDate}`);
-            }
-        });
-    }
-    
     return result;
 }
 

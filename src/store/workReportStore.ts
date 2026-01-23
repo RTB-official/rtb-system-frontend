@@ -403,7 +403,6 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     );
     
     if (alreadyExists) {
-      console.log("이미 존재하는 영수증, 추가하지 않음:", receipt.receiptId);
       return state; // 이미 있으면 추가하지 않음
     }
     
@@ -418,7 +417,6 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       preview: receipt.fileUrl && (receipt.mimeType?.startsWith('image/') || !receipt.mimeType) ? receipt.fileUrl : undefined,
       isExisting: true,
     };
-    console.log("새 영수증 추가:", newReceipt);
     return { uploadedFiles: [...state.uploadedFiles, newReceipt] };
   }),
   removeFile: (id) => set((state) => {

@@ -69,38 +69,54 @@ export default function AdminVacationPage() {
     const fetchEmployees = async (allVacations: Vacation[]): Promise<{ id: string; name: string; joinDate?: string }[]> => {
         try {
             // vacations 테이블에서 고유한 user_id 추출
-            const userIds = new Set(allVacations.map(v => v.user_id));
-            const employeeList: { id: string; name: string; joinDate?: string }[] = [];
+            const userIds = Array.from(new Set(allVacations.map(v => v.user_id).filter(Boolean)));
 
-            // 각 user_id에 대해 profiles 테이블에서 이름 가져오기
-            for (const userId of Array.from(userIds)) {
-                try {
-                    const { data: profile } = await supabase
-                        .from("profiles")
-                        .select("id, name, email, join_date")
-                        .eq("id", userId)
-                        .single();
+            if (userIds.length === 0) {
+                return [];
+            }
 
-                    if (profile) {
-                        employeeList.push({
-                            id: profile.id,
-                            name: profile.name || profile.email || "알 수 없음",
-                            joinDate: profile.join_date,
-                        });
-                    } else {
-                        employeeList.push({
-                            id: userId,
-                            name: `User ${userId.substring(0, 8)}`,
-                        });
-                    }
-                } catch {
-                    // 프로필이 없으면 기본값 사용
-                    employeeList.push({
-                        id: userId,
-                        name: `User ${userId.substring(0, 8)}`,
+            // ✅ 배치 조회로 변경: 모든 프로필을 한 번에 조회
+            const { data: profiles, error } = await supabase
+                .from("profiles")
+                .select("id, name, email, join_date")
+                .in("id", userIds);
+
+            if (error) {
+                console.error("직원 목록 조회 실패:", error);
+                // 에러 발생 시 기본값으로 반환
+                return userIds.map(id => ({
+                    id,
+                    name: `User ${id.substring(0, 8)}`,
+                }));
+            }
+
+            // 프로필 맵 생성
+            const profileMap = new Map<string, { name: string; email: string | null; join_date: string | null }>();
+            (profiles || []).forEach(profile => {
+                if (profile.id) {
+                    profileMap.set(profile.id, {
+                        name: profile.name || "",
+                        email: profile.email,
+                        join_date: profile.join_date,
                     });
                 }
-            }
+            });
+
+            // 직원 목록 생성
+            const employeeList: { id: string; name: string; joinDate?: string }[] = userIds.map(userId => {
+                const profile = profileMap.get(userId);
+                if (profile) {
+                    return {
+                        id: userId,
+                        name: profile.name || profile.email || "알 수 없음",
+                        joinDate: profile.join_date || undefined,
+                    };
+                }
+                return {
+                    id: userId,
+                    name: `User ${userId.substring(0, 8)}`,
+                };
+            });
 
             return employeeList.sort((a, b) => a.name.localeCompare(b.name));
         } catch (error) {
@@ -128,22 +144,38 @@ export default function AdminVacationPage() {
                 // 직원별 통계 계산
                 const statsMap = new Map<string, EmployeeStats>();
 
-                // 모든 직원의 현재 총 연차 계산 (모든 연도 합산)
-                for (const emp of employees) {
-                    const joinDate = emp.joinDate;
+                // ✅ 모든 직원의 연차를 병렬로 계산
+                const allEmployeeIds = new Set([
+                    ...employees.map(emp => emp.id),
+                    ...allVacations.map(v => v.user_id).filter(Boolean),
+                ]);
+
+                // 병렬로 모든 직원의 연차 계산
+                const annualLeavePromises = Array.from(allEmployeeIds).map(async (empId) => {
+                    const emp = employees.find(e => e.id === empId);
+                    const joinDate = emp?.joinDate || employeeJoinDateMap.get(empId);
                     let totalDays = 15; // 기본값
 
                     if (joinDate) {
-                        // 현재 날짜 기준으로 모든 연도의 연차 합산
                         try {
-                            totalDays = await getCurrentTotalAnnualLeave(emp.id);
+                            totalDays = await getCurrentTotalAnnualLeave(empId);
                         } catch (error) {
-                            console.error(`직원 ${emp.id} 연차 계산 실패:`, error);
+                            console.error(`직원 ${empId} 연차 계산 실패:`, error);
                             // 실패 시 해당 연도만 계산
                             totalDays = calculateAnnualLeave(joinDate, yearNum);
                         }
                     }
 
+                    return { empId, totalDays };
+                });
+
+                // 모든 연차 계산 완료 대기
+                const annualLeaveResults = await Promise.all(annualLeavePromises);
+                const annualLeaveMap = new Map(annualLeaveResults.map(r => [r.empId, r.totalDays]));
+
+                // 통계 초기화
+                for (const emp of employees) {
+                    const totalDays = annualLeaveMap.get(emp.id) || 15;
                     statsMap.set(emp.id, {
                         userId: emp.id,
                         userName: emp.name,
@@ -158,17 +190,7 @@ export default function AdminVacationPage() {
                 for (const vacation of allVacations) {
                     if (!statsMap.has(vacation.user_id)) {
                         const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
-                        const joinDate = employeeJoinDateMap.get(vacation.user_id);
-                        let totalDays = 15;
-
-                        if (joinDate) {
-                            try {
-                                totalDays = await getCurrentTotalAnnualLeave(vacation.user_id);
-                            } catch (error) {
-                                console.error(`직원 ${vacation.user_id} 연차 계산 실패:`, error);
-                                totalDays = calculateAnnualLeave(joinDate, yearNum);
-                            }
-                        }
+                        const totalDays = annualLeaveMap.get(vacation.user_id) || 15;
 
                         statsMap.set(vacation.user_id, {
                             userId: vacation.user_id,
@@ -452,8 +474,8 @@ export default function AdminVacationPage() {
                                                         <tr
                                                             key={stat.userId}
                                                             className={`border-b border-gray-100 transition-colors ${isSelected
-                                                                    ? "bg-blue-50 hover:bg-blue-100"
-                                                                    : "hover:bg-gray-50"
+                                                                ? "bg-blue-50 hover:bg-blue-100"
+                                                                : "hover:bg-gray-50"
                                                                 }`}
                                                         >
                                                             <td

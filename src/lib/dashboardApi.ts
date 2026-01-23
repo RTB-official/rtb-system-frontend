@@ -98,8 +98,6 @@ export async function createCalendarEvent(
 
     // 일정 생성 시 공무팀 및 참여자에게 알림 생성
     try {
-        console.log("🔔 [알림] 일정 생성 알림 시작...");
-        
         // 사용자 이름 가져오기
         const { data: profile } = await supabase
             .from("profiles")
@@ -112,8 +110,6 @@ export async function createCalendarEvent(
 
         // 1. 참여자에게 알림 보내기
         if (data.attendees && data.attendees.length > 0) {
-            console.log("🔔 [알림] 참여자 알림 생성 시작...", data.attendees);
-            
             // 참여자 이름을 user_id로 변환
             const { data: attendeeProfiles } = await supabase
                 .from("profiles")
@@ -126,13 +122,12 @@ export async function createCalendarEvent(
                     .filter(id => id !== data.user_id); // 본인 제외
 
                 if (attendeeUserIds.length > 0) {
-                    const attendeeResult = await createNotificationsForUsers(
+                    await createNotificationsForUsers(
                         attendeeUserIds,
                         "일정 참여 초대",
                         `${userName}님이 "${data.title}" 일정에 당신을 참여자로 추가했습니다.`,
                         "schedule"
                     );
-                    console.log("🔔 [알림] 참여자 알림 생성 완료:", attendeeResult.length, "개");
                     targetUserIds.push(...attendeeUserIds);
                 }
             }
@@ -145,21 +140,16 @@ export async function createCalendarEvent(
         );
         
         if (gongmuTargetUserIds.length > 0) {
-            const gongmuResult = await createNotificationsForUsers(
+            await createNotificationsForUsers(
                 gongmuTargetUserIds,
                 "새 일정",
                 `${userName}님이 새 일정 "${data.title}"을(를) 추가했습니다.`,
                 "schedule"
             );
-            console.log("🔔 [알림] 공무팀 알림 생성 완료:", gongmuResult.length, "개");
         }
     } catch (notificationError: any) {
         // 알림 생성 실패는 일정 생성을 막지 않음
-        console.error(
-            "❌ [알림] 알림 생성 실패 (일정은 정상 생성됨):",
-            notificationError?.message || notificationError,
-            notificationError
-        );
+        console.error("알림 생성 실패:", notificationError?.message || notificationError);
     }
 
     return event;
@@ -225,8 +215,6 @@ export async function updateCalendarEvent(
             );
 
             if (newAttendees.length > 0) {
-                console.log("🔔 [알림] 새 참여자 알림 생성 시작...", newAttendees);
-
                 // 사용자 이름 가져오기
                 const { data: profile } = await supabase
                     .from("profiles")
@@ -248,13 +236,12 @@ export async function updateCalendarEvent(
                         .filter(id => id !== currentUserId); // 본인 제외
 
                     if (attendeeUserIds.length > 0) {
-                        const result = await createNotificationsForUsers(
+                        await createNotificationsForUsers(
                             attendeeUserIds,
                             "일정 참여 초대",
                             `${userName}님이 "${existingEvent.title || event.title}" 일정에 당신을 참여자로 추가했습니다.`,
                             "schedule"
                         );
-                        console.log("🔔 [알림] 새 참여자 알림 생성 완료:", result.length, "개");
                     }
                 }
             }

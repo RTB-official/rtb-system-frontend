@@ -344,38 +344,26 @@ export async function createWorkLog(
         // 7. 보고서 제출 시 공무팀에 알림 생성 (임시저장이 아닐 때만, 본인 제외)
         if (!data.is_draft) {
             try {
-                console.log("🔔 [알림] 보고서 제출 알림 생성 시작...");
                 const gongmuUserIds = await getGongmuTeamUserIds();
-                console.log("🔔 [알림] 공무팀 사용자 ID 목록:", gongmuUserIds);
                 
                 // 본인 제외
                 const creatorId = data.created_by || null;
                 const targetUserIds = creatorId 
                     ? gongmuUserIds.filter(id => id !== creatorId)
                     : gongmuUserIds;
-                console.log("🔔 [알림] 알림 대상 사용자 ID 목록 (본인 제외):", targetUserIds);
                 
                 if (targetUserIds.length > 0) {
-                    const result = await createNotificationsForUsers(
+                    await createNotificationsForUsers(
                         targetUserIds,
                         "새 보고서",
                         `${workLog.author || "작성자"}님이 새 보고서를 제출했습니다.`,
                         "report"
                     );
-                    console.log("🔔 [알림] 알림 생성 완료:", result.length, "개");
-                } else {
-                    console.warn("⚠️ [알림] 알림 대상 사용자가 없어 알림을 생성하지 않았습니다.");
                 }
             } catch (notificationError: any) {
                 // 알림 생성 실패는 보고서 생성을 막지 않음
-                console.error(
-                    "❌ [알림] 알림 생성 실패 (보고서는 정상 생성됨):",
-                    notificationError?.message || notificationError,
-                    notificationError
-                );
+                console.error("알림 생성 실패:", notificationError?.message || notificationError);
             }
-        } else {
-            console.log("📝 [알림] 임시저장이므로 알림을 생성하지 않습니다.");
         }
 
         return workLog;
@@ -396,11 +384,6 @@ export async function uploadReceiptFile(
     workLogId: number,
     category: string
 ): Promise<string> {
-    console.log("=== 파일 업로드 디버깅 ===");
-    console.log("File:", file.name, file.size, file.type);
-    console.log("Work Log ID:", workLogId);
-    console.log("Category:", category);
-    
     const fileExt = file.name.split(".").pop();
     
     // 카테고리를 영문으로 변환 (한글 경로 문제 방지)
@@ -415,16 +398,8 @@ export async function uploadReceiptFile(
     // 파일명에 특수문자 제거 및 URL 안전한 문자만 사용
     const safeFileName = `${workLogId}_${categoryEn}_${Date.now()}.${fileExt}`;
     const filePath = `receipts/${safeFileName}`;
-    
-    console.log("File Path:", filePath);
-    console.log("Bucket:", "work-log-recipts");
 
-    // Storage 버킷 존재 여부 확인
-    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
-    console.log("Available buckets:", buckets?.map(b => b.name));
-    console.log("Buckets error:", bucketsError);
-
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
         .from("work-log-recipts")
         .upload(filePath, file, {
             cacheControl: '3600',
@@ -432,15 +407,9 @@ export async function uploadReceiptFile(
         });
 
     if (uploadError) {
-        console.error("=== Storage 업로드 에러 상세 ===");
-        console.error("Error Code:", uploadError.error);
-        console.error("Error Message:", uploadError.message);
-        console.error("Error Status Code:", uploadError.statusCode);
-        console.error("Full Error:", JSON.stringify(uploadError, null, 2));
         throw new Error(`파일 업로드 실패: ${uploadError.message || uploadError.error || "알 수 없는 오류"}`);
     }
 
-    console.log("파일 업로드 성공:", uploadData);
     return filePath;
 }
 
@@ -767,19 +736,12 @@ export async function updateWorkLog(
         // 7. 보고서 제출 시 공무팀에 알림 생성 (임시저장이 아닐 때만, 그리고 이전에 draft였던 경우만)
         if (!data.is_draft) {
             try {
-                console.log("🔔 [알림] 보고서 업데이트 알림 생성 시작...");
                 // 이전 상태 확인 (draft였는지)
-                const { data: previousWorkLog, error: prevError } = await supabase
+                const { data: previousWorkLog } = await supabase
                     .from("work_logs")
                     .select("is_draft")
                     .eq("id", workLogId)
                     .single();
-
-                if (prevError) {
-                    console.error("⚠️ [알림] 이전 보고서 상태 조회 실패:", prevError);
-                }
-
-                console.log("🔔 [알림] 이전 보고서 상태:", previousWorkLog);
 
                 // 이전에 draft였거나, 또는 새로 제출되는 경우 알림 생성 (본인 제외)
                 if (!previousWorkLog || previousWorkLog.is_draft) {
@@ -793,38 +755,25 @@ export async function updateWorkLog(
                     const creatorId = currentWorkLog?.created_by || data.created_by || null;
                     
                     const gongmuUserIds = await getGongmuTeamUserIds();
-                    console.log("🔔 [알림] 공무팀 사용자 ID 목록:", gongmuUserIds);
                     
                     // 본인 제외
                     const targetUserIds = creatorId 
                         ? gongmuUserIds.filter(id => id !== creatorId)
                         : gongmuUserIds;
-                    console.log("🔔 [알림] 알림 대상 사용자 ID 목록 (본인 제외):", targetUserIds);
                     
                     if (targetUserIds.length > 0) {
-                        const result = await createNotificationsForUsers(
+                        await createNotificationsForUsers(
                             targetUserIds,
                             "새 보고서",
                             `${workLog.author || "작성자"}님이 새 보고서를 제출했습니다.`,
                             "report"
                         );
-                        console.log("🔔 [알림] 알림 생성 완료:", result.length, "개");
-                    } else {
-                        console.warn("⚠️ [알림] 알림 대상 사용자가 없어 알림을 생성하지 않았습니다.");
                     }
-                } else {
-                    console.log("📝 [알림] 이미 제출된 보고서이므로 알림을 생성하지 않습니다.");
                 }
             } catch (notificationError: any) {
                 // 알림 생성 실패는 보고서 업데이트를 막지 않음
-                console.error(
-                    "❌ [알림] 알림 생성 실패 (보고서는 정상 업데이트됨):",
-                    notificationError?.message || notificationError,
-                    notificationError
-                );
+                console.error("알림 생성 실패:", notificationError?.message || notificationError);
             }
-        } else {
-            console.log("📝 [알림] 임시저장이므로 알림을 생성하지 않습니다.");
         }
 
         return workLog;

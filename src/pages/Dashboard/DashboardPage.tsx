@@ -11,7 +11,7 @@ import { IconMenu } from "../../components/icons/Icons";
 import { CalendarEvent } from "../../types";
 import useCalendarWheelNavigation from "../../hooks/useCalendarWheelNavigation";
 import { useAuth } from "../../store/auth";
-import { supabase } from "../../lib/supabase";
+import { useUser } from "../../hooks/useUser";
 import {
     getCalendarEvents,
     createCalendarEvent,
@@ -39,6 +39,7 @@ import CalendarGrid from "./components/CalendarGrid";
 
 export default function DashboardPage() {
     const { user } = useAuth();
+    const { userPermissions } = useUser();
     const navigate = useNavigate();
     const { showError } = useToast();
     const today = new Date();
@@ -48,28 +49,11 @@ export default function DashboardPage() {
 
     // 권한 체크: 공사팀(스태프)은 접근 불가
     useEffect(() => {
-        const checkAccess = async () => {
-            if (!user?.id) return;
-
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("role, department, position")
-                .eq("id", user.id)
-                .single();
-
-            if (profile) {
-                const isStaff = profile.role === "staff" || profile.department === "공사팀";
-                const isCEO = profile.position === "대표";
-                const isAdmin = profile.role === "admin" || profile.department === "공무팀";
-
-                // 공사팀(스태프)만 접근 불가 - 조용히 리다이렉트
-                if (isStaff && !isCEO && !isAdmin) {
-                    navigate("/report", { replace: true });
-                }
-            }
-        };
-        checkAccess();
-    }, [user?.id, navigate]);
+        // useUser 훅에서 이미 권한 정보를 가져왔으므로 추가 API 호출 불필요
+        if (userPermissions.isStaff && !userPermissions.isCEO && !userPermissions.isAdmin) {
+            navigate("/report", { replace: true });
+        }
+    }, [userPermissions, navigate]);
 
     // 공휴일 데이터
     const holidays = useHolidays(year, month);
@@ -535,7 +519,6 @@ export default function DashboardPage() {
                 isOpen={scheduleModalOpen}
                 onClose={() => setScheduleModalOpen(false)}
                 onSave={(payload) => {
-                    console.log("새 일정:", payload);
                     setScheduleModalOpen(false);
                 }}
             />
@@ -580,7 +563,7 @@ export default function DashboardPage() {
                                             }}
                                         />
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-gray-900 break-words">
+                                            <p className="font-medium text-gray-900 wrap-break-word">
                                                 {event.title}
                                             </p>
                                             <p className="text-sm text-gray-500 mt-1">

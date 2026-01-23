@@ -205,11 +205,6 @@ export default function MembersPage() {
             passportsMap.set(pp.user_id, pp);
         });
 
-        // 디버깅: 여권정보 확인
-        console.log("🔍 [Members] isAdmin:", admin);
-        console.log("🔍 [Members] passportsData count:", passportsData?.length || 0);
-        console.log("🔍 [Members] passports with number:", passportsData?.filter((pp: any) => pp.passport_number).length || 0);
-
         if (error) {
             console.error("profiles 조회 실패:", error.message);
             // ✅ 기존 목록 유지(캐시/이전 데이터가 있으면 그대로 보여줌)
