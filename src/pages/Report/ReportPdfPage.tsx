@@ -1258,13 +1258,14 @@ export default function ReportPdfPage() {
                                                                                         </div>
                                                                                     </div>
                                                                                 ) : (
-                                                                                    <img
-                                                                                        className="receipt-img"
-                                                                                        src={a.url}
-                                                                                        alt={a.name || "receipt"}
-                                                                                        onError={() => handleImageError(a.id)}
-                                                                                        style={{ display: "block" }}
-                                                                                    />
+                                                                                <img
+                                                                                    className="receipt-img"
+                                                                                    src={a.url}
+                                                                                    alt={a.name || "receipt"}
+                                                                                    onError={() => handleImageError(a.id)}
+                                                                                    onClick={() => openPreview(a.url, a.name || a.url.split("/").pop() || "receipt", "image")}
+                                                                                    style={{ display: "block", cursor: "pointer" }}
+                                                                                />
                                                                                 )}
 
                                                                                 <div
@@ -1307,13 +1308,14 @@ export default function ReportPdfPage() {
                                                                                         </div>
                                                                                     </div>
                                                                                 ) : (
-                                                                                    <img
-                                                                                        className="receipt-img"
-                                                                                        src={b.url}
-                                                                                        alt={b.name || "receipt"}
-                                                                                        onError={() => handleImageError(b.id)}
-                                                                                        style={{ display: "block" }}
-                                                                                    />
+                                                                                <img
+                                                                                    className="receipt-img"
+                                                                                    src={b.url}
+                                                                                    alt={b.name || "receipt"}
+                                                                                    onError={() => handleImageError(b.id)}
+                                                                                    onClick={() => openPreview(b.url, b.name || b.url.split("/").pop() || "receipt", "image")}
+                                                                                    style={{ display: "block", cursor: "pointer" }}
+                                                                                />
                                                                                 )}
 
                                                                                 <div

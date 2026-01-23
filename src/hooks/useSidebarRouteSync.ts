@@ -1,7 +1,9 @@
+//useSidebarRouteSync.ts
 import { useEffect, useRef } from "react";
 import { UserPermissions } from "./useUser";
 
 interface UseSidebarRouteSyncParams {
+    pathname: string;
     isReportRoute: boolean;
     isExpenseRoute: boolean;
     expenseSubMenuItems: Array<{ label: string; to: string }>;
@@ -15,10 +17,12 @@ interface UseSidebarRouteSyncParams {
     setShowNotifications: (value: boolean) => void;
 }
 
+
 /**
  * 라우트 변경에 따른 서브메뉴 상태 동기화
  */
 export function useSidebarRouteSync({
+    pathname,
     isReportRoute,
     isExpenseRoute,
     expenseSubMenuItems,
@@ -31,6 +35,7 @@ export function useSidebarRouteSync({
     setMenuFocus,
     setShowNotifications,
 }: UseSidebarRouteSyncParams) {
+    const prevPathRef = useRef<string>(pathname);
     useEffect(() => {
         const prevIsReportRoute = prevReportRouteRef.current;
         const prevIsExpenseRoute = prevExpenseRouteRef.current;
@@ -82,8 +87,13 @@ export function useSidebarRouteSync({
             prevExpenseRouteRef.current = false;
         }
 
-        setShowNotifications(false);
+        // ✅ "진짜 페이지 전환(경로 변경)"일 때만 알림 닫기
+        if (prevPathRef.current !== pathname) {
+            setShowNotifications(false);
+            prevPathRef.current = pathname;
+        }
     }, [
+        pathname,
         isReportRoute,
         isExpenseRoute,
         expenseSubMenuItems.length,

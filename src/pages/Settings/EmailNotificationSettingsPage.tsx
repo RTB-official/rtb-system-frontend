@@ -506,7 +506,7 @@ export default function EmailNotificationSettingsPage() {
                                   {item.email}
                                 </div>
                                 <div className="text-[12px] text-gray-500 mt-1">
-                                  {item.enabled ? "ON" : "OFF"}
+                                  {item.enabled ? "" : ""}
                                 </div>
                               </div>
 
@@ -517,7 +517,7 @@ export default function EmailNotificationSettingsPage() {
                                     : "bg-gray-100 text-gray-600 border border-gray-200"
                                 }`}
                               >
-                                {item.enabled ? "활성" : "비활성"}
+                                {item.enabled ? "ON" : "OFF"}
                               </div>
                             </div>
 
@@ -540,7 +540,7 @@ export default function EmailNotificationSettingsPage() {
                             </div>
 
                             <div className="mt-4 text-[12px] text-gray-500">
-                              선택: {selected.length ? selected.map((x) => TYPE_LABEL[x]).join(", ") : "없음"}
+
                             </div>
                           </button>
                         );

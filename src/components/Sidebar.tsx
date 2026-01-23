@@ -18,6 +18,7 @@ import {
     IconMembers,
     IconNotifications,
     IconClose,
+    IconSettings,
 } from "./icons/Icons";
 import { useUser } from "../hooks/useUser";
 import { useNotifications } from "../hooks/useNotifications";
@@ -37,6 +38,11 @@ interface SidebarProps {
 
 type MenuFocus = "REPORT" | "EXPENSE" | null;
 
+
+
+
+
+
 export default function Sidebar({ onClose }: SidebarProps) {
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
@@ -44,6 +50,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
     // 사용자 정보 및 권한
     const { currentUser, currentUserId, sidebarLoginId, userPermissions, handleLogout } =
         useUser();
+
+        const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+            return localStorage.getItem("profile_role") === "admin";
+        });
 
     // 권한 정보를 ref로 저장하여 깜빡임 방지
     const userPermissionsRef = useRef(userPermissions);
@@ -53,6 +63,32 @@ export default function Sidebar({ onClose }: SidebarProps) {
             userPermissionsRef.current = userPermissions;
         }
     }, [userPermissions]);
+
+    useEffect(() => {
+        const fetchRole = async () => {
+            if (!currentUserId) return;
+
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("role")
+                .eq("id", currentUserId)
+                .single();
+
+            if (error) {
+                console.error("profiles role 조회 실패:", error);
+                // ✅ 캐시가 admin이면 깜빡임 방지를 위해 false로 떨어뜨리지 않음
+                return;
+            }
+
+            const nextIsAdmin = data?.role === "admin";
+            setIsAdmin(nextIsAdmin);
+
+            // ✅ 다음 라우트 이동/재마운트 시 즉시 반영되도록 캐시
+            localStorage.setItem("profile_role", data?.role ?? "");
+        };
+
+        fetchRole();
+    }, [currentUserId]);
 
     // 안정화된 권한 사용 (깜빡임 방지)
     const stablePermissions = userPermissionsRef.current.isCEO || userPermissionsRef.current.isAdmin || userPermissionsRef.current.isStaff
@@ -71,6 +107,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     // 메뉴 포커스 및 상태
     const [menuFocus, setMenuFocus] = useState<MenuFocus>(null);
+
+    
 
     // 사용자 메뉴 상태
     const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -97,7 +135,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     // 메뉴 활성 상태
     const reportActive = isReportRoute || menuFocus === "REPORT";
+    const canShowHome = stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin;
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
+    const settingsActive = routeLocation.pathname.startsWith("/settings");
 
     // 메뉴 아이템
     const { reportSubMenuItems, expenseSubMenuItems } = useSidebarMenuItems(
@@ -109,6 +149,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     // 라우트 변경에 따른 서브메뉴 상태 동기화
     useSidebarRouteSync({
+        pathname: routeLocation.pathname,
         isReportRoute,
         isExpenseRoute,
         expenseSubMenuItems,
@@ -142,13 +183,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     // 로그아웃 처리
     const handleLogoutClick = async () => {
+        localStorage.removeItem("profile_role");
         await handleLogout();
         navigate("/login");
     };
 
     return (
         <aside className="w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col">
-            <div className="flex flex-col gap-6 px-4 py-5">
+            <div className="flex flex-col gap-6 px-4 py-5 flex-1">
                 {/* Logo & Close Button */}
                 <div className="flex gap-2 items-center justify-between p-2">
                     <div className="flex gap-2.5 items-center">
@@ -170,7 +212,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 </div>
 
                 {/* User Section */}
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 flex-1">
                     <div
                         ref={usernameRef}
                         className="flex gap-3 items-center p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
@@ -261,14 +303,19 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                     {/* Notifications */}
                     <div className="relative" ref={notificationRef}>
-                        <button
-                            onClick={() => {
-                                setShowNotifications(!showNotifications);
+                    <button
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowNotifications((v) => !v);
                                 setUserMenuOpen(false);
                             }}
+
                             className={`flex gap-6 items-center p-3 rounded-xl transition-colors w-full text-left ${showNotifications ? "bg-gray-100" : "text-gray-900 hover:bg-gray-200"
                                 }`}
                         >
+
                             <div className="flex gap-3 items-center w-[162px]">
                                 <IconNotifications />
                                 <p className="font-medium text-[16px] leading-normal">알림</p>
@@ -313,9 +360,18 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                     <div className="h-px bg-gray-200 rounded-full" />
 
-                    <nav className="flex flex-col gap-2">
-                        {/* 대시보드 - 대표님, admin만 */}
-                        {(stablePermissions.isCEO || stablePermissions.isAdmin) && (
+                    <nav
+    className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1
+               [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+>
+                        {/* 대시보드 - 대표님, admin만 (레이아웃 튐 방지: 항상 렌더 + invisible 처리) */}
+                        <div
+                            className={
+                                canShowHome
+                                    ? ""
+                                    : "invisible pointer-events-none"
+                            }
+                        >
                             <MainLink
                                 to={PATHS.dashboard}
                                 icon={<IconHome />}
@@ -325,7 +381,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 shouldForceInactive={shouldForceInactive}
                                 onMenuClick={() => handleMenuClick(null)}
                             />
-                        )}
+                        </div>
+
+
 
                         {/* 출장 보고서 */}
                         <MenuButton
@@ -419,6 +477,24 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             onMenuClick={() => handleMenuClick(null)}
                         />
                     </nav>
+                    
+                    <div className="h-px bg-gray-200 rounded-full mt-2" />
+
+                    <div className="mt-auto">
+                        <div className={isAdmin ? "" : "invisible pointer-events-none"}>
+                            <MenuButton
+                                icon={<IconSettings />}
+                                label="설정"
+                                isActive={settingsActive}
+                                onClick={() => {
+                                    handleMenuClick(null);
+                                    navigate("/settings/email-notifications");
+                                    onClose?.();
+                                }}
+                            />
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </aside>
