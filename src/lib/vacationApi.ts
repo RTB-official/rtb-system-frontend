@@ -237,11 +237,14 @@ export async function updateVacationStatus(
         })
         .eq("id", id)
         .select()
-        .single();
+        .maybeSingle();
 
     if (error) {
         console.error("Error updating vacation status:", error);
         throw new Error(`휴가 상태 변경 실패: ${error.message}`);
+    }
+    if (!vacation) {
+        throw new Error("휴가 상태 변경 실패: 권한이 없거나 대상 휴가를 찾을 수 없습니다.");
     }
 
     return vacation;

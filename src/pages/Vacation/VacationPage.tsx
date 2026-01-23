@@ -159,11 +159,14 @@ export default function VacationPage() {
                 const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
                 const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
 
+                const remainingWithPending = Math.max(0, (stats.total || 0) - stats.used - stats.pending);
+                const usedWithPending = stats.used + stats.pending;
+
                 setSummary({
-                    myAnnual: currentTotal, // 항상 현재 날짜 기준 총 연차
-                    granted: totalGranted || stats.total || 0, // 해당 연도 지급
-                    used: stats.used, // 해당 연도 사용
-                    expired: totalExpired, // 해당 연도 소멸
+                    myAnnual: remainingWithPending, // ??(??) ?? ?? ??
+                    granted: totalGranted || stats.total || 0, // ?? ?? ??
+                    used: usedWithPending, // ?? + ?? ?? ??
+                    expired: totalExpired, // ?? ?? ??
                 });
             } catch (error) {
                 console.error("휴가 목록 조회 실패:", error);
@@ -192,20 +195,26 @@ export default function VacationPage() {
 
     // API 데이터를 VacationRow 형식으로 변환
     const rows: VacationRow[] = useMemo(() => {
-        return vacations.map((vacation, index) => {
-            const usedDays = vacation.leave_type === "FULL" ? -1 : -0.5;
+        const yearTotal = summary.granted > 0 ? summary.granted : summary.myAnnual;
+        const sortedByDate = [...vacations].sort((a, b) => {
+            const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        });
 
-            // 남은 연차 계산 (간단한 로직, 실제로는 누적 계산 필요)
-            const approvedVacations = vacations
-                .filter(
-                    (v) =>
-                        v.status === "approved" && vacations.indexOf(v) <= index
-                )
-                .reduce(
-                    (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
-                    0
-                );
-            const remainDays = summary.myAnnual - approvedVacations;
+        let cumulativeReserved = 0;
+        const remainMap = new Map<string, number>();
+
+        sortedByDate.forEach((vacation) => {
+            if (vacation.status === "approved" || vacation.status === "pending") {
+                cumulativeReserved += vacation.leave_type === "FULL" ? 1 : 0.5;
+            }
+            remainMap.set(vacation.id, Math.max(0, yearTotal - cumulativeReserved));
+        });
+
+        return vacations.map((vacation) => {
+            const usedDays = vacation.leave_type === "FULL" ? -1 : -0.5;
+            const remainDays = remainMap.get(vacation.id) ?? Math.max(0, yearTotal - cumulativeReserved);
 
             return {
                 id: vacation.id,
@@ -214,11 +223,11 @@ export default function VacationPage() {
                 reason: vacation.reason,
                 status: statusToKorean(vacation.status) as VacationStatus,
                 usedDays,
-                remainDays: Math.max(0, remainDays),
-                date: vacation.date, // 날짜 체크용
+                remainDays,
+                date: vacation.date,
             };
         });
-    }, [vacations, summary.myAnnual]);
+    }, [vacations, summary.myAnnual, summary.granted]);
 
     // 지급/소멸 내역 변환
     const grantExpireRows = useMemo<GrantExpireRow[]>(() => {
@@ -287,8 +296,10 @@ export default function VacationPage() {
             const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
             const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
 
+            const remainingWithPending = Math.max(0, (stats.total || 0) - stats.used - stats.pending);
+
             setSummary({
-                myAnnual: stats.total || 0,
+                myAnnual: remainingWithPending,
                 granted: totalGranted || stats.total || 0,
                 used: stats.used,
                 expired: totalExpired,
@@ -346,10 +357,12 @@ export default function VacationPage() {
             setVacations(data);
 
             const stats = await getVacationStats(user.id, yearNum);
+            const remainingWithPending = Math.max(0, (stats.total || 0) - stats.used - stats.pending);
+            const usedWithPending = stats.used + stats.pending;
             setSummary({
-                myAnnual: stats.total || 15,
+                myAnnual: remainingWithPending,
                 granted: stats.total || 0,
-                used: stats.used,
+                used: usedWithPending,
                 expired: 0,
             });
         } catch (error: any) {
