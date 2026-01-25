@@ -499,7 +499,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 isActive={settingsActive}
                                 onClick={() => {
                                     handleMenuClick(null);
-                                    navigate("/settings/email-notifications");
+                                    navigate("/settings");
                                     onClose?.();
                                 }}
                             />

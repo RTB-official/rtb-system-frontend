@@ -419,14 +419,13 @@ export default function MembersPage() {
                         {loading ? (
                             <MembersSkeleton />
                         ) : (
-                            <div className="overflow-x-auto">
-                                <div className="min-w-[980px]">
+                            <div className="overflow-x-auto w-full">
                                     <Table
                                         columns={[
                                             {
                                                 key: "name",
                                                 label: "이름",
-                                                width: "8%",
+                                                width: "14%",
                                                 render: (_, row) => (
                                                     <div className="flex items-center gap-3">
                                                         <Avatar
@@ -448,7 +447,7 @@ export default function MembersPage() {
                                             {
                                                 key: "role",
                                                 label: "직급",
-                                                width: "2%",
+                                                width: "1%",
                                                 render: (value) => (
                                                     <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
                                                         {value}
@@ -458,7 +457,7 @@ export default function MembersPage() {
                                             {
                                                 key: "phone",
                                                 label: "전화번호",
-                                                width: "6%",
+                                                width: "2%",
                                                 render: (value) => (
                                                     <div className="text-[14px] text-gray-900 w-[140px] min-w-[140px]">
                                                         {value}
@@ -493,7 +492,7 @@ export default function MembersPage() {
                                             {
                                                 key: "birth",
                                                 label: "생년월일",
-                                                width: "4%",
+                                                width: "1%",
                                                 render: (value) => (
                                                     <div className="text-[14px] text-gray-900 w-[110px] min-w-[110px]">
                                                         {value}
@@ -503,7 +502,7 @@ export default function MembersPage() {
                                             {
                                                 key: "etc",
                                                 label: "여권정보",
-                                                width: "15%",
+                                                width: "12%",
                                                 render: (_, row) => {
                                                     // 여권 정보 확인
                                                     const hasPassportNo = !!row.passportNo;
@@ -640,7 +639,6 @@ export default function MembersPage() {
                                         }}
                                     />
                                 </div>
-                            </div>
                         )}
 
                         {/* 바닥 여백 */}
