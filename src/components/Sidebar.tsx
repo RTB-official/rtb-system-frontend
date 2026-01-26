@@ -516,13 +516,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     <div className="mt-auto">
                         <div className={isAdmin ? "" : "invisible pointer-events-none"}>
                         <MenuButton
-                                icon={<IconSettings />}
-                                label="설정"
-                                isActive={settingsActive}
-                                onClick={() => {
-                                    go("/settings/email-notifications", null);
-                                }}
-                            />
+                            icon={<IconSettings />}
+                            label="설정"
+                            isActive={settingsActive}
+                            onClick={() => {
+                                go("/settings", null);
+                            }}
+                        />
                         </div>
                     </div>
 

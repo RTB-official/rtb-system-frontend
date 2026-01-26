@@ -28,6 +28,7 @@ import {
 } from "../../hooks/useDashboardEvents";
 import { useCellHeights } from "../../hooks/useCellHeights";
 import { useToast } from "../../components/ui/ToastProvider";
+import { supabase } from "../../lib/supabase";
 import {
     splitIntoWeeks,
     formatDateRange,
@@ -41,13 +42,70 @@ export default function DashboardPage() {
     const { user } = useAuth();
     const { userPermissions } = useUser();
     const navigate = useNavigate();
-    const { showError } = useToast();
+    const { showError, showSuccess } = useToast();
+    const safetyToastOnceRef = useRef(false);
     const today = new Date();
 
     const [year, setYear] = useState(today.getFullYear());
     const [month, setMonth] = useState(today.getMonth());
 
     // 권한 체크: 공사팀(스태프)은 접근 불가
+        // ✅ 안전문구/슬로건 토스트 (세션당 1회)
+// ✅ 안전문구/슬로건 토스트 (로그인 1회당 딱 1회: pending 소비)
+useEffect(() => {
+    if (safetyToastOnceRef.current) return;
+    safetyToastOnceRef.current = true;
+  
+    // ✅ 로그인 직후 예약된 경우만
+    if (sessionStorage.getItem("rtb:safety_toast_pending") !== "1") return;
+  
+    // ✅ 즉시 소비 (StrictMode 대비)
+    sessionStorage.setItem("rtb:safety_toast_pending", "0");
+  
+    const run = async () => {
+      try {
+        const { data: settings } = await supabase
+        .from("safe_settings")
+        .select("safe_phrase, slogan_path")
+        .eq("id", 1)
+        .single();
+  
+        // 1️⃣ 슬로건 이미지 (위)
+        if (settings?.slogan_path) {
+          const { data: signed } = await supabase.storage
+            .from("safe-slogans")
+            .createSignedUrl(settings.slogan_path, 60 * 60);
+  
+          if (signed?.signedUrl) {
+            showSuccess({
+              message: "",
+              hideIcon: true,
+              imageUrl: signed.signedUrl,
+              imageAlt: "안전 슬로건",
+              duration: 6000,
+            });
+          }
+        }
+  
+        // 2️⃣ 안전 문구
+        showSuccess({
+          message: settings?.safe_phrase?.trim()
+            ? settings.safe_phrase
+            : "등록된 안전 문구가 없습니다.",
+          duration: 6000,
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    };
+  
+    run();
+  }, [showSuccess]);
+  
+  
+
+        
+    
     useEffect(() => {
         // useUser 훅에서 이미 권한 정보를 가져왔으므로 추가 API 호출 불필요
         if (userPermissions.isStaff && !userPermissions.isCEO && !userPermissions.isAdmin) {
