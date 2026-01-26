@@ -45,7 +45,19 @@ function LoginPage() {
       return;
     }
 
-    nav("/dashboard", { replace: true });
+    // rememberMe는 Supabase 기본 persistSession(true)로 이미 유지됨.
+    // (정말 rememberMe로 분기하려면, localStorage 기반 custom 처리로 확장 가능)
+
+    // ✅ 로그인 성공 시: 안전 토스트를 "딱 1회" 띄우기 위한 pending 플래그
+    sessionStorage.setItem("rtb:safety_toast_pending", "1");
+
+    const nextRole = res.role;
+    if (nextRole === "admin") {
+      nav("/dashboard", { replace: true });
+    } else {
+      nav("/report", { replace: true });
+    }
+
   };
 
   return (

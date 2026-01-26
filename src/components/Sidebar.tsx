@@ -94,20 +94,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
         fetchRole();
     }, [currentUserId]);
 
-    // ?덉젙?붾맂 沅뚰븳 ?ъ슜 (源쒕묀??諛⑹?)
     const stablePermissions = userPermissionsRef.current.isCEO || userPermissionsRef.current.isAdmin || userPermissionsRef.current.isStaff
         ? userPermissionsRef.current
         : userPermissions;
         const permissionsReady =
         stablePermissions.isCEO || stablePermissions.isAdmin || stablePermissions.isStaff;
 
-    // ???닿? 愿由щ뒗 "admin/ceo留? + 沅뚰븳 以鍮꾨맂 ?ㅼ뿉留??쒖떆
     const canShowVacation =
         permissionsReady && (stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin);
     const canShowVehicles =
         permissionsReady && (stablePermissions.isAdmin || isAdmin);
 
-    // ?뚮┝ 愿??
     const {
         showNotifications,
         setShowNotifications,
@@ -117,25 +114,19 @@ export default function Sidebar({ onClose }: SidebarProps) {
         refreshNotifications,
     } = useNotifications(currentUserId);
 
-    // 硫붾돱 ?ъ빱??諛??곹깭
     const [menuFocus, setMenuFocus] = useState<MenuFocus>(null);
 
-    
-
-    // ?ъ슜??硫붾돱 ?곹깭
+   
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
     const usernameRef = useRef<HTMLDivElement>(null);
 
-    // ?쇱슦??媛먯?
     const { isReportRoute, isExpenseRoute, isReportEditRoute, location: routeLocation } = useSidebarRoutes();
 
-    // ?댁쟾 ?쇱슦??異붿쟻 (媛숈? ?쒕툕硫붾돱 ???대룞 媛먯?)
     const prevReportRouteRef = useRef<boolean>(isReportRoute);
     const prevExpenseRouteRef = useRef<boolean>(isExpenseRoute);
 
-    // ?쒕툕硫붾돱 ?곹깭 愿由?
     const {
         setReportOpen,
         reportOpenRef,
@@ -145,20 +136,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
         stableExpenseOpen,
     } = useSidebarSubMenuState(isReportRoute, isExpenseRoute, prevReportRouteRef, prevExpenseRouteRef);
 
-    // 硫붾돱 ?쒖꽦 ?곹깭
     const reportActive = isReportRoute || menuFocus === "REPORT";
     const canShowHome = stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin;
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
     const settingsActive = routeLocation.pathname.startsWith("/settings");
 
-    // 硫붾돱 ?꾩씠??
     const { reportSubMenuItems, expenseSubMenuItems } = useSidebarMenuItems(
         stablePermissions,
         isReportEditRoute,
         routeLocation
     );
 
-        // ??report ?쒕툕硫붾돱: ?ロ옄 ??items媛 癒쇱? []濡?諛붾뚮㈃ ?좊땲硫붿씠?섏씠 ?ㅽ궢?????덉뼱 罹먯떆 ?좎?
         const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);
 
         useEffect(() => {
@@ -167,8 +155,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
             }
         }, [reportSubMenuItems]);
 
-
-    // ?쇱슦??蹂寃쎌뿉 ?곕Ⅸ ?쒕툕硫붾돱 ?곹깭 ?숆린??
     useSidebarRouteSync({
         pathname: routeLocation.pathname,
         isReportRoute,
@@ -183,8 +169,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
         setMenuFocus,
         setShowNotifications,
     });
-
-    // 硫붾돱 ?대┃ ?몃뱾??
     const handleMenuClick = (focus: MenuFocus | null) => {
         if (focus) {
             setMenuFocus(focus);
@@ -206,19 +190,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 navigate(to);
             });
         }
-
-        // 紐⑤컮???쒕줈?대씪硫?利됱떆 ?リ린
         onClose?.();
     };
 
 
-    // menuFocus媛 ?덉쑝硫??ㅻⅨ 硫붾돱??"媛뺤젣濡?鍮꾪솢?? 泥섎━
     const shouldForceInactive = (_kind: "HOME" | "WORKLOAD" | "VACATION" | "MEMBERS" | "VEHICLES") => {
         if (!menuFocus) return false;
         return true;
     };
-
-    // 로그아웃 泥섎━
     const handleLogoutClick = async () => {
         localStorage.removeItem("profile_role");
         await handleLogout();
@@ -409,7 +388,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
     className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1
                [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
 >
-                        {/* ??쒕낫??- ??쒕떂, admin留?*/}
                         {canShowHome && (
                             <MainLink
                                 to={PATHS.dashboard}
@@ -431,7 +409,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             label="출장 보고서"
                             isActive={reportActive}
                             onClick={() => {
-                                // ?쒕툕硫붾돱 ?대┝/?ロ옒? ?좎?
                                 setExpenseOpen(false);
                                 if (!reportOpenRef.current) {
                                     setReportOpen(true);
@@ -479,8 +456,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 }
                             }}
                         />
-
-                        {/* ?섏쐞硫붾돱 (?ロ옒 ?좊땲硫붿씠?섏쓣 ?꾪빐 ??긽 ?뚮뜑) */}
                         <SubMenu
                             isOpen={stableExpenseOpen && expenseSubMenuItems.length > 1}
                             items={expenseSubMenuItems.length > 1 ? expenseSubMenuItems : []}
@@ -488,8 +463,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             onClose={onClose}
                             onMenuClick={handleMenuClick}
                         />
-
-                        {/* ?닿? 愿由?- ??쒕떂, admin留?*/}
                         {canShowVacation && (
                             <MainLink
                                 to={PATHS.vacation}
@@ -501,8 +474,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 onMenuClick={() => handleMenuClick(null)}
                             />
                         )}
-
-                        {/* 援ъ꽦??愿由?*/}
                         <MainLink
                             to={PATHS.members}
                             icon={<IconMembers />}

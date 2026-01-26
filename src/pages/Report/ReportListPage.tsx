@@ -1,5 +1,5 @@
 // src/pages/Report/ReportListPage.tsx
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -47,7 +47,64 @@ export default function ReportListPage() {
     const [loading, setLoading] = useState(true);
     const itemsPerPage = 10;
     const navigate = useNavigate();
-    const { showSuccess, showError, showInfo } = useToast();
+    const { showSuccess, showError } = useToast();
+    const safetyToastOnceRef = useRef(false);
+
+    // ✅ 안전문구/슬로건 토스트 (세션당 1회)
+    useEffect(() => {
+        if (safetyToastOnceRef.current) return;
+        safetyToastOnceRef.current = true;
+      
+        // ✅ pending이 없으면 절대 안 띄움
+        if (sessionStorage.getItem("rtb:safety_toast_pending") !== "1") return;
+      
+        const run = async () => {
+          try {
+            // ✅ 여기서 바로 소비
+            sessionStorage.setItem("rtb:safety_toast_pending", "0");
+      
+
+      
+            const { data: settings } = await supabase
+            .from("safe_settings")
+            .select("safe_phrase, slogan_path")
+            .eq("id", 1)
+            .single();
+      
+            if (settings?.slogan_path) {
+              const { data: signed } = await supabase.storage
+                .from("safe-slogans")
+                .createSignedUrl(settings.slogan_path, 60 * 60);
+      
+              if (signed?.signedUrl) {
+                showSuccess({
+                  message: "",
+                  hideIcon: true,
+                  imageUrl: signed.signedUrl,
+                  imageAlt: "안전 슬로건",
+                  duration: 6000,
+                });
+              }
+            }
+      
+            showSuccess({
+              message: settings?.safe_phrase?.trim()
+                ? settings.safe_phrase
+                : "등록된 안전 문구가 없습니다.",
+              duration: 6000,
+            });
+          } catch (e) {
+            console.error(e);
+          }
+        };
+      
+        run();
+      }, [showSuccess]);
+      
+
+    
+
+    
 
 // 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
 const formatDate = (dateString: string) => {
