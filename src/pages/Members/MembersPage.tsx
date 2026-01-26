@@ -834,8 +834,8 @@ export default function MembersPage() {
                         }
 
                         // 비밀번호 길이 검증 (Edge Function과 일치)
-                        if (payload.newPassword.length < 8) {
-                            showError("비밀번호는 최소 8자 이상이어야 합니다.");
+                        if (payload.newPassword.length < 6) {
+                            showError("비밀번호는 최소 6자 이상이어야 합니다.");
                             return false;
                         }
 
