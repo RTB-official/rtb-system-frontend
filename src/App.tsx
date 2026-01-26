@@ -4,65 +4,57 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./store/auth";
 import RequireAuth from "./components/RequireAuth";
 import { ToastProvider } from "./components/ui/ToastProvider";
+import PageSkeleton from "./components/common/PageSkeleton";
+
 import ReportPdfPage from "./pages/Report/ReportPdfPage";
 import SettingsPage from "./pages/Settings";
+import SafePhrasePage from "./pages/Settings/SafePhrase";
 
 const LoginPage = lazy(() => import("./pages/Login/LoginPage"));
 const DashboardPage = lazy(() => import("./pages/Dashboard/DashboardPage"));
+
 const WorkloadPage = lazy(() => import("./pages/Workload/WorkloadPage"));
 const WorkloadDetailPage = lazy(() => import("./pages/Workload/WorkloadDetailPage"));
+
 const CreationPage = lazy(() => import("./pages/Creation/CreationPage"));
 const ReportListPage = lazy(() => import("./pages/Report/ReportListPage"));
 const ReportEditPage = lazy(() => import("./pages/Report/ReportEditPage"));
 const ReportViewPage = lazy(() => import("./pages/Report/ReportViewPage"));
+
 const VacationPage = lazy(() => import("./pages/Vacation/VacationPage"));
 const AdminVacationPage = lazy(() => import("./pages/Vacation/AdminVacationPage"));
+
 const PersonalExpensePage = lazy(() => import("./pages/Expense/PersonalExpensePage"));
 const MemberExpensePage = lazy(() => import("./pages/Expense/MemberExpensePage"));
+
 const MembersPage = lazy(() => import("./pages/Members/MembersPage"));
-const EmailNotificationSettingsPage = lazy(
-    () => import("./pages/Settings/EmailNotificationSettingsPage")
-);
+
+const EmailSettingsPage = lazy(() => import("./pages/Settings/Email"));
 
 function RoleLanding() {
-    const { loading, loadingProfile, user, profile } = useAuth();
+  const { loading, loadingProfile, user, profile } = useAuth();
 
-    if (loading || loadingProfile) return <PageSkeleton />;
-    if (!user) return <Navigate to="/login" replace />;
+  if (loading || loadingProfile) return <PageSkeleton />;
+  if (!user) return <Navigate to="/login" replace />;
 
-    if (profile?.role === "admin") return <Navigate to="/dashboard" replace />;
-    return <Navigate to="/report" replace />;
+  if (profile?.role === "admin") return <Navigate to="/dashboard" replace />;
+  return <Navigate to="/report" replace />;
 }
 
-function App() {
-
-    return (
-        <AuthProvider>
-            <ToastProvider>
-                <BrowserRouter>
-                    <Suspense fallback={<PageSkeleton />}>
-                        <Routes>
-                            {/* public */}
-                            <Route path="/login" element={<LoginPage />} />
+export default function App() {
+  return (
+    <AuthProvider>
+      <ToastProvider>
+        <BrowserRouter>
+          <Suspense fallback={<PageSkeleton />}>
+            <Routes>
+              {/* public */}
+              <Route path="/login" element={<LoginPage />} />
 
               {/* protected */}
               <Route element={<RequireAuth />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
 
-                            <Route
-                                path="/settings/email-notifications"
-                                element={<EmailNotificationSettingsPage />}
-                            />
-
-                            {/* default */}
-                            <Route path="/" element={<RoleLanding />} />
-                            <Route path="*" element={<RoleLanding />} />
-                        </Routes>
-                    </Suspense>
-                </BrowserRouter>
-            </ToastProvider>
-        </AuthProvider>
-    );
                 <Route path="/workload" element={<WorkloadPage />} />
                 <Route path="/workload/detail/:id" element={<WorkloadDetailPage />} />
 
@@ -81,8 +73,7 @@ function App() {
                 <Route path="/members" element={<MembersPage />} />
 
                 <Route path="/settings" element={<SettingsPage />} />
-
-                <Route path="/settings/email" element={<EmailNotificationPage />} />
+                <Route path="/settings/email" element={<EmailSettingsPage />} />
                 <Route path="/settings/safe-phrase" element={<SafePhrasePage />} />
 
                 {/* backward compatible */}
@@ -93,8 +84,8 @@ function App() {
               </Route>
 
               {/* default */}
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/" element={<RoleLanding />} />
+              <Route path="*" element={<RoleLanding />} />
             </Routes>
           </Suspense>
         </BrowserRouter>
@@ -102,5 +93,3 @@ function App() {
     </AuthProvider>
   );
 }
-
-export default App;
