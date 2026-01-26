@@ -1,7 +1,7 @@
 // src/App.tsx
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./store/auth";
+import { AuthProvider, useAuth } from "./store/auth";
 import RequireAuth from "./components/RequireAuth";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import ReportPdfPage from "./pages/Report/ReportPdfPage";
@@ -20,23 +20,49 @@ const AdminVacationPage = lazy(() => import("./pages/Vacation/AdminVacationPage"
 const PersonalExpensePage = lazy(() => import("./pages/Expense/PersonalExpensePage"));
 const MemberExpensePage = lazy(() => import("./pages/Expense/MemberExpensePage"));
 const MembersPage = lazy(() => import("./pages/Members/MembersPage"));
-const EmailNotificationPage = lazy(() => import("./pages/Settings/EmailNotification"));
-const SafePhrasePage = lazy(() => import("./pages/Settings/SafePhrase"));
+const EmailNotificationSettingsPage = lazy(
+    () => import("./pages/Settings/EmailNotificationSettingsPage")
+);
+
+function RoleLanding() {
+    const { loading, loadingProfile, user, profile } = useAuth();
+
+    if (loading || loadingProfile) return <PageSkeleton />;
+    if (!user) return <Navigate to="/login" replace />;
+
+    if (profile?.role === "admin") return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/report" replace />;
+}
 
 function App() {
-  return (
-    <AuthProvider>
-      <ToastProvider>
-        <BrowserRouter>
-          <Suspense fallback={null}>
-            <Routes>
-              {/* public */}
-              <Route path="/login" element={<LoginPage />} />
+
+    return (
+        <AuthProvider>
+            <ToastProvider>
+                <BrowserRouter>
+                    <Suspense fallback={<PageSkeleton />}>
+                        <Routes>
+                            {/* public */}
+                            <Route path="/login" element={<LoginPage />} />
 
               {/* protected */}
               <Route element={<RequireAuth />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
 
+                            <Route
+                                path="/settings/email-notifications"
+                                element={<EmailNotificationSettingsPage />}
+                            />
+
+                            {/* default */}
+                            <Route path="/" element={<RoleLanding />} />
+                            <Route path="*" element={<RoleLanding />} />
+                        </Routes>
+                    </Suspense>
+                </BrowserRouter>
+            </ToastProvider>
+        </AuthProvider>
+    );
                 <Route path="/workload" element={<WorkloadPage />} />
                 <Route path="/workload/detail/:id" element={<WorkloadDetailPage />} />
 

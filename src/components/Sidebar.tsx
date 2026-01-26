@@ -1,5 +1,5 @@
 // src/components/Sidebar.tsx
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import NotificationPopup from "./ui/NotificationPopup";
@@ -97,6 +97,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const stablePermissions = userPermissionsRef.current.isCEO || userPermissionsRef.current.isAdmin || userPermissionsRef.current.isStaff
         ? userPermissionsRef.current
         : userPermissions;
+        const permissionsReady =
+        stablePermissions.isCEO || stablePermissions.isAdmin || stablePermissions.isStaff;
+
+    // ✅ 휴가 관리는 "admin/ceo만" + 권한 준비된 뒤에만 표시
+    const canShowVacation =
+        permissionsReady && (stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin);
 
     // 알림 관련
     const {
@@ -149,6 +155,15 @@ export default function Sidebar({ onClose }: SidebarProps) {
         routeLocation
     );
 
+        // ✅ report 서브메뉴: 닫힐 때 items가 먼저 []로 바뀌면 애니메이션이 스킵될 수 있어 캐시 유지
+        const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);
+
+        useEffect(() => {
+            if (reportSubMenuItems.length > 0) {
+                setReportItemsForSubMenu(reportSubMenuItems);
+            }
+        }, [reportSubMenuItems]);
+
 
     // 라우트 변경에 따른 서브메뉴 상태 동기화
     useSidebarRouteSync({
@@ -177,6 +192,22 @@ export default function Sidebar({ onClose }: SidebarProps) {
         }
         setShowNotifications(false);
     };
+
+    // ✅ 자연스러운 이동: 상태 정리 → (필요 시) 이동 → 사이드바 닫기
+    const go = (to: string, focus: MenuFocus | null) => {
+        handleMenuClick(focus);
+
+        // 같은 경로면 navigate 생략 (불필요한 깜빡임 방지)
+        if (routeLocation.pathname !== to) {
+            startTransition(() => {
+                navigate(to);
+            });
+        }
+
+        // 모바일/드로어라면 즉시 닫기
+        onClose?.();
+    };
+
 
     // menuFocus가 있으면 다른 메뉴는 "강제로 비활성" 처리
     const shouldForceInactive = (_kind: "HOME" | "WORKLOAD" | "VACATION" | "MEMBERS") => {
@@ -375,14 +406,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
     className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1
                [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
 >
-                        {/* 대시보드 - 대표님, admin만 (레이아웃 튐 방지: 항상 렌더 + invisible 처리) */}
-                        <div
-                            className={
-                                canShowHome
-                                    ? ""
-                                    : "invisible pointer-events-none"
-                            }
-                        >
+                        {/* 대시보드 - 대표님, admin만 */}
+                        {canShowHome && (
                             <MainLink
                                 to={PATHS.dashboard}
                                 icon={<IconHome />}
@@ -392,7 +417,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 shouldForceInactive={shouldForceInactive}
                                 onMenuClick={() => handleMenuClick(null)}
                             />
-                        </div>
+                        )}
+
 
 
 
@@ -402,19 +428,19 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             label="출장 보고서"
                             isActive={reportActive}
                             onClick={() => {
-                                handleMenuClick("REPORT");
+                                // 서브메뉴 열림/닫힘은 유지
                                 setExpenseOpen(false);
-                                // 이미 열려있고 같은 서브메뉴 내 이동이면 상태 변경하지 않음
                                 if (!reportOpenRef.current) {
                                     setReportOpen(true);
                                 }
-                                navigate(PATHS.reportList);
+                                go(PATHS.reportList, "REPORT");
                             }}
                         />
 
+
                         <SubMenu
                             isOpen={stableReportOpen}
-                            items={reportSubMenuItems}
+                            items={reportItemsForSubMenu}
                             focus="REPORT"
                             onClose={onClose}
                             onMenuClick={handleMenuClick}
@@ -437,35 +463,31 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             label="지출 관리"
                             isActive={expenseActive}
                             onClick={() => {
-                                handleMenuClick("EXPENSE");
                                 setReportOpen(false);
 
                                 if (expenseSubMenuItems.length === 1) {
-                                    navigate(expenseSubMenuItems[0].to);
                                     setExpenseOpen(false);
+                                    go(expenseSubMenuItems[0].to, "EXPENSE");
                                 } else if (expenseSubMenuItems.length > 1) {
-                                    // 이미 열려있고 같은 서브메뉴 내 이동이면 상태 변경하지 않음
                                     if (!expenseOpenRef.current) {
                                         setExpenseOpen(true);
                                     }
-                                    navigate(PATHS.expensePersonal);
+                                    go(PATHS.expensePersonal, "EXPENSE");
                                 }
                             }}
                         />
 
-                        {/* 하위메뉴 */}
-                        {expenseSubMenuItems.length > 1 && (
-                            <SubMenu
-                                isOpen={stableExpenseOpen}
-                                items={expenseSubMenuItems}
-                                focus="EXPENSE"
-                                onClose={onClose}
-                                onMenuClick={handleMenuClick}
-                            />
-                        )}
+                        {/* 하위메뉴 (닫힘 애니메이션을 위해 항상 렌더) */}
+                        <SubMenu
+                            isOpen={stableExpenseOpen && expenseSubMenuItems.length > 1}
+                            items={expenseSubMenuItems.length > 1 ? expenseSubMenuItems : []}
+                            focus="EXPENSE"
+                            onClose={onClose}
+                            onMenuClick={handleMenuClick}
+                        />
 
-                        {/* 휴가 관리 - 대표님, admin만 (staff 제외) */}
-                        {(stablePermissions.isCEO || !stablePermissions.isStaff) && (
+                        {/* 휴가 관리 - 대표님, admin만 */}
+                        {canShowVacation && (
                             <MainLink
                                 to={PATHS.vacation}
                                 icon={<IconVacation />}
@@ -493,14 +515,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                     <div className="mt-auto">
                         <div className={isAdmin ? "" : "invisible pointer-events-none"}>
-                            <MenuButton
+                        <MenuButton
                                 icon={<IconSettings />}
                                 label="설정"
                                 isActive={settingsActive}
                                 onClick={() => {
-                                    handleMenuClick(null);
-                                    navigate("/settings");
-                                    onClose?.();
+                                    go("/settings/email-notifications", null);
                                 }}
                             />
                         </div>
