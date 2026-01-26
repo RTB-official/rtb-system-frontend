@@ -1,7 +1,7 @@
 // src/App.tsx
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./store/auth";
+import { AuthProvider, useAuth } from "./store/auth";
 import RequireAuth from "./components/RequireAuth";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import PageSkeleton from "./components/common/PageSkeleton";
@@ -29,8 +29,22 @@ const MemberExpensePage = lazy(
     () => import("./pages/Expense/MemberExpensePage")
 );
 const MembersPage = lazy(() => import("./pages/Members/MembersPage"));
+const EmailNotificationSettingsPage = lazy(
+    () => import("./pages/Settings/EmailNotificationSettingsPage")
+);
+
+function RoleLanding() {
+    const { loading, loadingProfile, user, profile } = useAuth();
+
+    if (loading || loadingProfile) return <PageSkeleton />;
+    if (!user) return <Navigate to="/login" replace />;
+
+    if (profile?.role === "admin") return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/report" replace />;
+}
 
 function App() {
+
     return (
         <AuthProvider>
             <ToastProvider>
@@ -96,15 +110,14 @@ function App() {
                                 />
                             </Route>
 
+                            <Route
+                                path="/settings/email-notifications"
+                                element={<EmailNotificationSettingsPage />}
+                            />
+
                             {/* default */}
-                            <Route
-                                path="/"
-                                element={<Navigate to="/dashboard" replace />}
-                            />
-                            <Route
-                                path="*"
-                                element={<Navigate to="/dashboard" replace />}
-                            />
+                            <Route path="/" element={<RoleLanding />} />
+                            <Route path="*" element={<RoleLanding />} />
                         </Routes>
                     </Suspense>
                 </BrowserRouter>
