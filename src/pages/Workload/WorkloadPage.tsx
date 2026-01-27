@@ -16,6 +16,7 @@ import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
 import { useUser } from "../../hooks/useUser";
+import { supabase } from "../../lib/supabase";
 import {
     getWorkloadData,
     getWorkloadTargetProfiles,
@@ -127,15 +128,39 @@ export default function WorkloadPage() {
     const { currentUser, currentUserId, userPermissions } = useUser();
     const userName = currentUser?.displayName || null;
     const isStaff = userPermissions.isStaff;
+    const [staffPersonName, setStaffPersonName] = useState<string | null>(null);
 
     // ✅ staff/공사팀이면 WorkloadPage 로딩 없이 즉시 본인 Detail로 이동
     useEffect(() => {
-        if (isStaff && userName) {
-            navigate(`/workload/detail/${encodeURIComponent(userName)}`, {
+        if (!isStaff || !currentUserId) return;
+
+        const loadProfileName = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("profiles")
+                    .select("name")
+                    .eq("id", currentUserId)
+                    .single();
+                if (!error && data?.name) {
+                    setStaffPersonName(data.name);
+                } else {
+                    setStaffPersonName(userName);
+                }
+            } catch {
+                setStaffPersonName(userName);
+            }
+        };
+
+        loadProfileName();
+    }, [isStaff, currentUserId, userName]);
+
+    useEffect(() => {
+        if (isStaff && staffPersonName) {
+            navigate(`/workload/detail/${encodeURIComponent(staffPersonName)}`, {
                 replace: true,
             });
         }
-    }, [isStaff, userName, navigate]);
+    }, [isStaff, staffPersonName, navigate]);
 
     // 차트 컨테이너 크기 측정 (성능 최적화: 즉시 측정)
     useEffect(() => {

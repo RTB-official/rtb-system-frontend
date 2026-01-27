@@ -482,31 +482,43 @@ export default function PersonalExpensePage() {
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3 items-stretch w-full">
-                                <MileageCard
-                                    initialDate={preselectedDate || undefined}
-                                    onAdd={handleMileageAdd}
-                                />
-                                <ExpenseFormCard
-                                    initialDate={preselectedDate || undefined}
-                                    onAdd={handleExpenseAdd}
-                                />
+                                <div className="min-w-0 w-full">
+                                    <MileageCard
+                                        initialDate={
+                                            preselectedDate || undefined
+                                        }
+                                        onAdd={handleMileageAdd}
+                                    />
+                                </div>
+                                <div className="min-w-0 w-full">
+                                    <ExpenseFormCard
+                                        initialDate={
+                                            preselectedDate || undefined
+                                        }
+                                        onAdd={handleExpenseAdd}
+                                    />
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start w-full">
-                                <ExpenseHistorySection
-                                    title="개인 차량 마일리지 내역"
-                                    items={mileageHistory}
-                                    emptyMessage="등록된 마일리지 내역이 없습니다."
-                                    submittedIds={submittedIds}
-                                    onRemove={handleRemoveMileage}
-                                />
-                                <ExpenseHistorySection
-                                    title="개인 카드/현금 지출 내역"
-                                    items={cardHistory}
-                                    emptyMessage="등록된 지출 내역이 없습니다."
-                                    submittedIds={submittedIds}
-                                    onRemove={handleRemoveExpense}
-                                />
+                                <div className="min-w-0 w-full">
+                                    <ExpenseHistorySection
+                                        title="개인 차량 마일리지 내역"
+                                        items={mileageHistory}
+                                        emptyMessage="등록된 마일리지 내역이 없습니다."
+                                        submittedIds={submittedIds}
+                                        onRemove={handleRemoveMileage}
+                                    />
+                                </div>
+                                <div className="min-w-0 w-full">
+                                    <ExpenseHistorySection
+                                        title="개인 카드/현금 지출 내역"
+                                        items={cardHistory}
+                                        emptyMessage="등록된 지출 내역이 없습니다."
+                                        submittedIds={submittedIds}
+                                        onRemove={handleRemoveExpense}
+                                    />
+                                </div>
                             </div>
 
                             {allItemsToSubmitCount > 0 && (

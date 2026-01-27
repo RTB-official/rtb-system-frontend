@@ -231,9 +231,15 @@ export default function VacationManagementSection({
                                 vacationDate.setHours(0, 0, 0, 0);
 
                                 // 지난 날짜의 승인 완료 휴가는 액션 메뉴 표시 안 함
-                                const isPastApproved = row.status === "승인 완료" && vacationDate < today;
+                                const isPastApproved =
+                                    row.status === "승인 완료" && vacationDate < today;
 
-                                if (isPastApproved) {
+                                const canEdit = row.status === "대기 중";
+                                const canDelete =
+                                    row.status === "대기 중" ||
+                                    (row.status === "승인 완료" && vacationDate >= today);
+
+                                if (isPastApproved || (!canEdit && !canDelete)) {
                                     return null;
                                 }
 
@@ -265,18 +271,18 @@ export default function VacationManagementSection({
                                                 setOpenMenuId(null);
                                                 setMenuAnchor(null);
                                             }}
-                                            onEdit={row.status === "대기 중" ? () => {
+                                            onEdit={canEdit ? () => {
                                                 onEdit?.(row);
                                                 setOpenMenuId(null);
                                                 setMenuAnchor(null);
                                             } : undefined} // 대기 중인 휴가만 수정 가능
-                                            onDelete={row.status === "대기 중" ? () => {
+                                            onDelete={canDelete ? () => {
                                                 onDelete?.(row);
                                                 setOpenMenuId(null);
                                                 setMenuAnchor(null);
-                                            } : undefined} // 대기 중인 휴가만 삭제 가능
+                                            } : undefined} // 대기 중/승인 완료(미경과) 휴가만 삭제 가능
                                             width="w-44"
-                                            showDelete={row.status === "대기 중"} // 대기 중인 휴가만 삭제 가능
+                                            showDelete={canDelete}
                                         />
                                     </div>
                                 );

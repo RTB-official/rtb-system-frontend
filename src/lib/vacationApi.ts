@@ -288,6 +288,13 @@ export async function getVacationStats(
 }> {
     const vacationData = vacations || await getVacations(userId, { year });
 
+    const currentDate = new Date();
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("join_date")
+        .eq("id", userId)
+        .single();
+
     const stats = vacationData.reduce(
         (acc, vacation) => {
             const days = vacation.leave_type === "FULL" ? 1 : 0.5;
@@ -315,14 +322,12 @@ export async function getVacationStats(
     // 406 에러나 다른 에러 발생 시 fallback 처리 (에러를 조용히 처리)
     if (balanceError || !balance) {
         // 잔액 테이블에 없거나 접근 불가능하면 입사일 기준으로 계산
-        const { data: profile } = await supabase
-            .from("profiles")
-            .select("join_date")
-            .eq("id", userId)
-            .single();
-        
         if (profile?.join_date) {
-            stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
+            stats.total = calculateAnnualLeave(
+                profile.join_date,
+                year,
+                currentDate
+            );
             stats.remaining = stats.total - stats.used;
         } else {
             stats.total = 0;
@@ -331,6 +336,36 @@ export async function getVacationStats(
     } else {
         stats.total = balance.total_days;
         stats.remaining = stats.total - stats.used;
+    }
+
+    // 1년 미만 근로자: 현재 연도 표기에 전년도 지급분 합산
+    if (profile?.join_date) {
+        const join = new Date(profile.join_date);
+        join.setHours(0, 0, 0, 0);
+        const yearStart = new Date(year, 0, 1);
+        yearStart.setHours(0, 0, 0, 0);
+        const yearsOfServiceAtYearStart =
+            (yearStart.getTime() - join.getTime()) / (1000 * 60 * 60 * 24) / 365;
+
+        if (yearsOfServiceAtYearStart < 1) {
+            const prevYearHistory = calculateGrantHistory(
+                profile.join_date,
+                year - 1,
+                currentDate
+            );
+            const prevGranted = prevYearHistory.reduce(
+                (sum, h) => sum + (h.granted || 0),
+                0
+            );
+            const prevExpired = Math.abs(
+                prevYearHistory.reduce((sum, h) => sum + (h.expired || 0), 0)
+            );
+            const carryOverDays = Math.max(0, prevGranted - prevExpired);
+            if (carryOverDays > 0) {
+                stats.total += carryOverDays;
+                stats.remaining += carryOverDays;
+            }
+        }
     }
 
     return stats;

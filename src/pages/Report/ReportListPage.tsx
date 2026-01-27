@@ -117,12 +117,32 @@ const formatDate = (dateString: string) => {
 
 
 
-// ✅ 기간 표기용 (끝 점 없이)
-const formatYMD = (dateString: string) => {
+// ✅ 기간 표기용 (한국어)
+const formatKoreanDate = (dateString: string) => {
     const d = new Date(dateString);
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${mm}.${dd}`;
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    return { month, day };
+};
+
+const formatKoreanPeriod = (start?: string, end?: string) => {
+    if (!start && !end) return "";
+    if (start && !end) {
+        const s = formatKoreanDate(start);
+        return `${s.month}월${s.day}일`;
+    }
+    if (!start && end) {
+        const e = formatKoreanDate(end);
+        return `${e.month}월${e.day}일`;
+    }
+
+    const s = formatKoreanDate(start as string);
+    const e = formatKoreanDate(end as string);
+    if (s.month === e.month) {
+        if (s.day === e.day) return `${s.month}월${s.day}일`;
+        return `${s.month}월${s.day}일~${e.day}일`;
+    }
+    return `${s.month}월${s.day}일~${e.month}월${e.day}일`;
 };
 
 
@@ -341,18 +361,10 @@ const reportsWithTitle = reportItems.map((item) => {
     const purpose = wl?.subject?.trim() ? wl.subject.trim() : "";
 
     const p = periodMap.get(item.id);
-    const start = p?.start ? formatYMD(p.start) : "";
-    const end = p?.end ? formatYMD(p.end) : "";
-
-    const period =
-        start && end
-            ? start === end
-                ? start
-                : `${start}~${end}`
-            : (start || end || "");
+    const period = formatKoreanPeriod(p?.start, p?.end);
 
     const parts = [period, vessel, purpose].filter(Boolean);
-    const combinedTitle = parts.length ? parts.join(" / ") : "(제목 없음)";
+    const combinedTitle = parts.length ? parts.join(" ") : "(제목 없음)";
 
     return { ...item, title: combinedTitle };
 });

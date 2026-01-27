@@ -8,6 +8,7 @@ import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkeleton";
 import { IconArrowBack } from "../../components/icons/Icons";
 import { useUser } from "../../hooks/useUser";
+import { supabase } from "../../lib/supabase";
 import {
     getWorkerWorkloadDetail,
     formatHours,
@@ -74,8 +75,10 @@ export default function WorkloadDetailPage() {
     const [loading, setLoading] = useState(true);
 
     // ✅ useUser 훅으로 권한 정보 가져오기
-    const { userPermissions } = useUser();
+    const { userPermissions, currentUserId } = useUser();
     const isStaff = userPermissions.isStaff;
+    const isAdmin = userPermissions.isAdmin;
+    const isCEO = userPermissions.isCEO;
     const [summary, setSummary] = useState<{
         name: string;
         totalWork: number;
@@ -86,6 +89,9 @@ export default function WorkloadDetailPage() {
 
     const itemsPerPage = 10;
     const personName = id ? decodeURIComponent(id) : "";
+    const [currentPersonName, setCurrentPersonName] = useState<string | null>(
+        null
+    );
 
     // 날짜별 내역 클릭 → 해당 출장보고서(ReportViewPage)로 이동
     const handleRowClick = (row: WorkloadDetailEntry) => {
@@ -100,9 +106,33 @@ export default function WorkloadDetailPage() {
             return;
         }
 
+        const guardAccess = async () => {
+            if (!isStaff || isAdmin || isCEO || !currentUserId) return true;
+            try {
+                const { data, error } = await supabase
+                    .from("profiles")
+                    .select("name")
+                    .eq("id", currentUserId)
+                    .single();
+                if (!error && data?.name) {
+                    setCurrentPersonName(data.name);
+                    if (data.name !== personName) {
+                        navigate("/workload", { replace: true });
+                        return false;
+                    }
+                }
+            } catch {
+                // ignore
+            }
+            return true;
+        };
+
         const loadData = async () => {
             setLoading(true);
             try {
+                const canAccess = await guardAccess();
+                if (!canAccess) return;
+
                 const yearNum = parseInt(selectedYear.replace("년", ""));
                 const monthNum = parseInt(selectedMonth.replace("월", ""));
 
@@ -123,7 +153,7 @@ export default function WorkloadDetailPage() {
         };
 
         loadData();
-    }, [personName, selectedYear, selectedMonth]);
+    }, [personName, selectedYear, selectedMonth, isStaff, isAdmin, isCEO, currentUserId, navigate]);
 
 
     // 페이지네이션 계산
@@ -259,7 +289,11 @@ export default function WorkloadDetailPage() {
                                             {
                                                 key: "date",
                                                 label: "날짜",
-                                                render: (_, row: WorkloadDetailEntry) => {
+                                                render: (_value, row: WorkloadDetailEntry, index: number) => {
+                                                    const prev = currentTableData[index - 1];
+                                                    if (prev?.date === row.date) {
+                                                        return <span className="text-transparent">-</span>;
+                                                    }
                                                     const formattedDate = formatDetailDate(row.date);
                                                     const date = new Date(row.date + "T00:00:00");
                                                     const dayOfWeek = date.getDay();
@@ -282,7 +316,13 @@ export default function WorkloadDetailPage() {
                                             {
                                                 key: "vesselName",
                                                 label: "호선명",
-                                                render: (value: string | null) => value || "-",
+                                                render: (value: string | null, row: WorkloadDetailEntry, index: number) => {
+                                                    const prev = currentTableData[index - 1];
+                                                    if (prev?.date === row.date) {
+                                                        return <span className="text-transparent">-</span>;
+                                                    }
+                                                    return value || "-";
+                                                },
                                             },
                                             {
                                                 key: "workTime",

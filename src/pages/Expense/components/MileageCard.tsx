@@ -17,11 +17,11 @@ export default function MileageCard({
         if (initialDate) setDate(initialDate);
     }, [initialDate]);
     const [from, setFrom] = React.useState("자택");
-    const [to, setTo] = React.useState("공장");
+    const [to, setTo] = React.useState("공장/사무실");
     const [distance, setDistance] = React.useState("");
     const [note, setNote] = React.useState("");
 
-    const chips = ["자택", "공장", "출장지"];
+    const chips = ["자택", "공장/사무실", "출장지"];
     const costPerKm = 250;
     const cost = Number(distance || 0) * costPerKm;
     const numericCost = cost.toLocaleString("ko-KR");
