@@ -75,6 +75,7 @@ export default function WorkloadDetailPage() {
     const [loading, setLoading] = useState(true);
 
     // ✅ useUser 훅으로 권한 정보 가져오기
+
     const { userPermissions, currentUserId } = useUser();
     const isStaff = userPermissions.isStaff;
     const isAdmin = userPermissions.isAdmin;
@@ -88,10 +89,13 @@ export default function WorkloadDetailPage() {
     const [detailEntries, setDetailEntries] = useState<WorkloadDetailEntry[]>([]);
 
     const itemsPerPage = 10;
+
+
     const personName = id ? decodeURIComponent(id) : "";
     const [currentPersonName, setCurrentPersonName] = useState<string | null>(
         null
     );
+
 
     // 날짜별 내역 클릭 → 해당 출장보고서(ReportViewPage)로 이동
     const handleRowClick = (row: WorkloadDetailEntry) => {
@@ -101,8 +105,9 @@ export default function WorkloadDetailPage() {
 
     // 데이터 로드
     useEffect(() => {
+        // personName이 아직 없으면(user 로딩 전) 조회 종료하지 말고 로딩 유지
         if (!personName) {
-            setLoading(false);
+            setLoading(true);
             return;
         }
 
@@ -192,8 +197,9 @@ export default function WorkloadDetailPage() {
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                <Header
-                    title={isStaff ? "워크로드" : `${personName} 작업자 워크로드`}
+            <Header
+                    title={`${personName || "워크로드"} 워크로드`}
+
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         !isStaff && (

@@ -781,7 +781,12 @@ export default function ReportPdfPage() {
       margin-right:0 !important;
     }
 
-
+    /* ✅ PDF에서 '일별 시간표'만 70%로 축소 */
+    .timeline-section .daily-timesheet{
+      transform: scale(0.8);
+      transform-origin: top left;
+      width: calc(100% / 0.7); /* 줄어든 만큼 가로폭 보정 */
+    }
 
     
     
@@ -1076,9 +1081,9 @@ export default function ReportPdfPage() {
                     {/* 타임라인 */}
                     <div className="section timeline-section">
 
-                        <div className="timeline-root">
-                            <TimelineSummarySection />
-                        </div>
+                    <div className="timeline-root">
+                        <TimelineSummarySection showWorkTimeRange />
+                    </div>
                     </div>
 
                     {/* 소모 자재 */}
@@ -1258,14 +1263,13 @@ export default function ReportPdfPage() {
                                                                                         </div>
                                                                                     </div>
                                                                                 ) : (
-                                                                                <img
-                                                                                    className="receipt-img"
-                                                                                    src={a.url}
-                                                                                    alt={a.name || "receipt"}
-                                                                                    onError={() => handleImageError(a.id)}
-                                                                                    onClick={() => openPreview(a.url, a.name || a.url.split("/").pop() || "receipt", "image")}
-                                                                                    style={{ display: "block", cursor: "pointer" }}
-                                                                                />
+                                                                                    <img
+                                                                                        className="receipt-img"
+                                                                                        src={a.url}
+                                                                                        alt={a.name || "receipt"}
+                                                                                        onError={() => handleImageError(a.id)}
+                                                                                        style={{ display: "block" }}
+                                                                                    />
                                                                                 )}
 
                                                                                 <div
@@ -1308,14 +1312,13 @@ export default function ReportPdfPage() {
                                                                                         </div>
                                                                                     </div>
                                                                                 ) : (
-                                                                                <img
-                                                                                    className="receipt-img"
-                                                                                    src={b.url}
-                                                                                    alt={b.name || "receipt"}
-                                                                                    onError={() => handleImageError(b.id)}
-                                                                                    onClick={() => openPreview(b.url, b.name || b.url.split("/").pop() || "receipt", "image")}
-                                                                                    style={{ display: "block", cursor: "pointer" }}
-                                                                                />
+                                                                                    <img
+                                                                                        className="receipt-img"
+                                                                                        src={b.url}
+                                                                                        alt={b.name || "receipt"}
+                                                                                        onError={() => handleImageError(b.id)}
+                                                                                        style={{ display: "block" }}
+                                                                                    />
                                                                                 )}
 
                                                                                 <div

@@ -28,8 +28,8 @@ function calcWorkMinutesWithLunchRule(params: {
     // 시간 없으면 0
     if (!dateFrom || !dateTo || !timeFrom || !timeTo) return 0;
 
-    const start = new Date(`${dateFrom}T${timeFrom}:00`);
-    const end = new Date(`${dateTo}T${timeTo}:00`);
+    const start = toDateSafe(dateFrom, timeFrom);
+    const end = toDateSafe(dateTo, timeTo);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
     if (end <= start) return 0;
 
@@ -81,6 +81,89 @@ function formatHoursMinutes(totalMinutes: number) {
     if (m === 0) return `${h}시간`;
     if (h === 0) return `${m}분`;
     return `${h}시간 ${m}분`;
+}
+
+// ✅ "24:00" 같은 시간을 Date로 안전하게 변환(24시는 다음날 00시로 처리)
+function toDateSafe(date: string, time: string) {
+    if (!date || !time) return new Date("Invalid");
+    const [hhStr, mmStr] = time.split(":");
+    const hh = Number(hhStr);
+    const mm = Number(mmStr ?? "0");
+
+    // 24:00 → 다음날 00:00
+    if (hh === 24) {
+        const d = new Date(`${date}T00:00:00`);
+        d.setDate(d.getDate() + 1);
+        d.setHours(0, mm, 0, 0);
+        return d;
+    }
+
+    return new Date(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`);
+}
+
+// ✅ 날짜跨越 엔트리를 "날짜별 카드"로 분할(표시용)
+function splitEntryByDayForDisplay<T extends {
+    id: number;
+    dateFrom: string;
+    timeFrom?: string;
+    dateTo: string;
+    timeTo?: string;
+}>(entry: T) {
+    const timeFrom = entry.timeFrom || "00:00";
+    const timeTo = entry.timeTo || "00:00";
+
+    // 같은 날이면 그대로
+    if (entry.dateFrom === entry.dateTo) {
+        return [{
+            ...entry,
+            __segId: String(entry.id),      // 렌더링 key/확장 상태용
+            __originId: entry.id,           // 수정/삭제는 원본 기준
+        }];
+    }
+
+    const start = toDateSafe(entry.dateFrom, timeFrom);
+    const end = toDateSafe(entry.dateTo, timeTo);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+        // 이상하면 안전하게 원본 1개로 표시
+        return [{
+            ...entry,
+            __segId: String(entry.id),
+            __originId: entry.id,
+        }];
+    }
+
+    const results: any[] = [];
+
+    // day cursor
+    let cur = new Date(`${entry.dateFrom}T00:00:00`);
+    const last = new Date(`${entry.dateTo}T00:00:00`);
+
+    while (cur <= last) {
+        const yyyy = cur.getFullYear();
+        const mm = String(cur.getMonth() + 1).padStart(2, "0");
+        const dd = String(cur.getDate()).padStart(2, "0");
+        const d = `${yyyy}-${mm}-${dd}`;
+
+        const isFirst = d === entry.dateFrom;
+        const isLast = d === entry.dateTo;
+
+        const segTimeFrom = isFirst ? timeFrom : "00:00";
+        const segTimeTo = isLast ? timeTo : "24:00"; // ✅ 중간 날짜는 24:00까지
+
+        results.push({
+            ...entry,
+            dateFrom: d,
+            dateTo: d,
+            timeFrom: segTimeFrom,
+            timeTo: segTimeTo,
+            __segId: `${entry.id}__${d}`,   // 날짜별로 다른 카드 키
+            __originId: entry.id,
+        });
+
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    return results;
 }
 
 
@@ -265,10 +348,10 @@ export default function WorkLogSection() {
     );
 
     // 카드 확장 상태
-    const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>(
+    const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>(
         {}
     );
-    const toggleCard = (id: number) => {
+    const toggleCard = (id: string) => {
         setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }));
     };
 
@@ -280,6 +363,16 @@ export default function WorkLogSection() {
             return aKey.localeCompare(bKey);
         });
     }, [workLogEntries]);
+
+        // ✅ 표시용: 날짜별로 분할한 카드 리스트
+        const displayEntries = useMemo(() => {
+            const split = sortedEntries.flatMap((e) => splitEntryByDayForDisplay(e));
+            return split.sort((a, b) => {
+                const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
+                const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
+                return aKey.localeCompare(bKey);
+            });
+        }, [sortedEntries]);
 
     return (
         <SectionCard title="출장 업무 일지">
@@ -860,10 +953,10 @@ export default function WorkLogSection() {
                 </div>
 
                 {/* 저장된 일지 목록 */}
-                {sortedEntries.length > 0 && (
+                {displayEntries.length > 0 && (
                     <div className="flex flex-col gap-3">
                         <div className="h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
-                        {sortedEntries.map((entry, index) => {
+                        {displayEntries.map((entry: any, index) => {
                             const noLunchText = "점심 안 먹고 작업진행(12:00~13:00)";
                             const effectiveNoLunch =
                                 !!entry.noLunch || (entry.note || "").includes(noLunchText);
@@ -878,7 +971,7 @@ export default function WorkLogSection() {
                             });
 
                             const hoursLabel = formatHoursMinutes(minutes);
-                            const isExpanded = expandedCards[entry.id] ?? false;
+                            const isExpanded = expandedCards[entry.__segId] ?? false;
 
 
                             // 유형별 스타일 설정
@@ -911,13 +1004,13 @@ export default function WorkLogSection() {
                                 ] || typeStyles["작업"];
 
                             // 날짜 변경 체크
-                            const prevEntry = sortedEntries[index - 1];
+                            const prevEntry = displayEntries[index - 1];
                             const showDateSeparator =
                                 prevEntry &&
                                 prevEntry.dateFrom !== entry.dateFrom;
 
                             return (
-                                <div key={entry.id}>
+                                <div key={entry.__segId}>
                                     {showDateSeparator && (
                                         <div className="flex items-center gap-3 my-4">
                                             <div className="flex-1 h-px bg-gradient-to-r from-transparent to-rose-300" />
@@ -938,7 +1031,7 @@ export default function WorkLogSection() {
                                         {/* 헤더 (클릭으로 접기/펼치기) */}
                                         <div
                                             className="relative p-4 cursor-pointer"
-                                            onClick={() => toggleCard(entry.id)}
+                                            onClick={() => toggleCard(entry.__segId)}
                                         >
                                             <div className="flex items-start justify-between gap-3">
                                                 <div className="flex-1">
@@ -1085,7 +1178,7 @@ export default function WorkLogSection() {
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 editWorkLogEntry(
-                                                                    entry.id
+                                                                    entry.__originId
                                                                 );
                                                                 setTimeout(
                                                                     () => {
@@ -1113,7 +1206,7 @@ export default function WorkLogSection() {
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 setDeleteTargetId(
-                                                                    entry.id
+                                                                    entry.__originId
                                                                 );
                                                                 setDeleteConfirmOpen(
                                                                     true
