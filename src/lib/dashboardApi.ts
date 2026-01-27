@@ -54,6 +54,7 @@ export interface WorkLogWithPersons {
     id: number;
     author: string;
     subject: string;
+    vessel?: string | null;
     created_at: string;
     persons: string[];
     date_from?: string;
@@ -382,7 +383,7 @@ export async function getWorkLogsForDashboard(
     const [workLogsResult, personsResult] = await Promise.all([
         supabase
             .from("work_logs")
-            .select("id, author, subject, created_at")
+            .select("id, author, subject, vessel, created_at")
             .eq("is_draft", false)
             .in("id", workLogIds)
             .limit(500),
@@ -461,6 +462,7 @@ export async function getWorkLogsForDashboard(
             id: log.id,
             author: log.author,
             subject: log.subject,
+            vessel: log.vessel,
             created_at: log.created_at,
             persons,
             date_from: dates?.date_from,
@@ -518,10 +520,13 @@ export function workLogToCalendarEvent(
 ): CalendarEvent {
     const startDate = workLog.date_from || workLog.created_at.split("T")[0];
     const endDate = workLog.date_to || startDate;
+    const vessel = workLog.vessel?.trim() || "";
+    const subject = workLog.subject?.trim() || "";
+    const detail = [vessel, subject].filter(Boolean).join(" ");
 
     return {
         id: `worklog-${workLog.id}`,
-        title: `출장 보고서 - ${workLog.subject}`,
+        title: `출장 보고서 - ${detail}`,
         color: "#84cc16", // 연두색
         startDate,
         endDate,

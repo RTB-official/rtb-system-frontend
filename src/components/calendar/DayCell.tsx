@@ -251,7 +251,7 @@ const DayCell: React.FC<DayCellProps> = ({
                         segment.event.endDate === getSafeDateKey(endDayDate);
 
                     // 시작 날짜의 공휴일 유무 확인 (며칠에 걸쳐 있는 이벤트의 위치 일관성 유지)
-                    const startDateKey = getSafeDateKey(startDayDate);
+                    const startDateKey = segment.event.startDate;
                     const startDateHasHoliday = getEventsForDate(startDateKey).some(event => event.isHoliday);
 
                     // 연속된 태그가 셀 경계를 넘어가도록 위치 조정

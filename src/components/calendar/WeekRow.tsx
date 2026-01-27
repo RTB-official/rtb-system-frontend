@@ -162,7 +162,9 @@ const WeekRow: React.FC<WeekRowProps> = ({
                     const iconWidth = iconSize + iconSpacing;
 
                     // 시작 날짜의 공휴일 유무 확인
-                    const startDateHasHoliday = getEventsForDate(startDateKey).some(event => event.isHoliday);
+                    const startDateHasHoliday = getEventsForDate(segment.event.startDate).some(
+                        (event) => event.isHoliday
+                    );
                     const holidayOffset = startDateHasHoliday ? tagHeight + tagSpacing : 0;
                     const top = isHoliday ? 0 : segment.rowIndex * (tagHeight + tagSpacing) + holidayOffset;
 
