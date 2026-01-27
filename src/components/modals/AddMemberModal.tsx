@@ -24,6 +24,8 @@ type Props = {
         passportFirstName: string;
         passportNo: string;
         passportExpiry: string; // YYMMDD (예: 251227)
+        profilePhotoFile?: File | null;
+        passportPhotoFile?: File | null;
     }) => void;
 };
 
@@ -46,6 +48,13 @@ export default function AddMemberModal({
     const [passportFirstName, setPassportFirstName] = useState("");
     const [passportNo, setPassportNo] = useState("");
     const [passportExpiry, setPassportExpiry] = useState("");
+    const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+    const [passportPhotoFile, setPassportPhotoFile] = useState<File | null>(null);
+
+    const profilePhotoLabel =
+        profilePhotoFile?.name || member?.profilePhotoName || "";
+    const passportPhotoLabel =
+        passportPhotoFile?.name || member?.passportPhotoName || "";
 
     const normalizeDateForPicker = (v?: string | null) => {
         const s = (v || "").trim();
@@ -102,6 +111,8 @@ export default function AddMemberModal({
             setPassportFirstName(member.passportFirstName || "");
             setPassportNo(member.passportNo || "");
             setPassportExpiry(member.passportExpiry || "");
+            setProfilePhotoFile(null);
+            setPassportPhotoFile(null);
         } else {
             setJoinDate("");
             setBirthDate("");
@@ -114,6 +125,8 @@ export default function AddMemberModal({
             setPassportFirstName("");
             setPassportNo("");
             setPassportExpiry("");
+            setProfilePhotoFile(null);
+            setPassportPhotoFile(null);
         }
     }, [member, isOpen]);
 
@@ -132,6 +145,8 @@ export default function AddMemberModal({
             passportFirstName,
             passportNo,
             passportExpiry,
+            profilePhotoFile,
+            passportPhotoFile,
         };
         onSubmit?.(payload);
         onClose();
@@ -325,6 +340,50 @@ export default function AddMemberModal({
                                 placeholder="예) 251227"
                                 inputMode="numeric"
                             />
+                        </div>
+
+                        {/* 여권 사진 */}
+                        <div className="mt-4">
+                            <label className="text-[12px] font-medium text-gray-900 block mb-2">
+                                여권 사진
+                            </label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) =>
+                                    setPassportPhotoFile(
+                                        e.target.files?.[0] ?? null
+                                    )
+                                }
+                                className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                            />
+                            <div className="mt-1 text-[12px] text-gray-500">
+                                {passportPhotoLabel
+                                    ? `현재 파일: ${passportPhotoLabel}`
+                                    : "현재 파일 없음"}
+                            </div>
+                        </div>
+
+                        {/* 증명사진 */}
+                        <div className="mt-6">
+                            <label className="text-[12px] font-medium text-gray-900 block mb-2">
+                                증명사진
+                            </label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) =>
+                                    setProfilePhotoFile(
+                                        e.target.files?.[0] ?? null
+                                    )
+                                }
+                                className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                            />
+                            <div className="mt-1 text-[12px] text-gray-500">
+                                {profilePhotoLabel
+                                    ? `현재 파일: ${profilePhotoLabel}`
+                                    : "현재 파일 없음"}
+                            </div>
                         </div>
                     </div>
                 </div>

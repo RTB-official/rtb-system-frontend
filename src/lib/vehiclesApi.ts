@@ -11,6 +11,7 @@ export type VehicleRecord = {
     insurer: string | null;
     inspection_date: string | null;
     engine_oil_date: string | null;
+    engine_oil_km: string | null;
     repair_note: string | null;
     registration_doc_bucket: string | null;
     registration_doc_path: string | null;
@@ -28,6 +29,7 @@ export type VehicleForm = {
     insurer: string;
     inspection: string;
     engineOil: string;
+    engineOilKm: string;
     repair: string;
     registrationBucket: string;
     registrationPath: string;
@@ -46,6 +48,7 @@ const mapRecordToForm = (record: VehicleRecord): VehicleForm => ({
     insurer: toFormValue(record.insurer),
     inspection: toFormValue(record.inspection_date),
     engineOil: toFormValue(record.engine_oil_date),
+    engineOilKm: toFormValue(record.engine_oil_km),
     repair: toFormValue(record.repair_note),
     registrationBucket: toFormValue(record.registration_doc_bucket),
     registrationPath: toFormValue(record.registration_doc_path),
@@ -64,6 +67,7 @@ const mapFormToRecordInput = (form: VehicleForm) => ({
     insurer: toDbValue(form.insurer),
     inspection_date: toDbValue(form.inspection),
     engine_oil_date: toDbValue(form.engineOil),
+    engine_oil_km: toDbValue(form.engineOilKm),
     repair_note: toDbValue(form.repair),
     registration_doc_bucket: toDbValue(form.registrationBucket),
     registration_doc_path: toDbValue(form.registrationPath),
@@ -74,7 +78,7 @@ export async function listVehicles(): Promise<VehicleRecord[]> {
     const { data, error } = await supabase
         .from("vehicles")
         .select(
-            "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,created_at"
+            "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,engine_oil_km,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,created_at"
         )
         .order("created_at", { ascending: false });
 
@@ -89,7 +93,7 @@ export async function createVehicle(form: VehicleForm): Promise<VehicleRecord> {
         .from("vehicles")
         .insert(mapFormToRecordInput(form))
         .select(
-            "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,created_at"
+            "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,engine_oil_km,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,created_at"
         )
         .single();
 
@@ -108,7 +112,7 @@ export async function updateVehicle(
         .update(mapFormToRecordInput(form))
         .eq("id", id)
         .select(
-            "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,created_at"
+            "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,engine_oil_km,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,created_at"
         )
         .single();
 
@@ -150,6 +154,16 @@ export async function uploadVehicleRegistration(
         path: fileName,
         name: file.name,
     };
+}
+
+export async function deleteVehicleRegistration(
+    bucket: string,
+    path: string
+): Promise<void> {
+    const { error } = await supabase.storage.from(bucket).remove([path]);
+    if (error) {
+        throw error;
+    }
 }
 
 export async function getVehicleRegistrationUrl(

@@ -112,7 +112,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const canShowVacation =
         permissionsReady && (stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin);
     const canShowVehicles =
-        permissionsReady && (stablePermissions.isAdmin || isAdmin);
+        permissionsReady &&
+        (stablePermissions.isAdmin ||
+            stablePermissions.isStaff ||
+            stablePermissions.isCEO ||
+            isAdmin);
 
     const {
         showNotifications,
