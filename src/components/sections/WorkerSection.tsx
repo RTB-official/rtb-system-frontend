@@ -131,6 +131,7 @@ export default function WorkerSection() {
                 acc[role] = [];
             }
             acc[role].push(member.name);
+            acc[role].sort((a, b) => a.localeCompare(b, "ko"));
             return acc;
         },
         {} as Record<string, string[]>

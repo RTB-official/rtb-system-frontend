@@ -83,6 +83,8 @@ function formatHoursMinutes(totalMinutes: number) {
     return `${h}시간 ${m}분`;
 }
 
+
+
 // ✅ "24:00" 같은 시간을 Date로 안전하게 변환(24시는 다음날 00시로 처리)
 function toDateSafe(date: string, time: string) {
     if (!date || !time) return new Date("Invalid");
@@ -373,6 +375,31 @@ export default function WorkLogSection() {
                 return aKey.localeCompare(bKey);
             });
         }, [sortedEntries]);
+
+        // ✅ YYYY-MM-DD -> MM/DD
+        const formatMDFromYMD = (ymd?: string) => {
+            if (!ymd) return "";
+            const parts = String(ymd).split("-");
+            if (parts.length !== 3) return "";
+            return `${parts[1]}/${parts[2]}`;
+        };
+
+        // ✅ 날짜별 n일차 맵 (displayEntries 기준)
+        const dayIndexMap = useMemo(() => {
+            const map = new Map<string, number>();
+            let dayNo = 0;
+
+            for (const it of displayEntries as any[]) {
+                const d = it?.dateFrom;
+                if (!d) continue;
+                if (!map.has(d)) {
+                    dayNo += 1;
+                    map.set(d, dayNo);
+                }
+            }
+            return map;
+        }, [displayEntries]);
+        
 
     return (
         <SectionCard title="출장 업무 일지">
@@ -807,11 +834,14 @@ export default function WorkLogSection() {
                                         </Button>
                                     ))
                                 )}
-                                {errors.persons && (
-                                    <p className="text-[12px] text-red-500 mt-2">{errors.persons}</p>
-                                )}
+
                             </div>
                         </div>
+                        {errors.persons && (
+                            <p className="text-[12px] text-red-500 mt-2 ml-1">
+                                {errors.persons}
+                            </p>
+                        )}
                         {/* 작업일 때 점심 체크박스 */}
                         {currentEntry.descType === "작업" && (
                             <label className="flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
@@ -911,6 +941,23 @@ export default function WorkLogSection() {
                             if (!currentEntry.details || !currentEntry.details.trim()) {
                                 newErrors.details = "상세 내용을 입력해주세요";
                             }
+                            // ✅ 종료가 시작보다 과거(또는 동일)인 경우 막기
+                            // (종료 날짜/종료 시간/분 선택에 빨간 테두리 + 안내 문구)
+                            if (
+                                currentEntry.dateFrom &&
+                                currentEntry.timeFrom &&
+                                currentEntry.dateTo &&
+                                currentEntry.timeTo
+                            ) {
+                                const start = new Date(`${currentEntry.dateFrom}T${currentEntry.timeFrom}:00`);
+                                const end = new Date(`${currentEntry.dateTo}T${currentEntry.timeTo}:00`);
+
+                                if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end <= start) {
+                                    const msg = "종료 날짜 종료 시간을 확인해주세요";
+                                    newErrors.dateTo = msg;
+                                    newErrors.timeTo = msg;
+                                }
+                            }
                             if (currentEntryPersons.length === 0) {
                                 newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
                             }
@@ -1005,19 +1052,21 @@ export default function WorkLogSection() {
 
                             // 날짜 변경 체크
                             const prevEntry = displayEntries[index - 1];
-                            const showDateSeparator =
-                                prevEntry &&
-                                prevEntry.dateFrom !== entry.dateFrom;
+                            const showDayHeader = !prevEntry || prevEntry.dateFrom !== entry.dateFrom;
+
+                            const dayNo = dayIndexMap.get(entry.dateFrom) ?? 1;
+                            const md = formatMDFromYMD(entry.dateFrom);
+                            const dayHeaderText = `${dayNo}일차(${md})`;
 
                             return (
                                 <div key={entry.__segId}>
-                                    {showDateSeparator && (
-                                        <div className="flex items-center gap-3 my-4">
-                                            <div className="flex-1 h-px bg-gradient-to-r from-transparent to-rose-300" />
-                                            <span className="text-[12px] font-medium text-rose-500 px-2">
-                                                날짜 변경
+                                    {showDayHeader && (
+                                        <div className="w-full flex items-center gap-3 my-4">
+                                            <div className="flex-1 border-t border-rose-300" />
+                                            <span className="text-[12px] font-semibold text-rose-500 px-2 whitespace-nowrap">
+                                                {dayHeaderText}
                                             </span>
-                                            <div className="flex-1 h-px bg-gradient-to-l from-transparent to-rose-300" />
+                                            <div className="flex-1 border-t border-rose-300" />
                                         </div>
                                     )}
                                     <div
@@ -1105,11 +1154,12 @@ export default function WorkLogSection() {
                                                         <span className="text-gray-400">
                                                             |
                                                         </span>
-                                                        <span className="truncate max-w-[200px]">
-                                                            {entry.persons.join(
-                                                                ", "
-                                                            )}
-                                                        </span>
+                                                        <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
+                                                            {Array.isArray(entry.persons) && entry.persons.length > 0
+                                                                ? entry.persons.join(", ")
+                                                                : "—"}
+                                                        </div>
+
                                                     </div>
                                                 </div>
 

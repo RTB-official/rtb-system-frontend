@@ -551,13 +551,13 @@ const personChunks = useMemo(() => {
             {/* 범례 */}
             <div className="flex flex-wrap gap-4 mb-6 text-[12px] text-[#6a7282]">
                 <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#3b82f6]"></span> 작업
+                    <span className="w-4 h-4 rounded-md bg-[#3b82f6]"></span> 작업
                 </span>
                 <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#10b981]"></span> 이동
+                    <span className="w-4 h-4 rounded-md bg-[#10b981]"></span> 이동
                 </span>
                 <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full bg-[#f59e0b]"></span> 대기
+                    <span className="w-4 h-4 rounded-md bg-[#f59e0b]"></span> 대기
                 </span>
             </div>
 

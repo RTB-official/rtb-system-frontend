@@ -64,6 +64,67 @@ function toKoreanTime(time?: string) {
     if (!mm || mm === "00") return `${Number(hh)}시`;
     return `${Number(hh)}시 ${mm}분`;
 }
+// ✅ 작업 시간(분) 계산: 점심(12:00~13:00) 제외 옵션 포함 (WorkLogSection과 동일 로직)
+function calcWorkMinutesWithLunchRule(params: {
+    dateFrom: string;
+    timeFrom?: string;
+    dateTo: string;
+    timeTo?: string;
+    descType: "작업" | "이동" | "대기" | "";
+    noLunch?: boolean;
+}) {
+    const { dateFrom, timeFrom, dateTo, timeTo, descType, noLunch } = params;
+
+    const from = normalizeTime(timeFrom);
+    const to = normalizeTime(timeTo);
+
+    if (!dateFrom || !dateTo || !from || !to) return 0;
+
+    // ✅ 24:00 대응 (이미 ReportViewPage에 toDateSafe 추가해둔 기준)
+    const start = toDateSafe(dateFrom, from);
+    const end = toDateSafe(dateTo, to);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    if (end <= start) return 0;
+
+    const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
+
+    // ✅ 작업이 아니면 점심 규칙 적용 X
+    if (descType !== "작업") return totalMinutes;
+
+    // ✅ "점심 안 먹음"이면 전체 시간 카운트
+    if (noLunch) return totalMinutes;
+
+    // ✅ 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
+    let lunchOverlapMinutes = 0;
+
+    const cur = new Date(`${dateFrom}T00:00:00`);
+    const last = new Date(`${dateTo}T00:00:00`);
+
+    while (cur <= last) {
+        const yyyy = cur.getFullYear();
+        const mm = String(cur.getMonth() + 1).padStart(2, "0");
+        const dd = String(cur.getDate()).padStart(2, "0");
+        const d = `${yyyy}-${mm}-${dd}`;
+
+        const lunchStart = new Date(`${d}T12:00:00`);
+        const lunchEnd = new Date(`${d}T13:00:00`);
+
+        const overlapStart = start > lunchStart ? start : lunchStart;
+        const overlapEnd = end < lunchEnd ? end : lunchEnd;
+
+        if (overlapEnd > overlapStart) {
+            lunchOverlapMinutes += Math.floor(
+                (overlapEnd.getTime() - overlapStart.getTime()) / 60000
+            );
+        }
+
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    const result = totalMinutes - lunchOverlapMinutes;
+    return result < 0 ? 0 : result;
+}
 
 function calcMinutes(params: {
     dateFrom: string;
@@ -180,7 +241,7 @@ const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
 
 function getExpenseTypeRowClass(t?: string) {
     if (!t) return "bg-white";
-    if (["조식", "중식", "석식"].includes(t)) return "bg-orange-50";
+    if (["조식", "중식", "석식", "간식"].includes(t)) return "bg-orange-50";
     if (t === "숙박") return "bg-blue-50";
     if (t === "유류비") return "bg-green-50";
     return "bg-pink-50";
@@ -201,6 +262,13 @@ function formatDateKoreanMD(dateString?: string) {
     const m = d.getMonth() + 1;
     const day = d.getDate();
     return `${m}월 ${day}일`;
+}
+// ✅ YYYY-MM-DD -> MM/DD (ReportView 카드 헤더용)
+function formatMDFromYMD(ymd?: string) {
+    if (!ymd) return "";
+    const parts = String(ymd).split("-");
+    if (parts.length !== 3) return "";
+    return `${parts[1]}/${parts[2]}`;
 }
 
 export default function ReportViewPage() {
@@ -516,14 +584,37 @@ try {
                     return aKey.localeCompare(bKey);
                 });
 
+                // ✅ 날짜별 n일차 맵 생성 (카드 상단/날짜변경선용)
+                const dayIndexMap = new Map<string, number>();
+                let dayNo = 0;
+                for (const it of displayEntries) {
+                    const d = it?.dateFrom;
+                    if (!d) continue;
+                    if (!dayIndexMap.has(d)) {
+                        dayNo += 1;
+                        dayIndexMap.set(d, dayNo);
+                    }
+                }
+
                 return displayEntries.map((e: any, index: number, arr: any[]) => {
                     const key = e.__segKey;
 
-                    const minutes = calcMinutes({
+                    const note = String(e.note ?? "");
+
+                    // ✅ 점심 안먹음 플래그(작성 페이지와 최대한 동일하게 흡수)
+                    const effectiveNoLunch =
+                        !!e.noLunch ||
+                        !!e.lunch_worked ||
+                        note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
+                        note.includes("점심 안먹고 작업진행(12:00~13:00)");
+
+                    const minutes = calcWorkMinutesWithLunchRule({
                         dateFrom: e.dateFrom,
                         timeFrom: e.timeFrom,
                         dateTo: e.dateTo,
                         timeTo: e.timeTo,
+                        descType: (e.descType ?? "") as any,
+                        noLunch: effectiveNoLunch, // ✅ true면 점심 제외 안함
                     });
                     const hoursLabel = formatHoursMinutes(minutes);
                     const isExpanded = expandedCards[String(key)] ?? false;
@@ -556,18 +647,22 @@ try {
                         typeStyles[e.descType as keyof typeof typeStyles] ||
                         typeStyles["작업"];
 
-                    const prev = arr[index - 1];
-                    const showDateSeparator = prev && prev.dateFrom !== e.dateFrom;
+                        const prev = arr[index - 1];
+                        const showDayHeader = !prev || prev.dateFrom !== e.dateFrom;
+    
+                        const dayNo = dayIndexMap.get(e.dateFrom) ?? 1;
+                        const md = formatMDFromYMD(e.dateFrom);
+                        const dayHeaderText = `${dayNo}일차(${md})`;
 
                     return (
                         <div key={String(key)}>
-                            {showDateSeparator && (
-                                <div className="flex items-center gap-3 my-4">
-                                    <div className="flex-1 h-px bg-gradient-to-r from-transparent to-rose-300" />
-                                    <span className="text-[12px] font-medium text-rose-500 px-2">
-                                        날짜 변경
+                            {showDayHeader && (
+                                <div className="w-full flex items-center gap-3 my-4">
+                                    <div className="flex-1 border-t border-rose-300" />
+                                    <span className="text-[12px] font-semibold text-rose-500 px-2 whitespace-nowrap">
+                                        {dayHeaderText}
                                     </span>
-                                    <div className="flex-1 h-px bg-gradient-to-l from-transparent to-rose-300" />
+                                    <div className="flex-1 border-t border-rose-300" />
                                 </div>
                             )}
 
@@ -594,7 +689,7 @@ try {
                                                 </span>
                                             </div>
 
-                                            {e.lunch_worked && (
+                                            {effectiveNoLunch && (
                                                 <div className="absolute bottom-3 right-3 z-20">
                                                     <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm">
                                                         {NO_LUNCH_TEXT}
@@ -634,9 +729,13 @@ try {
                                                     </svg>
                                                     <span className="font-medium">{e.persons.length}명</span>
                                                     <span className="text-gray-400">|</span>
-                                                    <span className="truncate max-w-[200px]">
-                                                        {e.persons.join(", ")}
-                                                    </span>
+                                                    <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
+                                                        {Array.isArray(e.persons) && e.persons.length > 0
+                                                            ? e.persons.join(", ")
+                                                            : "—"}
+                                                    </div>
+
+
                                                 </div>
                                             )}
                                         </div>
