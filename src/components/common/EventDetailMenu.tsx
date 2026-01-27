@@ -8,7 +8,7 @@ import Avatar from "./Avatar";
 import Chip from "../ui/Chip";
 import { supabase } from "../../lib/supabase";
 import { getVacationById } from "../../lib/vacationApi";
-import { getWorkLogById } from "../../lib/workLogApi";
+import { getWorkLogByIdCached } from "../../lib/workLogApi";
 import { formatDateRange } from "../../utils/calendarUtils";
 
 interface EventDetailMenuProps {
@@ -34,6 +34,8 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
 }) => {
     const navigate = useNavigate();
     const menuRef = useRef<HTMLDivElement>(null);
+    const vacationCacheRef = useRef<Map<string, any>>(new Map());
+    const profileCacheRef = useRef<Map<string, any>>(new Map());
     const [vacationData, setVacationData] = useState<any>(null);
     const [workLogData, setWorkLogData] = useState<any>(null);
     const [userProfile, setUserProfile] = useState<any>(null);
@@ -58,13 +60,36 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
             setLoading(true);
             try {
                 const vacationId = event.id.replace("vacation-", "");
+                const cachedVacation = vacationCacheRef.current.get(vacationId);
+                if (cachedVacation) {
+                    setVacationData(cachedVacation);
+                    if (cachedVacation.user_id) {
+                        const cachedProfile = profileCacheRef.current.get(
+                            cachedVacation.user_id
+                        );
+                        if (cachedProfile) {
+                            setUserProfile(cachedProfile);
+                        }
+                    }
+                    setLoading(false);
+                    return;
+                }
                 const vacation = await getVacationById(vacationId);
 
                 if (vacation) {
+                    vacationCacheRef.current.set(vacationId, vacation);
                     setVacationData(vacation);
 
                     // 사용자 프로필 가져오기
                     if (vacation.user_id) {
+                        const cachedProfile = profileCacheRef.current.get(
+                            vacation.user_id
+                        );
+                        if (cachedProfile) {
+                            setUserProfile(cachedProfile);
+                            setLoading(false);
+                            return;
+                        }
                         const { data: profile } = await supabase
                             .from("profiles")
                             .select("name, email, position")
@@ -72,6 +97,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             .single();
 
                         if (profile) {
+                            profileCacheRef.current.set(vacation.user_id, profile);
                             setUserProfile(profile);
                         }
                     }
@@ -94,7 +120,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
             setLoading(true);
             try {
                 const workLogId = event.id.replace("worklog-", "");
-                const workLog = await getWorkLogById(parseInt(workLogId));
+                const workLog = await getWorkLogByIdCached(parseInt(workLogId));
 
                 if (workLog) {
                     setWorkLogData(workLog);

@@ -5,6 +5,9 @@ import {
     createNotificationsForUsers,
 } from "./notificationApi";
 
+const workLogCache = new Map<number, WorkLogFullData>();
+const workLogInFlight = new Map<number, Promise<WorkLogFullData | null>>();
+
 // ==================== 타입 정의 ====================
 
 export interface WorkLog {
@@ -573,6 +576,40 @@ export async function getWorkLogById(
         materials,
         receipts,
     };
+}
+
+export async function prefetchWorkLogById(
+    workLogId: number
+): Promise<WorkLogFullData | null> {
+    if (workLogCache.has(workLogId)) {
+        return workLogCache.get(workLogId)!;
+    }
+    if (workLogInFlight.has(workLogId)) {
+        return workLogInFlight.get(workLogId)!;
+    }
+    const request = getWorkLogById(workLogId)
+        .then((data) => {
+            if (data) {
+                workLogCache.set(workLogId, data);
+            }
+            workLogInFlight.delete(workLogId);
+            return data;
+        })
+        .catch((error) => {
+            workLogInFlight.delete(workLogId);
+            throw error;
+        });
+    workLogInFlight.set(workLogId, request);
+    return request;
+}
+
+export async function getWorkLogByIdCached(
+    workLogId: number
+): Promise<WorkLogFullData | null> {
+    if (workLogCache.has(workLogId)) {
+        return workLogCache.get(workLogId)!;
+    }
+    return prefetchWorkLogById(workLogId);
 }
 
 /**

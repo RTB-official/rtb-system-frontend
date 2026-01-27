@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import WeekRow from "../../../components/calendar/WeekRow";
 import { CalendarEvent } from "../../../types";
 import { getWeekEventRows, getEventsForDate, getSafeDateKey, getColumnPadding } from "../../../utils/calendarUtils";
+import { prefetchWorkLogById } from "../../../lib/workLogApi";
 
 interface CalendarGridProps {
     weeks: { date: Date; inMonth: boolean }[][];
@@ -61,6 +62,42 @@ export default function CalendarGrid({
 
     const pad = (n: number) => (n < 10 ? "0" + n : String(n));
     const rowIndexByEvent = new Map<string, number>();
+
+    useEffect(() => {
+        // Prefetch visible worklog details in the background to reduce menu loading time.
+        const workLogIds = Array.from(
+            new Set(
+                sortedEvents
+                    .filter((e) => e.id.startsWith("worklog-"))
+                    .map((e) => parseInt(e.id.replace("worklog-", ""), 10))
+                    .filter((id) => !Number.isNaN(id))
+            )
+        ).slice(0, 50);
+
+        if (workLogIds.length === 0) return;
+
+        let cancelled = false;
+        const runPrefetch = () => {
+            if (cancelled) return;
+            workLogIds.forEach((id) => {
+                prefetchWorkLogById(id);
+            });
+        };
+
+        if ("requestIdleCallback" in window) {
+            const idleId = (window as any).requestIdleCallback(runPrefetch, { timeout: 1500 });
+            return () => {
+                cancelled = true;
+                (window as any).cancelIdleCallback?.(idleId);
+            };
+        }
+
+        const timer = window.setTimeout(runPrefetch, 300);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [sortedEvents]);
 
     return (
         <div

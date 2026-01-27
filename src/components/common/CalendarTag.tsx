@@ -2,6 +2,7 @@
 import React from "react";
 import { IconStar, IconVacation, IconReport } from "../icons/Icons";
 import { isVacationEvent } from "../../utils/calendarUtils";
+import { prefetchWorkLogById } from "../../lib/workLogApi";
 
 interface CalendarTagProps {
     title: string;
@@ -126,6 +127,12 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
             }}
             onMouseEnter={() => {
                 setIsHovered(true);
+                if (eventId?.startsWith("worklog-")) {
+                    const workLogId = parseInt(eventId.replace("worklog-", ""), 10);
+                    if (!Number.isNaN(workLogId)) {
+                        prefetchWorkLogById(workLogId);
+                    }
+                }
                 // 같은 이벤트 ID를 가진 모든 태그에 호버 상태 전파
                 if (eventId) {
                     window.dispatchEvent(new CustomEvent(`calendarTagHover-${eventId}`, {

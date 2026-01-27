@@ -110,6 +110,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
         : "";
 
     const isEventVisibleFromStart = (segment: WeekEventSegment) => {
+        if (segment.rowIndex >= maxVisibleRows) return false;
         const startDate = week[segment.startOffset]?.date;
         if (!startDate) return true;
         const startDateKey = `${startDate.getFullYear()}-${pad(
@@ -139,11 +140,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         startDate.getMonth() + 1
                     )}-${pad(startDate.getDate())}`;
 
-                    // 시작 셀의 visibleSegments에 포함된 이벤트만 텍스트 표시
-                    const startTagInfo = dateTagInfo.get(startDateKey);
-                    const isVisible = startTagInfo?.visibleSegments.some(
-                        (s) => s.event.id === segment.event.id
-                    );
+                    const isVisible = isEventVisibleFromStart(segment);
 
                     // 연속된 태그만 (단일 셀 태그는 CalendarTag에서 표시)
                     const isMultiDay = segment.duration > 1;

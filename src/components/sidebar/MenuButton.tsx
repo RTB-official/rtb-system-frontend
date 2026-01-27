@@ -32,7 +32,7 @@ export default function MenuButton({
     >
       <div className="flex gap-3 items-center w-[162px]">
         {icon}
-        <p className="font-medium text-[16px] leading-normal">{label}</p>
+        <p className="font-medium text-[16px]">{label}</p>
       </div>
     </button>
   );
