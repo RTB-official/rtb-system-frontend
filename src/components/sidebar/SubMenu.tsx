@@ -24,9 +24,6 @@ export default function SubMenu({
 
   // maxHeight는 number(px) 또는 "none"으로 관리
   const [maxHeight, setMaxHeight] = useState<number | "none">(isOpen ? "none" : 0);
-  
-    // ✅ 닫힐 때 items가 먼저 비어버리면 애니메이션이 깨지므로,
-  //    화면에 렌더링할 items는 따로 유지한다.
   const [renderItems, setRenderItems] = useState(items);
 
   const measure = () => contentRef.current?.scrollHeight ?? 0;

@@ -143,12 +143,12 @@ export default function ActionMenu({
                 <>
                     <div className="px-2 py-2 mb-1">
                         {userDisplayName && (
-                            <p className="text-[16px] font-semibold text-gray-900 leading-normal">
+                            <p className="text-[16px] font-semibold text-gray-900 ">
                                 {userDisplayName}
                             </p>
                         )}
                         {userEmail && (
-                            <p className="text-sm text-gray-500 leading-normal">
+                            <p className="text-sm text-gray-500">
                                 {userEmail}
                             </p>
                         )}

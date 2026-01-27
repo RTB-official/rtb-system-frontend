@@ -31,7 +31,6 @@ import { useSidebarMenuItems } from "../hooks/useSidebarMenuItems";
 import { useSidebarSubMenuState } from "../hooks/useSidebarSubMenuState";
 import { useSidebarRouteSync } from "../hooks/useSidebarRouteSync";
 import { PATHS } from "../utils/paths";
-import MainLink from "./sidebar/MainLink";
 import MenuButton from "./sidebar/MenuButton";
 import SubMenu from "./sidebar/SubMenu";
 
@@ -50,7 +49,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
 
-    // ?ъ슜???뺣낫 諛?沅뚰븳
+    // 사용자 정보 및 권한
     const { currentUser, currentUserId, sidebarLoginId, userPermissions, handleLogout } =
         useUser();
 
@@ -65,10 +64,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
 
 
-    // 沅뚰븳 ?뺣낫瑜?ref濡???ν븯??源쒕묀??諛⑹?
+    // 권한 정보를 ref로 보관해서 재렌더 이슈 방지
     const userPermissionsRef = useRef(userPermissions);
     useEffect(() => {
-        // 沅뚰븳????踰??ㅼ젙?섎㈃ ?좎? (珥덇린媛믪씠 false媛 ?꾨땺 ?뚮쭔 ?낅뜲?댄듃)
+        // 권한 정보가 완전히 세팅되면 업데이트 (초기값 false만 방지)
         if (userPermissions.isCEO || userPermissions.isAdmin || userPermissions.isStaff) {
             userPermissionsRef.current = userPermissions;
         }
@@ -85,8 +84,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 .single();
 
             if (error) {
-                console.error("profiles role 議고쉶 ?ㅽ뙣:", error);
-                // ??罹먯떆媛 admin?대㈃ 源쒕묀??諛⑹?瑜??꾪빐 false濡??⑥뼱?⑤━吏 ?딆쓬
+                console.error("profiles role 조회 실패:", error);
+                // 캐시가 admin이면 깜박임 방지를 위해 false로 덮지 않음
                 return;
             }
 
@@ -97,7 +96,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
             setProfileName(nextProfileName);
             localStorage.setItem("profile_name", nextProfileName);
 
-            // ???ㅼ쓬 ?쇱슦???대룞/?щ쭏?댄듃 ??利됱떆 諛섏쁺?섎룄濡?罹먯떆
+            // 새로고침/라우팅 시 즉시 반영되도록 캐시
             localStorage.setItem("profile_role", data?.role ?? "");
         };
 
@@ -190,11 +189,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
         setShowNotifications(false);
     };
 
-    // ???먯뿰?ㅻ윭???대룞: ?곹깭 ?뺣━ ??(?꾩슂 ?? ?대룞 ???ъ씠?쒕컮 ?リ린
     const go = (to: string, focus: MenuFocus | null) => {
         handleMenuClick(focus);
-
-        // 媛숈? 寃쎈줈硫?navigate ?앸왂 (遺덊븘?뷀븳 源쒕묀??諛⑹?)
         if (routeLocation.pathname !== to) {
             startTransition(() => {
                 navigate(to);
@@ -253,12 +249,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         }}
                     >
                         <Avatar email={currentUser?.email} size={28} position={currentUser?.position} />
-                        <p className="font-semibold text-[16px] text-gray-900 leading-normal">
+                        <p className="font-semibold text-[16px] text-gray-900">
                             {sidebarLoginId || currentUser?.email?.split("@")[0] || ""}
                         </p>
                     </div>
 
-                    {/* ?ъ슜???≪뀡 硫붾돱 */}
+                    {/* 사용자 액션 메뉴 */}
                     <ActionMenu
                         isOpen={userMenuOpen}
                         anchorEl={usernameRef.current}
@@ -292,19 +288,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                     });
 
                                     if (error) {
-                                        console.error("鍮꾨?踰덊샇 蹂寃??ㅽ뙣:", error.message);
-                                        showError("鍮꾨?踰덊샇 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎. ?ㅼ떆 ?쒕룄?댁＜?몄슂.");
+                                        console.error("비밀번호 변경 실패:", error.message);
+                                        showError("비밀번호 변경에 실패했습니다. 다시 시도해 주세요.");
                                         return false;
                                     }
 
-                                    showSuccess("鍮꾨?踰덊샇媛 蹂寃쎈릺?덉뒿?덈떎.");
+                                    showSuccess("비밀번호가 변경되었습니다.");
                                     return true;
                                 }}
                             />
                         </Suspense>
                     )}
-
-                    {/* 로그아웃 ?뺤씤 紐⑤떖 */}
                     {logoutConfirmModalOpen && (
                         <Suspense fallback={null}>
                             <BaseModal
@@ -356,7 +350,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                             <div className="flex gap-3 items-center w-[162px]">
                                 <IconNotifications />
-                                <p className="font-medium text-[16px] leading-normal">알림</p>
+                                <p className="font-medium text-[16px]">알림</p>
                             </div>
                             {unreadCount > 0 && (
                                 <div className="ml-auto">
@@ -388,7 +382,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                             await markAllNotificationsAsRead(currentUserId);
                                             await refreshNotifications();
                                         } catch (error) {
-                                            console.error("紐⑤몢 ?쎌쓬 泥섎━ ?ㅽ뙣:", error);
+                                            console.error("모두 읽음 처리 실패:", error);
                                         }
                                     }
                                 }}
@@ -403,14 +397,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                     >
                         {canShowHome && (
-                            <MainLink
-                                to={PATHS.dashboard}
+                            <MenuButton
                                 icon={<IconHome />}
                                 label="홈"
-                                kind="HOME"
-                                onClose={onClose}
-                                shouldForceInactive={shouldForceInactive}
-                                onMenuClick={() => handleMenuClick(null)}
+                                isActive={routeLocation.pathname === PATHS.dashboard && !menuFocus}
+                                onClick={() => go(PATHS.dashboard, null)}
                             />
                         )}
 
@@ -441,18 +432,18 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             />
                         </div>
 
-                        <MainLink
-                            to={
-                                stablePermissions.isStaff && profileName
-                                    ? `/workload/detail/${encodeURIComponent(profileName)}`
-                                    : PATHS.workload
-                            }
+                        <MenuButton
                             icon={<IconWorkload />}
                             label="워크로드"
-                            kind="WORKLOAD"
-                            onClose={onClose}
-                            shouldForceInactive={shouldForceInactive}
-                            onMenuClick={() => handleMenuClick(null)}
+                            isActive={routeLocation.pathname.startsWith(PATHS.workload) && !menuFocus}
+                            onClick={() =>
+                                go(
+                                    stablePermissions.isStaff && profileName
+                                        ? `/workload/detail/${encodeURIComponent(profileName)}`
+                                        : PATHS.workload,
+                                    null
+                                )
+                            }
                         />
 
                         <div className="-pb-1">
@@ -483,37 +474,28 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 onMenuClick={handleMenuClick}
                             />
                         </div>
-                        {canShowVacation && (
-                            <MainLink
-                                to={PATHS.vacation}
-                                icon={<IconVacation />}
-                                label="휴가 관리"
-                                kind="VACATION"
-                                onClose={onClose}
-                                shouldForceInactive={shouldForceInactive}
-                                onMenuClick={() => handleMenuClick(null)}
-                            />
-                        )}
-                        <MainLink
-                            to={PATHS.members}
-                            icon={<IconMembers />}
-                            label="구성원 관리"
-                            kind="MEMBERS"
-                            onClose={onClose}
-                            shouldForceInactive={shouldForceInactive}
-                            onMenuClick={() => handleMenuClick(null)}
-                        />
                         {canShowVehicles && (
-                            <MainLink
-                                to={PATHS.vehicles}
+                            <MenuButton
                                 icon={<IconCar />}
                                 label="차량 관리"
-                                kind="VEHICLES"
-                                onClose={onClose}
-                                shouldForceInactive={shouldForceInactive}
-                                onMenuClick={() => handleMenuClick(null)}
+                                isActive={routeLocation.pathname.startsWith(PATHS.vehicles) && !menuFocus}
+                                onClick={() => go(PATHS.vehicles, null)}
                             />
                         )}
+                        {canShowVacation && (
+                            <MenuButton
+                                icon={<IconVacation />}
+                                label="휴가 관리"
+                                isActive={routeLocation.pathname.startsWith(PATHS.vacation) && !menuFocus}
+                                onClick={() => go(PATHS.vacation, null)}
+                            />
+                        )}
+                        <MenuButton
+                            icon={<IconMembers />}
+                            label="구성원 관리"
+                            isActive={routeLocation.pathname.startsWith(PATHS.members) && !menuFocus}
+                            onClick={() => go(PATHS.members, null)}
+                        />
                     </nav>
 
                     <div className="h-px bg-gray-200 rounded-full mt-2" />
