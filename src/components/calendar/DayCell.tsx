@@ -233,6 +233,7 @@ const DayCell: React.FC<DayCellProps> = ({
                                 left: left,
                                 maxWidth: '100%',
                             }}
+                            onClick={(e) => onEventClick(segment.event, e)}
                         />
                     );
                 })}

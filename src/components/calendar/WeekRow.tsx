@@ -34,7 +34,7 @@ interface WeekRowProps {
     onDateClick: (dateKey: string, e: React.MouseEvent) => void;
     onDragStart: (dateKey: string, e: React.MouseEvent) => void;
     onDragEnter: (dateKey: string) => void;
-    onHiddenCountClick: (dateKey: string, threshold: number) => void;
+    onHiddenCountClick: (dateKey: string, hiddenEventIds: string[]) => void;
     onCellHeightChange?: (dateKey: string, height: number) => void;
 }
 
@@ -51,6 +51,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
     getColumnPadding,
     getSafeDateKey,
     getEventsForDate,
+    maxVisibleRows,
     tagHeight,
     tagSpacing,
     cellHeights,
@@ -108,6 +109,19 @@ const WeekRow: React.FC<WeekRowProps> = ({
         )}`
         : "";
 
+    const isEventVisibleFromStart = (segment: WeekEventSegment) => {
+        const startDate = week[segment.startOffset]?.date;
+        if (!startDate) return true;
+        const startDateKey = `${startDate.getFullYear()}-${pad(
+            startDate.getMonth() + 1
+        )}-${pad(startDate.getDate())}`;
+        const startTagInfo = dateTagInfo.get(startDateKey);
+        if (!startTagInfo) return true;
+        return startTagInfo.visibleSegments.some(
+            (s) => s.event.id === segment.event.id
+        );
+    };
+
     return (
         <div className="flex-1 grid grid-cols-7 border-b border-gray-200 relative" style={{ overflowX: 'visible' }}>
             {/* 연속된 태그의 텍스트를 WeekRow 레벨에 배치하여 전체 이벤트 너비에 걸쳐 표시 */}
@@ -159,15 +173,16 @@ const WeekRow: React.FC<WeekRowProps> = ({
 
                     const isHoliday = !!segment.event.isHoliday;
                     const isVacation = isVacationEvent(segment.event.title);
+                    const isWorkLog = segment.event.id.startsWith("worklog-");
                     const isContinued = segment.event.endDate > weekEndKey;
                     const displayTitle = segment.event.title;
                     // 태그 타입별로 다른 간격 적용
                     // 텍스트 위치는 아이콘 너비 + 태그 타입별 간격을 사용
                     const iconSize = isHoliday ? CALENDAR_TAG_ICON_SIZES.holiday
-                        : isVacation ? CALENDAR_TAG_ICON_SIZES.vacation
+                        : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SIZES.vacation
                             : CALENDAR_TAG_ICON_SIZES.general;
                     const iconSpacing = isHoliday ? CALENDAR_TAG_ICON_SPACING.holiday
-                        : isVacation ? CALENDAR_TAG_ICON_SPACING.vacation
+                        : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SPACING.vacation
                             : CALENDAR_TAG_ICON_SPACING.general;
                     const iconWidth = iconSize + iconSpacing;
 
@@ -239,7 +254,18 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         return current >= minDate && current <= maxDate;
                     })();
 
-                const tagInfo = dateTagInfo.get(dateKey);
+                const daySegments = weekEventRows.filter((segment) => {
+                    const segmentEnd = segment.startOffset + segment.duration;
+                    return segment.startOffset <= dayIdx && dayIdx < segmentEnd;
+                });
+                const visibleSegments = daySegments.filter(
+                    (segment) =>
+                        segment.rowIndex < maxVisibleRows &&
+                        isEventVisibleFromStart(segment)
+                );
+                const hiddenEventIds = daySegments
+                    .filter((segment) => !visibleSegments.some((s) => s.event.id === segment.event.id))
+                    .map((segment) => segment.event.id);
                 const cellHeight = cellHeights[dateKey] || 0;
 
                 return (
@@ -252,9 +278,9 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         isToday={isToday}
                         isInDragRange={!!isInDragRange}
                         columnPadding={getColumnPadding(dayIdx)}
-                        hiddenCount={tagInfo?.hiddenCount ?? 0}
+                        hiddenCount={hiddenEventIds.length}
                         onHiddenCountClick={() =>
-                            onHiddenCountClick(dateKey, tagInfo?.visibleSegments.length ?? 0)
+                            onHiddenCountClick(dateKey, hiddenEventIds)
                         }
                         cellRefs={cellRefs}
                         tagHeight={tagHeight}
@@ -262,19 +288,8 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         tagLayerTop={TAG_LAYER_TOP}
                         visibleSegments={
                             cellHeight > 0
-                                ? weekEventRows.filter((segment) => {
-                                    const segmentEnd = segment.startOffset + segment.duration;
-                                    const overlaps = segment.startOffset <= dayIdx && dayIdx < segmentEnd;
-                                    if (!overlaps) return false;
-                                    return tagInfo?.visibleSegments.some(
-                                        (s) => s.event.id === segment.event.id
-                                    );
-                                })
-                                : weekEventRows.filter(
-                                    (seg) =>
-                                        seg.startOffset <= dayIdx &&
-                                        dayIdx < seg.startOffset + seg.duration
-                                )
+                                ? visibleSegments
+                                : daySegments
                         }
                         week={week}
                         getSafeDateKey={getSafeDateKey}

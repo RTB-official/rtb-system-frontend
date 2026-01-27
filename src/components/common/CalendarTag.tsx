@@ -1,7 +1,7 @@
 // CalendarTag.tsx
 import React from "react";
 import { IconStar, IconVacation, IconReport } from "../icons/Icons";
-import { isVacationEvent, isWorkLogEvent } from "../../utils/calendarUtils";
+import { isVacationEvent } from "../../utils/calendarUtils";
 
 interface CalendarTagProps {
     title: string;
@@ -34,7 +34,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
 }) => {
     const isHoliday = variant === "holiday";
     const isVacation = isVacationEvent(title);
-    const isWorkLog = isWorkLogEvent(title);
+    const isWorkLog = !!eventId?.startsWith("worklog-");
 
     const [isHovered, setIsHovered] = React.useState(false);
 
@@ -84,7 +84,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                     width: width,
                 }}
                 onClick={(e) => {
-                    if (onClick && !isHoliday) {
+                    if (onClick) {
                         e.stopPropagation();
                         onClick(e);
                     }
@@ -143,7 +143,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                 }
             }}
             onClick={(e) => {
-                if (onClick && !isHoliday) {
+                if (onClick) {
                     e.stopPropagation();
                     onClick(e);
                 }
@@ -167,13 +167,17 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                         </div>
                     )
                 ) : isVacation ? (
-                    <div className="w-4 h-4 flex items-center justify-center mr-1.5 shrink-0">
-                        <IconVacation className="w-4 h-4 text-blue-500" />
-                    </div>
+                    isStart && (
+                        <div className="w-4 h-4 flex items-center justify-center mr-1.5 shrink-0">
+                            <IconVacation className="w-4 h-4 text-blue-500" />
+                        </div>
+                    )
                 ) : isWorkLog ? (
-                    <div className="w-4 h-4 flex items-center justify-center mr-1.5 shrink-0">
-                        <IconReport className="w-4 h-4 text-green-600" />
-                    </div>
+                    isStart && (
+                        <div className="w-4 h-4 flex items-center justify-center mr-1.5 shrink-0">
+                            <IconReport className="w-4 h-4 text-green-600" />
+                        </div>
+                    )
                 ) : isStart ? (
                     <div
                         className="w-1 h-5 rounded-full shrink-0 mr-2"

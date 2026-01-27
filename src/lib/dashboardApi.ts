@@ -358,15 +358,15 @@ export async function getWorkLogsForDashboard(
         const lastDay = getLastDayOfMonth(filters.year, filters.month);
         const startDate = `${filters.year}-${String(month).padStart(2, "0")}-01`;
         const endDate = `${filters.year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-        entriesQuery = entriesQuery
-            .gte("date_from", startDate)
-            .lte("date_from", endDate);
+        entriesQuery = entriesQuery.or(
+            `and(date_from.gte.${startDate},date_from.lte.${endDate}),and(date_to.gte.${startDate},date_to.lte.${endDate})`
+        );
     } else if (filters?.year) {
         const startDate = `${filters.year}-01-01`;
         const endDate = `${filters.year}-12-31`;
-        entriesQuery = entriesQuery
-            .gte("date_from", startDate)
-            .lte("date_from", endDate);
+        entriesQuery = entriesQuery.or(
+            `and(date_from.gte.${startDate},date_from.lte.${endDate}),and(date_to.gte.${startDate},date_to.lte.${endDate})`
+        );
     }
 
     const { data: entriesData, error: entriesError } = await entriesQuery;
@@ -429,24 +429,26 @@ export async function getWorkLogsForDashboard(
     >();
     for (const entry of entriesData) {
         const logId = entry.work_log_id;
+        const startCandidate = entry.date_from || entry.date_to || undefined;
+        const endCandidate = entry.date_to || entry.date_from || undefined;
         if (!datesMap.has(logId)) {
             datesMap.set(logId, {
-                date_from: entry.date_from || undefined,
-                date_to: entry.date_to || undefined,
+                date_from: startCandidate,
+                date_to: endCandidate,
             });
         } else {
             const existing = datesMap.get(logId)!;
             if (
-                entry.date_from &&
-                (!existing.date_from || entry.date_from < existing.date_from)
+                startCandidate &&
+                (!existing.date_from || startCandidate < existing.date_from)
             ) {
-                existing.date_from = entry.date_from;
+                existing.date_from = startCandidate;
             }
             if (
-                entry.date_to &&
-                (!existing.date_to || entry.date_to > existing.date_to)
+                endCandidate &&
+                (!existing.date_to || endCandidate > existing.date_to)
             ) {
-                existing.date_to = entry.date_to;
+                existing.date_to = endCandidate;
             }
         }
     }

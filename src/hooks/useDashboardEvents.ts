@@ -141,6 +141,19 @@ export function useMergedHolidays(
 ): CalendarEvent[] {
     return useMemo(() => {
         const merged: CalendarEvent[] = [];
+        const formatDateLabel = (dateKey: string) => {
+            const [, m, d] = dateKey.split("-");
+            const month = String(parseInt(m, 10));
+            const day = String(parseInt(d, 10));
+            return `${month}월 ${day}일`;
+        };
+        const normalizeHolidayName = (rawName: string, dateKey: string) => {
+            const name = rawName.trim();
+            if (name === "1월1일") return "신정";
+            if (name === "설날") return "설날 연휴";
+            if (name === "기독탄신일") return "크리스마스";
+            return name || formatDateLabel(dateKey);
+        };
         const sortedKeys = Object.keys(holidays).sort();
 
         let currentHoliday: {
@@ -150,7 +163,8 @@ export function useMergedHolidays(
         } | null = null;
 
         for (const key of sortedKeys) {
-            const title = holidays[key];
+            const rawTitle = holidays[key] ?? "";
+            const title = normalizeHolidayName(rawTitle, key);
             if (!currentHoliday) {
                 currentHoliday = { title, start: key, end: key };
             } else if (currentHoliday.title === title) {
@@ -231,4 +245,3 @@ export function useSortedEvents(
         });
     }, [allEvents, mergedHolidays]);
 }
-

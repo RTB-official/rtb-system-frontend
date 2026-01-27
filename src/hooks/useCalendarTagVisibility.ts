@@ -44,9 +44,6 @@ export function useCalendarTagVisibility(
 
         // rowIndex 순서대로 정렬된 이벤트 목록
         const sortedEvents = Array.from(uniqueEvents.values()).sort((a, b) => {
-            if (a.event.isHoliday !== b.event.isHoliday) {
-                return a.event.isHoliday ? -1 : 1; // 공휴일이 먼저
-            }
             return a.rowIndex - b.rowIndex;
         });
 
@@ -87,12 +84,7 @@ export function useCalendarTagVisibility(
                         seg.startOffset <= startDayIdx &&
                         startDayIdx < seg.startOffset + seg.duration
                 )
-                .sort((a, b) => {
-                    if (a.event.isHoliday !== b.event.isHoliday) {
-                        return a.event.isHoliday ? -1 : 1;
-                    }
-                    return a.rowIndex - b.rowIndex;
-                });
+                .sort((a, b) => a.rowIndex - b.rowIndex);
 
             // availableHeight 계산: 셀 높이에서 상단 영역과 하단 패딩만 제외
             const availableHeight = cellHeight - TAG_LAYER_TOP - CELL_PADDING_BOTTOM + EXTRA_SPACE;
@@ -104,35 +96,15 @@ export function useCalendarTagVisibility(
                 return;
             }
 
-            // 공휴일 태그 확인
-            const hasHoliday = daySegments.some(seg => seg.event.isHoliday);
-            const holidayOffset = hasHoliday ? tagHeight + tagSpacing : 0;
-
             // 순차적으로 태그를 배치하면서 들어갈 수 있는지 확인
             const visibleEvents = new Set<string>();
 
-            // 공휴일 태그 먼저 처리
-            let startTop = 0;
-            if (hasHoliday) {
-                const holidaySeg = daySegments.find(seg => seg.event.isHoliday);
-                if (holidaySeg) {
-                    const holidayBottom = tagHeight;
-                    if (holidayBottom <= availableHeight) {
-                        visibleEvents.add(holidaySeg.event.id);
-                        startTop = holidayOffset;
-                    }
-                }
-            }
-
-            // 일반 이벤트 태그만 필터링 (공휴일 제외)
-            const regularSegments = daySegments.filter(seg => !seg.event.isHoliday);
-
             // 태그가 잘리기 시작하는 순간을 감지하여 +n개 표시
-            let currentTop = startTop;
+            let currentTop = 0;
             let hasOverflow = false;
 
             // 모든 태그가 완전히 들어가는지 확인하면서 동시에 배치
-            for (const seg of regularSegments) {
+            for (const seg of daySegments) {
                 const tagTop = currentTop;
                 const tagBottom = tagTop + tagHeight;
 
@@ -151,23 +123,12 @@ export function useCalendarTagVisibility(
             if (hasOverflow) {
                 // +n개 공간을 확보한 최대 높이 (태그가 완전히 들어갈 수 있는 높이)
                 const maxVisibleHeight = availableHeight - HIDDEN_COUNT_HEIGHT;
-                currentTop = startTop;
-
-                // 공휴일 태그는 보존하고 일반 이벤트만 다시 계산
-                const holidayEventIds = new Set<string>();
-                if (hasHoliday) {
-                    const holidaySeg = daySegments.find(seg => seg.event.isHoliday);
-                    if (holidaySeg) {
-                        holidayEventIds.add(holidaySeg.event.id);
-                    }
-                }
+                currentTop = 0;
 
                 visibleEvents.clear();
-                // 공휴일 태그 다시 추가
-                holidayEventIds.forEach(id => visibleEvents.add(id));
 
                 // 태그가 완전히 들어갈 수 있는지 확인하면서 배치
-                for (const seg of regularSegments) {
+                for (const seg of daySegments) {
                     const tagTop = currentTop;
                     const tagBottom = tagTop + tagHeight;
 
@@ -201,12 +162,7 @@ export function useCalendarTagVisibility(
                         seg.startOffset <= dayIdx &&
                         dayIdx < seg.startOffset + seg.duration
                 )
-                .sort((a, b) => {
-                    if (a.event.isHoliday !== b.event.isHoliday) {
-                        return a.event.isHoliday ? -1 : 1;
-                    }
-                    return a.rowIndex - b.rowIndex;
-                });
+                .sort((a, b) => a.rowIndex - b.rowIndex);
 
             // 결정된 이벤트 표시 여부에 따라 최종 visibleSegments 결정
             const finalVisibleSegments = daySegments.filter(seg => {
@@ -224,4 +180,3 @@ export function useCalendarTagVisibility(
         return info;
     }, [week, weekEventRows, cellHeights, tagHeight, tagSpacing]);
 }
-
