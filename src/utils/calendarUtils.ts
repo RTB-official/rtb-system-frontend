@@ -22,9 +22,7 @@ export function generateMonthGrid(year: number, month: number) {
 /**
  * 주 단위로 그리드 데이터 나누기
  */
-export function splitIntoWeeks(
-    grid: { date: Date; inMonth: boolean }[]
-) {
+export function splitIntoWeeks(grid: { date: Date; inMonth: boolean }[]) {
     const result = [];
     for (let i = 0; i < grid.length; i += 7) {
         result.push(grid.slice(i, i + 7));
@@ -47,8 +45,20 @@ export function getSafeDateKey(d: Date): string {
  */
 export function getWeekEventRows(
     week: { date: Date; inMonth: boolean }[],
-    sortedEvents: CalendarEvent[]
+    sortedEvents: CalendarEvent[],
+    preferredRowIndexByEvent?: Map<string, number>,
 ) {
+    const preferredRows = preferredRowIndexByEvent ?? new Map<string, number>();
+    const normalizeDateKey = (value: string) => {
+        const base = value.length >= 10 ? value.slice(0, 10) : value;
+        const parts = base.split("-");
+        if (parts.length !== 3) return base;
+        const y = parts[0];
+        const m = parts[1].padStart(2, "0");
+        const d = parts[2].padStart(2, "0");
+        return `${y}-${m}-${d}`;
+    };
+    const weekStartKey = getSafeDateKey(week[0].date);
     const weekStart = new Date(week[0].date);
     weekStart.setHours(0, 0, 0, 0);
     const weekEnd = new Date(week[6].date);
@@ -67,14 +77,14 @@ export function getWeekEventRows(
             if (eventEnd < weekStart || eventStart > weekEnd) return null;
 
             const start = new Date(
-                Math.max(eventStart.getTime(), weekStart.getTime())
+                Math.max(eventStart.getTime(), weekStart.getTime()),
             );
             const end = new Date(
-                Math.min(eventEnd.getTime(), weekEnd.getTime())
+                Math.min(eventEnd.getTime(), weekEnd.getTime()),
             );
 
             const startOffset = Math.round(
-                (start.getTime() - weekStart.getTime()) / dayMs
+                (start.getTime() - weekStart.getTime()) / dayMs,
             );
             const duration =
                 Math.round((end.getTime() - start.getTime()) / dayMs) + 1;
@@ -87,23 +97,55 @@ export function getWeekEventRows(
         duration: number;
     }[];
 
-    // 슬롯(행) 할당 (공휴일 제외)
-    // 공휴일 태그는 rowIndex를 차지하지 않음
-    const nonHolidaySegments = segments.filter(seg => !seg.event.isHoliday);
-    const rows: (typeof nonHolidaySegments)[] = [];
-    nonHolidaySegments.forEach((segment) => {
+    // 슬롯(행) 할당 (연속된 태그를 위로, 공휴일은 아래로)
+    const orderedSegments = [...segments].sort((a, b) => {
+        const aStartKey = normalizeDateKey(a.event.startDate);
+        const bStartKey = normalizeDateKey(b.event.startDate);
+        const aContinued = aStartKey < weekStartKey;
+        const bContinued = bStartKey < weekStartKey;
+        if (aContinued !== bContinued) {
+            return aContinued ? -1 : 1; // 이전 주에서 넘어온 태그 우선
+        }
+        if (a.event.isHoliday !== b.event.isHoliday) {
+            return a.event.isHoliday ? 1 : -1; // 공휴일은 뒤로
+        }
+        if (a.startOffset !== b.startOffset) {
+            return a.startOffset - b.startOffset;
+        }
+        return a.event.id.localeCompare(b.event.id);
+    });
+
+    const rows: (typeof segments)[] = [];
+    orderedSegments.forEach((segment) => {
         let assigned = false;
-        for (let i = 0; i < rows.length; i++) {
-            const canFit = !rows[i].some(
+        const preferredRow = preferredRows.get(segment.event.id);
+        if (preferredRow !== undefined) {
+            while (rows.length <= preferredRow) {
+                rows.push([]);
+            }
+            const canFitPreferred = !rows[preferredRow].some(
                 (s) =>
                     segment.startOffset < s.startOffset + s.duration &&
-                    s.startOffset < segment.startOffset + segment.duration
+                    s.startOffset < segment.startOffset + segment.duration,
             );
-
-            if (canFit) {
-                rows[i].push(segment);
+            if (canFitPreferred) {
+                rows[preferredRow].push(segment);
                 assigned = true;
-                break;
+            }
+        }
+        if (!assigned) {
+            for (let i = 0; i < rows.length; i++) {
+                const canFit = !rows[i].some(
+                    (s) =>
+                        segment.startOffset < s.startOffset + s.duration &&
+                        s.startOffset < segment.startOffset + segment.duration,
+                );
+
+                if (canFit) {
+                    rows[i].push(segment);
+                    assigned = true;
+                    break;
+                }
             }
         }
         if (!assigned) {
@@ -114,25 +156,12 @@ export function getWeekEventRows(
     // 각 세그먼트에 rowIndex를 추가하여 반환
     const result = rows
         .map((row, rowIndex) =>
-            row.map((segment) => ({ ...segment, rowIndex }))
+            row.map((segment) => ({ ...segment, rowIndex })),
         )
         .flat();
-    
-    // 공휴일 세그먼트도 결과에 포함 (rowIndex는 -1로 설정하여 rowIndex 계산에서 제외)
-    const holidaySegments = segments
-        .filter(seg => seg.event.isHoliday)
-        .map(seg => ({ ...seg, rowIndex: -1 }));
-    
-    return [...result, ...holidaySegments];
-    
-    // 디버깅: 1월 1일과 1월 2일의 모든 일정 초기 rowIndex 확인
-    const weekStartDate = getSafeDateKey(week[0].date);
-    const weekEndDate = getSafeDateKey(week[6].date);
-    const hasJan1Or2 = result.some(seg => {
-        const segStartDate = getSafeDateKey(week[seg.startOffset]?.date || week[0].date);
-        return segStartDate === "2026-01-01" || segStartDate === "2026-01-02";
-    });
-    
+
+    return result;
+
     return result;
 }
 
@@ -141,7 +170,7 @@ export function getWeekEventRows(
  */
 export function getEventsForDate(
     dateKey: string,
-    sortedEvents: CalendarEvent[]
+    sortedEvents: CalendarEvent[],
 ): CalendarEvent[] {
     return sortedEvents.filter((event) => {
         const eventStart = new Date(event.startDate);
@@ -183,20 +212,15 @@ export function isVacationEvent(title: string): boolean {
     return title.includes("휴가");
 }
 
-export function isWorkLogEvent(title: string): boolean {
-    return title.startsWith("출장보고서 - ") || title.startsWith("출장 보고서 - ");
-}
-
 /**
  * 캘린더 태그 아이콘 간격 상수 (px)
  * - 홀리데이, 휴가, 출장보고서: 6px (mr-1.5)
  * - 기본 일정: 8px (mr-2)
  */
 export const CALENDAR_TAG_ICON_SPACING = {
-    holiday: 6,      // 공휴일
-    vacation: 6,    // 휴가
-    workLog: 6,      // 출장보고서
-    general: 8,      // 기본 일정
+    holiday: 6, // 공휴일
+    vacation: 6, // 휴가
+    general: 8, // 기본 일정
 } as const;
 
 /**
@@ -207,20 +231,21 @@ export const CALENDAR_TAG_ICON_SPACING = {
  * - 일반 이벤트: w-1(4px)
  */
 export const CALENDAR_TAG_ICON_SIZES = {
-    holiday: 16,      // 공휴일
-    vacation: 16,    // 휴가
-    workLog: 16,      // 출장보고서
-    general: 4,      // 일반 이벤트
+    holiday: 16, // 공휴일
+    vacation: 16, // 휴가
+    general: 4, // 일반 이벤트
 } as const;
 
 /**
  * 캘린더 태그 아이콘 너비 (아이콘 + 간격)
  */
 export const CALENDAR_TAG_ICON_WIDTHS = {
-    holiday: CALENDAR_TAG_ICON_SIZES.holiday + CALENDAR_TAG_ICON_SPACING.holiday,      // 22px
-    vacation: CALENDAR_TAG_ICON_SIZES.vacation + CALENDAR_TAG_ICON_SPACING.vacation,    // 22px
-    workLog: CALENDAR_TAG_ICON_SIZES.workLog + CALENDAR_TAG_ICON_SPACING.workLog,      // 22px
-    general: CALENDAR_TAG_ICON_SIZES.general + CALENDAR_TAG_ICON_SPACING.general,      // 12px
+    holiday:
+        CALENDAR_TAG_ICON_SIZES.holiday + CALENDAR_TAG_ICON_SPACING.holiday, // 22px
+    vacation:
+        CALENDAR_TAG_ICON_SIZES.vacation + CALENDAR_TAG_ICON_SPACING.vacation, // 22px
+    general:
+        CALENDAR_TAG_ICON_SIZES.general + CALENDAR_TAG_ICON_SPACING.general, // 12px
 } as const;
 
 /**
@@ -229,11 +254,8 @@ export const CALENDAR_TAG_ICON_WIDTHS = {
 export function getCalendarTagIconWidth(
     isHoliday: boolean,
     isVacation: boolean,
-    isWorkLog: boolean
 ): number {
     if (isHoliday) return CALENDAR_TAG_ICON_WIDTHS.holiday;
     if (isVacation) return CALENDAR_TAG_ICON_WIDTHS.vacation;
-    if (isWorkLog) return CALENDAR_TAG_ICON_WIDTHS.workLog;
     return CALENDAR_TAG_ICON_WIDTHS.general;
 }
-

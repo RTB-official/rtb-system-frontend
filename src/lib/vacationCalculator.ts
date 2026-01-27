@@ -49,7 +49,6 @@ export function calculateAnnualLeave(
     if (yearsOfServiceAtYearStart < 1) {
         // 입사일 기준으로 매월 같은 날짜에 1개씩 지급
         // 해당 연도에 지급받을 연차 개수 계산 (현재 날짜까지)
-        // 전년도 12월에 지급받은 연차도 해당 연도 연차에 포함
         let count = 0;
         
         // 입사일의 일(day) 추출
@@ -106,11 +105,6 @@ export function calculateAnnualLeave(
             // 해당 연도 내에 있는 경우 카운트
             if (grantDate >= yearStart && grantDate <= yearEnd) {
                 count++;
-            } else if (calculatedYear === targetYear - 1 && calculatedMonth === 11) {
-                // 전년도 12월에 지급받은 연차도 해당 연도 연차에 포함
-                if (grantDate <= previousYearEnd) {
-                    count++;
-                }
             }
             
             // 다음 달로 이동
@@ -300,7 +294,7 @@ export function getVacationGrantHistory(
                     continue;
                 }
                 
-                // 해당 연도 내에 있는 경우만 추가 (전년도 12월 연차는 해당 연도에 포함하지 않음)
+                // 해당 연도 내에 있는 경우만 추가
                 if (grantDate >= yearStart && grantDate <= yearEnd) {
                     // 타임존 문제 방지를 위해 로컬 날짜로 직접 구성
                     const year = grantDate.getFullYear();

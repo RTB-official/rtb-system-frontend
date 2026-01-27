@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { IconCalendar, IconVacation, IconReport, IconDownload } from "../icons/Icons";
+import { IconCalendar, IconVacation, IconReport, IconDownload, IconStar } from "../icons/Icons";
 import { CalendarEvent } from "../../types";
 import Button from "./Button";
 import Avatar from "./Avatar";
@@ -9,6 +9,7 @@ import Chip from "../ui/Chip";
 import { supabase } from "../../lib/supabase";
 import { getVacationById } from "../../lib/vacationApi";
 import { getWorkLogById } from "../../lib/workLogApi";
+import { formatDateRange } from "../../utils/calendarUtils";
 
 interface EventDetailMenuProps {
     isOpen: boolean;
@@ -43,9 +44,11 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         ? "vacation"
         : event?.id.startsWith("worklog-")
             ? "worklog"
-            : event?.id.startsWith("event-")
-                ? "event"
-                : null;
+            : event?.id.startsWith("holiday-")
+                ? "holiday"
+                : event?.id.startsWith("event-")
+                    ? "event"
+                    : null;
 
     // 휴가 데이터 로드
     useEffect(() => {
@@ -261,10 +264,14 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
             title = "출장 보고서";
         }
 
-        // 작성일 표시 (작업 기간이 아닌 작성일)
-        const createdDate = workLogData?.workLog?.created_at
-            ? formatDateTime(workLogData.workLog.created_at)
-            : null;
+        const entries = workLogData?.entries || [];
+        const dateCandidates = entries.flatMap((entry: any) => [
+            entry.dateFrom || null,
+            entry.dateTo || null,
+        ]).filter(Boolean) as string[];
+        const periodStart = dateCandidates.length > 0 ? dateCandidates.reduce((a, b) => (a < b ? a : b)) : null;
+        const periodEnd = dateCandidates.length > 0 ? dateCandidates.reduce((a, b) => (a > b ? a : b)) : null;
+        const workPeriod = periodStart ? formatDateRange(periodStart, periodEnd || periodStart) : null;
 
         return (
             <div className="flex flex-col gap-2.5">
@@ -276,13 +283,13 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                         <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words text-left">
                             {title}
                         </h3>
-                        {createdDate ? (
+                        {workPeriod ? (
                             <div className="text-sm text-gray-500 text-left">
-                                {createdDate} 작성
+                                {workPeriod}
                             </div>
                         ) : (
                             <div className="text-sm text-gray-500 text-left">
-                                작성일 정보 없음
+                                출장기간 정보 없음
                             </div>
                         )}
                     </div>
@@ -414,6 +421,31 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         );
     };
 
+    // 공휴일 UI
+    const renderHolidayUI = () => {
+        const holidayRange = formatDateRange(event.startDate, event.endDate);
+        return (
+            <div className="flex flex-col gap-4">
+                <div className="flex gap-3 items-start">
+                    <div className="shrink-0">
+                        <IconStar className="w-6 h-6 text-red-500" />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-2 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words">
+                            {event.title}
+                        </h3>
+                        <div className="text-sm text-gray-500 font-medium">
+                            대한민국 공휴일
+                        </div>
+                        <div className="text-sm text-gray-500 font-medium">
+                            {holidayRange}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // 참여자 프로필 컴포넌트
     const AttendeeProfile: React.FC<{ attendeeName: string }> = ({ attendeeName }) => {
         const [profile, setProfile] = useState<any>(null);
@@ -471,6 +503,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         >
             {eventType === "vacation" && renderVacationUI()}
             {eventType === "worklog" && renderWorkLogUI()}
+            {eventType === "holiday" && renderHolidayUI()}
             {eventType === "event" && renderEventUI()}
             {!eventType && (
                 <div className="text-sm text-gray-500">

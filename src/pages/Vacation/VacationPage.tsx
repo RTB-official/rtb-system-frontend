@@ -231,19 +231,24 @@ export default function VacationPage() {
 
     // 지급/소멸 내역 변환
     const grantExpireRows = useMemo<GrantExpireRow[]>(() => {
+        const selectedYear = parseInt(year, 10);
         return grantHistory.map((h, index) => {
             const date = new Date(h.date);
+            const displayYear = date.getFullYear();
             const month = date.getMonth() + 1;
             const day = date.getDate();
 
             return {
                 id: `grant-${index}`,
-                monthLabel: `${month}월 ${day}일`,
+                monthLabel:
+                    displayYear !== selectedYear
+                        ? `${displayYear}년 ${month}월 ${day}일`
+                        : `${month}월 ${day}일`,
                 granted: h.granted,
                 expired: h.expired,
             };
         });
-    }, [grantHistory]);
+    }, [grantHistory, year]);
 
     // 간단 페이징(1페이지 10개 고정)
     const itemsPerPage = 10;

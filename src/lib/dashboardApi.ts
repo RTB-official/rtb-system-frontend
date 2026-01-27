@@ -54,6 +54,7 @@ export interface WorkLogWithPersons {
     id: number;
     author: string;
     subject: string;
+    vessel?: string | null;
     created_at: string;
     persons: string[];
     date_from?: string;
@@ -357,15 +358,15 @@ export async function getWorkLogsForDashboard(
         const lastDay = getLastDayOfMonth(filters.year, filters.month);
         const startDate = `${filters.year}-${String(month).padStart(2, "0")}-01`;
         const endDate = `${filters.year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-        entriesQuery = entriesQuery
-            .gte("date_from", startDate)
-            .lte("date_from", endDate);
+        entriesQuery = entriesQuery.or(
+            `and(date_from.gte.${startDate},date_from.lte.${endDate}),and(date_to.gte.${startDate},date_to.lte.${endDate})`
+        );
     } else if (filters?.year) {
         const startDate = `${filters.year}-01-01`;
         const endDate = `${filters.year}-12-31`;
-        entriesQuery = entriesQuery
-            .gte("date_from", startDate)
-            .lte("date_from", endDate);
+        entriesQuery = entriesQuery.or(
+            `and(date_from.gte.${startDate},date_from.lte.${endDate}),and(date_to.gte.${startDate},date_to.lte.${endDate})`
+        );
     }
 
     const { data: entriesData, error: entriesError } = await entriesQuery;
@@ -382,7 +383,7 @@ export async function getWorkLogsForDashboard(
     const [workLogsResult, personsResult] = await Promise.all([
         supabase
             .from("work_logs")
-            .select("id, author, subject, created_at")
+            .select("id, author, subject, vessel, created_at")
             .eq("is_draft", false)
             .in("id", workLogIds)
             .limit(500),
@@ -428,24 +429,26 @@ export async function getWorkLogsForDashboard(
     >();
     for (const entry of entriesData) {
         const logId = entry.work_log_id;
+        const startCandidate = entry.date_from || entry.date_to || undefined;
+        const endCandidate = entry.date_to || entry.date_from || undefined;
         if (!datesMap.has(logId)) {
             datesMap.set(logId, {
-                date_from: entry.date_from || undefined,
-                date_to: entry.date_to || undefined,
+                date_from: startCandidate,
+                date_to: endCandidate,
             });
         } else {
             const existing = datesMap.get(logId)!;
             if (
-                entry.date_from &&
-                (!existing.date_from || entry.date_from < existing.date_from)
+                startCandidate &&
+                (!existing.date_from || startCandidate < existing.date_from)
             ) {
-                existing.date_from = entry.date_from;
+                existing.date_from = startCandidate;
             }
             if (
-                entry.date_to &&
-                (!existing.date_to || entry.date_to > existing.date_to)
+                endCandidate &&
+                (!existing.date_to || endCandidate > existing.date_to)
             ) {
-                existing.date_to = entry.date_to;
+                existing.date_to = endCandidate;
             }
         }
     }
@@ -461,6 +464,7 @@ export async function getWorkLogsForDashboard(
             id: log.id,
             author: log.author,
             subject: log.subject,
+            vessel: log.vessel,
             created_at: log.created_at,
             persons,
             date_from: dates?.date_from,
@@ -518,10 +522,13 @@ export function workLogToCalendarEvent(
 ): CalendarEvent {
     const startDate = workLog.date_from || workLog.created_at.split("T")[0];
     const endDate = workLog.date_to || startDate;
+    const vessel = workLog.vessel?.trim() || "";
+    const subject = workLog.subject?.trim() || "";
+    const detail = [vessel, subject].filter(Boolean).join(" ");
 
     return {
         id: `worklog-${workLog.id}`,
-        title: `출장 보고서 - ${workLog.subject}`,
+        title: detail || "출장 보고서",
         color: "#84cc16", // 연두색
         startDate,
         endDate,

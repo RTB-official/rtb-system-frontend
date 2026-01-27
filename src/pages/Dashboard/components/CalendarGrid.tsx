@@ -18,7 +18,7 @@ interface CalendarGridProps {
     onDateClick: (dateKey: string, e: React.MouseEvent) => void;
     onDragStart: (dateKey: string, e: React.MouseEvent) => void;
     onDragEnter: (dateKey: string) => void;
-    onHiddenCountClick: (dateKey: string, threshold: number) => void;
+    onHiddenCountClick: (dateKey: string, hiddenEventIds: string[]) => void;
     onCellHeightChange?: (dateKey: string, height: number) => void;
 }
 
@@ -60,6 +60,7 @@ export default function CalendarGrid({
     const tagSpacing = isMobile ? 4 : 6; // 모바일: 점 간격(4px), 데스크톱: 태그 간격(6px)
 
     const pad = (n: number) => (n < 10 ? "0" + n : String(n));
+    const rowIndexByEvent = new Map<string, number>();
 
     return (
         <div
@@ -72,7 +73,21 @@ export default function CalendarGrid({
         >
             {weeks.map((week, weekIdx) => {
                 // 주 단위 이벤트 행 정보 가져오기
-                const weekEventRows = getWeekEventRows(week, sortedEvents);
+                const weekEventRows = getWeekEventRows(
+                    week,
+                    sortedEvents,
+                    rowIndexByEvent
+                );
+                const weekStartKey = getSafeDateKey(week[0].date);
+                const weekEndKey = getSafeDateKey(week[6].date);
+                weekEventRows.forEach((segment) => {
+                    const startKey = segment.event.startDate.slice(0, 10);
+                    if (startKey >= weekStartKey && startKey <= weekEndKey) {
+                        rowIndexByEvent.set(segment.event.id, segment.rowIndex);
+                    } else if (!rowIndexByEvent.has(segment.event.id)) {
+                        rowIndexByEvent.set(segment.event.id, segment.rowIndex);
+                    }
+                });
 
                 // 각 날짜 셀의 최소 높이를 계산하여 표시 가능한 행 수 결정
                 const weekCellHeights = week.map(({ date }) => {
@@ -131,4 +146,3 @@ export default function CalendarGrid({
         </div>
     );
 }
-

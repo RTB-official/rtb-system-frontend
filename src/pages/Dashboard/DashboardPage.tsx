@@ -141,7 +141,7 @@ useEffect(() => {
     const [hiddenEventsModalOpen, setHiddenEventsModalOpen] = useState(false);
     const [hiddenEventsDate, setHiddenEventsDate] = useState<{
         dateKey: string;
-        threshold: number;
+        hiddenEventIds: string[];
     } | null>(null);
     const [eventDetailMenuOpen, setEventDetailMenuOpen] = useState(false);
     const [eventDetailMenuPos, setEventDetailMenuPos] = useState<{
@@ -521,10 +521,10 @@ useEffect(() => {
                                             setDragEnd(dateKey);
                                             setSelectedEndDateForModal(dateKey);
                                         }}
-                                        onHiddenCountClick={(dateKey, threshold) => {
+                                        onHiddenCountClick={(dateKey, hiddenEventIds) => {
                                             setHiddenEventsDate({
                                                 dateKey,
-                                                threshold,
+                                                hiddenEventIds,
                                             });
                                             setHiddenEventsModalOpen(true);
                                         }}
@@ -597,7 +597,9 @@ useEffect(() => {
                             hiddenEventsDate.dateKey,
                             sortedEvents
                         )
-                            .slice(hiddenEventsDate.threshold)
+                            .filter((event) =>
+                                hiddenEventsDate.hiddenEventIds.includes(event.id)
+                            )
                             .map((event) => (
                                 <div
                                     key={event.id}

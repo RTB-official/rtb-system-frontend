@@ -1,6 +1,7 @@
 import React from "react";
 import CalendarTag from "../common/CalendarTag";
 import { CalendarEvent } from "../../types";
+import { CELL_PADDING_LEFT, CELL_PADDING_RIGHT } from "../../utils/calendarConstants";
 
 interface WeekEventSegment {
     event: CalendarEvent;
@@ -124,7 +125,7 @@ const DayCell: React.FC<DayCellProps> = ({
             onMouseDown={onMouseDown}
             onMouseEnter={onMouseEnter}
             onClick={onClick}
-            className={`p-4 relative ${dayIdx < 6 ? "border-r border-gray-200" : ""
+            className={`p-2 relative ${dayIdx < 6 ? "border-r border-gray-200" : ""
                 } ${inMonth ? "cursor-pointer" : "cursor-default"
                 } transition-colors select-none flex flex-col ${isInDragRange
                     ? "bg-blue-50"
@@ -175,7 +176,7 @@ const DayCell: React.FC<DayCellProps> = ({
                     zIndex: 10,
                 }}
             >
-                {/* 공휴일 태그를 제일 위에 배치 */}
+                {/* 공휴일 태그 */}
                 {holidaySegments.map((segment) => {
                     const isStartInCell = segment.startOffset === dayIdx;
                     const isEndInCell = segment.startOffset + segment.duration - 1 === dayIdx;
@@ -196,22 +197,25 @@ const DayCell: React.FC<DayCellProps> = ({
                     let width = "100%";
                     let left = "0px";
                     if (isStartInCell && isEndInCell) {
-                        // 시작과 끝 모두 이 셀에 있으면 양쪽 12px 패딩
-                        width = "calc(100% - 24px)";
-                        left = "12px";
+                        // 시작과 끝 모두 이 셀에 있으면 양쪽 패딩
+                        width = `calc(100% - ${CELL_PADDING_LEFT + CELL_PADDING_RIGHT}px)`;
+                        left = `${CELL_PADDING_LEFT}px`;
                     } else if (isStartInCell) {
-                        // 시작만 이 셀에 있으면 왼쪽 12px 패딩
-                        width = "calc(100% - 12px)";
-                        left = "12px";
+                        // 시작만 이 셀에 있으면 왼쪽 패딩
+                        width = `calc(100% - ${CELL_PADDING_LEFT}px)`;
+                        left = `${CELL_PADDING_LEFT}px`;
                     } else if (isEndInCell) {
-                        // 끝만 이 셀에 있으면 오른쪽 12px 패딩
-                        width = "calc(100% - 12px)";
+                        // 끝만 이 셀에 있으면 오른쪽 패딩
+                        width = `calc(100% - ${CELL_PADDING_RIGHT}px)`;
                         left = "0px";
                     } else {
                         // 중간에 있는 태그는 패딩 없음 (연속된 태그)
                         width = "100%";
                         left = "0px";
                     }
+
+                    // 공휴일도 rowIndex 기준으로 배치 (우선순위 낮춤)
+                    const top = segment.rowIndex * (tagHeight + tagSpacing);
 
                     return (
                         <CalendarTag
@@ -225,10 +229,11 @@ const DayCell: React.FC<DayCellProps> = ({
                             eventId={segment.event.id}
                             style={{
                                 position: 'absolute',
-                                top: '0px', // 공휴일은 항상 제일 위
+                                top: `${top}px`,
                                 left: left,
                                 maxWidth: '100%',
                             }}
+                            onClick={(e) => onEventClick(segment.event, e)}
                         />
                     );
                 })}
@@ -250,24 +255,20 @@ const DayCell: React.FC<DayCellProps> = ({
                     const isEventEnd =
                         segment.event.endDate === getSafeDateKey(endDayDate);
 
-                    // 시작 날짜의 공휴일 유무 확인 (며칠에 걸쳐 있는 이벤트의 위치 일관성 유지)
-                    const startDateKey = getSafeDateKey(startDayDate);
-                    const startDateHasHoliday = getEventsForDate(startDateKey).some(event => event.isHoliday);
-
                     // 연속된 태그가 셀 경계를 넘어가도록 위치 조정
                     let width = "100%";
                     let left = "0px";
                     if (isStartInCell && isEndInCell) {
-                        // 시작과 끝 모두 이 셀에 있으면 양쪽 12px 패딩
-                        width = "calc(100% - 24px)";
-                        left = "12px";
+                        // 시작과 끝 모두 이 셀에 있으면 양쪽 패딩
+                        width = `calc(100% - ${CELL_PADDING_LEFT + CELL_PADDING_RIGHT}px)`;
+                        left = `${CELL_PADDING_LEFT}px`;
                     } else if (isStartInCell) {
-                        // 시작만 이 셀에 있으면 왼쪽 12px 패딩
-                        width = "calc(100% - 12px)";
-                        left = "12px";
+                        // 시작만 이 셀에 있으면 왼쪽 패딩
+                        width = `calc(100% - ${CELL_PADDING_LEFT}px)`;
+                        left = `${CELL_PADDING_LEFT}px`;
                     } else if (isEndInCell) {
-                        // 끝만 이 셀에 있으면 오른쪽 12px 패딩
-                        width = "calc(100% - 12px)";
+                        // 끝만 이 셀에 있으면 오른쪽 패딩
+                        width = `calc(100% - ${CELL_PADDING_RIGHT}px)`;
                         left = "0px";
                     } else {
                         // 중간에 있는 태그는 패딩 없음 (연속된 태그)
@@ -275,9 +276,8 @@ const DayCell: React.FC<DayCellProps> = ({
                         left = "0px";
                     }
 
-                    // rowIndex로 위치 계산 (시작 날짜에 공휴일이 있으면 그 아래에 배치하여 일관성 유지)
-                    const holidayOffset = startDateHasHoliday ? tagHeight + tagSpacing : 0;
-                    const top = segment.rowIndex * (tagHeight + tagSpacing) + holidayOffset;
+                    // rowIndex로 위치 계산
+                    const top = segment.rowIndex * (tagHeight + tagSpacing);
 
                     return (
                         <CalendarTag
