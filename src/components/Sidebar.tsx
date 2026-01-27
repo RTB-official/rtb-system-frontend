@@ -55,9 +55,16 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const { currentUser, currentUserId, sidebarLoginId, userPermissions, handleLogout } =
         useUser();
 
+
         const [isAdmin, setIsAdmin] = useState<boolean>(() => {
             return localStorage.getItem("profile_role") === "admin";
         });
+    
+        const [profileName, setProfileName] = useState<string>(() => {
+            return localStorage.getItem("profile_name") ?? "";
+        });
+
+
 
     // 沅뚰븳 ?뺣낫瑜?ref濡???ν븯??源쒕묀??諛⑹?
     const userPermissionsRef = useRef(userPermissions);
@@ -74,7 +81,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
             const { data, error } = await supabase
                 .from("profiles")
-                .select("role")
+                .select("role, name")
                 .eq("id", currentUserId)
                 .single();
 
@@ -86,6 +93,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
             const nextIsAdmin = data?.role === "admin";
             setIsAdmin(nextIsAdmin);
+
+            const nextProfileName = data?.name ?? "";
+            setProfileName(nextProfileName);
+            localStorage.setItem("profile_name", nextProfileName);
 
             // ???ㅼ쓬 ?쇱슦???대룞/?щ쭏?댄듃 ??利됱떆 諛섏쁺?섎룄濡?罹먯떆
             localStorage.setItem("profile_role", data?.role ?? "");
@@ -200,6 +211,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     };
     const handleLogoutClick = async () => {
         localStorage.removeItem("profile_role");
+        localStorage.removeItem("profile_name");
         await handleLogout();
         navigate("/login");
     };
@@ -428,7 +440,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                         {/* ?뚰겕濡쒕뱶 */}
                         <MainLink
-                            to={PATHS.workload}
+                            to={
+                                stablePermissions.isStaff && profileName
+                                    ? `/workload/detail/${encodeURIComponent(profileName)}`
+                                    : PATHS.workload
+                            }
                             icon={<IconWorkload />}
                             label="워크로드"
                             kind="WORKLOAD"
@@ -436,6 +452,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             shouldForceInactive={shouldForceInactive}
                             onMenuClick={() => handleMenuClick(null)}
                         />
+
 
                         {/* 吏異?愿由?*/}
                         <MenuButton

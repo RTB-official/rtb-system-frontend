@@ -78,8 +78,9 @@ function calcMinutes(params: {
 
     if (!dateFrom || !dateTo || !from || !to) return 0;
 
-    const start = new Date(`${dateFrom}T${from}:00`);
-    const end = new Date(`${dateTo}T${to}:00`);
+    const start = toDateSafe(dateFrom, from);
+    const end = toDateSafe(dateTo, to);
+
 
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
     if (end <= start) return 0;
@@ -94,6 +95,85 @@ function formatHoursMinutes(totalMinutes: number) {
     if (m === 0) return `${h}시간`;
     if (h === 0) return `${m}분`;
     return `${h}시간 ${m}분`;
+}
+
+// ✅ "24:00" 같은 시간을 Date로 안전하게 변환(24시는 다음날 00시로 처리)
+function toDateSafe(date: string, time: string) {
+    if (!date || !time) return new Date("Invalid");
+    const [hhStr, mmStr] = time.split(":");
+    const hh = Number(hhStr);
+    const mm = Number(mmStr ?? "0");
+
+    // 24:00 → 다음날 00:00
+    if (hh === 24) {
+        const d = new Date(`${date}T00:00:00`);
+        d.setDate(d.getDate() + 1);
+        d.setHours(0, mm, 0, 0);
+        return d;
+    }
+
+    return new Date(
+        `${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`
+    );
+}
+
+// ✅ 날짜跨越 엔트리를 "날짜별 카드"로 분할(표시용)
+function splitEntryByDayForDisplay(entry: any, fallbackKey: string) {
+    const timeFrom = normalizeTime(entry.timeFrom) || "00:00";
+    const timeTo = normalizeTime(entry.timeTo) || "00:00";
+
+    // 같은 날이면 그대로
+    if (entry.dateFrom === entry.dateTo) {
+        return [
+            {
+                ...entry,
+                __segKey: String(entry.id ?? fallbackKey),
+            },
+        ];
+    }
+
+    const start = toDateSafe(entry.dateFrom, timeFrom);
+    const end = toDateSafe(entry.dateTo, timeTo);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+        return [
+            {
+                ...entry,
+                __segKey: String(entry.id ?? fallbackKey),
+            },
+        ];
+    }
+
+    const results: any[] = [];
+
+    let cur = new Date(`${entry.dateFrom}T00:00:00`);
+    const last = new Date(`${entry.dateTo}T00:00:00`);
+
+    while (cur <= last) {
+        const yyyy = cur.getFullYear();
+        const mm = String(cur.getMonth() + 1).padStart(2, "0");
+        const dd = String(cur.getDate()).padStart(2, "0");
+        const d = `${yyyy}-${mm}-${dd}`;
+
+        const isFirst = d === entry.dateFrom;
+        const isLast = d === entry.dateTo;
+
+        const segTimeFrom = isFirst ? timeFrom : "00:00";
+        const segTimeTo = isLast ? timeTo : "24:00"; // ✅ 중간 날짜는 24:00까지
+
+        results.push({
+            ...entry,
+            dateFrom: d,
+            dateTo: d,
+            timeFrom: segTimeFrom,
+            timeTo: segTimeTo,
+            __segKey: `${entry.id ?? fallbackKey}__${d}`, // 날짜별 카드 키
+        });
+
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    return results;
 }
 
 const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
@@ -418,16 +498,26 @@ try {
 <SectionCard title="출장 업무 일지">
     {data?.entries?.length ? (
         <div className="flex flex-col gap-3">
-            {[...data.entries]
-                .sort((a: any, b: any) => {
+            {(() => {
+                const baseSorted = [...data.entries]
+                    .sort((a: any, b: any) => {
+                        const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
+                        const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
+                        return aKey.localeCompare(bKey);
+                    });
+
+                // ✅ 날짜별 표시용 분할
+                const displayEntries = baseSorted.flatMap((e: any, index: number) => {
+                    const fallbackKey = `${e.dateFrom}-${e.timeFrom}-${e.dateTo}-${e.timeTo}-${index}`;
+                    return splitEntryByDayForDisplay(e, fallbackKey);
+                }).sort((a: any, b: any) => {
                     const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
                     const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
                     return aKey.localeCompare(bKey);
-                })
-                .map((e: any, index: number, arr: any[]) => {
-                    const key =
-                        e.id ??
-                        `${e.dateFrom}-${e.timeFrom}-${e.dateTo}-${e.timeTo}-${index}`;
+                });
+
+                return displayEntries.map((e: any, index: number, arr: any[]) => {
+                    const key = e.__segKey;
 
                     const minutes = calcMinutes({
                         dateFrom: e.dateFrom,
@@ -467,8 +557,7 @@ try {
                         typeStyles["작업"];
 
                     const prev = arr[index - 1];
-                    const showDateSeparator =
-                        prev && prev.dateFrom !== e.dateFrom;
+                    const showDateSeparator = prev && prev.dateFrom !== e.dateFrom;
 
                     return (
                         <div key={String(key)}>
@@ -485,19 +574,14 @@ try {
                             <div
                                 className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
                             >
-                                {/* 상단 컬러바 */}
-                                <div
-                                    className={`h-1 bg-gradient-to-r ${style.gradient}`}
-                                />
+                                <div className={`h-1 bg-gradient-to-r ${style.gradient}`} />
 
-                                {/* 헤더 (클릭으로 접기/펼치기) */}
                                 <div
                                     className="relative p-4 cursor-pointer"
                                     onClick={() => toggleCard(String(key))}
                                 >
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="flex-1">
-                                            {/* 유형 배지 & 시간 */}
                                             <div className="flex items-center gap-2 mb-2">
                                                 <span
                                                     className={`inline-flex items-center px-3 py-1 ${style.badge} text-white text-[13px] font-bold rounded-full shadow-sm`}
@@ -505,14 +589,11 @@ try {
                                                     {e.descType || "—"}
                                                 </span>
 
-                                                {/* ✅ 상태 옆에 x시간 */}
                                                 <span className={`text-[15px] font-bold ${style.text}`}>
                                                     {hoursLabel}
                                                 </span>
                                             </div>
 
-
-                                            {/* 점심 미제공(근무) 표시 (있을 때만) */}
                                             {e.lunch_worked && (
                                                 <div className="absolute bottom-3 right-3 z-20">
                                                     <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm">
@@ -521,7 +602,6 @@ try {
                                                 </div>
                                             )}
 
-                                            {/* 시간 정보 */}
                                             <div className="flex items-center gap-2 text-[13px] text-gray-600 mb-2">
                                                 <svg
                                                     width="16"
@@ -533,19 +613,14 @@ try {
                                                     <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                 </svg>
                                                 <span>
-                                                    {e.dateFrom}{" "}
-                                                    {toKoreanTime(e.timeFrom)}
+                                                    {e.dateFrom} {toKoreanTime(e.timeFrom)}
                                                 </span>
-                                                <span className="text-gray-400">
-                                                    →
-                                                </span>
+                                                <span className="text-gray-400">→</span>
                                                 <span>
-                                                    {e.dateTo}{" "}
-                                                    {toKoreanTime(e.timeTo)}
+                                                    {e.dateTo} {toKoreanTime(e.timeTo)}
                                                 </span>
                                             </div>
 
-                                            {/* 인원 */}
                                             {Array.isArray(e.persons) && (
                                                 <div className="flex items-center gap-2 text-[13px] text-gray-600">
                                                     <svg
@@ -557,12 +632,8 @@ try {
                                                     >
                                                         <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                                                     </svg>
-                                                    <span className="font-medium">
-                                                        {e.persons.length}명
-                                                    </span>
-                                                    <span className="text-gray-400">
-                                                        |
-                                                    </span>
+                                                    <span className="font-medium">{e.persons.length}명</span>
+                                                    <span className="text-gray-400">|</span>
                                                     <span className="truncate max-w-[200px]">
                                                         {e.persons.join(", ")}
                                                     </span>
@@ -570,11 +641,8 @@ try {
                                             )}
                                         </div>
 
-                                        {/* 확장 아이콘 */}
                                         <div
-                                            className={`w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shadow-sm transition-transform ${
-                                                isExpanded ? "rotate-180" : ""
-                                            }`}
+                                            className={`w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shadow-sm transition-transform ${isExpanded ? "rotate-180" : ""}`}
                                         >
                                             <svg
                                                 width="20"
@@ -595,32 +663,23 @@ try {
                                     </div>
                                 </div>
 
-                                {/* 본문 (확장 시) */}
                                 <div
                                     className={`overflow-hidden transition-all duration-300 ${
-                                        isExpanded
-                                            ? "max-h-[500px] opacity-100"
-                                            : "max-h-0 opacity-0"
+                                        isExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
                                     }`}
                                 >
                                     <div className="px-4 pb-4 border-t border-white/50">
                                         <div className="pt-4 space-y-3">
-                                            {/* 상세내용 */}
                                             <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                                <p className="text-[13px] text-gray-500 mb-1">
-                                                    상세 내용
-                                                </p>
+                                                <p className="text-[13px] text-gray-500 mb-1">상세 내용</p>
                                                 <p className="text-[15px] text-gray-800 whitespace-pre-line">
                                                     {e.details || "—"}
                                                 </p>
                                             </div>
 
-                                            {/* 특이사항 (있을 때만) */}
                                             {e.note?.trim() && (
                                                 <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                                    <p className="text-[13px] text-gray-500 mb-1">
-                                                        특이 사항
-                                                    </p>
+                                                    <p className="text-[13px] text-gray-500 mb-1">특이 사항</p>
                                                     <p className="text-[15px] text-gray-800 whitespace-pre-line">
                                                         {e.note}
                                                     </p>
@@ -632,7 +691,9 @@ try {
                             </div>
                         </div>
                     );
-                })}
+                });
+            })()}
+
         </div>
     ) : (
         <div className="text-gray-400">업무 일지가 없습니다.</div>

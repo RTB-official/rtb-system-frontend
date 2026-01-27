@@ -74,7 +74,7 @@ export default function WorkloadDetailPage() {
     const [loading, setLoading] = useState(true);
 
     // ✅ useUser 훅으로 권한 정보 가져오기
-    const { userPermissions } = useUser();
+    const { currentUser, userPermissions } = useUser();
     const isStaff = userPermissions.isStaff;
     const [summary, setSummary] = useState<{
         name: string;
@@ -85,7 +85,28 @@ export default function WorkloadDetailPage() {
     const [detailEntries, setDetailEntries] = useState<WorkloadDetailEntry[]>([]);
 
     const itemsPerPage = 10;
-    const personName = id ? decodeURIComponent(id) : "";
+
+    // ✅ API가 "이름" 기준으로 조회된다는 전제 (현재 라우트 id가 이름이었기 때문에)
+    const personName = useMemo(() => {
+        if (id) return decodeURIComponent(id);
+
+        // useUser.ts의 User 타입에는 displayName만 확실히 존재
+        // (현재 구조에서는 displayName이 username 또는 name일 수 있음)
+
+        return (currentUser?.displayName ?? currentUser?.name) || "";
+    }, [id, currentUser]);
+
+    // ✅ staff가 본인 조회로 들어왔는데 URL에 id가 없으면, /workload/:id 형태로 정규화
+    useEffect(() => {
+        if (!isStaff) return;
+        if (id) return;
+        if (!personName) return;
+
+        navigate(`/workload/detail/${encodeURIComponent(personName)}`, { replace: true });
+    }, [isStaff, id, personName, navigate]);
+
+
+
 
     // 날짜별 내역 클릭 → 해당 출장보고서(ReportViewPage)로 이동
     const handleRowClick = (row: WorkloadDetailEntry) => {
@@ -95,8 +116,9 @@ export default function WorkloadDetailPage() {
 
     // 데이터 로드
     useEffect(() => {
+        // personName이 아직 없으면(user 로딩 전) 조회 종료하지 말고 로딩 유지
         if (!personName) {
-            setLoading(false);
+            setLoading(true);
             return;
         }
 
@@ -162,8 +184,9 @@ export default function WorkloadDetailPage() {
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                <Header
-                    title={isStaff ? "워크로드" : `${personName} 작업자 워크로드`}
+            <Header
+                    title={`${personName || "워크로드"} 워크로드`}
+
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         !isStaff && (
