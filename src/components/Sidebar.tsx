@@ -6,7 +6,6 @@ import NotificationPopup from "./ui/NotificationPopup";
 import ActionMenu from "./common/ActionMenu";
 import Button from "./common/Button";
 
-// 紐⑤떖 而댄룷?뚰듃 lazy loading
 const ResetPasswordModal = lazy(() => import("./modals/ResetPasswordModal"));
 const BaseModal = lazy(() => import("./ui/BaseModal"));
 import { supabase } from "../lib/supabase";
@@ -56,13 +55,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
         useUser();
 
 
-        const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-            return localStorage.getItem("profile_role") === "admin";
-        });
-    
-        const [profileName, setProfileName] = useState<string>(() => {
-            return localStorage.getItem("profile_name") ?? "";
-        });
+    const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+        return localStorage.getItem("profile_role") === "admin";
+    });
+
+    const [profileName, setProfileName] = useState<string>(() => {
+        return localStorage.getItem("profile_name") ?? "";
+    });
 
 
 
@@ -108,7 +107,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const stablePermissions = userPermissionsRef.current.isCEO || userPermissionsRef.current.isAdmin || userPermissionsRef.current.isStaff
         ? userPermissionsRef.current
         : userPermissions;
-        const permissionsReady =
+    const permissionsReady =
         stablePermissions.isCEO || stablePermissions.isAdmin || stablePermissions.isStaff;
 
     const canShowVacation =
@@ -127,7 +126,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     const [menuFocus, setMenuFocus] = useState<MenuFocus>(null);
 
-   
+
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
@@ -158,13 +157,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
         routeLocation
     );
 
-        const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);
+    const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);
 
-        useEffect(() => {
-            if (reportSubMenuItems.length > 0) {
-                setReportItemsForSubMenu(reportSubMenuItems);
-            }
-        }, [reportSubMenuItems]);
+    useEffect(() => {
+        if (reportSubMenuItems.length > 0) {
+            setReportItemsForSubMenu(reportSubMenuItems);
+        }
+    }, [reportSubMenuItems]);
 
     useSidebarRouteSync({
         pathname: routeLocation.pathname,
@@ -282,7 +281,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         userEmail={currentUser?.email}
                     />
 
-                    {/* 鍮꾨?踰덊샇 ?ъ꽕??紐⑤떖 */}
                     {resetPasswordModalOpen && (
                         <Suspense fallback={null}>
                             <ResetPasswordModal
@@ -343,7 +341,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                     {/* Notifications */}
                     <div className="relative" ref={notificationRef}>
-                    <button
+                        <button
                             onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
                             onClick={(e) => {
@@ -401,9 +399,9 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     <div className="h-px bg-gray-200 rounded-full" />
 
                     <nav
-    className="flex flex-col gap-2 flex-1 overflow-y-auto pr-1
-               [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
->
+                        className="flex flex-col gap-2 flex-1 overflow-y-auto
+                        [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+                    >
                         {canShowHome && (
                             <MainLink
                                 to={PATHS.dashboard}
@@ -419,30 +417,30 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
 
 
-                        {/* 異쒖옣 蹂닿퀬??*/}
-                        <MenuButton
-                            icon={<IconReport />}
-                            label="출장 보고서"
-                            isActive={reportActive}
-                            onClick={() => {
-                                setExpenseOpen(false);
-                                if (!reportOpenRef.current) {
-                                    setReportOpen(true);
-                                }
-                                go(PATHS.reportList, "REPORT");
-                            }}
-                        />
+                        <div className="-pb-1">
+                            <MenuButton
+                                icon={<IconReport />}
+                                label="출장 보고서"
+                                isActive={reportActive}
+                                onClick={() => {
+                                    setExpenseOpen(false);
+                                    if (!reportOpenRef.current) {
+                                        setReportOpen(true);
+                                    }
+                                    go(PATHS.reportList, "REPORT");
+                                }}
+                            />
 
 
-                        <SubMenu
-                            isOpen={stableReportOpen}
-                            items={reportItemsForSubMenu}
-                            focus="REPORT"
-                            onClose={onClose}
-                            onMenuClick={handleMenuClick}
-                        />
+                            <SubMenu
+                                isOpen={stableReportOpen}
+                                items={reportItemsForSubMenu}
+                                focus="REPORT"
+                                onClose={onClose}
+                                onMenuClick={handleMenuClick}
+                            />
+                        </div>
 
-                        {/* ?뚰겕濡쒕뱶 */}
                         <MainLink
                             to={
                                 stablePermissions.isStaff && profileName
@@ -457,33 +455,34 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             onMenuClick={() => handleMenuClick(null)}
                         />
 
+                        <div className="-pb-1">
 
-                        {/* 吏異?愿由?*/}
-                        <MenuButton
-                            icon={<IconCard />}
-                            label="지출 관리"
-                            isActive={expenseActive}
-                            onClick={() => {
-                                setReportOpen(false);
+                            <MenuButton
+                                icon={<IconCard />}
+                                label="지출 관리"
+                                isActive={expenseActive}
+                                onClick={() => {
+                                    setReportOpen(false);
 
-                                if (expenseSubMenuItems.length === 1) {
-                                    setExpenseOpen(false);
-                                    go(expenseSubMenuItems[0].to, "EXPENSE");
-                                } else if (expenseSubMenuItems.length > 1) {
-                                    if (!expenseOpenRef.current) {
-                                        setExpenseOpen(true);
+                                    if (expenseSubMenuItems.length === 1) {
+                                        setExpenseOpen(false);
+                                        go(expenseSubMenuItems[0].to, "EXPENSE");
+                                    } else if (expenseSubMenuItems.length > 1) {
+                                        if (!expenseOpenRef.current) {
+                                            setExpenseOpen(true);
+                                        }
+                                        go(PATHS.expensePersonal, "EXPENSE");
                                     }
-                                    go(PATHS.expensePersonal, "EXPENSE");
-                                }
-                            }}
-                        />
-                        <SubMenu
-                            isOpen={stableExpenseOpen && expenseSubMenuItems.length > 1}
-                            items={expenseSubMenuItems.length > 1 ? expenseSubMenuItems : []}
-                            focus="EXPENSE"
-                            onClose={onClose}
-                            onMenuClick={handleMenuClick}
-                        />
+                                }}
+                            />
+                            <SubMenu
+                                isOpen={stableExpenseOpen && expenseSubMenuItems.length > 1}
+                                items={expenseSubMenuItems.length > 1 ? expenseSubMenuItems : []}
+                                focus="EXPENSE"
+                                onClose={onClose}
+                                onMenuClick={handleMenuClick}
+                            />
+                        </div>
                         {canShowVacation && (
                             <MainLink
                                 to={PATHS.vacation}
@@ -516,12 +515,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             />
                         )}
                     </nav>
-                    
+
                     <div className="h-px bg-gray-200 rounded-full mt-2" />
 
                     <div className="mt-auto">
                         <div className={isAdmin ? "" : "invisible pointer-events-none"}>
-                        <MenuButton
+                            <MenuButton
                                 icon={<IconSettings />}
                                 label="설정"
                                 isActive={settingsActive}

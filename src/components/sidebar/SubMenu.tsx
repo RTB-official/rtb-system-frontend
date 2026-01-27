@@ -52,6 +52,10 @@ export default function SubMenu({
 
     const el = contentRef.current;
     if (!el) {
+      if (isOpen) {
+        // 렌더 직후 ref가 아직 없을 수 있어, 즉시 표시로 처리
+        setMaxHeight("none");
+      }
       prevIsOpenRef.current = isOpen;
       return;
     }
