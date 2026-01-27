@@ -526,7 +526,7 @@ export function workLogToCalendarEvent(
 
     return {
         id: `worklog-${workLog.id}`,
-        title: `출장 보고서 - ${detail}`,
+        title: detail || "출장 보고서",
         color: "#84cc16", // 연두색
         startDate,
         endDate,
