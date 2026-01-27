@@ -147,7 +147,11 @@ const WeekRow: React.FC<WeekRowProps> = ({
 
                     // 시작 셀의 위치 계산
                     const startCellLeft = startDayIdx * cellWidth;
-                    const totalEventWidth = segment.duration * cellWidth;
+                    const visibleDuration = Math.min(
+                        segment.duration,
+                        week.length - startDayIdx
+                    );
+                    const totalEventWidth = visibleDuration * cellWidth;
 
                     // 첫 셀의 패딩: 셀 패딩(12px) + 태그 내부 패딩(4px)
                     const firstCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT;
@@ -156,9 +160,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
                     const isHoliday = !!segment.event.isHoliday;
                     const isVacation = isVacationEvent(segment.event.title);
                     const isContinued = segment.event.endDate > weekEndKey;
-                    const displayTitle = isContinued
-                        ? `${segment.event.title}…`
-                        : segment.event.title;
+                    const displayTitle = segment.event.title;
                     // 태그 타입별로 다른 간격 적용
                     // 텍스트 위치는 아이콘 너비 + 태그 타입별 간격을 사용
                     const iconSize = isHoliday ? CALENDAR_TAG_ICON_SIZES.holiday
