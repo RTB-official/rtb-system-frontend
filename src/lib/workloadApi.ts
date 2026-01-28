@@ -172,14 +172,19 @@ function formatHoursOnly(hours: number): string {
 export async function getWorkloadData(filters?: {
     year?: number;
     month?: number;
+    includeDrafts?: boolean;
 }): Promise<WorkloadEntry[]> {
     try {
         // 1. 출장보고서 조회 (제출된 것만, is_draft = false)
         // 필터링은 작업 일정(date_from, date_to) 기준으로 하므로 모든 제출된 보고서 조회
-        const { data: workLogs, error: workLogsError } = await supabase
+        let workLogsQuery = supabase
             .from("work_logs")
-            .select("id, vessel, subject")
-            .eq("is_draft", false);
+            .select("id, vessel, subject");
+        if (!filters?.includeDrafts) {
+            workLogsQuery = workLogsQuery.eq("is_draft", false);
+        }
+
+        const { data: workLogs, error: workLogsError } = await workLogsQuery;
 
         if (workLogsError) {
             console.error("Error fetching work logs:", workLogsError);
@@ -407,11 +412,8 @@ export function aggregatePersonWorkload(
                 continue;
             }
 
-            // ✅ 공무팀: 작업/이동 시간이 있을 때만 표시
+            // ✅ 공무팀: 워크로드에서 제외
             if (dept === "공무팀") {
-                if (existing.workHours > 0 || existing.travelHours > 0) {
-                    resultMap.set(name, existing);
-                }
                 continue;
             }
         }
@@ -474,4 +476,3 @@ export function generateTableData(
         days: `${summary.totalDays}일`,
     }));
 }
-
