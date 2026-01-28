@@ -4,7 +4,7 @@ import Pagination from "./Pagination";
 
 export interface TableColumn<T = any> {
     key: string;
-    label: string;
+    label: React.ReactNode;
     width?: string;
     align?: "left" | "right" | "center";
     render?: (value: any, row: T, index: number) => React.ReactNode;
