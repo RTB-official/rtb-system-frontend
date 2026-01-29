@@ -76,6 +76,83 @@ export default function EmailNotificationPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
 
+  const [testSending, setTestSending] = useState<NotiType | null>(null);
+
+  // ✅ Resend에서 인증된 발신자 (필요 시 변경)
+  const VERIFIED_FROM = "brian.ko@rtb-kor.com";
+
+  const sendTestEmail = async (type: NotiType) => {
+    if (!userId) {
+      showError("로그인이 필요합니다.");
+      return;
+    }
+  
+    setTestSending(type);
+    try {
+      const subjectByType: Record<NotiType, string> = {
+        report: "보고서 알림 테스트",
+        vacation: "휴가 알림 테스트",
+        schedule: "일정 알림 테스트",
+      };
+  
+      const textByType: Record<NotiType, string> = {
+        report: "보고서 알림 테스트 메일입니다.",
+        vacation: "휴가 알림 테스트 메일입니다.",
+        schedule: "일정 알림 테스트 메일입니다.",
+      };
+  
+      const internalKey = import.meta.env.VITE_INTERNAL_KEY; // ✅ (선택)
+
+
+
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      const { data, error } = await supabase.functions.invoke("send-email-notification", {
+        headers: {
+          ...(internalKey ? { "x-internal-key": internalKey } : {}),
+        },
+        body: {
+          from: VERIFIED_FROM,
+          user_id: userId,
+          type,
+          subject: subjectByType[type],
+          text: textByType[type],
+        },
+      });
+
+
+      
+      if (error) {
+        // supabase-js는 non-2xx면 error에 status/context를 담아줍니다.
+        console.error("invoke error:", error);
+
+        const status = (error as any)?.status ?? (error as any)?.context?.status;
+        const body = (error as any)?.context?.body ?? (error as any)?.context;
+
+        showError(
+          `Edge Function error | status=${status ?? "?"} | message=${error.message} | body=${JSON.stringify(body)}`
+        );
+        return;
+      }
+      
+      if ((data as any)?.skipped) {
+        showError("해당 유형으로 받을 이메일이 없어서 발송이 스킵되었습니다.");
+        return;
+      }
+      
+      showSuccess("테스트 메일 발송 요청이 완료되었습니다.");
+    } catch (e: any) {
+      console.error(e);
+      showError(e?.message ?? "테스트 메일 발송 실패");
+    } finally {
+      setTestSending(null);
+    }
+  };
+  
+
+
+
+
   // 목록(카드)
   const [list, setList] = useState<EmailPref[]>([]);
 
@@ -472,6 +549,50 @@ export default function EmailNotificationPage() {
                       추가
                     </Button>
                   </div>
+                                    {/* ✅ 테스트 메일 발송 */}
+                                    <div className="mt-4 border-t border-gray-100 pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[14px] font-bold text-gray-900">테스트 메일 보내기</div>
+                        <div className="text-[12px] text-gray-500 mt-1">
+                          저장된 설정을 기준으로(ON + 유형 선택) 해당 이메일들로 테스트 메일을 보냅니다.
+                        </div>
+                      </div>
+                      <div className="text-[12px] text-gray-500">
+                        {testSending ? "발송 중..." : ""}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={() => sendTestEmail("report")}
+                        disabled={saving || !userId || testSending !== null}
+                      >
+                        {testSending === "report" ? "발송 중..." : "보고서 테스트"}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={() => sendTestEmail("vacation")}
+                        disabled={saving || !userId || testSending !== null}
+                      >
+                        {testSending === "vacation" ? "발송 중..." : "휴가 테스트"}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        onClick={() => sendTestEmail("schedule")}
+                        disabled={saving || !userId || testSending !== null}
+                      >
+                        {testSending === "schedule" ? "발송 중..." : "일정 테스트"}
+                      </Button>
+                    </div>
+                  </div>
+
                 </div>
 
                 {/* 2. 이메일 목록 섹션 */}
