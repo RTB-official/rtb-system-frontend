@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../store/auth";
+import { setRememberMe } from "../../lib/supabase";
 import { IconEye, IconEyeOff } from "../../components/icons/Icons";
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
@@ -36,6 +37,8 @@ function LoginPage() {
     setErrors({});
     setSubmitting(true);
 
+    // rememberMe 여부에 따라 auth storage 선택
+    setRememberMe(rememberMe);
     const res = await signInWithUsername(username.trim(), password);
 
     setSubmitting(false);
@@ -45,8 +48,7 @@ function LoginPage() {
       return;
     }
 
-    // rememberMe는 Supabase 기본 persistSession(true)로 이미 유지됨.
-    // (정말 rememberMe로 분기하려면, localStorage 기반 custom 처리로 확장 가능)
+    // rememberMe: 체크 시 localStorage, 해제 시 sessionStorage에 세션 저장됨.
 
     // ✅ 로그인 성공 시: 안전 토스트를 "딱 1회" 띄우기 위한 pending 플래그
     sessionStorage.setItem("rtb:safety_toast_pending", "1");

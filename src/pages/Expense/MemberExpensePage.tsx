@@ -17,7 +17,6 @@ import { TableSkeleton } from "./components/TableSkeleton";
 import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
 import BaseModal from "../../components/ui/BaseModal";
-import EmptyValueIndicator from "./components/EmptyValueIndicator";
 import Avatar from "../../components/common/Avatar";
 import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
@@ -326,7 +325,7 @@ export default function MemberExpensePage() {
                 if (value && value.trim()) {
                     return <span className="text-gray-700">{value}</span>;
                 }
-                return <EmptyValueIndicator />;
+                return "";
             },
         },
     ];
@@ -353,7 +352,7 @@ export default function MemberExpensePage() {
                 if (value && value.trim()) {
                     return <span className="text-gray-700">{value}</span>;
                 }
-                return <EmptyValueIndicator />;
+                return "";
             },
         },
         {
@@ -373,7 +372,7 @@ export default function MemberExpensePage() {
                         </button>
                     );
                 }
-                return <EmptyValueIndicator />;
+                return "";
             },
         },
     ];
@@ -667,7 +666,7 @@ export default function MemberExpensePage() {
                                         );
                                     }}
                                     expandedRowKeys={expandedRowKeys}
-                                    emptyText="데이터가 없습니다."
+                                    emptyText="해당 기간의 직원별 지출 내역이 없습니다."
                                     className="border-gray-200"
                                 />
 

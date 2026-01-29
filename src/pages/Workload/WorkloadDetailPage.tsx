@@ -285,90 +285,85 @@ export default function WorkloadDetailPage() {
                                     날짜별 세부 분석
                                 </h2>
 
-                                {detailEntries.length === 0 ? (
-                                    <div className="py-8 text-center text-gray-500">
-                                        데이터가 없습니다.
-                                    </div>
-                                ) : (
-                                    <Table
-                                        columns={[
-                                            {
-                                                key: "date",
-                                                label: "날짜",
-                                                render: (_value, row: WorkloadDetailEntry, index: number) => {
-                                                    const prev = currentTableData[index - 1];
-                                                    if (prev?.date === row.date) {
-                                                        return <span className="text-transparent">-</span>;
-                                                    }
-                                                    const formattedDate = formatDetailDate(row.date);
-                                                    const date = new Date(row.date + "T00:00:00");
-                                                    const dayOfWeek = date.getDay();
-                                                    
-                                                    let colorClass = "text-gray-800";
-                                                    if (dayOfWeek === 0)
-                                                        colorClass = "text-red-600"; // 일요일
-                                                    else if (dayOfWeek === 6)
-                                                        colorClass = "text-blue-600"; // 토요일
+                                <Table
+                                    columns={[
+                                        {
+                                            key: "date",
+                                            label: "날짜",
+                                            render: (_value, row: WorkloadDetailEntry, index: number) => {
+                                                const prev = currentTableData[index - 1];
+                                                if (prev?.date === row.date) {
+                                                    return <span className="text-transparent">-</span>;
+                                                }
+                                                const formattedDate = formatDetailDate(row.date);
+                                                const date = new Date(row.date + "T00:00:00");
+                                                const dayOfWeek = date.getDay();
 
-                                                    return (
-                                                        <span
-                                                            className={`font-medium ${colorClass}`}
-                                                        >
-                                                            {formattedDate}
-                                                        </span>
-                                                    );
-                                                },
+                                                let colorClass = "text-gray-800";
+                                                if (dayOfWeek === 0)
+                                                    colorClass = "text-red-600"; // 일요일
+                                                else if (dayOfWeek === 6)
+                                                    colorClass = "text-blue-600"; // 토요일
+
+                                                return (
+                                                    <span
+                                                        className={`font-medium ${colorClass}`}
+                                                    >
+                                                        {formattedDate}
+                                                    </span>
+                                                );
                                             },
-                                            {
-                                                key: "vesselName",
-                                                label: "호선명",
-                                                render: (value: string | null, row: WorkloadDetailEntry, index: number) => {
-                                                    const prev = currentTableData[index - 1];
-                                                    if (prev?.date === row.date) {
-                                                        return <span className="text-transparent">-</span>;
-                                                    }
-                                                    return value || "-";
-                                                },
+                                        },
+                                        {
+                                            key: "vesselName",
+                                            label: "호선명",
+                                            render: (value: string | null, row: WorkloadDetailEntry, index: number) => {
+                                                const prev = currentTableData[index - 1];
+                                                if (prev?.date === row.date) {
+                                                    return <span className="text-transparent">-</span>;
+                                                }
+                                                    return value || "";
                                             },
-                                            {
-                                                key: "workTime",
-                                                label: "작업시간",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatHours(row.workTime),
-                                            },
-                                            {
-                                                key: "timeRange",
-                                                label: "시간대",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatTimeRange(row.timeFrom, row.timeTo),
-                                            },
-                                            {
-                                                key: "travelTime",
-                                                label: "이동시간",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatHours(row.travelTime),
-                                            },
-                                            {
-                                                key: "waitTime",
-                                                label: "대기시간",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatHours(row.waitTime),
-                                            },
-                                        ]}
-                                        data={currentTableData}
-                                        rowKey="id"
-                                        onRowClick={handleRowClick}
-                                        pagination={
-                                            totalPages > 1
-                                                ? {
-                                                      currentPage,
-                                                      totalPages,
-                                                      onPageChange: setCurrentPage,
-                                                  }
-                                                : undefined
-                                        }
-                                    />
-                                )}
+                                        },
+                                        {
+                                            key: "workTime",
+                                            label: "작업시간",
+                                            render: (_, row: WorkloadDetailEntry) =>
+                                                formatHours(row.workTime),
+                                        },
+                                        {
+                                            key: "timeRange",
+                                            label: "시간대",
+                                            render: (_, row: WorkloadDetailEntry) =>
+                                                formatTimeRange(row.timeFrom, row.timeTo),
+                                        },
+                                        {
+                                            key: "travelTime",
+                                            label: "이동시간",
+                                            render: (_, row: WorkloadDetailEntry) =>
+                                                formatHours(row.travelTime),
+                                        },
+                                        {
+                                            key: "waitTime",
+                                            label: "대기시간",
+                                            render: (_, row: WorkloadDetailEntry) =>
+                                                formatHours(row.waitTime),
+                                        },
+                                    ]}
+                                    data={currentTableData}
+                                    rowKey="id"
+                                    onRowClick={handleRowClick}
+                                    emptyText="선택한 기간의 작업 내역이 없습니다."
+                                    pagination={
+                                        totalPages > 1
+                                            ? {
+                                                  currentPage,
+                                                  totalPages,
+                                                  onPageChange: setCurrentPage,
+                                              }
+                                            : undefined
+                                    }
+                                />
                             </div>
                         </div>
                     )}

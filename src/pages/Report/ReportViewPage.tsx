@@ -6,13 +6,15 @@ import Header from "../../components/common/Header";
 import CreationSkeleton from "../../components/common/CreationSkeleton";
 import SectionCard from "../../components/ui/SectionCard";
 import Button from "../../components/common/Button";
+import Table from "../../components/common/Table";
 import { IconArrowBack } from "../../components/icons/Icons";
-import EmptyValueIndicator from "../Expense/components/EmptyValueIndicator";
 import { getWorkLogById } from "../../lib/workLogApi";
 import { getWorkLogReceipts } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
+import WorkloadLegend from "../../components/common/WorkloadLegend";
+import WorkLogEntryCard from "../../components/sections/WorkLogEntryCard";
 
 type ViewData = {
     workLog: any;
@@ -299,6 +301,17 @@ export default function ReportViewPage() {
     const toggleCard = (key: string) => {
     setExpandedCards((prev) => ({ ...prev, [key]: !prev[key] }));
     };
+
+    const expenseRows = (data?.expenses ?? [])
+        .slice()
+        .sort((a: any, b: any) => (a.date || "").localeCompare(b.date || ""));
+    const expenseTotal = expenseRows.reduce((sum: number, ex: any) => {
+        const n =
+            typeof ex.amount === "number"
+                ? ex.amount
+                : Number(String(ex.amount || "0").replace(/,/g, "")) || 0;
+        return sum + n;
+    }, 0);
     
     useEffect(() => {
         const load = async () => {
@@ -481,85 +494,81 @@ try {
                         <div className="max-w-[960px] mx-auto flex flex-col gap-4 md:gap-6">
                             {/* 기본 정보 */}
                             <SectionCard title="기본 정보">
-                            <div className="bg-white border border-gray-200 rounded-2xl divide-y">
+                                <div className="bg-white border border-gray-200 rounded-2xl divide-y">
+                                    {/* 핵심 정보 */}
+                                    <div className="grid grid-cols-1 md:grid-cols-[120px_220px_1fr] gap-4 p-5">
+                                        <div>
+                                            <p className="text-xs text-gray-400 mb-1">호선</p>
+                                            <p className="text-lg font-semibold text-gray-900">
+                                                {workLog?.vessel?.trim() ? workLog.vessel : "—"}
+                                            </p>
+                                        </div>
 
-                                {/* 핵심 정보 */}
-                                <div className="grid grid-cols-1 md:grid-cols-[120px_220px_1fr] gap-4 p-5">
-                                    <div>
-                                        <p className="text-xs text-gray-400 mb-1">호선</p>
-                                        <p className="text-lg font-semibold text-gray-900">
-                                            {workLog?.vessel?.trim() ? workLog.vessel : <EmptyValueIndicator />}
-                                        </p>
+                                        <div>
+                                            <p className="text-xs text-gray-400 mb-1">엔진</p>
+                                            <p className="text-lg font-semibold text-gray-900">
+                                                {workLog?.engine?.trim() ? workLog.engine : "—"}
+                                            </p>
+                                        </div>
+
+                                        <div>
+                                            <p className="text-xs text-gray-400 mb-1">목적(제목)</p>
+                                            <p className="text-lg font-semibold text-gray-900">
+                                                {workLog?.subject?.trim() ? workLog.subject : "—"}
+                                            </p>
+                                        </div>
                                     </div>
 
-                                    <div>
-                                        <p className="text-xs text-gray-400 mb-1">엔진</p>
-                                        <p className="text-lg font-semibold text-gray-900">
-                                            {workLog?.engine?.trim() ? workLog.engine : <EmptyValueIndicator />}
-                                        </p>
-                                    </div>
+                                    {/* 상세 정보 */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 p-5 text-sm">
+                                        <div className="flex">
+                                            <span className="w-28 text-gray-400 shrink-0">출장지</span>
+                                            <span className="text-gray-900">
+                                                {workLog?.location?.trim() ? workLog.location : "—"}
+                                            </span>
+                                        </div>
 
-                                    <div>
-                                        <p className="text-xs text-gray-400 mb-1">목적(제목)</p>
-                                        <p className="text-lg font-semibold text-gray-900">
-                                            {workLog?.subject?.trim() ? workLog.subject : <EmptyValueIndicator />}
-                                        </p>
+                                        <div className="flex">
+                                            <span className="w-28 text-gray-400 shrink-0">작업 지시</span>
+                                            <span className="text-gray-900">
+                                                {workLog?.order_group?.trim() ? workLog.order_group : "—"}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex">
+                                            <span className="w-28 text-gray-400 shrink-0">참관감독</span>
+                                            <span className="text-gray-900">
+                                                {workLog?.order_person?.trim() ? workLog.order_person : "—"}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex">
+                                            <span className="w-28 text-gray-400 shrink-0">차량</span>
+                                            <span className="text-gray-900">
+                                                {workLog?.vehicle?.trim() ? workLog.vehicle : "—"}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex">
+                                            <span className="w-28 text-gray-400 shrink-0">작성자 / 작성일</span>
+                                            <span className="text-gray-900">
+                                                {workLog?.author?.trim() ? workLog.author : "(작성자 없음)"}
+                                                <span className="text-gray-400 ml-2">
+                                                    · {formatDate(workLog?.created_at)}
+                                                </span>
+                                            </span>
+                                        </div>
+
+                                        <div className="flex">
+                                            <span className="w-28 text-gray-400 shrink-0">투입 인원</span>
+                                            <span className="text-gray-900">
+                                            {data?.workers?.length
+                                                ? data?.workers?.join(", ")
+                                                : "—"}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-
-                                {/* 상세 정보 */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 p-5 text-sm">
-                                    <div className="flex">
-                                        <span className="w-28 text-gray-400 shrink-0">출장지</span>
-                                        <span className="text-gray-900">
-                                            {workLog?.location?.trim() ? workLog.location : <EmptyValueIndicator />}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex">
-                                        <span className="w-28 text-gray-400 shrink-0">작업 지시</span>
-                                        <span className="text-gray-900">
-                                            {workLog?.order_group?.trim() ? workLog.order_group : <EmptyValueIndicator />}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex">
-                                        <span className="w-28 text-gray-400 shrink-0">참관감독</span>
-                                        <span className="text-gray-900">
-                                            {workLog?.order_person?.trim() ? workLog.order_person : <EmptyValueIndicator />}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex">
-                                        <span className="w-28 text-gray-400 shrink-0">차량</span>
-                                        <span className="text-gray-900">
-                                            {workLog?.vehicle?.trim() ? workLog.vehicle : <EmptyValueIndicator />}
-                                        </span>
-                                    </div>
-
-                                {/* 작성자 / 작성일 */}
-                                <div className="flex">
-                                    <span className="w-28 text-gray-400 shrink-0">작성자 / 작성일</span>
-                                    <span className="text-gray-900">
-                                        {workLog?.author?.trim() ? workLog.author : "(작성자 없음)"}
-                                        <span className="text-gray-400 ml-2">
-                                            · {formatDate(workLog?.created_at)}
-                                        </span>
-                                    </span>
-                                </div>
-
-                                {/* 투입 인원 */}
-                                <div className="flex">
-                                    <span className="w-28 text-gray-400 shrink-0">투입 인원</span>
-                                    <span className="text-gray-900">
-                                        {data?.workers?.length
-                                            ? data.workers.join(", ")
-                                            : "—"}
-                                    </span>
-                                </div>
-                                </div>
-                            </div>
-
                             </SectionCard>
 
 {/* 출장 업무 일지 */}
@@ -567,38 +576,38 @@ try {
     {data?.entries?.length ? (
         <div className="flex flex-col gap-3">
             {(() => {
-                const baseSorted = [...data.entries]
+                const baseSorted = [...(data?.entries ?? [])].sort((a: any, b: any) => {
+                    const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
+                    const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
+                    return aKey.localeCompare(bKey);
+                });
+
+                // ✅ 날짜별 표시용 분할
+                const displayEntries = baseSorted
+                    .flatMap((e: any, index: number) => {
+                        const fallbackKey = `${e.dateFrom}-${e.timeFrom}-${e.dateTo}-${e.timeTo}-${index}`;
+                        return splitEntryByDayForDisplay(e, fallbackKey);
+                    })
                     .sort((a: any, b: any) => {
                         const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
                         const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
                         return aKey.localeCompare(bKey);
                     });
 
-                // ✅ 날짜별 표시용 분할
-                const displayEntries = baseSorted.flatMap((e: any, index: number) => {
-                    const fallbackKey = `${e.dateFrom}-${e.timeFrom}-${e.dateTo}-${e.timeTo}-${index}`;
-                    return splitEntryByDayForDisplay(e, fallbackKey);
-                }).sort((a: any, b: any) => {
-                    const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
-                    const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
-                    return aKey.localeCompare(bKey);
-                });
-
                 // ✅ 날짜별 n일차 맵 생성 (카드 상단/날짜변경선용)
                 const dayIndexMap = new Map<string, number>();
-                let dayNo = 0;
+                let dayNoCounter = 0;
                 for (const it of displayEntries) {
                     const d = it?.dateFrom;
                     if (!d) continue;
                     if (!dayIndexMap.has(d)) {
-                        dayNo += 1;
-                        dayIndexMap.set(d, dayNo);
+                        dayNoCounter += 1;
+                        dayIndexMap.set(d, dayNoCounter);
                     }
                 }
 
                 return displayEntries.map((e: any, index: number, arr: any[]) => {
                     const key = e.__segKey;
-
                     const note = String(e.note ?? "");
 
                     // ✅ 점심 안먹음 플래그(작성 페이지와 최대한 동일하게 흡수)
@@ -619,40 +628,12 @@ try {
                     const hoursLabel = formatHoursMinutes(minutes);
                     const isExpanded = expandedCards[String(key)] ?? false;
 
-                    const typeStyles = {
-                        작업: {
-                            gradient: "from-blue-500 to-indigo-600",
-                            bg: "bg-gradient-to-br from-blue-50 to-indigo-50",
-                            border: "border-blue-200",
-                            badge: "bg-blue-500",
-                            text: "text-blue-700",
-                        },
-                        이동: {
-                            gradient: "from-emerald-500 to-teal-600",
-                            bg: "bg-gradient-to-br from-emerald-50 to-teal-50",
-                            border: "border-emerald-200",
-                            badge: "bg-emerald-500",
-                            text: "text-emerald-700",
-                        },
-                        대기: {
-                            gradient: "from-amber-500 to-orange-600",
-                            bg: "bg-gradient-to-br from-amber-50 to-orange-50",
-                            border: "border-amber-200",
-                            badge: "bg-amber-500",
-                            text: "text-amber-700",
-                        },
-                    };
+                    const prev = arr[index - 1];
+                    const showDayHeader = !prev || prev.dateFrom !== e.dateFrom;
 
-                    const style =
-                        typeStyles[e.descType as keyof typeof typeStyles] ||
-                        typeStyles["작업"];
-
-                        const prev = arr[index - 1];
-                        const showDayHeader = !prev || prev.dateFrom !== e.dateFrom;
-    
-                        const dayNo = dayIndexMap.get(e.dateFrom) ?? 1;
-                        const md = formatMDFromYMD(e.dateFrom);
-                        const dayHeaderText = `${dayNo}일차(${md})`;
+                    const thisDayNo = dayIndexMap.get(e.dateFrom) ?? 1;
+                    const md = formatMDFromYMD(e.dateFrom);
+                    const dayHeaderText = `${thisDayNo}일차(${md})`;
 
                     return (
                         <div key={String(key)}>
@@ -666,38 +647,32 @@ try {
                                 </div>
                             )}
 
-                            <div
-                                className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
-                            >
-                                <div className={`h-1 bg-gradient-to-r ${style.gradient}`} />
+                            <WorkLogEntryCard
+                                descType={e.descType as any}
+                                hoursLabel={hoursLabel}
+                                meta={
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 text-[13px] text-gray-600">
+                                            <svg
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="currentColor"
+                                                className="text-gray-400"
+                                            >
+                                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                                            </svg>
+                                            <span>
+                                                {e.dateFrom} {toKoreanTime(e.timeFrom)}
+                                            </span>
+                                            <span className="text-gray-400">→</span>
+                                            <span>
+                                                {e.dateTo} {toKoreanTime(e.timeTo)}
+                                            </span>
+                                        </div>
 
-                                <div
-                                    className="relative p-4 cursor-pointer"
-                                    onClick={() => toggleCard(String(key))}
-                                >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <span
-                                                    className={`inline-flex items-center px-3 py-1 ${style.badge} text-white text-[13px] font-bold rounded-full shadow-sm`}
-                                                >
-                                                    {e.descType || "—"}
-                                                </span>
-
-                                                <span className={`text-[15px] font-bold ${style.text}`}>
-                                                    {hoursLabel}
-                                                </span>
-                                            </div>
-
-                                            {effectiveNoLunch && (
-                                                <div className="absolute bottom-3 right-3 z-20">
-                                                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm">
-                                                        {NO_LUNCH_TEXT}
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            <div className="flex items-center gap-2 text-[13px] text-gray-600 mb-2">
+                                        {Array.isArray(e.persons) && (
+                                            <div className="flex items-center gap-2 text-[13px] text-gray-600">
                                                 <svg
                                                     width="16"
                                                     height="16"
@@ -705,94 +680,44 @@ try {
                                                     fill="currentColor"
                                                     className="text-gray-400"
                                                 >
-                                                    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                                                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                                                 </svg>
-                                                <span>
-                                                    {e.dateFrom} {toKoreanTime(e.timeFrom)}
-                                                </span>
-                                                <span className="text-gray-400">→</span>
-                                                <span>
-                                                    {e.dateTo} {toKoreanTime(e.timeTo)}
-                                                </span>
-                                            </div>
-
-                                            {Array.isArray(e.persons) && (
-                                                <div className="flex items-center gap-2 text-[13px] text-gray-600">
-                                                    <svg
-                                                        width="16"
-                                                        height="16"
-                                                        viewBox="0 0 24 24"
-                                                        fill="currentColor"
-                                                        className="text-gray-400"
-                                                    >
-                                                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                                                    </svg>
-                                                    <span className="font-medium">{e.persons.length}명</span>
-                                                    <span className="text-gray-400">|</span>
-                                                    <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
-                                                        {Array.isArray(e.persons) && e.persons.length > 0
-                                                            ? e.persons.join(", ")
-                                                            : "—"}
-                                                    </div>
-
-
+                                                <span className="font-medium">{e.persons.length}명</span>
+                                                <span className="text-gray-400">|</span>
+                                                <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
+                                                    {Array.isArray(e.persons) && e.persons.length > 0
+                                                        ? e.persons.join(", ")
+                                                        : "—"}
                                                 </div>
-                                            )}
-                                        </div>
-
-                                        <div
-                                            className={`w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shadow-sm transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                                        >
-                                            <svg
-                                                width="20"
-                                                height="20"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                className="text-gray-500"
-                                            >
-                                                <path
-                                                    d="M7 10L12 15L17 10"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                />
-                                            </svg>
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
+                                }
+                                showNoLunch={effectiveNoLunch}
+                                noLunchText={NO_LUNCH_TEXT}
+                                isExpanded={isExpanded}
+                                onToggle={() => toggleCard(String(key))}
+                            >
+                                <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                    <p className="text-[13px] text-gray-500 mb-1">상세 내용</p>
+                                    <p className="text-[15px] text-gray-800 whitespace-pre-line">
+                                        {e.details || "—"}
+                                    </p>
                                 </div>
 
-                                <div
-                                    className={`overflow-hidden transition-all duration-300 ${
-                                        isExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
-                                    }`}
-                                >
-                                    <div className="px-4 pb-4 border-t border-white/50">
-                                        <div className="pt-4 space-y-3">
-                                            <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                                <p className="text-[13px] text-gray-500 mb-1">상세 내용</p>
-                                                <p className="text-[15px] text-gray-800 whitespace-pre-line">
-                                                    {e.details || "—"}
-                                                </p>
-                                            </div>
-
-                                            {e.note?.trim() && (
-                                                <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                                    <p className="text-[13px] text-gray-500 mb-1">특이 사항</p>
-                                                    <p className="text-[15px] text-gray-800 whitespace-pre-line">
-                                                        {e.note}
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
+                                {e.note?.trim() && (
+                                    <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                        <p className="text-[13px] text-gray-500 mb-1">특이 사항</p>
+                                        <p className="text-[15px] text-gray-800 whitespace-pre-line">
+                                            {e.note}
+                                        </p>
                                     </div>
-                                </div>
-                            </div>
+                                )}
+                            </WorkLogEntryCard>
                         </div>
                     );
                 });
             })()}
-
         </div>
     ) : (
         <div className="text-gray-400">업무 일지가 없습니다.</div>
@@ -802,91 +727,80 @@ try {
 
 {/* 경비 내역 */}
 <SectionCard title="경비 내역">
-    {data?.expenses?.length ? (
-        <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-                <thead>
-                    <tr className="bg-gray-100">
-                        <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center">
-                            날짜
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center">
-                            분류
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center">
-                            상세내용
-                        </th>
-                        <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center">
-                            금액
-                        </th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {[...data.expenses]
-                        .sort((a: any, b: any) => (a.date || "").localeCompare(b.date || ""))
-                        .map((ex: any, idx: number) => {
-                            const amountNum =
-                                typeof ex.amount === "number"
-                                    ? ex.amount
-                                    : Number(String(ex.amount || "0").replace(/,/g, "")) || 0;
-
-                            return (
-                                <tr
-                                    key={ex.id ?? `${ex.date}-${ex.type}-${idx}`}
-                                    className={`${getExpenseTypeRowClass(ex.type)}`}
-                                >
-                                    <td className="border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap">
-                                        {formatDateKoreanMD(ex.date)}
-                                    </td>
-                                    <td className="border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-medium">
-                                        {ex.type || "—"}
-                                    </td>
-                                    <td className="border border-gray-200 px-3 py-2 text-[13px]">
-                                        {ex.detail || "—"}
-                                    </td>
-                                    <td className="border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-semibold">
-                                        {amountNum.toLocaleString()}원
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                </tbody>
-
-                <tfoot>
-                    <tr>
-                        <td
-                            colSpan={3}
-                            className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
-                        >
-                            합계
-                        </td>
-                        <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px] whitespace-nowrap">
-                            {data.expenses
-                                .reduce((sum: number, ex: any) => {
-                                    const n =
-                                        typeof ex.amount === "number"
-                                            ? ex.amount
-                                            : Number(String(ex.amount || "0").replace(/,/g, "")) || 0;
-                                    return sum + n;
-                                }, 0)
-                                .toLocaleString()}
-                            원
-                        </td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-    ) : (
-        <div className="text-gray-400">경비 내역이 없습니다.</div>
-    )}
+    <div className="overflow-x-auto">
+        <Table
+            columns={[
+                {
+                    key: "date",
+                    label: "날짜",
+                    align: "center",
+                    headerClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                    cellClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap",
+                    render: (value) => formatDateKoreanMD(value),
+                },
+                {
+                    key: "type",
+                    label: "분류",
+                    align: "center",
+                    headerClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                    cellClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-medium",
+                },
+                {
+                    key: "detail",
+                    label: "상세내용",
+                    headerClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                    cellClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px]",
+                },
+                {
+                    key: "amount",
+                    label: "금액",
+                    align: "center",
+                    headerClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                    cellClassName:
+                        "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-semibold",
+                    render: (value) => {
+                        const amountNum =
+                            typeof value === "number"
+                                ? value
+                                : Number(String(value || "0").replace(/,/g, "")) || 0;
+                        return `${amountNum.toLocaleString()}원`;
+                    },
+                },
+            ]}
+            data={expenseRows}
+            rowKey={(row: any) => row.id ?? `${row.date || "date"}-${row.type || "type"}`}
+            rowClassName={(row: any) => getExpenseTypeRowClass(row.type)}
+            className="border-collapse"
+            emptyText="등록된 경비 내역이 없습니다."
+            footer={
+                <tr>
+                    <td
+                        colSpan={3}
+                        className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
+                    >
+                        합계
+                    </td>
+                    <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px] whitespace-nowrap">
+                        {expenseTotal.toLocaleString()}원
+                    </td>
+                </tr>
+            }
+        />
+    </div>
 </SectionCard>
 
 {/* 소모 자재 */}
 <SectionCard title="소모 자재">
     {data?.materials?.length ? (
         <div className="flex flex-wrap gap-2">
-            {data.materials.map((m: any, idx: number) => {
+            {(data?.materials ?? []).map((m: any, idx: number) => {
                 // 표시용 라벨 (작성 페이지 로직 반영)
                 const label =
                     m.name === "보루"
@@ -1057,8 +971,23 @@ try {
 </SectionCard>
 
 {/* 타임라인 */}
-<SectionCard title="">
-    <TimelineSummarySection />
+<SectionCard
+    title="타임라인"
+    headerContent={
+        <WorkloadLegend
+            items={[
+                { key: "work", label: "작업", color: "#3b82f6" },
+                { key: "move", label: "이동", color: "#10b981" },
+                { key: "wait", label: "대기", color: "#f59e0b" },
+            ]}
+            className="flex items-center gap-4"
+            itemClassName="flex items-center gap-1.5"
+            labelClassName="text-[12px] text-[#6a7282]"
+            swatchClassName="w-[14px] h-[14px] rounded-md"
+        />
+    }
+>
+<TimelineSummarySection />
 </SectionCard>
 
 

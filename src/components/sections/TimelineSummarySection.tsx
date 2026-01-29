@@ -1,6 +1,7 @@
 // src/components/sections/TimelineSummarySection.tsx
 import { Fragment, useMemo, useState } from "react";
 import { useWorkReportStore } from "../../store/workReportStore";
+import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 
 // 분 → 시간 문자열 (0.5시간 단위)
 const toHourStr = (minutes: number): string => {
@@ -23,6 +24,15 @@ const minutesToTopLabel = (min: number): string => {
     if (m === 0) return `${h}시`;
     if (m === 30) return `${h}시반`;
     return `${h}:${String(m).padStart(2, "0")}시`;
+};
+
+const formatKoreanDateLabel = (dateKey: string) => {
+    const d = new Date(dateKey);
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+    const weekday = weekdays[d.getDay()] || "";
+    return `${month}월 ${day}일 (${weekday})`;
 };
 
 // ✅ 작업시간 표기용: 09~22 / 09:30~22:00 형태
@@ -209,31 +219,28 @@ const aggregatePersonDayData = (entries: any[]) => {
 const getTypeColor = (type: string) => {
     switch (type) {
         case "작업":
-            // 일별 시간표: bg-blue-50 / text-blue-700
             return {
-                bg: "#dbeafe",     // blue-100
-                bgDark: "#bfdbfe", // blue-200
-                border: "#60a5fa", // blue-400
+                bg: "#dbeafe",
+                border: "#60a5fa",
+                text: "#1f2937",
             };
         case "이동":
-            // 일별 시간표: bg-emerald-50 / text-emerald-700
             return {
-                bg: "#d1fae5",     // emerald-100
-                bgDark: "#a7f3d0", // emerald-200
-                border: "#34d399", // emerald-400
+                bg: "#d1fae5",
+                border: "#34d399",
+                text: "#1f2937",
             };
         case "대기":
-            // 일별 시간표: bg-amber-50 / text-amber-700
             return {
-                bg: "#fef3c7",     // amber-100
-                bgDark: "#fde68a", // amber-200
-                border: "#fbbf24", // amber-400
+                bg: "#fef3c7",
+                border: "#fbbf24",
+                text: "#1f2937",
             };
         default:
             return {
                 bg: "#e5e7eb",
-                bgDark: "#d1d5db",
                 border: "#9ca3af",
+                text: "#374151",
             };
     }
 };
@@ -543,24 +550,6 @@ const personChunks = useMemo(() => {
 
     return (
         <div className="bg-white" style={{ width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
-            {/* 타임라인 */}
-            <h2 className="text-[18px] md:text-[22px] font-semibold text-[#364153] mb-4">
-                타임라인
-            </h2>
-
-            {/* 범례 */}
-            <div className="flex flex-wrap gap-4 mb-6 text-[12px] text-[#6a7282]">
-                <span className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-md bg-[#3b82f6]"></span> 작업
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-md bg-[#10b981]"></span> 이동
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded-md bg-[#f59e0b]"></span> 대기
-                </span>
-            </div>
-
             {/* 그룹별 타임라인 */}
             <div className="flex flex-col gap-8" style={{ width: "100%" }}>
                 {overallGroups.map((group, groupIdx) => {
@@ -571,7 +560,6 @@ const personChunks = useMemo(() => {
                                 <div className="text-[14px] font-semibold text-slate-800">
                                     {group.persons.join(", ")} ({group.persons.length}명)
                                 </div>
-                                <div className="text-[12px] text-slate-400"></div>
                             </div>
 
                             {/* 그룹 내 날짜별 타임라인 */}
@@ -586,7 +574,7 @@ const personChunks = useMemo(() => {
 
                                     const lanesSegments = assignLanes(segments);
                                     const laneCount = Math.max(1, ...lanesSegments.map((s) => s.lane + 1));
-                                    const trackHeight = Math.max(36, laneCount * 32 + 8);
+                                    const trackHeight = Math.max(48, laneCount * 38 + 10);
 
                                     const d = new Date(dateKey);
                                     const isSunday = d.getDay() === 0;
@@ -598,12 +586,12 @@ const personChunks = useMemo(() => {
                                     return (
                                         <div
                                             key={`${groupIdx}-${dateKey}`}
-                                            className="flex items-start gap-3"
+                                            className="flex items-center gap-4"
                                             style={{ width: "100%" }}
                                         >
                                             {/* 날짜 */}
                                             <div
-                                                className={`w-[44px] shrink-0 text-[14px] font-semibold leading-[28px] pt-[18px] ${
+                                                className={`mt-2.5 text-[14px] font-medium ${
                                                     isSunday
                                                         ? "text-rose-500"
                                                         : isSaturday
@@ -611,31 +599,38 @@ const personChunks = useMemo(() => {
                                                         : "text-slate-700"
                                                 }`}
                                             >
-                                                {d.getMonth() + 1}/{d.getDate()}
+                                                {formatKoreanDateLabel(dateKey)}
                                             </div>
 
                                             {/* 트랙 */}
                                             <div className="flex-1" style={{ minWidth: 0, width: "100%" }}>
                                                 <div
-                                                    className="relative border border-[#e5e7eb] rounded-xl overflow-visible w-full mt-5"
+                                                    className="relative border border-gray-300 rounded-lg overflow-visible w-full mt-3 bg-gray-50"
                                                     style={{
                                                         width: "100%",
                                                         height: `${trackHeight}px`,
-                                                        background: `
-                                                            linear-gradient(90deg, rgba(17,24,39,0.04) 1px, transparent 1px) 0 0 / calc(100%/${hourCols}) 100%,
-                                                            linear-gradient(to bottom, #f8fafc, #fff)
-                                                        `,
                                                     }}
                                                 >
-                                                    {/* 시간 라벨 */}
+                                                    {/* 세로 그리드 */}
+                                                    {Array.from({ length: Math.max(0, hourCols - 1) }).map(
+                                                        (_, i) => (
+                                                            <div
+                                                                key={`grid-${dateKey}-${i + 1}`}
+                                                                className="absolute top-0 bottom-0 border-l border-gray-200"
+                                                                style={{
+                                                                    left: `${((i + 1) / hourCols) * 100}%`,
+                                                                }}
+                                                            />
+                                                        )
+                                                    )}                
                                                     {labels.map((label, idx) => (
                                                         <div
-                                                        key={idx}
-                                                        className="absolute -top-4 text-[10px] font-semibold text-slate-600 whitespace-nowrap bg-white px-1 py-0 transform -translate-x-1/2"
-                                                        style={{ left: `${label.left}%` }}
-                                                    >
-                                                        {minutesToTopLabel(label.min)}
-                                                    </div>
+                                                            key={idx}
+                                                            className="absolute -top-4 text-[11px] font-medium text-gray-500 whitespace-nowrap bg-white px-1 transform -translate-x-1/2"
+                                                            style={{ left: `${label.left}%` }}
+                                                        >
+                                                            {minutesToTopLabel(label.min)}
+                                                        </div>
                                                     ))}
 
                                                     {/* 세그먼트 */}
@@ -647,21 +642,26 @@ const personChunks = useMemo(() => {
                                                         const width = Math.max(((segEnd - segStart) / span) * 100, 0.5);
 
                                                         const color = getTypeColor(seg.type);
-                                                        const laneHeight = 28;
-                                                        const topOffset = 4 + seg.lane * (laneHeight + 4);
+                                                        const laneHeight = 38;
+                                                        const topOffset = 5 + seg.lane * (laneHeight + 6);
+
+                                                        const showHours = width > 2;
+                                                        const showType = width > 6;
+                                                        const labelText = showType
+                                                            ? `${seg.type} ${toHourStr(seg.totalMin)}h`
+                                                            : `${toHourStr(seg.totalMin)}h`;
 
                                                         return (
                                                             <div
                                                                 key={`${seg.entryId}-${groupIdx}-${dateKey}-${idx}`}
-                                                                className="absolute rounded-lg cursor-pointer transition-all hover:scale-[1.02] hover:shadow-lg hover:z-10"
+                                                                className="absolute rounded-md cursor-pointer transition-colors hover:shadow-md hover:z-10"
                                                                 style={{
                                                                     left: `${left}%`,
                                                                     width: `${width}%`,
                                                                     top: `${topOffset}px`,
                                                                     height: `${laneHeight}px`,
-                                                                    background: `linear-gradient(135deg, ${color.bg} 0%, ${color.bgDark} 100%)`,
+                                                                    background: color.bg,
                                                                     border: `1px solid ${color.border}`,
-                                                                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                                                                 }}
                                                                 onMouseEnter={(e) =>
                                                                     setHoveredSegment({
@@ -679,11 +679,14 @@ const personChunks = useMemo(() => {
                                                                     }
                                                                 }}
                                                             >
-                                                                {width > 6 && (
-                                                                    <div className="absolute inset-0 flex items-center justify-center px-2 overflow-hidden">
-                                                                    <span className="text-[11px] font-semibold text-[#1f2937] truncate">
-                                                                        {seg.type} {toHourStr(seg.totalMin)}h
-                                                                    </span>
+                                                                {showHours && (
+                                                                    <div className="absolute inset-0 flex items-center justify-center px-1 overflow-hidden">
+                                                                        <span
+                                                                            className={`font-semibold truncate ${showType ? "text-[13px]" : "text-[12px]"}`}
+                                                                            style={{ color: color.text ?? "#ffffff" }}
+                                                                        >
+                                                                            {labelText}
+                                                                        </span>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -707,16 +710,6 @@ const personChunks = useMemo(() => {
                         <h3 className="text-[16px] md:text-[18px] font-semibold text-[#364153]">
                             일별 시간표
                         </h3>
-{/*
-<div className="flex items-center gap-1 text-[11px] text-[#6a7282]">
-    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">작업</span>
-    {showWorkTimeRange && (
-        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded">작업시간</span>
-    )}
-    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded">이동</span>
-    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded">대기</span>
-</div>
-*/}
                         </div>
 
                     {/* ✅ 4명 단위로 표 여러 개 */}
@@ -724,16 +717,16 @@ const personChunks = useMemo(() => {
                         {personChunks.map((chunkPersons, chunkIdx) => (
                             <div
                             key={`person-chunk-${chunkIdx}`}
-                            className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm w-fit max-w-full"
+                            className="overflow-x-auto rounded-xl border border-gray-300 w-fit max-w-full"
                         >
 
 <table className="w-full text-[13px] border-collapse" style={{ width: "100%" }}>
                                     <thead>
                                         {/* 1줄: 날짜 + 사람(3칸 합치기) */}
-                                        <tr className="bg-gradient-to-r from-slate-100 to-slate-50">
+                                        <tr className="bg-white">
                                         <th
                                         rowSpan={2}
-                                        className="px-1 py-2 text-center font-semibold text-slate-700 border-b border-slate-200 w-[56px] min-w-[56px] sticky left-0 bg-gradient-to-r from-slate-100 to-slate-50 whitespace-nowrap"
+                                        className="px-1 py-2 text-center font-bold text-slate-700 border-b border-gray-300 border-r border-r-gray-300 w-[56px] min-w-[56px] sticky left-0 bg-white whitespace-nowrap"
                                     >
                                         날짜
                                     </th>
@@ -745,8 +738,8 @@ const personChunks = useMemo(() => {
                                             <th
                                                 key={person}
                                                 colSpan={showWait ? (showWorkTimeRange ? 4 : 3) : (showWorkTimeRange ? 3 : 2)}
-                                                className={`px-3 py-2 text-center border-b border-slate-200 min-w-[280px] ${
-                                                    idx > 0 ? "border-l-2 border-l-rose-300" : ""
+                                                className={`px-3 py-2 text-center border-b border-gray-300 min-w-[280px] bg-white ${
+                                                    idx > 0 ? "border-l border-l-gray-300" : ""
                                                 }`}
                                             >
                                                 <span className="text-[14px] font-bold text-slate-700">{person}</span>
@@ -757,28 +750,28 @@ const personChunks = useMemo(() => {
                                         </tr>
 
                                             {/* 2줄: 사람 아래 세부항목 */}
-                                            <tr className="bg-gradient-to-r from-slate-100 to-slate-50">
+                                            <tr className="bg-white">
                                             {chunkPersons.map((person, idx) => {
                                             const showWait = waitPersonSet.has(person);
                                             return (
                                                 <Fragment key={`${person}-sub`}>
                                                     <th
-                                                        className={`px-2 py-2 text-center border-b border-slate-200 text-[12px] text-slate-600 ${
-                                                            idx > 0 ? "border-l-2 border-l-rose-300" : ""
+                                                        className={`px-2 py-2 text-center border-b border-gray-300 text-[14px] text-slate-600 bg-white ${
+                                                            idx > 0 ? "border-l border-l-gray-300" : ""
                                                         }`}
                                                     >
                                                         작업
                                                     </th>
                                                     {showWorkTimeRange && (
-                                                        <th className="px-2 py-2 text-center border-b border-slate-200 text-[12px] text-slate-600">
+                                                        <th className="px-2 py-2 text-center border-b border-gray-300 border-l border-l-gray-300 text-[14px] text-slate-600 bg-white">
                                                             작업시간
                                                         </th>
                                                     )}
-                                                    <th className="px-2 py-2 text-center border-b border-slate-200 text-[12px] text-slate-600">
+                                                    <th className="px-2 py-2 text-center border-b border-gray-300 border-l border-l-gray-300 text-[14px] text-slate-600 bg-white">
                                                         이동
                                                     </th>
                                                     {showWait && (
-                                                        <th className="px-2 py-2 text-center border-b border-slate-200 text-[12px] text-slate-600">
+                                                        <th className="px-2 py-2 text-center border-b border-gray-300 border-l border-l-gray-300 text-[14px] text-slate-600 bg-white">
                                                             대기
                                                         </th>
                                                     )}
@@ -799,20 +792,16 @@ const personChunks = useMemo(() => {
                                             return (
                                                 <tr
                                                     key={date}
-                                                    className={`${
-                                                        dateIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
-                                                    } hover:bg-blue-50 transition-all`}
+                                                    className="bg-white hover:bg-blue-50 transition-all"
                                                 >
                                                         {/* 날짜 셀 */}
-                                                        <td
-                                                        className={`px-1 py-2 font-semibold text-slate-800 border-b border-slate-100 sticky left-0 whitespace-nowrap w-[56px] min-w-[56px] text-center ${
-                                                            dateIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
-                                                        }`}
+                                                    <td
+                                                        className="px-1 py-2 font-bold text-slate-800 border-b border-gray-300 border-r border-r-gray-300 sticky left-0 whitespace-nowrap w-[56px] min-w-[56px] text-center bg-white"
                                                     >
                                                         <div className="flex flex-col items-center">
 
                                                             <span
-                                                                className={`text-[14px] font-bold ${
+                                                                className={`text-[14px] font-extrabold ${
                                                                     isSunday
                                                                         ? "text-rose-500"
                                                                         : isSaturday
@@ -823,7 +812,7 @@ const personChunks = useMemo(() => {
                                                                 {d.getMonth() + 1}/{d.getDate()}
                                                             </span>
                                                             <span
-                                                                className={`text-[11px] ${
+                                                                className={`text-[11px] font-semibold ${
                                                                     isSunday
                                                                         ? "text-rose-400"
                                                                         : isSaturday
@@ -847,60 +836,50 @@ const personChunks = useMemo(() => {
 
                                                         const range = workTimeRangeMap.get(`${date}|${person}`);
 
-                                                        const moveStr = rec.이동 > 0 ? toHourStr(rec.이동) : "-";
-                                                        const workStr = rec.작업 > 0 ? toHourStr(rec.작업) : "-";
+                                                        const moveStr = rec.이동 > 0 ? toHourStr(rec.이동) : "";
+                                                        const workStr = rec.작업 > 0 ? toHourStr(rec.작업) : "";
                                                         const waitStr = rec.대기 > 0 ? toHourStr(rec.대기) : "";
                                                         const timeStr =
                                                             range && rec.작업 > 0
                                                                 ? minutesToRangeLabel(range.minStart, range.maxEnd)
-                                                                : "-";
+                                                                : "";
 
 
                                                         const personLeftBorder =
-                                                            idx > 0 ? "border-l-2 border-l-rose-300" : "";
+                                                            idx > 0 ? "border-l border-l-gray-300" : "";
                                                             const showWait = waitPersonSet.has(person);
                                                             return (
                                                                 <Fragment key={`${date}-${person}`}>
                                                                     {/* 작업 */}
                                                                     
-                                                                    <td className={`px-2 py-2 border-b border-slate-100 ${personLeftBorder}`}>
-                                                                        <div className="flex items-center justify-center p-1.5 bg-blue-50 rounded-lg">
-                                                                            <span className="text-[14px] font-bold text-blue-700">
-                                                                                {workStr}
-                                                                            </span>
-                                                                        </div>
+                                                                    <td className={`px-2 py-2 border-b border-gray-300 ${personLeftBorder} bg-blue-50 text-center`}>
+                                                                        <span className="text-[16px] font-medium text-blue-700">
+                                                                            {workStr || <EmptyValueIndicator />}
+                                                                        </span>
                                                                     </td>
                                                             
                                                                     {/* 작업시간 */}
                                                                     {showWorkTimeRange && (
-                                                                        <td className="px-2 py-2 border-b border-slate-100">
-                                                                            <div className="flex items-center justify-center p-1.5 bg-slate-50 rounded-lg">
-                                                                                <span className="text-[14px] font-semibold text-slate-700">
-                                                                                    {timeStr}
-                                                                                </span>
-                                                                            </div>
+                                                                        <td className="px-2 py-2 border-b border-gray-300 border-l border-l-gray-300 text-center">
+                                                                            <span className="text-[16px] font-medium text-slate-700">
+                                                                                {timeStr || <EmptyValueIndicator />}
+                                                                            </span>
                                                                         </td>
                                                                     )}
                                                             
                                                                     {/* 이동 */}
-                                                                    <td className="px-2 py-2 border-b border-slate-100">
-                                                                        <div className="flex items-center justify-center p-1.5 bg-emerald-50 rounded-lg">
-                                                                            <span className="text-[14px] font-bold text-emerald-700">
-                                                                                {moveStr}
-                                                                            </span>
-                                                                        </div>
+                                                                    <td className="px-2 py-2 border-b border-gray-300 border-l border-l-gray-300 bg-green-50 text-center">
+                                                                        <span className="text-[16px] font-medium text-green-800">
+                                                                            {moveStr || <EmptyValueIndicator />}
+                                                                        </span>
                                                                     </td>
                                                             
                                                             {/* 대기 (해당 사람이 대기 0이면 컬럼 자체 생략) */}
                                                             {showWait && (
-                                                                <td className="px-2 py-2 border-b border-slate-100">
-                                                                    {waitStr ? (
-                                                                        <div className="flex items-center justify-center p-1.5 bg-amber-50 rounded-lg">
-                                                                            <span className="text-[14px] font-bold text-amber-700">
-                                                                                {waitStr}
-                                                                            </span>
-                                                                        </div>
-                                                                    ) : null}
+                                                                <td className="px-2 py-2 border-b border-gray-300 border-l border-l-gray-300 bg-amber-50 text-center">
+                                                                    <span className="text-[16px] font-medium text-amber-700">
+                                                                        {waitStr || <EmptyValueIndicator />}
+                                                                    </span>
                                                                 </td>
                                                             )}
                                                                 </Fragment>
@@ -911,6 +890,59 @@ const personChunks = useMemo(() => {
                                             );
                                         })}
                                     </tbody>
+                                    <tfoot>
+                                        <tr className="bg-slate-100">
+                                            <td className="px-1 py-2 font-medium text-slate-800 border-t-0 border-gray-300 border-r border-r-gray-300 sticky left-0 bg-slate-100 text-center">
+                                                합계
+                                            </td>
+                                            {chunkPersons.map((person, idx) => {
+                                                const personLeftBorder =
+                                                    idx > 0 ? "border-l border-l-gray-300" : "";
+                                                const showWait = waitPersonSet.has(person);
+                                                let totalWork = 0;
+                                                let totalMove = 0;
+                                                let totalWait = 0;
+                                                allDates.forEach((date) => {
+                                                    const rec = dayPersonData.get(`${date}|${person}`);
+                                                    if (rec) {
+                                                        totalWork += rec.작업 || 0;
+                                                        totalMove += rec.이동 || 0;
+                                                        totalWait += rec.대기 || 0;
+                                                    }
+                                                });
+                                                const totalWorkStr = totalWork > 0 ? toHourStr(totalWork) : "";
+                                                const totalMoveStr = totalMove > 0 ? toHourStr(totalMove) : "";
+                                                const totalWaitStr = totalWait > 0 ? toHourStr(totalWait) : "";
+
+                                                return (
+                                                    <Fragment key={`total-${person}`}>
+                                                        <td className={`px-2 py-2 border-t-0 border-gray-300 ${personLeftBorder} bg-blue-100 text-center`}>
+                                                            <span className="text-[16px] font-bold text-blue-700">
+                                                                {totalWorkStr || <EmptyValueIndicator />}
+                                                            </span>
+                                                        </td>
+                                                        {showWorkTimeRange && (
+                                                            <td className="px-2 py-2 border-t-0 border-gray-300 border-l border-l-gray-300 bg-slate-100 text-center">
+                                                                <EmptyValueIndicator />
+                                                            </td>
+                                                        )}
+                                                        <td className="px-2 py-2 border-t-0 border-gray-300 border-l border-l-gray-300 bg-green-100 text-center">
+                                                            <span className="text-[16px] font-bold text-green-800">
+                                                                {totalMoveStr || <EmptyValueIndicator />}
+                                                            </span>
+                                                        </td>
+                                                        {showWait && (
+                                                            <td className="px-2 py-2 border-t-0 border-gray-300 border-l border-l-gray-300 bg-amber-100 text-center">
+                                                                <span className="text-[16px] font-bold text-amber-700">
+                                                                    {totalWaitStr || <EmptyValueIndicator />}
+                                                                </span>
+                                                            </td>
+                                                        )}
+                                                    </Fragment>
+                                                );
+                                            })}
+                                        </tr>
+                                    </tfoot>
                                 </table>
                             </div>
                         ))}

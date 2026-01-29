@@ -231,7 +231,7 @@ export async function getWorkerWorkloadDetail(
     entries: WorkloadDetailEntry[];
 }> {
     // 모든 워크로드 데이터 조회
-    const allEntries = await getWorkloadData(filters);
+    const allEntries = await getWorkloadData({ ...filters, includeDrafts: true });
 
     // 해당 작업자의 데이터만 필터링
     const workerEntries = allEntries.filter(
@@ -425,4 +425,3 @@ export function formatTimeRange(
     if (!to) return `${from}-`;
     return `${from}-${to}`;
 }
-

@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import SectionCard from "../ui/SectionCard";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
+import Table from "../common/Table";
 import TextInput from "../ui/TextInput";
 import RequiredIndicator from "../ui/RequiredIndicator";
 import {
@@ -348,92 +349,99 @@ export default function ExpenseSection() {
                 </div>
 
                 {/* 테이블 */}
-                {expenses.length > 0 && (
-                    <div className="overflow-x-auto mt-4">
-                        <table className="w-full border-collapse">
-                            <thead>
-                                <tr className="bg-gray-100">
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
-                                        날짜
-                                    </th>
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
-                                        분류
-                                    </th>
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
-                                        상세내용
-                                    </th>
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
-                                        금액
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {expenses.map((expense) => {
-                                    const isSelected = editingExpenseId === expense.id;
+                <div className="mt-4">
+                    <Table<ExpenseEntry>
+                        columns={[
+                            {
+                                key: "date",
+                                label: "날짜",
+                                align: "center",
+                                headerClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px]",
+                                cellClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px] text-center",
+                                render: (value) => formatDate(String(value || "")),
+                            },
+                            {
+                                key: "type",
+                                label: "분류",
+                                align: "center",
+                                headerClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px]",
+                                cellClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px] text-center",
+                            },
+                            {
+                                key: "detail",
+                                label: "상세내용",
+                                headerClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px]",
+                                cellClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px]",
+                            },
+                            {
+                                key: "amount",
+                                label: "금액",
+                                align: "center",
+                                headerClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px]",
+                                cellClassName:
+                                    "border border-gray-200 px-3 py-2 text-[13px] text-center relative",
+                                render: (value, row) => {
+                                    const isSelected = editingExpenseId === row.id;
                                     return (
-                                        <tr
-                                            key={expense.id}
-                                            onClick={() => handleEdit(expense)}
-                                            className={`group cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
-                                                expense.type
-                                            )} ${
-                                                isSelected
-                                                    ? "outline outline-2 outline-blue-500 -outline-offset-2"
-                                                    : ""
-                                            }`}
-                                        >
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
-                                                {formatDate(expense.date)}
-                                            </td>
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
-                                                {expense.type}
-                                            </td>
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px]">
-                                                {expense.detail}
-                                            </td>
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
-                                                {formatCurrency(expense.amount)}원
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (
-                                                            confirm(
-                                                                "삭제하시겠습니까?"
-                                                            )
-                                                        )
-                                                            deleteExpense(
-                                                                expense.id
-                                                            );
-                                                    }}
-                                                    className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${
-                                                        isSelected
-                                                            ? "opacity-100"
-                                                            : "opacity-0 group-hover:opacity-100"
-                                                    }`}
-                                                >
-                                                    ✕
-                                                </button>
-                                            </td>
-                                        </tr>
+                                        <div className="relative">
+                                            {formatCurrency(Number(value || 0))}원
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm("삭제하시겠습니까?")) {
+                                                        deleteExpense(row.id);
+                                                    }
+                                                }}
+                                                className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${
+                                                    isSelected
+                                                        ? "opacity-100"
+                                                        : "opacity-0 group-hover:opacity-100"
+                                                }`}
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
                                     );
-                                })}
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td
-                                        colSpan={3}
-                                        className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
-                                    >
-                                        합계
-                                    </td>
-                                    <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px]">
-                                        {formatCurrency(total)}원
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                )}
+                                },
+                            },
+                        ]}
+                        data={expenses}
+                        rowKey={(row) => row.id}
+                        onRowClick={(row) => handleEdit(row)}
+                        rowClassName={(row) => {
+                            const isSelected = editingExpenseId === row.id;
+                            return `group cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
+                                row.type
+                            )} ${
+                                isSelected
+                                    ? "outline outline-2 outline-blue-500 -outline-offset-2"
+                                    : ""
+                            }`;
+                        }}
+                        className="border-collapse"
+                        emptyText="등록된 지출 내역이 없습니다."
+                        footer={
+                            <tr>
+                                <td
+                                    colSpan={3}
+                                    className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
+                                >
+                                    합계
+                                </td>
+                                <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px]">
+                                    {formatCurrency(total)}원
+                                </td>
+                            </tr>
+                        }
+                    />
+                </div>
             </div>
         </SectionCard>
     );

@@ -9,11 +9,16 @@ import AddMemberModal from "../../components/modals/AddMemberModal";
 import ResetPasswordModal from "../../components/modals/ResetPasswordModal";
 import Table from "../../components/common/Table";
 import Chip from "../../components/ui/Chip";
-import { IconMore } from "../../components/icons/Icons";
+import { IconDownload, IconMore } from "../../components/icons/Icons";
+import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 import Avatar from "../../components/common/Avatar";
 import MembersSkeleton from "../../components/common/MembersSkeleton";
-import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 import { useToast } from "../../components/ui/ToastProvider";
+import MiniIconButton from "../../components/ui/MiniIconButton";
+import {
+    uploadPassportPhoto,
+    uploadProfilePhoto,
+} from "../../lib/memberFilesApi";
 
 type Member = {
     id: string;
@@ -37,6 +42,13 @@ type Member = {
     passportFirstName: string; // profiles.passport_first_name
     passportExpiry: string; // profiles.passport_expiry_date (YYMMDD로 보여주기)
     passportExpiryISO: string; // profiles.passport_expiry_date (ISO 형식, 날짜 비교용)
+
+    profilePhotoBucket: string;
+    profilePhotoPath: string;
+    profilePhotoName: string;
+    passportPhotoBucket: string;
+    passportPhotoPath: string;
+    passportPhotoName: string;
 };
 
 export default function MembersPage() {
@@ -58,6 +70,7 @@ export default function MembersPage() {
     const [loadError, setLoadError] = useState<string | null>(null);
     const PAGE_SIZE = 10;
     const [isAdmin, setIsAdmin] = useState(false);
+    const [isStaff, setIsStaff] = useState(false);
     const MEMBERS_CACHE_KEY = "members_cache_v1";
     const [myUserId, setMyUserId] = useState<string | null>(null);
 
@@ -79,6 +92,41 @@ export default function MembersPage() {
         // iso: "2026-01-07"
         const s = iso.slice(0, 10).replace(/-/g, ""); // YYYYMMDD
         return s.length === 8 ? s.slice(2) : s; // YYMMDD
+    };
+
+    const downloadStorageFile = async (
+        bucket: string,
+        path: string,
+        fileName: string
+    ) => {
+        const { data, error } = await supabase.storage
+            .from(bucket)
+            .download(path);
+        if (error || !data) {
+            throw error || new Error("파일 다운로드 실패");
+        }
+        const url = URL.createObjectURL(data);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName || path.split("/").pop() || "download";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const deleteStorageFile = async (bucket?: string, path?: string) => {
+        if (!bucket || !path) return;
+        try {
+            const { error } = await supabase.storage
+                .from(bucket)
+                .remove([path]);
+            if (error) {
+                console.warn("Storage 삭제 실패:", error.message);
+            }
+        } catch (error: any) {
+            console.warn("Storage 삭제 실패:", error?.message || error);
+        }
     };
 
     const normalizeDateToISO = (v: string) => {
@@ -129,7 +177,7 @@ export default function MembersPage() {
 
         const { data, error } = await supabase
             .from("profiles")
-            .select("role")
+            .select("role, department")
             .eq("id", user.id)
             .single();
 
@@ -138,7 +186,8 @@ export default function MembersPage() {
             return;
         }
 
-        setIsAdmin(data?.role === "admin");
+        setIsAdmin(data?.role === "admin" || data?.department === "공무팀");
+        setIsStaff(data?.role === "staff" || data?.department === "공사팀");
     };
 
     const fetchMembers = async (opts?: {
@@ -168,6 +217,9 @@ export default function MembersPage() {
                 phone_number,
                 address,
                 position,
+                profile_photo_bucket,
+                profile_photo_path,
+                profile_photo_name,
                 created_at
             `
             )
@@ -197,7 +249,7 @@ export default function MembersPage() {
             supabase
                 .from("profile_passports")
                 .select(
-                    "user_id, passport_last_name, passport_first_name, passport_number, passport_expiry_date"
+                    "user_id, passport_last_name, passport_first_name, passport_number, passport_expiry_date, passport_image_bucket, passport_image_path, passport_image_name"
                 )
                 .in("user_id", ids),
         ]);
@@ -224,23 +276,32 @@ export default function MembersPage() {
         const mapped: Member[] = (data ?? []).map((p: any) => {
             const pp = passportsMap.get(p.id);
             const isOwnProfile = opts?.myUserId === p.id;
-            // 공사팀(스태프)이고 본인이 아닌 경우 여권정보 마스킹
-            const shouldMaskPassport = opts?.isStaff && !isOwnProfile;
+            // 공사팀(스태프)이고 본인이 아닌 경우: 이름/직급/전화번호만 공개
+            const shouldMaskOtherFields = opts?.isStaff && !isOwnProfile;
+            const shouldMaskPassport = shouldMaskOtherFields;
 
             return {
                 id: p.id,
                 name: p.name ?? "",
-                username: p.username ?? "",
+                username: shouldMaskOtherFields ? "" : (p.username ?? ""),
                 team: p.department ?? "",
                 role: p.position ?? p.role ?? "",
-                email: p.email ?? "",
+                email: shouldMaskOtherFields ? "" : (p.email ?? ""),
 
                 phone: p.phone_number ?? "",
-                address1: p.address ?? "",
+                address1: shouldMaskOtherFields ? "" : (p.address ?? ""),
                 address2: "",
 
-                joinDate: p.join_date ? toYYMMDD(p.join_date) : "",
-                birth: p.birth_date ? toYYMMDD(p.birth_date) : "",
+                joinDate: shouldMaskOtherFields
+                    ? ""
+                    : p.join_date
+                    ? toYYMMDD(p.join_date)
+                    : "",
+                birth: shouldMaskOtherFields
+                    ? ""
+                    : p.birth_date
+                    ? toYYMMDD(p.birth_date)
+                    : "",
 
                 // 공사팀(스태프)이고 본인이 아닌 경우 여권정보 마스킹
                 passportNo: shouldMaskPassport ? "" : (pp?.passport_number ?? ""),
@@ -250,6 +311,25 @@ export default function MembersPage() {
                     ? toYYMMDD(pp.passport_expiry_date)
                     : ""),
                 passportExpiryISO: shouldMaskPassport ? "" : (pp?.passport_expiry_date ?? ""),
+
+                profilePhotoBucket: shouldMaskOtherFields
+                    ? ""
+                    : (p.profile_photo_bucket ?? ""),
+                profilePhotoPath: shouldMaskOtherFields
+                    ? ""
+                    : (p.profile_photo_path ?? ""),
+                profilePhotoName: shouldMaskOtherFields
+                    ? ""
+                    : (p.profile_photo_name ?? ""),
+                passportPhotoBucket: shouldMaskPassport
+                    ? ""
+                    : (pp?.passport_image_bucket ?? ""),
+                passportPhotoPath: shouldMaskPassport
+                    ? ""
+                    : (pp?.passport_image_path ?? ""),
+                passportPhotoName: shouldMaskPassport
+                    ? ""
+                    : (pp?.passport_image_name ?? ""),
             };
         });
 
@@ -309,10 +389,13 @@ export default function MembersPage() {
 
     const filteredMembers = useMemo(() => {
         let filtered = members;
+        if (!isAdmin && isStaff && myUserId) {
+            filtered = filtered.filter((m) => m.id === myUserId);
+        }
         if (activeTab === "ADMIN") {
-            filtered = members.filter((m) => m.team === "공무팀");
+            filtered = filtered.filter((m) => m.team === "공무팀");
         } else if (activeTab === "STAFF") {
-            filtered = members.filter((m) => m.team === "공사팀");
+            filtered = filtered.filter((m) => m.team === "공사팀");
         }
 
         // 직급 순으로 정렬 (높은 순)
@@ -425,9 +508,16 @@ export default function MembersPage() {
                                             {
                                                 key: "name",
                                                 label: "이름",
-                                                width: "14%",
-                                                render: (_, row) => (
-                                                    <div className="flex items-center gap-3">
+                                                width: "10%",
+                                                render: (_, row) => {
+                                                    const canDownload =
+                                                        isAdmin ||
+                                                        row.id === myUserId;
+                                                    const hasPhoto =
+                                                        !!row.profilePhotoBucket &&
+                                                        !!row.profilePhotoPath;
+                                                    return (
+                                                    <div className="relative group flex items-center gap-3">
                                                         <Avatar
                                                             email={row.email}
                                                             size={24}
@@ -435,57 +525,100 @@ export default function MembersPage() {
                                                         />
                                                         <div className="leading-tight">
                                                             <div className="text-[14px] font-semibold text-gray-900">
-                                                                {row.name}
+                                                                {row.name ? (
+                                                                    row.name
+                                                                ) : (
+                                                                    <EmptyValueIndicator />
+                                                                )}
                                                             </div>
                                                             <div className="text-[12px] text-gray-500">
-                                                                {row.username}
+                                                                {row.username ? (
+                                                                    row.username
+                                                                ) : (
+                                                                    <EmptyValueIndicator />
+                                                                )}
                                                             </div>
                                                         </div>
+                                                        {canDownload && hasPhoto && (
+                                                            <MiniIconButton
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    try {
+                                                                        await downloadStorageFile(
+                                                                            row.profilePhotoBucket,
+                                                                            row.profilePhotoPath,
+                                                                            row.profilePhotoName ||
+                                                                                "profile-photo"
+                                                                        );
+                                                                    } catch (error: any) {
+                                                                        showError(
+                                                                            error?.message ||
+                                                                                "증명사진 다운로드 실패"
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                title="증명사진 다운로드"
+                                                                icon={<IconDownload className="w-3.5 h-3.5" />}
+                                                                className="-ml-1"
+                                                            />
+                                                        )}
                                                     </div>
-                                                ),
+                                                );
+                                                },
                                             },
                                             {
                                                 key: "role",
                                                 label: "직급",
-                                                width: "1%",
+                                                width: "10%",
                                                 render: (value) => (
                                                     <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
-                                                        {value}
+                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
                                                     </div>
                                                 ),
                                             },
                                             {
                                                 key: "phone",
                                                 label: "전화번호",
-                                                width: "2%",
+                                                width: "10%",
                                                 render: (value) => (
                                                     <div className="text-[14px] text-gray-900 w-[140px] min-w-[140px]">
-                                                        {value}
+                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
                                                     </div>
                                                 ),
                                             },
                                             {
                                                 key: "address",
                                                 label: "주소",
-                                                width: "24%",
-                                                render: (_, row) => (
-                                                    <div className="text-[14px] text-gray-900 w-[320px] min-w-[320px] max-w-[320px]">
-                                                        <div className="wrap-break-word whitespace-normal">
-                                                            {row.address1}
+                                                width: "30%",
+                                                render: (_, row) => {
+                                                    const hasAddress1 = !!row.address1;
+                                                    const hasAddress2 = !!row.address2;
+                                                    if (!hasAddress1 && !hasAddress2) {
+                                                        return <EmptyValueIndicator />;
+                                                    }
+                                                    const primaryAddress =
+                                                        row.address1 || row.address2 || "";
+                                                    return (
+                                                        <div className="text-[14px] text-gray-900 w-full max-w-[520px]">
+                                                            <div className="truncate whitespace-nowrap">
+                                                                {primaryAddress}
+                                                            </div>
+                                                            {hasAddress1 && hasAddress2 && (
+                                                                <div className="text-[12px] text-gray-500 mt-1 truncate whitespace-nowrap">
+                                                                    {row.address2}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <div className="text-[12px] text-gray-500 mt-1 wrap-break-word whitespace-normal">
-                                                            {row.address2}
-                                                        </div>
-                                                    </div>
-                                                ),
+                                                    );
+                                                },
                                             },
                                             {
                                                 key: "joinDate",
                                                 label: "입사일",
-                                                width: "4%",
+                                                width: "10%",
                                                 render: (value) => (
                                                     <div className="text-[14px] text-gray-900 w-[100px] min-w-[100px]">
-                                                        {value}
+                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
                                                     </div>
                                                 ),
                                             },
@@ -495,23 +628,33 @@ export default function MembersPage() {
                                                 width: "1%",
                                                 render: (value) => (
                                                     <div className="text-[14px] text-gray-900 w-[110px] min-w-[110px]">
-                                                        {value}
+                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
                                                     </div>
                                                 ),
                                             },
                                             {
                                                 key: "etc",
                                                 label: "여권정보",
-                                                width: "12%",
+                                                width: "10%",
                                                 render: (_, row) => {
                                                     // 여권 정보 확인
                                                     const hasPassportNo = !!row.passportNo;
                                                     const hasPassportName =
                                                         !!(row.passportLastName || row.passportFirstName);
                                                     const hasExpiry = !!row.passportExpiry;
-                                                    const hasAnyPassportInfo = hasPassportNo || hasPassportName || hasExpiry;
+                                                    const hasPassportPhoto =
+                                                        !!row.passportPhotoBucket &&
+                                                        !!row.passportPhotoPath;
+                                                    const hasAnyPassportInfo =
+                                                        hasPassportNo ||
+                                                        hasPassportName ||
+                                                        hasExpiry ||
+                                                        hasPassportPhoto;
+                                                    const canDownload =
+                                                        isAdmin ||
+                                                        row.id === myUserId;
 
-                                                    // 여권 정보가 아예 없을 때만 EmptyValueIndicator 표시
+                                                    // 여권 정보가 아예 없을 때만 표시
                                                     if (!hasAnyPassportInfo) {
                                                         return (
                                                             <div className="flex items-start pr-2 w-[260px] min-w-[260px]">
@@ -522,7 +665,7 @@ export default function MembersPage() {
                                                                     row.id ===
                                                                     myUserId) && (
                                                                         <button
-                                                                            className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
+                                                                            className="flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
                                                                             onClick={(
                                                                                 e
                                                                             ) => {
@@ -575,7 +718,7 @@ export default function MembersPage() {
 
                                                     // 여권정보가 있으면 있는 정보만 표시
                                                     return (
-                                                        <div className="flex items-start pr-2 w-[260px] min-w-[260px]">
+                                                        <div className="relative group flex items-start pr-2 w-[260px] min-w-[260px]">
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-center gap-2 flex-wrap">
                                                                     {hasPassportNo && (
@@ -600,7 +743,38 @@ export default function MembersPage() {
                                                                         {passportName}
                                                                     </div>
                                                                 )}
+                                                                {hasPassportPhoto &&
+                                                                    !hasPassportNo &&
+                                                                    !passportName &&
+                                                                    !formattedExpiry && (
+                                                                        <div className="text-[12px] text-gray-500 mt-1">
+                                                                            여권사진 다운로드
+                                                                        </div>
+                                                                    )}
                                                             </div>
+                                                            {canDownload && hasPassportPhoto && (
+                                                                <MiniIconButton
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        try {
+                                                                            await downloadStorageFile(
+                                                                                row.passportPhotoBucket,
+                                                                                row.passportPhotoPath,
+                                                                                row.passportPhotoName ||
+                                                                                    "passport-photo"
+                                                                            );
+                                                                        } catch (error: any) {
+                                                                            showError(
+                                                                                error?.message ||
+                                                                                    "여권사진 다운로드 실패"
+                                                                            );
+                                                                        }
+                                                                    }}
+                                                                    title="여권사진 다운로드"
+                                                                    icon={<IconDownload className="w-3.5 h-3.5" />}
+                                                                    className="relative -left-1"
+                                                                />
+                                                            )}
                                                             {(isAdmin ||
                                                                 row.id ===
                                                                 myUserId) && (
@@ -632,6 +806,7 @@ export default function MembersPage() {
                                         ]}
                                         data={pagedMembers}
                                         rowKey="id"
+                                        emptyText="등록된 구성원이 없습니다."
                                         pagination={{
                                             currentPage: page,
                                             totalPages: pageCount,
@@ -696,6 +871,39 @@ export default function MembersPage() {
                         .eq("id", selectedMemberId);
 
                     if (!error) {
+                        if (payload.profilePhotoFile) {
+                            try {
+                                const prevBucket =
+                                    selectedMember?.profilePhotoBucket;
+                                const prevPath = selectedMember?.profilePhotoPath;
+                                const uploaded = await uploadProfilePhoto(
+                                    selectedMemberId,
+                                    payload.profilePhotoFile
+                                );
+                                await supabase
+                                    .from("profiles")
+                                    .update({
+                                        profile_photo_bucket: uploaded.bucket,
+                                        profile_photo_path: uploaded.path,
+                                        profile_photo_name: uploaded.name,
+                                    })
+                                    .eq("id", selectedMemberId);
+                                if (
+                                    prevBucket &&
+                                    prevPath &&
+                                    (prevBucket !== uploaded.bucket ||
+                                        prevPath !== uploaded.path)
+                                ) {
+                                    await deleteStorageFile(prevBucket, prevPath);
+                                }
+                            } catch (e: any) {
+                                showError(
+                                    e?.message ||
+                                        "증명사진 업로드에 실패했습니다."
+                                );
+                            }
+                        }
+
                         // ✅ 여권정보는 분리 테이블에 저장
                         const { error: ppError } = await supabase
                             .from("profile_passports")
@@ -719,6 +927,43 @@ export default function MembersPage() {
                             );
                             showError("여권정보 저장에 실패했습니다.");
                             return;
+                        }
+
+                        if (payload.passportPhotoFile) {
+                            try {
+                                const prevBucket =
+                                    selectedMember?.passportPhotoBucket;
+                                const prevPath =
+                                    selectedMember?.passportPhotoPath;
+                                const uploaded = await uploadPassportPhoto(
+                                    selectedMemberId,
+                                    payload.passportPhotoFile
+                                );
+                                await supabase
+                                    .from("profile_passports")
+                                    .upsert(
+                                        {
+                                            user_id: selectedMemberId,
+                                            passport_image_bucket: uploaded.bucket,
+                                            passport_image_path: uploaded.path,
+                                            passport_image_name: uploaded.name,
+                                        },
+                                        { onConflict: "user_id" }
+                                    );
+                                if (
+                                    prevBucket &&
+                                    prevPath &&
+                                    (prevBucket !== uploaded.bucket ||
+                                        prevPath !== uploaded.path)
+                                ) {
+                                    await deleteStorageFile(prevBucket, prevPath);
+                                }
+                            } catch (e: any) {
+                                showError(
+                                    e?.message ||
+                                        "여권사진 업로드에 실패했습니다."
+                                );
+                            }
                         }
                     }
 
