@@ -1,6 +1,7 @@
 // src/components/sections/TimelineSummarySection.tsx
 import { Fragment, useMemo, useState } from "react";
 import { useWorkReportStore } from "../../store/workReportStore";
+import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 
 // 분 → 시간 문자열 (0.5시간 단위)
 const toHourStr = (minutes: number): string => {
@@ -762,15 +763,15 @@ const personChunks = useMemo(() => {
                                                         작업
                                                     </th>
                                                     {showWorkTimeRange && (
-                                                        <th className="px-2 py-2 text-center border-b border-gray-300 text-[14px] text-slate-600 bg-white">
+                                                        <th className="px-2 py-2 text-center border-b border-gray-300 border-l border-l-gray-300 text-[14px] text-slate-600 bg-white">
                                                             작업시간
                                                         </th>
                                                     )}
-                                                    <th className="px-2 py-2 text-center border-b border-gray-300 text-[14px] text-slate-600 bg-white">
+                                                    <th className="px-2 py-2 text-center border-b border-gray-300 border-l border-l-gray-300 text-[14px] text-slate-600 bg-white">
                                                         이동
                                                     </th>
                                                     {showWait && (
-                                                        <th className="px-2 py-2 text-center border-b border-gray-300 text-[14px] text-slate-600 bg-white">
+                                                        <th className="px-2 py-2 text-center border-b border-gray-300 border-l border-l-gray-300 text-[14px] text-slate-600 bg-white">
                                                             대기
                                                         </th>
                                                     )}
@@ -791,15 +792,11 @@ const personChunks = useMemo(() => {
                                             return (
                                                 <tr
                                                     key={date}
-                                                    className={`${
-                                                        dateIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
-                                                    } hover:bg-blue-50 transition-all`}
+                                                    className="bg-white hover:bg-blue-50 transition-all"
                                                 >
                                                         {/* 날짜 셀 */}
                                                     <td
-                                                        className={`px-1 py-2 font-bold text-slate-800 border-b border-gray-300 border-r border-r-gray-300 sticky left-0 whitespace-nowrap w-[56px] min-w-[56px] text-center ${
-                                                            dateIdx % 2 === 0 ? "bg-white" : "bg-slate-50"
-                                                        }`}
+                                                        className="px-1 py-2 font-bold text-slate-800 border-b border-gray-300 border-r border-r-gray-300 sticky left-0 whitespace-nowrap w-[56px] min-w-[56px] text-center bg-white"
                                                     >
                                                         <div className="flex flex-col items-center">
 
@@ -839,13 +836,13 @@ const personChunks = useMemo(() => {
 
                                                         const range = workTimeRangeMap.get(`${date}|${person}`);
 
-                                                        const moveStr = rec.이동 > 0 ? toHourStr(rec.이동) : "-";
-                                                        const workStr = rec.작업 > 0 ? toHourStr(rec.작업) : "-";
+                                                        const moveStr = rec.이동 > 0 ? toHourStr(rec.이동) : "";
+                                                        const workStr = rec.작업 > 0 ? toHourStr(rec.작업) : "";
                                                         const waitStr = rec.대기 > 0 ? toHourStr(rec.대기) : "";
                                                         const timeStr =
                                                             range && rec.작업 > 0
                                                                 ? minutesToRangeLabel(range.minStart, range.maxEnd)
-                                                                : "-";
+                                                                : "";
 
 
                                                         const personLeftBorder =
@@ -856,32 +853,32 @@ const personChunks = useMemo(() => {
                                                                     {/* 작업 */}
                                                                     
                                                                     <td className={`px-2 py-2 border-b border-gray-300 ${personLeftBorder} bg-blue-50 text-center`}>
-                                                                <span className="text-[16px] font-bold text-blue-700">
-                                                                    {workStr}
-                                                                </span>
+                                                                        <span className="text-[16px] font-medium text-blue-700">
+                                                                            {workStr || <EmptyValueIndicator />}
+                                                                        </span>
                                                                     </td>
                                                             
                                                                     {/* 작업시간 */}
                                                                     {showWorkTimeRange && (
-                                                                        <td className="px-2 py-2 border-b border-gray-300 bg-slate-50 text-center">
-                                                                            <span className="text-[16px] font-semibold text-slate-700">
-                                                                                {timeStr}
+                                                                        <td className="px-2 py-2 border-b border-gray-300 border-l border-l-gray-300 text-center">
+                                                                            <span className="text-[16px] font-medium text-slate-700">
+                                                                                {timeStr || <EmptyValueIndicator />}
                                                                             </span>
                                                                         </td>
                                                                     )}
                                                             
                                                                     {/* 이동 */}
-                                                                    <td className="px-2 py-2 border-b border-gray-300 bg-emerald-50 text-center">
-                                                                        <span className="text-[16px] font-bold text-emerald-700">
-                                                                            {moveStr}
+                                                                    <td className="px-2 py-2 border-b border-gray-300 border-l border-l-gray-300 bg-green-50 text-center">
+                                                                        <span className="text-[16px] font-medium text-green-800">
+                                                                            {moveStr || <EmptyValueIndicator />}
                                                                         </span>
                                                                     </td>
                                                             
                                                             {/* 대기 (해당 사람이 대기 0이면 컬럼 자체 생략) */}
                                                             {showWait && (
-                                                                <td className="px-2 py-2 border-b border-gray-300 bg-amber-50 text-center">
-                                                                    <span className="text-[16px] font-bold text-amber-700">
-                                                                        {waitStr || "-"}
+                                                                <td className="px-2 py-2 border-b border-gray-300 border-l border-l-gray-300 bg-amber-50 text-center">
+                                                                    <span className="text-[16px] font-medium text-amber-700">
+                                                                        {waitStr || <EmptyValueIndicator />}
                                                                     </span>
                                                                 </td>
                                                             )}
@@ -894,8 +891,8 @@ const personChunks = useMemo(() => {
                                         })}
                                     </tbody>
                                     <tfoot>
-                                        <tr className="bg-white">
-                                            <td className="px-1 py-2 font-bold text-slate-800 border-t-0 border-gray-300 border-r border-r-gray-300 sticky left-0 bg-white text-center">
+                                        <tr className="bg-slate-100">
+                                            <td className="px-1 py-2 font-medium text-slate-800 border-t-0 border-gray-300 border-r border-r-gray-300 sticky left-0 bg-slate-100 text-center">
                                                 합계
                                             </td>
                                             {chunkPersons.map((person, idx) => {
@@ -913,33 +910,31 @@ const personChunks = useMemo(() => {
                                                         totalWait += rec.대기 || 0;
                                                     }
                                                 });
-                                                const totalWorkStr = totalWork > 0 ? toHourStr(totalWork) : "-";
-                                                const totalMoveStr = totalMove > 0 ? toHourStr(totalMove) : "-";
+                                                const totalWorkStr = totalWork > 0 ? toHourStr(totalWork) : "";
+                                                const totalMoveStr = totalMove > 0 ? toHourStr(totalMove) : "";
                                                 const totalWaitStr = totalWait > 0 ? toHourStr(totalWait) : "";
 
                                                 return (
                                                     <Fragment key={`total-${person}`}>
-                                                        <td className={`px-2 py-2 border-t-0 border-gray-300 ${personLeftBorder} bg-blue-50 text-center`}>
+                                                        <td className={`px-2 py-2 border-t-0 border-gray-300 ${personLeftBorder} bg-blue-100 text-center`}>
                                                             <span className="text-[16px] font-bold text-blue-700">
-                                                                {totalWorkStr}
+                                                                {totalWorkStr || <EmptyValueIndicator />}
                                                             </span>
                                                         </td>
                                                         {showWorkTimeRange && (
-                                                            <td className="px-2 py-2 border-t-0 border-gray-300 bg-slate-50 text-center">
-                                                                <span className="text-[16px] font-semibold text-slate-700">
-                                                                    -
-                                                                </span>
+                                                            <td className="px-2 py-2 border-t-0 border-gray-300 border-l border-l-gray-300 bg-slate-100 text-center">
+                                                                <EmptyValueIndicator />
                                                             </td>
                                                         )}
-                                                        <td className="px-2 py-2 border-t-0 border-gray-300 bg-emerald-50 text-center">
-                                                            <span className="text-[16px] font-bold text-emerald-700">
-                                                                {totalMoveStr}
+                                                        <td className="px-2 py-2 border-t-0 border-gray-300 border-l border-l-gray-300 bg-green-100 text-center">
+                                                            <span className="text-[16px] font-bold text-green-800">
+                                                                {totalMoveStr || <EmptyValueIndicator />}
                                                             </span>
                                                         </td>
                                                         {showWait && (
-                                                            <td className="px-2 py-2 border-t-0 border-gray-300 bg-amber-50 text-center">
+                                                            <td className="px-2 py-2 border-t-0 border-gray-300 border-l border-l-gray-300 bg-amber-100 text-center">
                                                                 <span className="text-[16px] font-bold text-amber-700">
-                                                                    {totalWaitStr || "-"}
+                                                                    {totalWaitStr || <EmptyValueIndicator />}
                                                                 </span>
                                                             </td>
                                                         )}
