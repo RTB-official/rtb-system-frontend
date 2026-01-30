@@ -7,8 +7,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const REMEMBER_ME_KEY = "rtb:remember_me";
 
 function getAuthStorage(): Storage {
-  const remember = localStorage.getItem(REMEMBER_ME_KEY) === "1";
-  return remember ? localStorage : sessionStorage;
+  return localStorage;
 }
 
 const authStorage = {

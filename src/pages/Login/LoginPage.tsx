@@ -1,6 +1,6 @@
 // src/pages/Login/LoginPage.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../store/auth";
 import { setRememberMe } from "../../lib/supabase";
 import { IconEye, IconEyeOff } from "../../components/icons/Icons";
@@ -9,6 +9,7 @@ import Button from "../../components/common/Button";
 
 function LoginPage() {
   const nav = useNavigate();
+  const location = useLocation();
   const { signInWithUsername } = useAuth();
 
   const [username, setUsername] = useState("");
@@ -53,11 +54,21 @@ function LoginPage() {
     // ✅ 로그인 성공 시: 안전 토스트를 "딱 1회" 띄우기 위한 pending 플래그
     sessionStorage.setItem("rtb:safety_toast_pending", "1");
 
+    const from = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)
+      ?.from;
+    const redirectTo = from
+      ? `${from.pathname || ""}${from.search || ""}${from.hash || ""}`
+      : "";
+
     const nextRole = res.role;
     if (nextRole === "admin") {
       nav("/dashboard", { replace: true });
     } else {
-      nav("/report", { replace: true });
+      if (redirectTo && redirectTo.startsWith("/report/pdf")) {
+        nav(redirectTo, { replace: true });
+      } else {
+        nav("/report", { replace: true });
+      }
     }
 
   };

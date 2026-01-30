@@ -21,10 +21,15 @@ export function useSidebarRoutes() {
 
     const isReportRoute =
         isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate) || isReportEditRoute;
+    const isTbmRoute =
+        isMatch(PATHS.tbmList) ||
+        isMatch(PATHS.tbmCreate) ||
+        !!matchPath({ path: "/tbm/:id", end: false }, location.pathname);
     const isExpenseRoute = isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
 
     return {
         isReportRoute,
+        isTbmRoute,
         isExpenseRoute,
         isReportEditRoute,
         location,

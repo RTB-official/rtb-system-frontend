@@ -14,6 +14,7 @@ import { markAllNotificationsAsRead } from "../lib/notificationApi";
 import {
     IconHome,
     IconReport,
+    IconShieldCheck,
     IconWorkload,
     IconCard,
     IconVacation,
@@ -38,7 +39,7 @@ interface SidebarProps {
     onClose?: () => void;
 }
 
-type MenuFocus = "REPORT" | "EXPENSE" | null;
+type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | null;
 
 
 
@@ -135,32 +136,38 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
     const usernameRef = useRef<HTMLDivElement>(null);
 
-    const { isReportRoute, isExpenseRoute, isReportEditRoute, location: routeLocation } = useSidebarRoutes();
+    const { isReportRoute, isTbmRoute, isExpenseRoute, isReportEditRoute, location: routeLocation } = useSidebarRoutes();
 
     const prevReportRouteRef = useRef<boolean>(isReportRoute);
+    const prevTbmRouteRef = useRef<boolean>(isTbmRoute);
     const prevExpenseRouteRef = useRef<boolean>(isExpenseRoute);
 
     const {
         setReportOpen,
         reportOpenRef,
+        setTbmOpen,
+        tbmOpenRef,
         setExpenseOpen,
         expenseOpenRef,
         stableReportOpen,
+        stableTbmOpen,
         stableExpenseOpen,
-    } = useSidebarSubMenuState(isReportRoute, isExpenseRoute, prevReportRouteRef, prevExpenseRouteRef);
+    } = useSidebarSubMenuState(isReportRoute, isTbmRoute, isExpenseRoute, prevReportRouteRef, prevTbmRouteRef, prevExpenseRouteRef);
 
     const reportActive = isReportRoute || menuFocus === "REPORT";
+    const tbmActive = isTbmRoute || menuFocus === "TBM";
     const canShowHome = stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin;
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
     const settingsActive = routeLocation.pathname.startsWith("/settings");
 
-    const { reportSubMenuItems, expenseSubMenuItems } = useSidebarMenuItems(
+    const { reportSubMenuItems, tbmSubMenuItems, expenseSubMenuItems } = useSidebarMenuItems(
         stablePermissions,
         isReportEditRoute,
         routeLocation
     );
 
     const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);
+    const [tbmItemsForSubMenu, setTbmItemsForSubMenu] = useState(tbmSubMenuItems);
 
     useEffect(() => {
         if (reportSubMenuItems.length > 0) {
@@ -168,16 +175,26 @@ export default function Sidebar({ onClose }: SidebarProps) {
         }
     }, [reportSubMenuItems]);
 
+    useEffect(() => {
+        if (tbmSubMenuItems.length > 0) {
+            setTbmItemsForSubMenu(tbmSubMenuItems);
+        }
+    }, [tbmSubMenuItems]);
+
     useSidebarRouteSync({
         pathname: routeLocation.pathname,
         isReportRoute,
+        isTbmRoute,
         isExpenseRoute,
         expenseSubMenuItems,
         prevReportRouteRef,
+        prevTbmRouteRef,
         prevExpenseRouteRef,
         reportOpenRef,
+        tbmOpenRef,
         expenseOpenRef,
         setReportOpen,
+        setTbmOpen,
         setExpenseOpen,
         setMenuFocus,
         setShowNotifications,
@@ -188,6 +205,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         } else {
             setMenuFocus(null);
             setReportOpen(false);
+            setTbmOpen(false);
             setExpenseOpen(false);
         }
         setShowNotifications(false);
@@ -376,6 +394,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                     type: n.type,
                                     created_at: n.created_at,
                                     read_at: n.read_at,
+                                    meta: n.meta,
                                 }))}
                                 onNotificationRead={async () => {
                                     await refreshNotifications();
@@ -418,6 +437,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 label="출장 보고서"
                                 isActive={reportActive}
                                 onClick={() => {
+                                    setTbmOpen(false);
                                     setExpenseOpen(false);
                                     if (!reportOpenRef.current) {
                                         setReportOpen(true);
@@ -431,6 +451,40 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 isOpen={stableReportOpen}
                                 items={reportItemsForSubMenu}
                                 focus="REPORT"
+                                onClose={onClose}
+                                onMenuClick={handleMenuClick}
+                            />
+                        </div>
+
+                        <div className="-pb-1">
+                            <MenuButton
+                                icon={
+                                    <span
+                                        style={
+                                            tbmActive
+                                                ? ({ ["--tbm-check-color" as any]: "#111111" } as React.CSSProperties)
+                                                : undefined
+                                        }
+                                    >
+                                        <IconShieldCheck />
+                                    </span>
+                                }
+                                label="TBM"
+                                isActive={tbmActive}
+                                onClick={() => {
+                                    setReportOpen(false);
+                                    setExpenseOpen(false);
+                                    if (!tbmOpenRef.current) {
+                                        setTbmOpen(true);
+                                    }
+                                    go(PATHS.tbmList, "TBM");
+                                }}
+                            />
+
+                            <SubMenu
+                                isOpen={stableTbmOpen}
+                                items={tbmItemsForSubMenu}
+                                focus="TBM"
                                 onClose={onClose}
                                 onMenuClick={handleMenuClick}
                             />
@@ -458,6 +512,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 isActive={expenseActive}
                                 onClick={() => {
                                     setReportOpen(false);
+                                    setTbmOpen(false);
 
                                     if (expenseSubMenuItems.length === 1) {
                                         setExpenseOpen(false);

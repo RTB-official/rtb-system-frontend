@@ -340,14 +340,13 @@ export default function AddMemberModal({
                             />
                         </div>
 
-                        {/* 여권 사진 */}
+                        {/* 여권사진 */}
                         <div className="mt-4">
                             <label className="text-[12px] font-medium text-gray-900 block mb-2">
-                                여권 사진
+                                여권사진
                             </label>
                             <input
                                 type="file"
-                                accept="image/*"
                                 onChange={(e) =>
                                     setPassportPhotoFile(
                                         e.target.files?.[0] ?? null
@@ -369,7 +368,6 @@ export default function AddMemberModal({
                             </label>
                             <input
                                 type="file"
-                                accept="image/*"
                                 onChange={(e) =>
                                     setProfilePhotoFile(
                                         e.target.files?.[0] ?? null

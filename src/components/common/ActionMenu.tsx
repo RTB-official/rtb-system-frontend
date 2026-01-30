@@ -15,6 +15,8 @@ interface ActionMenuProps {
     position?: { x: number; y: number };
     onClose: () => void;
     onEdit?: () => void;
+    onPdf?: () => void;
+    showPdf?: boolean;
     onDelete?: () => void;
     onResetPassword?: () => void;
     onLogout?: () => void;
@@ -36,7 +38,9 @@ export default function ActionMenu({
     position,
     onClose,
     onEdit,
+    onPdf,
     onDelete,
+    showPdf,
     onResetPassword,
     onLogout,
     onDownload,
@@ -172,6 +176,22 @@ export default function ActionMenu({
                     수정
                 </button>
             )}
+
+            {showPdf && onPdf && (               /* ✅ PDF 버튼 */
+                <button
+                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                    onClick={() => {
+                        onPdf();
+                        onClose();
+                    }}
+                >
+                    <div className="text-gray-500">
+                        <IconDownload />
+                    </div>
+                    PDF
+                </button>
+            )}
+
             {onResetPassword && (
                 <button
                     className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"

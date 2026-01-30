@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 
-type MenuFocus = "REPORT" | "EXPENSE" | null;
+type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | null;
 
 interface SubLinkProps {
   to: string;

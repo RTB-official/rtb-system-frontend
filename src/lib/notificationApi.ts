@@ -9,6 +9,7 @@ export interface Notification {
     title: string;
     message: string;
     type: "report" | "schedule" | "vacation" | "other";
+    meta?: string | null;
     created_at: string;
     read_at: string | null;
 }
@@ -18,6 +19,7 @@ export interface CreateNotificationInput {
     title: string;
     message: string;
     type: "report" | "schedule" | "vacation" | "other";
+    meta?: string;
 }
 
 // ==================== 알림 생성 ====================
@@ -75,7 +77,8 @@ export async function createNotificationsForUsers(
     userIds: string[],
     title: string,
     message: string,
-    type: "report" | "schedule" | "vacation" | "other"
+    type: "report" | "schedule" | "vacation" | "other",
+    meta?: string
 ): Promise<Notification[]> {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
     const {

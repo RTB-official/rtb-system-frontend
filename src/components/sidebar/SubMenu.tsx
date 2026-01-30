@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import SubLink from "./SubLink";
 
-type MenuFocus = "REPORT" | "EXPENSE" | null;
+type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | null;
 
 interface SubMenuProps {
   isOpen: boolean;

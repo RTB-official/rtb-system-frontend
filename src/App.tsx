@@ -19,6 +19,10 @@ const CreationPage = lazy(() => import("./pages/Creation/CreationPage"));
 const ReportListPage = lazy(() => import("./pages/Report/ReportListPage"));
 const ReportEditPage = lazy(() => import("./pages/Report/ReportEditPage"));
 const ReportViewPage = lazy(() => import("./pages/Report/ReportViewPage"));
+const TbmListPage = lazy(() => import("./pages/TBM/TbmListPage"));
+const TbmCreatePage = lazy(() => import("./pages/TBM/TbmCreatePage"));
+const TbmDetailPage = lazy(() => import("./pages/TBM/TbmDetailPage"));
+const TbmPdfPage = lazy(() => import("./pages/TBM/TbmPdfPage"));
 
 const VacationPage = lazy(() => import("./pages/Vacation/VacationPage"));
 const AdminVacationPage = lazy(() => import("./pages/Vacation/AdminVacationPage"));
@@ -63,6 +67,11 @@ function App() {
                 <Route path="/report/:id" element={<ReportViewPage />} />
                 <Route path="/report/:id/edit" element={<ReportEditPage />} />
                 <Route path="/report/pdf" element={<ReportPdfPage />} />
+
+                <Route path="/tbm" element={<TbmListPage />} />
+                <Route path="/tbm/create" element={<TbmCreatePage />} />
+                <Route path="/tbm/:id/pdf" element={<TbmPdfPage />} />
+                <Route path="/tbm/:id" element={<TbmDetailPage />} />
 
                 <Route path="/vacation" element={<VacationPage />} />
                 <Route path="/vacation/admin" element={<AdminVacationPage />} />
