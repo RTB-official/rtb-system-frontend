@@ -113,10 +113,11 @@ export default function ExpenseFormCard({
                                 fullWidth
                                 placeholder="유형 선택"
                                 options={[
-                                    { value: "주유", label: "주유" },
-                                    { value: "통행료", label: "통행료" },
+                                    { value: "유대", label: "유대" },
                                     { value: "식비", label: "식비" },
-                                    { value: "자재구매", label: "자재구매" },
+                                    { value: "자재 구매", label: "자재 구매" },
+                                    { value: "도로비", label: "도로비" },
+                                    { value: "주차비", label: "주차비" },
                                     { value: "기타", label: "기타" },
                                 ]}
                                 value={type}
