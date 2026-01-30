@@ -1,5 +1,4 @@
-
-
+//settings/index.tsx
 import React from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -74,7 +73,7 @@ export default function SettingsPage() {
         <main className="flex-1 overflow-auto pt-8 pb-20 px-4 sm:px-6 lg:px-10 bg-gray-50">
           <div className="w-full max-w-none">
 
-            <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6">
               <SettingSection label="알림">
                 <SettingRow
                   title="이메일 알림"
@@ -83,12 +82,21 @@ export default function SettingsPage() {
                 />
                 <div className="h-px bg-gray-200" />
                 <SettingRow
+                  title="웹 알림"
+                  desc="웹 알림 설정을 관리합니다."
+                  to="/settings/web-notification"
+                />
+              </SettingSection>
+
+              <SettingSection label="웹설정">
+                <SettingRow
                   title="안전 문구"
                   desc="시스템에 표시할 안전/주의 문구를 설정합니다."
                   to="/settings/safe-phrase"
                 />
               </SettingSection>
             </div>
+
           </div>
         </main>
       </div>

@@ -34,6 +34,8 @@ const MembersPage = lazy(() => import("./pages/Members/MembersPage"));
 const VehiclesPage = lazy(() => import("./pages/Vehicles/VehiclesPage"));
 const EmailSettingsPage = lazy(() => import("./pages/Settings/Email"));
 const SafePhrasePage = lazy(() => import("./pages/Settings/SafePhrase"));
+const WebNotificationSettingsPage = lazy(() => import("./pages/Settings/WebNotificationSettingsPage"));
+
 
 function RoleLanding() {
   const { loading, loadingProfile, user, profile } = useAuth();
@@ -84,7 +86,9 @@ function App() {
 
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/email" element={<EmailSettingsPage />} />
+                <Route path="/settings/web-notification" element={<WebNotificationSettingsPage />} />
                 <Route path="/settings/safe-phrase" element={<SafePhrasePage />} />
+
 
                 {/* backward compatible */}
                 <Route
