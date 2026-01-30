@@ -16,7 +16,7 @@ import {
 import { TableSkeleton } from "./components/TableSkeleton";
 import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
-import BaseModal from "../../components/ui/BaseModal";
+import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
 import Avatar from "../../components/common/Avatar";
 import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
@@ -742,20 +742,12 @@ export default function MemberExpensePage() {
 
             {/* 영수증 모달 */}
             {selectedReceipt && (
-                <BaseModal
+                <ImagePreviewModal
                     isOpen={!!selectedReceipt}
                     onClose={() => setSelectedReceipt(null)}
-                    title="영수증 원본"
-                    maxWidth="max-w-[90vw]"
-                >
-                    <div className="flex justify-center bg-gray-50 rounded-xl overflow-hidden mb-2">
-                        <img
-                            src={selectedReceipt}
-                            alt="receipt full"
-                            className="max-w-full h-auto max-h-[70vh] object-contain"
-                        />
-                    </div>
-                </BaseModal>
+                    imageSrc={selectedReceipt}
+                    imageAlt="영수증 원본"
+                />
             )}
         </div>
     );
