@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import SectionCard from "../ui/SectionCard";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
+import Select from "../common/Select";
 import Table from "../common/Table";
 import TextInput from "../ui/TextInput";
 import RequiredIndicator from "../ui/RequiredIndicator";
@@ -59,9 +60,9 @@ export default function ExpenseSection() {
 
     // 분류별 색상
     const getTypeClass = (t: string) => {
-        if (["조식", "중식", "석식"].includes(t)) return "bg-orange-50";
+        if (["조식", "중식", "석식", "간식", "식비"].includes(t)) return "bg-orange-50";
         if (t === "숙박") return "bg-blue-50";
-        if (t === "유류비") return "bg-green-50";
+        if (["유대", "유류비", "주유"].includes(t)) return "bg-green-50";
         return "bg-pink-50";
     };
 
@@ -72,7 +73,7 @@ export default function ExpenseSection() {
 
     const handleAddExpense = () => {
         const finalDate = date || entryDates[0] || "";
-        const finalType = type === "OTHER" ? typeCustom : type;
+        const finalType = type === "기타" && typeCustom ? typeCustom : type;
 
         // 유효성 검사
         const newErrors: typeof errors = {};
@@ -129,7 +130,7 @@ export default function ExpenseSection() {
     const handleEdit = (expense: ExpenseEntry) => {
         editExpense(expense.id);
         setDate(expense.date);
-        setType(EXPENSE_TYPES.includes(expense.type) ? expense.type : "OTHER");
+        setType(EXPENSE_TYPES.includes(expense.type) ? expense.type : "기타");
         setTypeCustom(EXPENSE_TYPES.includes(expense.type) ? "" : expense.type);
         setDetail(expense.detail);
         setAmount(formatCurrency(expense.amount));
@@ -161,13 +162,8 @@ export default function ExpenseSection() {
     return (
         <SectionCard
             title="지출 내역"
-            headerContent={
-                <span className="font-medium text-[14px] text-gray-400">
-                    총 {expenses.length}건
-                </span>
-            }
         >
-            <div className="flex flex-col gap-2 -mt-4">
+            <div className="flex flex-col gap-2">
                 {/* 입력 폼 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-2">
                     {/* 날짜 */}
@@ -214,45 +210,27 @@ export default function ExpenseSection() {
                             분류
                             <RequiredIndicator />
                         </label>
-                        <div className="flex flex-wrap gap-2">
-                            {EXPENSE_TYPES.map((t) => (
-                                <Button
-                                    key={t}
-                                    size="md"
-                                    variant={type === t ? "primary" : "outline"}
-                                    onClick={() => {
-                                        setType(t);
-                                        setTypeCustom("");
-                                        if (errors.type) {
-                                            setErrors((prev) => ({
-                                                ...prev,
-                                                type: undefined,
-                                            }));
-                                        }
-                                    }}
-                                >
-                                    {t}
-                                </Button>
-                            ))}
-                            <Button
-                                size="md"
-                                variant={
-                                    type === "OTHER" ? "primary" : "outline"
+                        <Select
+                            value={type}
+                            onChange={(value) => {
+                                setType(value);
+                                if (value !== "기타") {
+                                    setTypeCustom("");
                                 }
-                                onClick={() => {
-                                    setType("OTHER");
-                                    if (errors.type) {
-                                        setErrors((prev) => ({
-                                            ...prev,
-                                            type: undefined,
-                                        }));
-                                    }
-                                }}
-                            >
-                                기타
-                            </Button>
-                        </div>
-                        {type === "OTHER" && (
+                                if (errors.type) {
+                                    setErrors((prev) => ({
+                                        ...prev,
+                                        type: undefined,
+                                    }));
+                                }
+                            }}
+                            placeholder="분류 선택"
+                            options={EXPENSE_TYPES.map((t) => ({
+                                value: t,
+                                label: t,
+                            }))}
+                        />
+                        {type === "기타" && (
                             <TextInput
                                 placeholder="분류를 직접 입력"
                                 value={typeCustom}
@@ -370,6 +348,10 @@ export default function ExpenseSection() {
                                     "border border-gray-200 px-3 py-2 text-[13px]",
                                 cellClassName:
                                     "border border-gray-200 px-3 py-2 text-[13px] text-center",
+                                render: (value) => {
+                                    if (value === "유류비" || value === "주유") return "유대";
+                                    return value || "-";
+                                },
                             },
                             {
                                 key: "detail",
@@ -399,11 +381,10 @@ export default function ExpenseSection() {
                                                         deleteExpense(row.id);
                                                     }
                                                 }}
-                                                className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${
-                                                    isSelected
+                                                className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${isSelected
                                                         ? "opacity-100"
                                                         : "opacity-0 group-hover:opacity-100"
-                                                }`}
+                                                    }`}
                                             >
                                                 ✕
                                             </button>
@@ -419,11 +400,10 @@ export default function ExpenseSection() {
                             const isSelected = editingExpenseId === row.id;
                             return `group cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
                                 row.type
-                            )} ${
-                                isSelected
+                            )} ${isSelected
                                     ? "outline outline-2 outline-blue-500 -outline-offset-2"
                                     : ""
-                            }`;
+                                }`;
                         }}
                         className="border-collapse"
                         emptyText="등록된 지출 내역이 없습니다."
@@ -433,7 +413,9 @@ export default function ExpenseSection() {
                                     colSpan={3}
                                     className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
                                 >
-                                    합계
+                                    합계<span className="font-light ml-0.5 text-[12px] text-gray-400">
+                                        ({expenses.length})
+                                    </span>
                                 </td>
                                 <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px]">
                                     {formatCurrency(total)}원

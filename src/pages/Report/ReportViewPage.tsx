@@ -243,9 +243,9 @@ const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
 
 function getExpenseTypeRowClass(t?: string) {
     if (!t) return "bg-white";
-    if (["조식", "중식", "석식", "간식"].includes(t)) return "bg-orange-50";
+    if (["조식", "중식", "석식", "간식", "식비"].includes(t)) return "bg-orange-50";
     if (t === "숙박") return "bg-blue-50";
-    if (t === "유류비") return "bg-green-50";
+    if (["유대", "유류비", "주유"].includes(t)) return "bg-green-50";
     return "bg-pink-50";
 }
 
@@ -748,6 +748,10 @@ try {
                         "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
                     cellClassName:
                         "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-medium",
+                    render: (value) => {
+                        if (value === "유류비" || value === "주유") return "유대";
+                        return value || "-";
+                    },
                 },
                 {
                     key: "detail",
