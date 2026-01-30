@@ -67,7 +67,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 // 나눔고딕 폰트 추가 (로컬 파일 사용 - Regular + Bold)
 // 반환값: { success: boolean, hasBold: boolean }
-async function addNanumGothicFont(doc: jsPDF): Promise<{ success: boolean; hasBold: boolean }> {
+export async function addNanumGothicFont(doc: jsPDF): Promise<{ success: boolean; hasBold: boolean }> {
     try {
         let regularAdded = false;
         let boldAdded = false;

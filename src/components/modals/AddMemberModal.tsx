@@ -287,6 +287,7 @@ export default function AddMemberModal({
                                 { value: "과장", label: "과장" },
                                 { value: "대리", label: "대리" },
                                 { value: "주임", label: "주임" },
+                                { value: "사원", label: "사원" },
                                 { value: "인턴", label: "인턴" },
                             ]}
                             placeholder="직급 선택"
@@ -342,14 +343,13 @@ export default function AddMemberModal({
                             />
                         </div>
 
-                        {/* 여권 사진 */}
+                        {/* 여권사진 */}
                         <div className="mt-4">
                             <label className="text-[12px] font-medium text-gray-900 block mb-2">
-                                여권 사진
+                                여권사진
                             </label>
                             <input
                                 type="file"
-                                accept="image/*"
                                 onChange={(e) =>
                                     setPassportPhotoFile(
                                         e.target.files?.[0] ?? null
@@ -371,7 +371,6 @@ export default function AddMemberModal({
                             </label>
                             <input
                                 type="file"
-                                accept="image/*"
                                 onChange={(e) =>
                                     setProfilePhotoFile(
                                         e.target.files?.[0] ?? null

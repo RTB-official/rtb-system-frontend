@@ -21,7 +21,7 @@ interface NotificationPopupProps {
     onNotificationRead?: (id: string) => void;
 }
 
-// 날짜 포맷팅 헬퍼
+// 날짜 표시 포맷터
 function formatNotificationDate(dateString: string): string {
     const date = new Date(dateString);
     const now = new Date();
@@ -53,8 +53,14 @@ export default function NotificationPopup({
     const popupRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
 
-
-
+    const parseMeta = (meta?: string) => {
+        if (!meta) return null;
+        try {
+            return JSON.parse(meta);
+        } catch {
+            return null;
+        }
+    };
 
     // 알림 클릭 핸들러
     const handleNotificationClick = async (item: NotificationItem) => {
@@ -80,9 +86,13 @@ export default function NotificationPopup({
                 navigate("/Vacation");
                 break;
             case "other":
-            default:
-                // other 타입은 이동하지 않음
+            default: {
+                const meta = parseMeta(item.meta);
+                if (meta?.tbm_id) {
+                    navigate(`/tbm/${meta.tbm_id}`);
+                }
                 break;
+            }
         }
 
         // 알림 팝업 닫기
@@ -94,8 +104,7 @@ export default function NotificationPopup({
             ref={popupRef}
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-           className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-x-hidden overflow-y-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
-
+            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-x-hidden overflow-y-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
         >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50">
@@ -110,8 +119,8 @@ export default function NotificationPopup({
                 )}
             </div>
 
-{/* Notification List */}
-<div className="max-h-[380px] overflow-y-auto overflow-x-hidden custom-scrollbar">
+            {/* Notification List */}
+            <div className="max-h-[380px] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 {items.length === 0 ? (
                     <div className="px-5 pt-8 pb-16 text-center text-gray-400">
                         알림이 없습니다.
@@ -152,13 +161,9 @@ export default function NotificationPopup({
                                 >
                                     {it.message}
                                 </p>
-                                {(it.created_at || it.meta) && (
+                                {it.created_at && (
                                     <p className="text-[13px] text-gray-400 mt-0.5">
-                                        {it.meta ||
-                                            (it.created_at &&
-                                                formatNotificationDate(
-                                                    it.created_at
-                                                ))}
+                                        {formatNotificationDate(it.created_at)}
                                     </p>
                                 )}
                             </div>

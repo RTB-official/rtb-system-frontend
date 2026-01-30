@@ -345,6 +345,30 @@ export const IconWorkload = (props: { className?: string }) => (
     </svg>
 );
 
+export const IconShieldCheck = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-6 h-6"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+    >
+        <path
+            d="M12 2.5L4.5 5.5V11.2C4.5 15.7 7.6 19.8 12 21.5C16.4 19.8 19.5 15.7 19.5 11.2V5.5L12 2.5Z"
+            fill="currentColor"
+            stroke="currentColor"
+            strokeWidth="0"
+        />
+        <path
+            d="M8.2 12.4L10.6 14.7L15.8 9.6"
+            stroke="var(--tbm-check-color, #ffffff)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+    </svg>
+);
+
 export const IconVacation = (props: { className?: string }) => (
     <svg
         className={props.className || "w-6 h-6"}

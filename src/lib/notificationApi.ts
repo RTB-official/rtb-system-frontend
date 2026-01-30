@@ -9,6 +9,7 @@ export interface Notification {
     title: string;
     message: string;
     type: "report" | "schedule" | "vacation" | "other";
+    meta?: string | null;
     created_at: string;
     read_at: string | null;
 }
@@ -18,6 +19,7 @@ export interface CreateNotificationInput {
     title: string;
     message: string;
     type: "report" | "schedule" | "vacation" | "other";
+    meta?: string;
 }
 
 // ==================== 알림 생성 ====================
@@ -53,7 +55,8 @@ export async function createNotificationsForUsers(
     userIds: string[],
     title: string,
     message: string,
-    type: "report" | "schedule" | "vacation" | "other"
+    type: "report" | "schedule" | "vacation" | "other",
+    meta?: string
 ): Promise<Notification[]> {
     // RLS 정책 문제로 인해 함수를 사용하거나, 하나씩 생성
     // 먼저 직접 INSERT 시도
@@ -62,6 +65,7 @@ export async function createNotificationsForUsers(
         title,
         message,
         type,
+        ...(meta ? { meta } : {}),
     }));
 
     let data: Notification[] = [];
@@ -141,7 +145,7 @@ export async function createNotificationsForUsers(
             userIds.map(async (user_id) => {
                 const { data: indData, error: indError } = await supabase
                     .from("notifications")
-                    .insert([{ user_id, title, message, type }])
+                    .insert([{ user_id, title, message, type, ...(meta ? { meta } : {}) }])
                     .select()
                     .single();
                 

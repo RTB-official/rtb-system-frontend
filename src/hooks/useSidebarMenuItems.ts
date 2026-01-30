@@ -16,7 +16,6 @@ export function useSidebarMenuItems(
     isReportEditRoute: boolean,
     location: ReturnType<typeof useLocation>
 ) {
-    // 하위메뉴 아이템
     const reportSubMenuItems = useMemo<MenuItem[]>(
         () => [
             { label: "출장 보고서 목록", to: PATHS.reportList },
@@ -28,14 +27,23 @@ export function useSidebarMenuItems(
         [isReportEditRoute, location.pathname, location.search]
     );
 
-    // 권한별 지출 관리 서브메뉴 (role 기준: admin/staff, 대표는 예외로 admin과 동일)
+    const tbmSubMenuItems = useMemo<MenuItem[]>(
+        () => [
+            { label: "TBM 목록", to: PATHS.tbmList },
+            { label: "TBM 작성", to: PATHS.tbmCreate },
+        ],
+        []
+    );
+
+    // 권한별 지출관리 서브메뉴 (role 기준: admin/staff, CEO는 admin과 동일)
     const expenseSubMenuItems = useMemo<MenuItem[]>(() => {
         if (stablePermissions.isCEO || stablePermissions.isAdmin) {
             return [
                 { label: "개인 지출 기록", to: PATHS.expensePersonal },
                 { label: "구성원 지출 관리", to: PATHS.expenseTeam },
             ];
-        } else if (stablePermissions.isStaff) {
+        }
+        if (stablePermissions.isStaff) {
             return [{ label: "개인 지출 기록", to: PATHS.expensePersonal }];
         }
         return [];
@@ -43,7 +51,7 @@ export function useSidebarMenuItems(
 
     return {
         reportSubMenuItems,
+        tbmSubMenuItems,
         expenseSubMenuItems,
     };
 }
-
