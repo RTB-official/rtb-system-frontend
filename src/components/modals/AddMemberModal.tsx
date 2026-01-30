@@ -262,10 +262,7 @@ export default function AddMemberModal({
                             options={[
                                 { value: "공무팀", label: "공무팀" },
                                 { value: "공사팀", label: "공사팀" },
-                                {
-                                    value: "영업/AI기획팀",
-                                    label: "영업/AI기획팀",
-                                },
+
                             ]}
                             placeholder="팀 선택"
                         />

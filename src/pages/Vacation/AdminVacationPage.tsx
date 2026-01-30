@@ -540,63 +540,81 @@ export default function AdminVacationPage() {
                                 <h2 className="text-[20px] font-semibold text-gray-900 mb-4">
                                     직원별 휴가 사용 현황
                                 </h2>
-                                <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-                                    <table className="w-full text-[14px]">
-                                        <thead className="bg-gray-100 border-b border-gray-200">
-                                            <tr>
-                                                <th className="px-4 py-3 text-left font-semibold text-gray-600">
-                                                    직원명
-                                                </th>
-                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                    사용 일수
-                                                </th>
-                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                    대기 중
-                                                </th>
-                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                    잔여 일수
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {employeeStats.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
-                                                        데이터가 없습니다.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                employeeStats.map((stat) => {
-                                                    const isSelected = selectedEmployeeId === stat.userId;
-                                                    return (
-                                                        <tr
-                                                            key={stat.userId}
-                                                            className={`border-b border-gray-100 transition-colors ${isSelected
-                                                                ? "bg-blue-50 hover:bg-blue-100"
-                                                                : "hover:bg-gray-50"
-                                                                }`}
-                                                        >
-                                                            <td
-                                                                className="px-4 py-3 cursor-pointer font-medium text-blue-600 hover:text-blue-700"
-                                                                onClick={() => {
-                                                                    setSelectedEmployeeId(isSelected ? null : stat.userId);
-                                                                    setPage(1); // 필터 변경 시 첫 페이지로
-                                                                }}
-                                                            >
-                                                                {stat.userName}
-                                                            </td>
-                                                            <td className="px-4 py-3 text-right">{stat.usedDays.toFixed(1)}일</td>
-                                                            <td className="px-4 py-3 text-right text-yellow-600">
-                                                                {stat.pendingDays > 0 ? `${stat.pendingDays.toFixed(1)}일` : "-"}
-                                                            </td>
-                                                            <td className="px-4 py-3 text-right">{stat.remainingDays.toFixed(1)}일</td>
-                                                        </tr>
-                                                    );
-                                                })
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <Table<EmployeeStats>
+                                    columns={[
+                                        {
+                                            key: "userName",
+                                            label: "직원명",
+                                            align: "left",
+                                            headerClassName: "px-4 py-3 text-left font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3",
+                                            render: (_, row) => {
+                                                const isSelected = selectedEmployeeId === row.userId;
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        className="cursor-pointer font-medium text-blue-600 hover:text-blue-700"
+                                                        onClick={() => {
+                                                            setSelectedEmployeeId(
+                                                                isSelected ? null : row.userId
+                                                            );
+                                                            setPage(1);
+                                                        }}
+                                                    >
+                                                        {row.userName}
+                                                    </button>
+                                                );
+                                            },
+                                        },
+                                        {
+                                            key: "usedDays",
+                                            label: "사용 일수",
+                                            align: "right",
+                                            headerClassName: "px-4 py-3 text-right font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3 text-right",
+                                            render: (value) => {
+                                                if (value === null || value === undefined) {
+                                                    return null;
+                                                }
+                                                return `${Number(value).toFixed(1)}일`;
+                                            },
+                                        },
+                                        {
+                                            key: "pendingDays",
+                                            label: "대기 중",
+                                            align: "right",
+                                            headerClassName: "px-4 py-3 text-right font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3 text-right text-yellow-600",
+                                            render: (value) => {
+                                                if (value === null || value === undefined) {
+                                                    return null;
+                                                }
+                                                return `${Number(value).toFixed(1)}일`;
+                                            },
+                                        },
+                                        {
+                                            key: "remainingDays",
+                                            label: "잔여 일수",
+                                            align: "right",
+                                            headerClassName: "px-4 py-3 text-right font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3 text-right",
+                                            render: (value) => {
+                                                if (value === null || value === undefined) {
+                                                    return null;
+                                                }
+                                                return `${Number(value).toFixed(1)}일`;
+                                            },
+                                        },
+                                    ]}
+                                    data={employeeStats}
+                                    rowKey={(row) => row.userId}
+                                    rowClassName={(row) =>
+                                        selectedEmployeeId === row.userId
+                                            ? "bg-blue-50 hover:bg-blue-100"
+                                            : "hover:bg-gray-50"
+                                    }
+                                    emptyText="사용한 휴가가 없습니다."
+                                />
                             </div>
 
                             {/* 휴가 신청 목록 */}
@@ -664,6 +682,7 @@ export default function AdminVacationPage() {
                                     rowKey="id"
                                     onRowClick={(row: VacationRequestRow) => handleRowClick(row)}
                                     className="cursor-pointer"
+                                    emptyText="휴가 신청 내역이 없습니다."
                                     pagination={{
                                         currentPage: page,
                                         totalPages,
@@ -748,4 +767,3 @@ export default function AdminVacationPage() {
         </div>
     );
 }
-

@@ -16,8 +16,7 @@ import {
 import { TableSkeleton } from "./components/TableSkeleton";
 import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
-import BaseModal from "../../components/ui/BaseModal";
-import EmptyValueIndicator from "./components/EmptyValueIndicator";
+import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
 import Avatar from "../../components/common/Avatar";
 import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
@@ -326,7 +325,7 @@ export default function MemberExpensePage() {
                 if (value && value.trim()) {
                     return <span className="text-gray-700">{value}</span>;
                 }
-                return <EmptyValueIndicator />;
+                return "";
             },
         },
     ];
@@ -353,7 +352,7 @@ export default function MemberExpensePage() {
                 if (value && value.trim()) {
                     return <span className="text-gray-700">{value}</span>;
                 }
-                return <EmptyValueIndicator />;
+                return "";
             },
         },
         {
@@ -373,7 +372,7 @@ export default function MemberExpensePage() {
                         </button>
                     );
                 }
-                return <EmptyValueIndicator />;
+                return "";
             },
         },
     ];
@@ -667,7 +666,7 @@ export default function MemberExpensePage() {
                                         );
                                     }}
                                     expandedRowKeys={expandedRowKeys}
-                                    emptyText="데이터가 없습니다."
+                                    emptyText="해당 기간의 직원별 지출 내역이 없습니다."
                                     className="border-gray-200"
                                 />
 
@@ -743,20 +742,12 @@ export default function MemberExpensePage() {
 
             {/* 영수증 모달 */}
             {selectedReceipt && (
-                <BaseModal
+                <ImagePreviewModal
                     isOpen={!!selectedReceipt}
                     onClose={() => setSelectedReceipt(null)}
-                    title="영수증 원본"
-                    maxWidth="max-w-[90vw]"
-                >
-                    <div className="flex justify-center bg-gray-50 rounded-xl overflow-hidden mb-2">
-                        <img
-                            src={selectedReceipt}
-                            alt="receipt full"
-                            className="max-w-full h-auto max-h-[70vh] object-contain"
-                        />
-                    </div>
-                </BaseModal>
+                    imageSrc={selectedReceipt}
+                    imageAlt="영수증 원본"
+                />
             )}
         </div>
     );

@@ -1,6 +1,7 @@
 //workLogSection.tsx
 import { useState, useMemo, useRef, useEffect } from "react";
 import SectionCard from "../ui/SectionCard";
+import WorkLogEntryCard from "./WorkLogEntryCard";
 import Select from "../common/Select";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
@@ -170,12 +171,21 @@ function splitEntryByDayForDisplay<T extends {
 
 
 const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
+const NO_DINNER_TEXT = "저녁 안 먹고 작업진행(18:00~19:00)";
 
-function stripNoLunchText(note: string) {
+function stripSpecialText(note: string, target: string) {
     return (note || "")
         .split("\n")
         .map((line) => line.trim())
-        .filter((line) => line && line !== NO_LUNCH_TEXT)
+        .filter((line) => line && line !== target)
+        .join("\n");
+}
+
+function stripSpecialNotes(note: string) {
+    return (note || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && line !== NO_LUNCH_TEXT && line !== NO_DINNER_TEXT)
         .join("\n");
 }
 
@@ -258,13 +268,14 @@ export default function WorkLogSection() {
     // ✅ 문구 생성/삭제는 체크박스로만 가능 (textarea에서 편집 불가)
     useEffect(() => {
         const hasNoLunchText = (currentEntry.note || "").includes(NO_LUNCH_TEXT);
+        const hasNoDinnerText = (currentEntry.note || "").includes(NO_DINNER_TEXT);
 
         // 작업이 아니면: 체크 해제 + note에서 문구 제거
         if (currentEntry.descType !== "작업") {
-            if (currentEntry.noLunch || hasNoLunchText) {
+            if (currentEntry.noLunch || hasNoLunchText || hasNoDinnerText) {
                 setCurrentEntry({
                     noLunch: false,
-                    note: stripNoLunchText(currentEntry.note || ""),
+                    note: stripSpecialNotes(currentEntry.note || ""),
                 });
             }
             return;
@@ -842,41 +853,73 @@ export default function WorkLogSection() {
                                 {errors.persons}
                             </p>
                         )}
-                        {/* 작업일 때 점심 체크박스 */}
+                        {/* 작업일 때 점심/저녁 체크박스 */}
                         {currentEntry.descType === "작업" && (
-                            <label className="flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
-                                <input
-                                    type="checkbox"
-                                    checked={currentEntry.noLunch || false}
-                                    onChange={(e) => {
-                                        const checked = e.target.checked;
-                                        const baseNote = stripNoLunchText(currentEntry.note || "");
+                            <div className="flex flex-col md:flex-row gap-2">
+                                <label className="flex-1 min-w-[260px] flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={currentEntry.noLunch || false}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            const baseNote = stripSpecialText(currentEntry.note || "", NO_LUNCH_TEXT);
 
-                                        if (checked) {
-                                            setCurrentEntry({
-                                                noLunch: true,
-                                                note: baseNote ? `${baseNote}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
-                                            });
-                                        } else {
-                                            setCurrentEntry({
-                                                noLunch: false,
-                                                note: baseNote,
-                                            });
-                                        }
-                                    }}
-                                    className="w-5 h-5 mt-0.5 accent-amber-500"
-                                />
+                                            if (checked) {
+                                                setCurrentEntry({
+                                                    noLunch: true,
+                                                    note: baseNote ? `${baseNote}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
+                                                });
+                                            } else {
+                                                setCurrentEntry({
+                                                    noLunch: false,
+                                                    note: baseNote,
+                                                });
+                                            }
+                                        }}
+                                        className="w-5 h-5 mt-0.5 accent-amber-500"
+                                    />
 
+                                    <div className="flex flex-col">
+                                        <span className="text-[14px] font-semibold text-[#92400e]">
+                                            점심 안 먹고 작업진행 (12:00~13:00)
+                                        </span>
+                                        <span className="text-[12px] text-[#b45309]">
+                                            ※운항선 작업일 때 체크해주세요.
+                                        </span>
+                                    </div>
+                                </label>
 
-                                <div className="flex flex-col">
-                                    <span className="text-[14px] font-semibold text-[#92400e]">
-                                        점심 안 먹고 작업진행 (12:00~13:00)
-                                    </span>
-                                    <span className="text-[12px] text-[#b45309]">
-                                        ※운항선 작업일 때 체크해주세요.
-                                    </span>
-                                </div>
-                            </label>
+                                <label className="flex-1 min-w-[260px] flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#f0f9ff] cursor-pointer hover:bg-[#e0f2fe] transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={(currentEntry.note || "").includes(NO_DINNER_TEXT)}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            const baseNote = stripSpecialText(currentEntry.note || "", NO_DINNER_TEXT);
+
+                                            if (checked) {
+                                                setCurrentEntry({
+                                                    note: baseNote ? `${baseNote}\n${NO_DINNER_TEXT}` : NO_DINNER_TEXT,
+                                                });
+                                            } else {
+                                                setCurrentEntry({
+                                                    note: baseNote,
+                                                });
+                                            }
+                                        }}
+                                        className="w-5 h-5 mt-0.5 accent-sky-500"
+                                    />
+
+                                    <div className="flex flex-col">
+                                        <span className="text-[14px] font-semibold text-sky-900">
+                                            저녁 안 먹고 작업진행 (18:00~19:00)
+                                        </span>
+                                        <span className="text-[12px] text-sky-800">
+                                            ※운항선 작업일 때 체크해주세요.
+                                        </span>
+                                    </div>
+                                </label>
+                            </div>
                         )}
                     </div>
 
@@ -886,29 +929,41 @@ export default function WorkLogSection() {
                             특이 사항
                         </label>
 
-                        {/* ✅ 점심 문구는 textarea에서 삭제/수정 불가: 칩으로만 표시 */}
-                        {currentEntry.descType === "작업" && currentEntry.noLunch && (
+                        {/* ✅ 점심/저녁 문구는 textarea에서 삭제/수정 불가: 칩으로만 표시 */}
+                        {currentEntry.descType === "작업" && (
                             <div className="flex flex-wrap gap-2">
-                                <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[13px] font-semibold border border-amber-200">
-                                    {NO_LUNCH_TEXT}
-                                </span>
+                                {currentEntry.noLunch && (
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[13px] font-semibold border border-amber-200">
+                                        {NO_LUNCH_TEXT}
+                                    </span>
+                                )}
+                                {(currentEntry.note || "").includes(NO_DINNER_TEXT) && (
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-sky-100 text-sky-800 text-[13px] font-semibold border border-sky-200">
+                                        {NO_DINNER_TEXT}
+                                    </span>
+                                )}
                             </div>
                         )}
 
                         <textarea
                             placeholder="특이 사항이 있으면 입력해주세요"
-                            value={stripNoLunchText(currentEntry.note || "")}
+                            value={stripSpecialNotes(currentEntry.note || "")}
                             onChange={(e) => {
-                                const cleaned = stripNoLunchText(e.target.value);
+                                const cleaned = stripSpecialNotes(e.target.value);
 
                                 // ✅ 문구는 체크박스로만 관리되므로, textarea 입력값에는 항상 문구를 제거한 값만 반영
-                                if (currentEntry.noLunch) {
-                                    setCurrentEntry({
-                                        note: cleaned ? `${cleaned}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
-                                    });
-                                } else {
-                                    setCurrentEntry({ note: cleaned });
-                                }
+                                const withLunch = currentEntry.noLunch
+                                    ? cleaned
+                                        ? `${cleaned}\n${NO_LUNCH_TEXT}`
+                                        : NO_LUNCH_TEXT
+                                    : cleaned;
+                                const withDinner = (currentEntry.note || "").includes(NO_DINNER_TEXT)
+                                    ? withLunch
+                                        ? `${withLunch}\n${NO_DINNER_TEXT}`
+                                        : NO_DINNER_TEXT
+                                    : withLunch;
+
+                                setCurrentEntry({ note: withDinner });
                             }}
                             className="w-full min-h-[60px] p-3 border border-[#e5e7eb] rounded-xl text-[16px] resize-none outline-none focus:border-[#9ca3af]"
                         />
@@ -1020,36 +1075,6 @@ export default function WorkLogSection() {
                             const hoursLabel = formatHoursMinutes(minutes);
                             const isExpanded = expandedCards[entry.__segId] ?? false;
 
-
-                            // 유형별 스타일 설정
-                            const typeStyles = {
-                                작업: {
-                                    gradient: "from-blue-500 to-indigo-600",
-                                    bg: "bg-gradient-to-br from-blue-50 to-indigo-50",
-                                    border: "border-blue-200",
-                                    badge: "bg-blue-500",
-                                    text: "text-blue-700",
-                                },
-                                이동: {
-                                    gradient: "from-emerald-500 to-teal-600",
-                                    bg: "bg-gradient-to-br from-emerald-50 to-teal-50",
-                                    border: "border-emerald-200",
-                                    badge: "bg-emerald-500",
-                                    text: "text-emerald-700",
-                                },
-                                대기: {
-                                    gradient: "from-amber-500 to-orange-600",
-                                    bg: "bg-gradient-to-br from-amber-50 to-orange-50",
-                                    border: "border-amber-200",
-                                    badge: "bg-amber-500",
-                                    text: "text-amber-700",
-                                },
-                            };
-                            const style =
-                                typeStyles[
-                                entry.descType as keyof typeof typeStyles
-                                ] || typeStyles["작업"];
-
                             // 날짜 변경 체크
                             const prevEntry = displayEntries[index - 1];
                             const showDayHeader = !prevEntry || prevEntry.dateFrom !== entry.dateFrom;
@@ -1069,213 +1094,106 @@ export default function WorkLogSection() {
                                             <div className="flex-1 border-t border-rose-300" />
                                         </div>
                                     )}
-                                    <div
-                                        className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
-                                    >
-                                        {/* 상단 컬러바 */}
-                                        <div
-                                            className={`h-1 bg-gradient-to-r ${style.gradient}`}
-                                        />
-
-                                        {/* 헤더 (클릭으로 접기/펼치기) */}
-                                        <div
-                                            className="relative p-4 cursor-pointer"
-                                            onClick={() => toggleCard(entry.__segId)}
-                                        >
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div className="flex-1">
-                                                    {/* 유형 배지 & 시간 */}
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span
-                                                            className={`inline-flex items-center px-3 py-1 ${style.badge} text-white text-[13px] font-bold rounded-full shadow-sm`}
-                                                        >
-                                                            {entry.descType}
-                                                        </span>
-                                                        <span className={`text-[15px] font-bold ${style.text}`}>
-                                                            {hoursLabel}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* ✅ 점심 안 먹고 작업진행 칩 (헤더 우측 하단 고정) */}
-                                                    {entry.descType === "작업" && effectiveNoLunch && (
-                                                        <div className="absolute bottom-3 right-3 z-20">
-                                                            <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm">
-                                                                {NO_LUNCH_TEXT}
-                                                            </span>
-                                                        </div>
-                                                    )}
-
-                                                    {/* 시간 정보 */}
-                                                    <div className="flex items-center gap-2 text-[13px] text-gray-600 mb-2">
-                                                        <svg
-                                                            width="16"
-                                                            height="16"
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            className="text-gray-400"
-                                                        >
-                                                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-                                                        </svg>
-                                                        <span>
-                                                            {entry.dateFrom}{" "}
-                                                            {toKoreanTime(
-                                                                entry.timeFrom
-                                                            )}
-                                                        </span>
-                                                        <span className="text-gray-400">
-                                                            →
-                                                        </span>
-                                                        <span>
-                                                            {entry.dateTo}{" "}
-                                                            {toKoreanTime(
-                                                                entry.timeTo
-                                                            )}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* 인원 */}
-                                                    <div className="flex items-center gap-2 text-[13px] text-gray-600">
-                                                        <svg
-                                                            width="16"
-                                                            height="16"
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            className="text-gray-400"
-                                                        >
-                                                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                                                        </svg>
-                                                        <span className="font-medium">
-                                                            {
-                                                                entry.persons
-                                                                    .length
-                                                            }
-                                                            명
-                                                        </span>
-                                                        <span className="text-gray-400">
-                                                            |
-                                                        </span>
-                                                        <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
-                                                            {Array.isArray(entry.persons) && entry.persons.length > 0
-                                                                ? entry.persons.join(", ")
-                                                                : "—"}
-                                                        </div>
-
-                                                    </div>
-                                                </div>
-
-                                                {/* 확장 아이콘 */}
-                                                <div
-                                                    className={`w-8 h-8 rounded-full bg-white/80 flex items-center justify-center shadow-sm transition-transform ${isExpanded
-                                                        ? "rotate-180"
-                                                        : ""
-                                                        }`}
-                                                >
+                                    <WorkLogEntryCard
+                                        descType={entry.descType as any}
+                                        hoursLabel={hoursLabel}
+                                        title={entry.title}
+                                        meta={
+                                            <div className="space-y-2">
+                                                <div className="flex items-center gap-2 text-[13px] text-gray-600">
                                                     <svg
-                                                        width="20"
-                                                        height="20"
+                                                        width="16"
+                                                        height="16"
                                                         viewBox="0 0 24 24"
-                                                        fill="none"
-                                                        className="text-gray-500"
+                                                        fill="currentColor"
+                                                        className="text-gray-400"
                                                     >
-                                                        <path
-                                                            d="M7 10L12 15L17 10"
-                                                            stroke="currentColor"
-                                                            strokeWidth="2"
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                        />
+                                                        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                     </svg>
+                                                    <span>
+                                                        {entry.dateFrom} {toKoreanTime(entry.timeFrom)}
+                                                    </span>
+                                                    <span className="text-gray-400">→</span>
+                                                    <span>
+                                                        {entry.dateTo} {toKoreanTime(entry.timeTo)}
+                                                    </span>
                                                 </div>
-                                            </div>
-                                        </div>
-
-                                        {/* 본문 (확장 시) */}
-                                        <div
-                                            className={`overflow-hidden transition-all duration-300 ${isExpanded
-                                                ? "max-h-[500px] opacity-100"
-                                                : "max-h-0 opacity-0"
-                                                }`}
-                                        >
-
-                                            <div className="px-4 pb-4 border-t border-white/50">
-                                                <div className="pt-4 space-y-3">
-                                                    {/* 상세내용 */}
-                                                    <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                                        <p className="text-[13px] text-gray-500 mb-1">
-                                                            상세 내용
-                                                        </p>
-                                                        <p className="text-[15px] text-gray-800">
-                                                            {entry.details ||
-                                                                "-"}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* 특이사항 */}
-                                                    {entry.note && (
-                                                        <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                                            <p className="text-[13px] text-gray-500 mb-1">
-                                                                특이 사항
-                                                            </p>
-                                                            <p className="text-[15px] text-gray-800">
-                                                                {entry.note}
-                                                            </p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* 액션 버튼 */}
-                                                    <div className="flex gap-2 pt-2">
-                                                        <Button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                editWorkLogEntry(
-                                                                    entry.__originId
-                                                                );
-                                                                setTimeout(
-                                                                    () => {
-                                                                        formRef.current?.scrollIntoView(
-                                                                            {
-                                                                                behavior:
-                                                                                    "smooth",
-                                                                                block: "start",
-                                                                            }
-                                                                        );
-                                                                    },
-                                                                    100
-                                                                );
-                                                            }}
-                                                            variant="outline"
-                                                            size="md"
-                                                            fullWidth
-                                                            icon={
-                                                                <IconEdit className="w-4 h-4" />
-                                                            }
-                                                        >
-                                                            수정
-                                                        </Button>
-                                                        <Button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setDeleteTargetId(
-                                                                    entry.__originId
-                                                                );
-                                                                setDeleteConfirmOpen(
-                                                                    true
-                                                                );
-                                                            }}
-                                                            variant="outline"
-                                                            size="md"
-                                                            fullWidth
-                                                            icon={
-                                                                <IconTrash className="w-4 h-4" />
-                                                            }
-                                                        >
-                                                            삭제
-                                                        </Button>
+                                                <div className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                    <svg
+                                                        width="16"
+                                                        height="16"
+                                                        viewBox="0 0 24 24"
+                                                        fill="currentColor"
+                                                        className="text-gray-400"
+                                                    >
+                                                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                                                    </svg>
+                                                    <span className="font-medium">{entry.persons.length}명</span>
+                                                    <span className="text-gray-400">|</span>
+                                                    <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
+                                                        {Array.isArray(entry.persons) && entry.persons.length > 0
+                                                            ? entry.persons.join(", ")
+                                                            : "—"}
                                                     </div>
                                                 </div>
                                             </div>
+                                        }
+                                        showNoLunch={entry.descType === "작업" && effectiveNoLunch}
+                                        noLunchText={NO_LUNCH_TEXT}
+                                        isExpanded={isExpanded}
+                                        onToggle={() => toggleCard(entry.__segId)}
+                                    >
+                                        <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                            <p className="text-[13px] text-gray-500 mb-1">상세 내용</p>
+                                            <p className="text-[15px] text-gray-800">
+                                                {entry.details || "-"}
+                                            </p>
                                         </div>
-                                    </div>
+
+                                        {entry.note && (
+                                            <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                                <p className="text-[13px] text-gray-500 mb-1">특이 사항</p>
+                                                <p className="text-[15px] text-gray-800">
+                                                    {entry.note}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="flex gap-2 pt-2">
+                                            <Button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    editWorkLogEntry(entry.__originId);
+                                                    setTimeout(() => {
+                                                        formRef.current?.scrollIntoView({
+                                                            behavior: "smooth",
+                                                            block: "start",
+                                                        });
+                                                    }, 100);
+                                                }}
+                                                variant="outline"
+                                                size="md"
+                                                fullWidth
+                                                icon={<IconEdit className="w-4 h-4" />}
+                                            >
+                                                수정
+                                            </Button>
+                                            <Button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setDeleteTargetId(entry.__originId);
+                                                    setDeleteConfirmOpen(true);
+                                                }}
+                                                variant="outline"
+                                                size="md"
+                                                fullWidth
+                                                icon={<IconTrash className="w-4 h-4" />}
+                                                className="text-red-600 border-red-200 hover:bg-red-50"
+                                            >
+                                                삭제
+                                            </Button>
+                                        </div>
+                                    </WorkLogEntryCard>
                                 </div>
                             );
                         })}

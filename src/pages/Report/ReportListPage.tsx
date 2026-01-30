@@ -11,7 +11,6 @@ import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
 import ReportListSkeleton from "../../components/common/ReportListSkeleton";
 import { IconMore, IconPlus, IconReport } from "../../components/icons/Icons";
-import EmptyValueIndicator from "../Expense/components/EmptyValueIndicator";
 import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
@@ -29,6 +28,9 @@ interface ReportItem {
     ownerEmail?: string | null;
     ownerPosition?: string | null;
     date: string;
+    createdAt?: string;
+    periodStart?: string;
+    periodEnd?: string;
     status: ReportStatus;
 }
 
@@ -170,10 +172,11 @@ const convertToReportItem = (workLog: WorkLog): ReportItem => {
         id: workLog.id,
         // ✅ title은 loadReports에서 "기간 / 호선 / 목적"으로 다시 조합할 예정
         title: workLog.subject || "(제목 없음)",
-        place: workLog.location || "—",
-        supervisor: workLog.order_person || "—",
+        place: workLog.location || "",
+        supervisor: workLog.order_person || "",
         owner: workLog.author || "(작성자 없음)",
         date: formatDate(workLog.created_at),
+        createdAt: workLog.created_at || "",
         status: workLog.is_draft ? "pending" : "submitted",
     };
 };
@@ -366,7 +369,12 @@ const reportsWithTitle = reportItems.map((item) => {
     const parts = [period, vessel, purpose].filter(Boolean);
     const combinedTitle = parts.length ? parts.join(" ") : "(제목 없음)";
 
-    return { ...item, title: combinedTitle };
+    return {
+        ...item,
+        title: combinedTitle,
+        periodStart: p?.start,
+        periodEnd: p?.end,
+    };
 });
 
 
@@ -398,33 +406,78 @@ const reportsWithTitle = reportItems.map((item) => {
     const handleResetFilter = () => {
         setYear("년도 전체");
         setMonth("월 전체");
+        setSearch("");
         setCurrentPage(1);
     };
 
     const filtered = useMemo(() => {
+        const getRange = (r: ReportItem) => {
+            const startRaw = r.periodStart || r.periodEnd || r.createdAt || "";
+            const endRaw = r.periodEnd || r.periodStart || r.createdAt || "";
+            if (!startRaw || !endRaw) return null;
+            const start = new Date(startRaw);
+            const end = new Date(endRaw);
+            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+                return null;
+            }
+            if (start > end) return { start: end, end: start };
+            return { start, end };
+        };
+
+        const overlapsMonth = (
+            range: { start: Date; end: Date },
+            monthNum: number,
+            yearNum?: number
+        ) => {
+            if (yearNum) {
+                const monthStart = new Date(yearNum, monthNum - 1, 1);
+                const monthEnd = new Date(yearNum, monthNum, 0, 23, 59, 59, 999);
+                return range.start <= monthEnd && range.end >= monthStart;
+            }
+            const cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
+            const endMonth = new Date(range.end.getFullYear(), range.end.getMonth(), 1);
+            let guard = 0;
+            while (cursor <= endMonth && guard < 120) {
+                if (cursor.getMonth() + 1 === monthNum) return true;
+                cursor.setMonth(cursor.getMonth() + 1);
+                guard += 1;
+            }
+            return false;
+        };
+
+        const q = search.trim().toLowerCase();
         return reports.filter((r) => {
             const matchSearch =
-                r.title.includes(search) ||
-                r.owner.includes(search) ||
-                r.place.includes(search);
+                q === "" ||
+                r.title.toLowerCase().includes(q) ||
+                r.owner.toLowerCase().includes(q) ||
+                r.place.toLowerCase().includes(q);
 
-            // 년도 필터링 (날짜 형식: "2025.11.24.")
+            const range = getRange(r);
+
             const matchYear =
                 year === "년도 전체" ||
-                r.date.startsWith(year.replace("년", ""));
+                (range &&
+                    Number(year.replace("년", "")) >= range.start.getFullYear() &&
+                    Number(year.replace("년", "")) <= range.end.getFullYear());
 
-            // 월 필터링 (날짜 형식: "2025.11.24.")
             let matchMonth = true;
             if (month !== "월 전체") {
-                const monthNum = month.replace("월", "");
-                // "2025.11.24." 형식에서 월 추출 (두 번째 숫자)
-                const dateParts = r.date.split(".");
-                matchMonth = dateParts.length > 1 && dateParts[1] === monthNum;
+                const monthNum = parseInt(month.replace("월", ""), 10);
+                const yearNum =
+                    year === "년도 전체"
+                        ? undefined
+                        : Number(year.replace("년", ""));
+                matchMonth = !!range && overlapsMonth(range, monthNum, yearNum);
             }
 
             return matchSearch && matchYear && matchMonth;
         });
     }, [reports, search, year, month]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search, year, month]);
 
     const totalPages = Math.ceil(filtered.length / itemsPerPage);
     const currentData = useMemo(() => {
@@ -585,6 +638,7 @@ const reportsWithTitle = reportItems.map((item) => {
                             {/* 테이블 섹션 */}
                             <Table
                                 className="text-[14px]"
+                                emptyText="조회된 보고서가 없습니다."
                                 columns={[
                                     {
                                         key: "owner",
@@ -632,7 +686,7 @@ const reportsWithTitle = reportItems.map((item) => {
                                                     </span>
                                                 );
                                             }
-                                            return <EmptyValueIndicator />;
+                                            return "";
                                         },
                                     },
                                     {
@@ -651,7 +705,7 @@ const reportsWithTitle = reportItems.map((item) => {
                                                     </span>
                                                 );
                                             }
-                                            return <EmptyValueIndicator />;
+                                            return "";
                                         },
                                     },
                                     {
@@ -785,7 +839,6 @@ const reportsWithTitle = reportItems.map((item) => {
                                 ]}
                                 data={currentData}
                                 rowKey="id"
-                                emptyText="결과가 없습니다."
                                 onRowClick={(row: ReportItem) => {
                                     navigate(`/report/${row.id}`);
                                 }}

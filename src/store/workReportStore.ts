@@ -94,7 +94,18 @@ export const MATERIAL_UNITS: Record<string, string> = {
 export const MATERIALS = Object.keys(MATERIAL_UNITS);
 
 // 지출 분류
-export const EXPENSE_TYPES = ['조식', '중식', '석식', '간식', '숙박', '유류비'];
+export const EXPENSE_TYPES = [
+  '조식',
+  '중식',
+  '석식',
+  '간식',
+  '숙박',
+  '유대',
+  '자재 구입',
+  '공구 구입',
+  '소모품 구입',
+  '기타',
+];
 
 interface WorkReportState {
   // 기본정보
@@ -472,4 +483,3 @@ export const calcDurationHours = (dateFrom: string, timeFrom: string, dateTo: st
   if (noLunch) hours = Math.max(0, hours - 1);
   return Math.round(hours * 10) / 10;
 };
-

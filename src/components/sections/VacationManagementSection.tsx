@@ -194,27 +194,37 @@ export default function VacationManagementSection({
                             label: "사용 일수",
                             width: "12%",
                             align: "left",
-                            render: (_value, row: VacationRow) => (
-                                <span
-                                    className={`font-medium ${row.usedDays < 0
-                                        ? "text-red-600"
-                                        : "text-gray-800"
-                                        }`}
-                                >
-                                    {formatUsedDays(row.usedDays)}
-                                </span>
-                            ),
+                            render: (_value, row: VacationRow) => {
+                                if (row.usedDays === null || row.usedDays === undefined) {
+                                    return null;
+                                }
+                                return (
+                                    <span
+                                        className={`font-medium ${row.usedDays < 0
+                                            ? "text-red-600"
+                                            : "text-gray-800"
+                                            }`}
+                                    >
+                                        {formatUsedDays(row.usedDays)}
+                                    </span>
+                                );
+                            },
                         },
                         {
                             key: "remainDays",
                             label: "잔여",
                             width: "12%",
                             align: "left",
-                            render: (_value, row: VacationRow) => (
-                                <span className="font-medium text-gray-900">
-                                    {row.remainDays}일
-                                </span>
-                            ),
+                            render: (_value, row: VacationRow) => {
+                                if (row.remainDays === null || row.remainDays === undefined) {
+                                    return null;
+                                }
+                                return (
+                                    <span className="font-medium text-gray-900">
+                                        {row.remainDays}일
+                                    </span>
+                                );
+                            },
                         },
                         {
                             key: "actions",
@@ -292,6 +302,7 @@ export default function VacationManagementSection({
                     data={rows}
                     rowKey="id"
                     className="text-[13px]"
+                    emptyText="휴가 사용 내역이 없습니다."
                     pagination={{
                         currentPage: page,
                         totalPages,
@@ -313,7 +324,7 @@ export default function VacationManagementSection({
 }
 
 function formatDaysOrDash(v?: number) {
-    if (v === undefined || v === null) return "-";
+    if (v === undefined || v === null) return "";
     if (v === 0) return "0일";
     // 지급은 +, 소멸/사용은 -로 들어올 수 있음
     const s = v > 0 ? `+${v}` : `${v}`;
@@ -321,7 +332,7 @@ function formatDaysOrDash(v?: number) {
 }
 
 function formatBalanceOrDash(v?: number) {
-    if (v === undefined || v === null) return "-";
+    if (v === undefined || v === null) return "";
     return `${v}일`;
 }
 
@@ -355,61 +366,82 @@ function GrantExpireTable({
                     key: "granted",
                     label: "지급",
                     width: "20%",
-                    render: (_value, row: GrantExpireRow) => (
-                        <span
-                            className={`font-medium ${row.granted && row.granted > 0
-                                ? "text-gray-900"
-                                : "text-gray-400"
-                                }`}
-                        >
-                            {formatDaysOrDash(row.granted)}
-                        </span>
-                    ),
+                    render: (_value, row: GrantExpireRow) => {
+                        if (row.granted === null || row.granted === undefined) {
+                            return null;
+                        }
+                        return (
+                            <span
+                                className={`font-medium ${row.granted > 0
+                                    ? "text-gray-900"
+                                    : "text-gray-400"
+                                    }`}
+                            >
+                                {formatDaysOrDash(row.granted)}
+                            </span>
+                        );
+                    },
                 },
                 {
                     key: "expired",
                     label: "소멸",
                     width: "20%",
-                    render: (_value, row: GrantExpireRow) => (
-                        <span
-                            className={`font-medium ${row.expired && row.expired < 0
-                                ? "text-gray-900"
-                                : "text-gray-400"
-                                }`}
-                        >
-                            {formatDaysOrDash(row.expired)}
-                        </span>
-                    ),
+                    render: (_value, row: GrantExpireRow) => {
+                        if (row.expired === null || row.expired === undefined) {
+                            return null;
+                        }
+                        return (
+                            <span
+                                className={`font-medium ${row.expired < 0
+                                    ? "text-gray-900"
+                                    : "text-gray-400"
+                                    }`}
+                            >
+                                {formatDaysOrDash(row.expired)}
+                            </span>
+                        );
+                    },
                 },
                 {
                     key: "used",
                     label: "사용",
                     width: "20%",
-                    render: (_value, row: GrantExpireRow) => (
-                        <span
-                            className={`font-medium ${row.used && row.used < 0
-                                ? "text-gray-900"
-                                : "text-gray-400"
-                                }`}
-                        >
-                            {formatDaysOrDash(row.used)}
-                        </span>
-                    ),
+                    render: (_value, row: GrantExpireRow) => {
+                        if (row.used === null || row.used === undefined) {
+                            return null;
+                        }
+                        return (
+                            <span
+                                className={`font-medium ${row.used < 0
+                                    ? "text-gray-900"
+                                    : "text-gray-400"
+                                    }`}
+                            >
+                                {formatDaysOrDash(row.used)}
+                            </span>
+                        );
+                    },
                 },
                 {
                     key: "balance",
                     label: "잔여",
                     width: "20%",
-                    render: (_value, row: GrantExpireRow) => (
-                        <span className="font-medium text-gray-900">
-                            {formatBalanceOrDash(row.balance)}
-                        </span>
-                    ),
+                    render: (_value, row: GrantExpireRow) => {
+                        if (row.balance === null || row.balance === undefined) {
+                            return null;
+                        }
+                        return (
+                            <span className="font-medium text-gray-900">
+                                {formatBalanceOrDash(row.balance)}
+                            </span>
+                        );
+                    },
                 },
             ]}
             data={rows}
             rowKey="id"
             className="text-[13px]"
+            emptyText="지급/소멸 내역이 없습니다."
             pagination={pagination}
         />
     );

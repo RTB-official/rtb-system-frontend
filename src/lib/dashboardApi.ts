@@ -59,6 +59,7 @@ export interface WorkLogWithPersons {
     persons: string[];
     date_from?: string;
     date_to?: string;
+    leaderName?: string;
 }
 
 // ==================== 유틸리티 함수 ====================
@@ -423,6 +424,65 @@ export async function getWorkLogsForDashboard(
         }
     }
 
+    const uniquePersonNames = Array.from(
+        new Set(
+            Array.from(personsMap.values()).flat().filter((name) => !!name)
+        )
+    );
+
+    const profileMap = new Map<
+        string,
+        { isTeamLead: boolean; position: string }
+    >();
+    if (uniquePersonNames.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+            .from("profiles")
+            .select("name, position, role, is_team_lead")
+            .in("name", uniquePersonNames);
+
+        if (profilesError) {
+            console.error("profiles 조회 실패:", profilesError.message);
+        } else if (profiles) {
+            profiles.forEach((p) => {
+                if (!p.name) return;
+                const position = p.position || p.role || "";
+                profileMap.set(p.name, {
+                    isTeamLead: !!p.is_team_lead,
+                    position,
+                });
+            });
+        }
+    }
+
+    const roleOrder: Record<string, number> = {
+        "대표": 1,
+        "감사": 2,
+        "부장": 3,
+        "차장": 4,
+        "과장": 5,
+        "대리": 6,
+        "주임": 7,
+        "사원": 8,
+        "인턴": 9,
+    };
+
+    const pickLeaderName = (names: string[]) => {
+        const leaders = names.filter((name) => {
+            const profile = profileMap.get(name);
+            return profile?.isTeamLead;
+        });
+        const candidates = leaders.length > 0 ? leaders : names;
+        if (candidates.length === 0) return "";
+        return candidates.sort((a, b) => {
+            const posA = profileMap.get(a)?.position || "";
+            const posB = profileMap.get(b)?.position || "";
+            const rankA = roleOrder[posA] ?? 999;
+            const rankB = roleOrder[posB] ?? 999;
+            if (rankA !== rankB) return rankA - rankB;
+            return 0;
+        })[0];
+    };
+
     const datesMap = new Map<
         number,
         { date_from?: string; date_to?: string }
@@ -459,6 +519,7 @@ export async function getWorkLogsForDashboard(
     for (const log of workLogs) {
         const persons = personsMap.get(log.id) || [];
         const dates = datesMap.get(log.id);
+        const leaderName = pickLeaderName(persons);
 
         result.push({
             id: log.id,
@@ -469,6 +530,7 @@ export async function getWorkLogsForDashboard(
             persons,
             date_from: dates?.date_from,
             date_to: dates?.date_to,
+            leaderName,
         });
     }
 
@@ -525,10 +587,13 @@ export function workLogToCalendarEvent(
     const vessel = workLog.vessel?.trim() || "";
     const subject = workLog.subject?.trim() || "";
     const detail = [vessel, subject].filter(Boolean).join(" ");
+    const baseTitle = detail || "출장 보고서";
+    const leaderName = workLog.leaderName?.trim();
+    const title = leaderName ? `${leaderName} - ${baseTitle}` : baseTitle;
 
     return {
         id: `worklog-${workLog.id}`,
-        title: detail || "출장 보고서",
+        title,
         color: "#84cc16", // 연두색
         startDate,
         endDate,

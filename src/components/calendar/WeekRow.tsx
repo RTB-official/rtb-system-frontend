@@ -193,7 +193,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         return null;
                     }
 
-                    const textSize = 'text-[15px]';
+                    const textSize = 'text-[14px]';
                     const textWidth = Math.max(
                         0,
                         totalEventWidth - firstCellPadding - lastCellPadding - iconWidth
