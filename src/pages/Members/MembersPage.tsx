@@ -28,7 +28,8 @@ type Member = {
     username: string; // profiles.username
     team: string; // profiles.department
     role: string; // 직급: profiles.position (없으면 profiles.role fallback)
-    email: string; // profiles.email
+    email: string; // profiles.email (UI 표시용 - staff는 타인 마스킹 유지)
+    avatarEmail: string; // Avatar 표시용 - staff여도 타인은 실제 이메일 사용
 
     phone: string; // profiles.phone_number
     address1: string; // profiles.address (한 줄로 처리)
@@ -68,9 +69,10 @@ export default function MembersPage() {
     });
     const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
-    const PAGE_SIZE = 10;
+    const [roleReady, setRoleReady] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const [isStaff, setIsStaff] = useState(false);
+    const PAGE_SIZE = isStaff ? 14 : 10;
     const MEMBERS_CACHE_KEY = "members_cache_v1";
     const [myUserId, setMyUserId] = useState<string | null>(null);
 
@@ -200,7 +202,8 @@ export default function MembersPage() {
         const admin = opts?.isAdmin ?? isAdmin;
         const uid = opts?.myUserId ?? myUserId;
 
-        setLoading(true);
+        // 이미 데이터가 있으면 화면은 유지하고, 백그라운드로만 갱신(깜빡임 방지)
+        if (members.length === 0) setLoading(true);
 
         let query = supabase
             .from("profiles")
@@ -275,9 +278,15 @@ export default function MembersPage() {
 
         const mapped: Member[] = (data ?? []).map((p: any) => {
             const pp = passportsMap.get(p.id);
-            const isOwnProfile = opts?.myUserId === p.id;
+
+            const resolvedMyUserId = opts?.myUserId ?? myUserId;
+            const resolvedIsStaff = opts?.isStaff ?? isStaff;
+
+            const isOwnProfile = resolvedMyUserId === p.id;
+
             // 공사팀(스태프)이고 본인이 아닌 경우: 이름/직급/전화번호만 공개
-            const shouldMaskOtherFields = opts?.isStaff && !isOwnProfile;
+            // (여권정보 + 주소/입사일/생년월일은 기존 방식대로 "" 처리 -> UI에서 EmptyValueIndicator 노출)
+            const shouldMaskOtherFields = resolvedIsStaff && !isOwnProfile;
             const shouldMaskPassport = shouldMaskOtherFields;
 
             return {
@@ -287,6 +296,7 @@ export default function MembersPage() {
                 team: p.department ?? "",
                 role: p.position ?? p.role ?? "",
                 email: shouldMaskOtherFields ? "" : (p.email ?? ""),
+                avatarEmail: p.email ?? "",
 
                 phone: p.phone_number ?? "",
                 address1: shouldMaskOtherFields ? "" : (p.address ?? ""),
@@ -307,9 +317,11 @@ export default function MembersPage() {
                 passportNo: shouldMaskPassport ? "" : (pp?.passport_number ?? ""),
                 passportLastName: shouldMaskPassport ? "" : (pp?.passport_last_name ?? ""),
                 passportFirstName: shouldMaskPassport ? "" : (pp?.passport_first_name ?? ""),
-                passportExpiry: shouldMaskPassport ? "" : (pp?.passport_expiry_date
+                passportExpiry: shouldMaskPassport
+                    ? ""
+                    : pp?.passport_expiry_date
                     ? toYYMMDD(pp.passport_expiry_date)
-                    : ""),
+                    : "",
                 passportExpiryISO: shouldMaskPassport ? "" : (pp?.passport_expiry_date ?? ""),
 
                 profilePhotoBucket: shouldMaskOtherFields
@@ -333,6 +345,7 @@ export default function MembersPage() {
             };
         });
 
+
         setMembers(mapped);
         try {
             localStorage.setItem(MEMBERS_CACHE_KEY, JSON.stringify(mapped));
@@ -342,6 +355,7 @@ export default function MembersPage() {
 
     useEffect(() => {
         const init = async () => {
+            setRoleReady(false);
             await fetchMyRole();
             // fetchMyRole가 state를 바로 반영하기 전에 쓸 수 있게, 다시 user를 가져와서 안전하게 전달
             const {
@@ -369,6 +383,7 @@ export default function MembersPage() {
                 isStaff: isStaff,
                 isCEO: isCEO,
             });
+            setRoleReady(true);
         };
 
         init();
@@ -389,9 +404,7 @@ export default function MembersPage() {
 
     const filteredMembers = useMemo(() => {
         let filtered = members;
-        if (!isAdmin && isStaff && myUserId) {
-            filtered = filtered.filter((m) => m.id === myUserId);
-        }
+
         if (activeTab === "ADMIN") {
             filtered = filtered.filter((m) => m.team === "공무팀");
         } else if (activeTab === "STAFF") {
@@ -399,14 +412,24 @@ export default function MembersPage() {
         }
 
         // 직급 순으로 정렬 (높은 순)
+        // ✅ staff일 때는 내 계정을 항상 최상단에 고정
         return [...filtered].sort((a, b) => {
+            if (isStaff && myUserId) {
+                const aIsMe = a.id === myUserId;
+                const bIsMe = b.id === myUserId;
+                if (aIsMe && !bIsMe) return -1; // a가 나면 위로
+                if (!aIsMe && bIsMe) return 1;  // b가 나면 아래로
+            }
+
             const orderA = roleOrder[a.role] ?? 999;
             const orderB = roleOrder[b.role] ?? 999;
             if (orderA !== orderB) return orderA - orderB;
+
             // 같은 직급이면 입사일 순
             return a.joinDate.localeCompare(b.joinDate);
         });
-    }, [members, activeTab]);
+    }, [members, activeTab, isStaff, myUserId]);
+
 
     const totalCount = members.length;
     const adminCount = members.filter((m) => m.team === "공무팀").length;
@@ -499,7 +522,7 @@ export default function MembersPage() {
                             </div>
                         )}
 
-                        {loading ? (
+{!roleReady || (loading && members.length === 0) ? (
                             <MembersSkeleton />
                         ) : (
                             <div className="overflow-x-auto w-full">
@@ -519,7 +542,7 @@ export default function MembersPage() {
                                                     return (
                                                     <div className="relative group flex items-center gap-3">
                                                         <Avatar
-                                                            email={row.email}
+                                                            email={row.avatarEmail}
                                                             size={24}
                                                             position={row.role}
                                                         />
