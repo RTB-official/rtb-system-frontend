@@ -74,19 +74,6 @@ export default function SettingsPage() {
           <div className="w-full max-w-none">
 
           <div className="flex flex-col gap-6">
-              <SettingSection label="알림">
-                <SettingRow
-                  title="이메일 알림"
-                  desc="보고서/휴가/일정 이메일 알림을 관리합니다."
-                  to="/settings/email"
-                />
-                <div className="h-px bg-gray-200" />
-                <SettingRow
-                  title="웹 알림"
-                  desc="웹 알림 설정을 관리합니다."
-                  to="/settings/web-notification"
-                />
-              </SettingSection>
 
               <SettingSection label="웹설정">
                 <SettingRow

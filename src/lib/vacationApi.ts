@@ -1,9 +1,9 @@
+// vacationApi.ts
 import { supabase } from "./supabase";
 import {
-    getAdminUserIds,
-    getGongmuTeamUserIds,
     createNotificationsForUsers,
 } from "./notificationApi";
+
 import { 
     calculateAnnualLeave, 
     getVacationGrantHistory as calculateGrantHistory, 
@@ -79,34 +79,37 @@ export async function createVacation(
         throw new Error(`휴가 신청 실패: ${error.message}`);
     }
 
-    // 휴가 등록 시 공무팀 전체에 알림 생성 (본인 제외)
+    // ✅ 휴가 등록 시 대표(y.k)에게 알림 생성
     try {
-        const gongmuUserIds = await getGongmuTeamUserIds();
-        
-        // 본인 제외
-        const targetUserIds = gongmuUserIds.filter(id => id !== data.user_id);
-        
-        if (targetUserIds.length > 0) {
-            // 사용자 이름 가져오기
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("name")
-                .eq("id", data.user_id)
-                .single();
+        // 신청자 이름 가져오기
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("name")
+            .eq("id", data.user_id)
+            .single();
 
             const userName = profile?.name || "사용자";
 
+            // ✅ 대표 계정 UUID 고정 (profiles.id)
+            const CEO_USER_ID = "62da12a4-8677-44f3-a1c8-09d6b635c322";
+    
             await createNotificationsForUsers(
-                targetUserIds,
+                [CEO_USER_ID],
                 "휴가 신청",
                 `${userName}님이 휴가를 신청했습니다.`,
-                "vacation"
+                "vacation",
+                JSON.stringify({
+                    kind: "vacation_requested",
+                    requester_id: data.user_id,
+                })
             );
-        }
+    
+    
     } catch (notificationError: any) {
         // 알림 생성 실패는 휴가 신청을 막지 않음
         console.error("알림 생성 실패:", notificationError?.message || notificationError);
     }
+
 
     return vacation;
 }
@@ -246,6 +249,40 @@ export async function updateVacationStatus(
     if (!vacation) {
         throw new Error("휴가 상태 변경 실패: 권한이 없거나 대상 휴가를 찾을 수 없습니다.");
     }
+
+    // ✅ 대표가 승인/반려하면 신청자에게 알림
+    try {
+        // 승인/반려자 이름(대표) 가져오기
+        const { data: updater } = await supabase
+            .from("profiles")
+            .select("name")
+            .eq("id", updatedBy)
+            .maybeSingle();
+
+        const updaterName = updater?.name || "관리자";
+
+        const title = status === "approved" ? "휴가 승인" : "휴가 반려";
+        const message =
+            status === "approved"
+                ? `${updaterName}님이 휴가를 승인했습니다.`
+                : `${updaterName}님이 휴가를 반려했습니다.`;
+
+        await createNotificationsForUsers(
+            [vacation.user_id],
+            title,
+            message,
+            "vacation",
+            JSON.stringify({
+                kind: "vacation_status_changed",
+                vacation_id: vacation.id,
+                status,
+            })
+        );
+    } catch (notificationError: any) {
+        console.error("승인/반려 알림 생성 실패:", notificationError?.message || notificationError);
+    }
+
+
 
     return vacation;
 }
