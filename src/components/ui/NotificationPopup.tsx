@@ -10,7 +10,7 @@ interface NotificationItem {
     type: "report" | "schedule" | "vacation" | "other";
     created_at?: string;
     read_at?: string | null;
-    meta?: string;
+    meta?: any;
 }
 
 interface NotificationPopupProps {
@@ -21,7 +21,7 @@ interface NotificationPopupProps {
     onNotificationRead?: (id: string) => void;
 }
 
-// 날짜 표시 포맷터
+// Format notification date.
 function formatNotificationDate(dateString: string): string {
     const date = new Date(dateString);
     const now = new Date();
@@ -30,12 +30,12 @@ function formatNotificationDate(dateString: string): string {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "방금 전";
-    if (diffMins < 60) return `${diffMins}분 전`;
-    if (diffHours < 24) return `${diffHours}시간 전`;
-    if (diffDays < 7) return `${diffDays}일 전`;
+    if (diffMins < 1) return "\uBC29\uAE08 \uC804";
+    if (diffMins < 60) return `${diffMins}\uBD84 \uC804`;
+    if (diffHours < 24) return `${diffHours}\uC2DC\uAC04 \uC804`;
+    if (diffDays < 7) return `${diffDays}\uC77C \uC804`;
 
-    // 7일 이상이면 날짜 표시
+    // Show date for 7+ days.
     return date.toLocaleDateString("ko-KR", {
         year: "numeric",
         month: "short",
@@ -53,49 +53,76 @@ export default function NotificationPopup({
     const popupRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
 
-    const parseMeta = (meta?: string) => {
+    const parseMeta = (meta?: any) => {
         if (!meta) return null;
-        try {
-            return JSON.parse(meta);
-        } catch {
-            return null;
+
+        // 1) meta object (jsonb)
+        if (typeof meta === "object") return meta;
+
+        // 2) string -> JSON parse
+        if (typeof meta === "string") {
+            let v: any = meta;
+
+            // Handle double-stringify up to 2 times.
+            for (let i = 0; i < 2; i++) {
+                try {
+                    v = JSON.parse(v);
+                    if (typeof v === "object") return v;
+                } catch {
+                    break;
+                }
+            }
         }
+
+        return null;
     };
 
-    // 알림 클릭 핸들러
+    // Notification click handler
     const handleNotificationClick = async (item: NotificationItem) => {
-        // 읽지 않은 알림이면 읽음 처리
+        // Mark as read if unread
         if (!item.read_at) {
             try {
                 await markNotificationAsRead(item.id);
                 onNotificationRead?.(item.id);
             } catch (error) {
-                console.error("알림 읽음 처리 실패:", error);
+                console.error("Failed to mark notification as read:", error);
             }
         }
 
-        // 타입에 따라 페이지 이동
-        switch (item.type) {
-            case "schedule":
-                navigate("/dashboard");
-                break;
-            case "report":
-                navigate("/report");
-                break;
-            case "vacation":
-                navigate("/Vacation");
-                break;
-            case "other":
-            default: {
-                const meta = parseMeta(item.meta);
-                if (meta?.tbm_id) {
-                    navigate(`/tbm/${meta.tbm_id}`);
-                }
-                break;
+        // Navigate by meta first (common for all notifications)
+        const meta = parseMeta(item.meta);
+        if (meta?.route) {
+            navigate(meta.route);
+        } else if (meta?.tbm_id) {
+            navigate(`/tbm/${meta.tbm_id}`);
+        } else if (meta?.kind === "passport_expiry_within_1y") {
+            navigate("/members");
+        } else {
+            const text = `${item.title ?? ""} ${item.message ?? ""}`;
+            if (/tbm/i.test(text)) {
+                navigate("/tbm");
+            } else if (text.includes("\uC5EC\uAD8C")) {
+                navigate("/members");
+            } else {
+            // Fallback by type
+            switch (item.type) {
+                case "schedule":
+                    navigate("/dashboard");
+                    break;
+                case "report":
+                    navigate("/report");
+                    break;
+                case "vacation":
+                    navigate("/Vacation");
+                    break;
+                case "other":
+                default:
+                    break;
+            }
             }
         }
 
-        // 알림 팝업 닫기
+        // Close notification popup
         onClose();
     };
 
@@ -108,13 +135,13 @@ export default function NotificationPopup({
         >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50">
-                <h4 className="text-[20px] font-bold text-[#1e293b]">알림</h4>
+                <h4 className="text-[20px] font-bold text-[#1e293b]">{"\uC54C\uB9BC"}</h4>
                 {items.length > 0 && onMarkAllAsRead && (
                     <button
                         onClick={onMarkAllAsRead}
                         className="text-[14px] text-gray-400 hover:text-gray-600 font-medium transition-colors"
                     >
-                        모두 읽음
+                        {"\uBAA8\uB450 \uC77D\uC74C"}
                     </button>
                 )}
             </div>
@@ -123,7 +150,7 @@ export default function NotificationPopup({
             <div className="max-h-[380px] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 {items.length === 0 ? (
                     <div className="px-5 pt-8 pb-16 text-center text-gray-400">
-                        알림이 없습니다.
+                        {"\uC54C\uB9BC\uC774 \uC5C6\uC2B5\uB2C8\uB2E4."}
                     </div>
                 ) : (
                     items.map((it) => {

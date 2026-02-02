@@ -1,3 +1,4 @@
+// DashboardSkeleton.tsx
 /**
  * 대시보드 페이지 로딩 스켈레톤 컴포넌트
  */

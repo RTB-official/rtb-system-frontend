@@ -1,9 +1,7 @@
 //workLogApi.ts
 import { supabase } from "./supabase";
-import {
-    getGongmuTeamUserIds,
-    createNotificationsForUsers,
-} from "./notificationApi";
+import { notificationService } from "./notificationService";
+
 
 const workLogCache = new Map<number, WorkLogFullData>();
 const workLogInFlight = new Map<number, Promise<WorkLogFullData | null>>();

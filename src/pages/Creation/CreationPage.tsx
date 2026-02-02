@@ -474,7 +474,7 @@ useEffect(() => {
             return;
         }
         if (workers.length === 0) {
-            showError("작업자를 선택해주세요.");
+            showError("인원을을 선택해주세요.");
             return;
         }
         if (workLogEntries.length === 0) {

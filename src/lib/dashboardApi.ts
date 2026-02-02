@@ -1,3 +1,4 @@
+// dashboardApi.ts
 import { supabase } from "./supabase";
 import { CalendarEvent } from "../types";
 import { Vacation } from "./vacationApi";
