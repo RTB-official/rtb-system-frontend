@@ -1,5 +1,5 @@
 //MembersPage.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import { supabase } from "../../lib/supabase";
 import Header from "../../components/common/Header";
@@ -61,6 +61,7 @@ type Member = {
 
 export default function MembersPage() {
     const { showSuccess, showError } = useToast();
+    const passportNotifyRanRef = useRef(false);
     const [activeTab, setActiveTab] = useState<"ALL" | "ADMIN" | "STAFF">(
         "ALL"
     );
@@ -196,60 +197,64 @@ export default function MembersPage() {
 
             if (expiring.length === 0) return;
 
-
-            const hasPassportExpiryNotification = async (
+            // ✅ 서버 dedupe: passport_expiry_alerts에 기록이 있으면 전송하지 않음
+            const hasPassportExpiryAlertRecord = async (
                 memberId: string,
                 expiryISO: string
             ) => {
-                try {
-                    const { data, error } = await supabase
-                        .from("notifications")
-                        .select("id")
-                        .like("meta", '%"kind":"passport_expiry_within_1y"%')
-                        .like("meta", `"user_id":"${memberId}"`)
-                        .like(
-                            "meta",
-                            `"passport_expiry_date":"${expiryISO}"`
-                        )
-                        .limit(1);
+                // expiryISO: "2026-01-07" → date로 저장하므로 앞 10자리 사용
+                const expiryDate = expiryISO.slice(0, 10);
 
-                    if (error) {
-                        console.warn(
-                            "Passport expiry notification dedupe check failed:",
-                            error.message
-                        );
-                        return false;
-                    }
+                const { data, error } = await supabase
+                    .from("passport_expiry_alerts")
+                    .select("user_id")
+                    .eq("user_id", memberId)
+                    .eq("passport_expiry_date", expiryDate)
+                    .limit(1);
 
-                    return (data ?? []).length > 0;
-                } catch (err) {
-                    console.warn(
-                        "Passport expiry notification dedupe check failed:",
-                        err
-                    );
+                if (error) {
+                    console.warn("passport_expiry_alerts 조회 실패:", error.message);
+                    // 조회 실패 시에는 안전하게 '아직 안 보냄'으로 처리(원하면 true로 바꿔도 됨)
                     return false;
+                }
+
+                return (data ?? []).length > 0;
+            };
+
+            const upsertPassportExpiryAlertRecord = async (
+                memberId: string,
+                expiryISO: string
+            ) => {
+                const expiryDate = expiryISO.slice(0, 10);
+
+                const { error } = await supabase
+                    .from("passport_expiry_alerts")
+                    .upsert(
+                        {
+                            user_id: memberId,
+                            passport_expiry_date: expiryDate,
+                            notified_at: new Date().toISOString(),
+                        },
+                        { onConflict: "user_id,passport_expiry_date" }
+                    );
+
+                if (error) {
+                    console.warn("passport_expiry_alerts upsert 실패:", error.message);
                 }
             };
 
             for (const m of expiring) {
-                // 중복 전송 방지 (같은 만료일에 대해 1회만)
-                const key = `passport_expiry_1y_notified:${m.id}:${m.passportExpiryISO}`;
-                if (localStorage.getItem(key) === "1") continue;
-
-                const alreadyNotified = await hasPassportExpiryNotification(
+                // ✅ 이미 보낸 기록이 있으면 스킵 (로그인/새로고침/다시 진입해도 재전송 없음)
+                const alreadySent = await hasPassportExpiryAlertRecord(
                     m.id,
                     m.passportExpiryISO
                 );
-                if (alreadyNotified) {
-                    localStorage.setItem(key, "1");
-                    continue;
-                }
-
+                if (alreadySent) continue;
 
                 // 수신자: 당사자 + admin들 (중복 제거)
                 const recipients = Array.from(new Set([m.id, ...adminIds]));
 
-                // 보기 좋은 날짜(YY년 M월 만료) - 기존 UI 표기와 맞춤
+                // 보기 좋은 날짜(YY년 M월 만료)
                 let label = "";
                 try {
                     const d = new Date(m.passportExpiryISO);
@@ -260,6 +265,7 @@ export default function MembersPage() {
                     label = "";
                 }
 
+                // ✅ 알림 먼저 생성
                 await createNotificationsForUsers(
                     recipients,
                     "여권 만료 임박",
@@ -272,12 +278,14 @@ export default function MembersPage() {
                     })
                 );
 
-                localStorage.setItem(key, "1");
+                // ✅ 성공 후 dedupe 기록 저장 (딱 1회 보장)
+                await upsertPassportExpiryAlertRecord(m.id, m.passportExpiryISO);
             }
         } catch (e) {
             console.error("여권 만료 1년 이내 알림 전송 실패:", e);
         }
     };
+
 
 
     const fetchMyRole = async () => {
@@ -457,12 +465,11 @@ export default function MembersPage() {
                     : (pp?.passport_image_name ?? ""),
             };
         });
-
-                // ✅ 여권 만료 1년 이내 알림 (당사자 + admin)
-                await notifyPassportExpiryWithinOneYear(mapped);
-
-                setMembers(mapped);
-        
+        // ✅ 여권 만료 1년 이내 알림 (당사자 + admin)
+        if (!passportNotifyRanRef.current) {
+            passportNotifyRanRef.current = true;
+            await notifyPassportExpiryWithinOneYear(mapped);
+        }
 
         setMembers(mapped);
         try {
