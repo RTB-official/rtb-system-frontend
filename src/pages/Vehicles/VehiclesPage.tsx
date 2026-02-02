@@ -58,6 +58,15 @@ const emptyForm: VehicleForm = {
     registrationName: "",
 };
 
+const onlyDigits = (value: string) => value.replace(/\D/g, "");
+
+const formatWithCommas = (value?: string) => {
+    if (!value) return "";
+    const digits = onlyDigits(value);
+    if (!digits) return "";
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
 export default function VehiclesPage() {
     const { showError, showSuccess } = useToast();
     const { userPermissions } = useUser();
@@ -452,7 +461,7 @@ export default function VehiclesPage() {
                                             label: "정비 km",
                                             width: "100px",
                                             render: (_, row: VehicleRow) =>
-                                                row.form.engineOilKm ?? "",
+                                                formatWithCommas(row.form.engineOilKm),
                                         },
                                         {
                                             key: "repair",
@@ -626,9 +635,12 @@ export default function VehiclesPage() {
                         />
                         <Input
                             label="엔진오일 정비 km"
-                            value={editForm.engineOilKm}
+                            value={formatWithCommas(editForm.engineOilKm)}
                             onChange={(v) =>
-                                setEditForm({ ...editForm, engineOilKm: v })
+                                setEditForm({
+                                    ...editForm,
+                                    engineOilKm: onlyDigits(v),
+                                })
                             }
                             placeholder="예) 120000"
                         />

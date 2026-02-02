@@ -4,12 +4,23 @@ import {
     createNotificationsForUsers,
 } from "./notificationApi";
 
-import { 
-    calculateAnnualLeave, 
-    getVacationGrantHistory as calculateGrantHistory, 
+import {
+    calculateAnnualLeave,
+    getVacationGrantHistory as calculateGrantHistory,
     type VacationGrantHistory,
-    updateVacationBalances
+    updateVacationBalances,
 } from "./vacationCalculator";
+
+function buildVacationMonthRange(year: number, monthZeroBased: number) {
+    const monthNumber = monthZeroBased + 1;
+    const monthString = String(monthNumber).padStart(2, "0");
+    const lastDay = new Date(year, monthZeroBased + 1, 0).getDate();
+    const lastDayString = String(lastDay).padStart(2, "0");
+    return {
+        startDate: `${year}-${monthString}-01`,
+        endDate: `${year}-${monthString}-${lastDayString}`,
+    };
+}
 
 // ==================== 타입 정의 ====================
 
@@ -152,14 +163,10 @@ export async function getVacations(
     }
 
     if (filters?.month !== undefined && filters?.year) {
-        const startDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-01`;
-        const endDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-31`;
+        const { startDate, endDate } = buildVacationMonthRange(
+            filters.year,
+            filters.month
+        );
         query = query.gte("date", startDate).lte("date", endDate);
     }
 
