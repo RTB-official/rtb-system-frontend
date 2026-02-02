@@ -21,21 +21,26 @@ begin
     if new.is_draft = true then
       return new;
     end if;
+  end if;
 
-    if (tg_op = 'UPDATE') then
-      new_json := to_jsonb(new);
-      old_json := to_jsonb(old);
-      select coalesce(
-        jsonb_object_agg(
-          key,
-          jsonb_build_object('before', old_json->key, 'after', new_json->key)
-        ),
-        '{}'::jsonb
-      )
-      into changes
-      from jsonb_each(new_json)
-      where (old_json->key) is distinct from (new_json->key);
-    end if;
+  if (tg_op = 'UPDATE') then
+    new_json := to_jsonb(new);
+    old_json := to_jsonb(old);
+    select coalesce(
+      jsonb_object_agg(
+        key,
+        jsonb_build_object('before', old_json->key, 'after', new_json->key)
+      ),
+      '{}'::jsonb
+    )
+    into changes
+    from jsonb_each(new_json)
+    where key not in ('updated_at', 'created_at')
+      and (old_json->key) is distinct from (new_json->key);
+  end if;
+
+  if (tg_op = 'UPDATE' and changes = '{}'::jsonb) then
+    return new;
   end if;
 
   payload := jsonb_build_object(
@@ -69,6 +74,16 @@ for each row execute function public.notify_email_on_insert();
 drop trigger if exists notify_email_work_logs_update on public.work_logs;
 create trigger notify_email_work_logs_update
 after update on public.work_logs
+for each row execute function public.notify_email_on_insert();
+
+drop trigger if exists notify_email_work_log_entries_update on public.work_log_entries;
+create trigger notify_email_work_log_entries_update
+after update on public.work_log_entries
+for each row execute function public.notify_email_on_insert();
+
+drop trigger if exists notify_email_work_log_entries_insert on public.work_log_entries;
+create trigger notify_email_work_log_entries_insert
+after insert on public.work_log_entries
 for each row execute function public.notify_email_on_insert();
 
 -- calendar_events

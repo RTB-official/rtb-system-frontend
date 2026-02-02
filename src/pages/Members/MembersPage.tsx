@@ -15,6 +15,7 @@ import Avatar from "../../components/common/Avatar";
 import MembersSkeleton from "../../components/common/MembersSkeleton";
 import { useToast } from "../../components/ui/ToastProvider";
 import MiniIconButton from "../../components/ui/MiniIconButton";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import {
     uploadPassportPhoto,
     uploadProfilePhoto,
@@ -96,6 +97,7 @@ export default function MembersPage() {
     const [selectedMemberId, setSelectedMemberId] = useState<string | null>(
         null
     );
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const toYYMMDD = (iso?: string | null) => {
         if (!iso) return "";
@@ -1152,30 +1154,44 @@ export default function MembersPage() {
                 // ✅ admin만 삭제 가능
                 onDelete={
                     isAdmin
-                        ? async () => {
+                        ? () => {
                             if (!selectedMemberId) return;
-                            if (!confirm("정말 삭제하시겠습니까?")) return;
-
-                            const { error } = await supabase
-                                .from("profiles")
-                                .delete()
-                                .eq("id", selectedMemberId);
-
-                            if (error) {
-                                console.error("삭제 실패:", error.message);
-                                showError("삭제에 실패했습니다.");
-                                return;
-                            }
-
-                            showSuccess("삭제 완료");
-                            setActionOpen(false);
-                            setActionAnchor(null);
-                            await fetchMembers();
+                            setDeleteConfirmOpen(true);
                         }
                         : undefined
                 }
                 showDelete={isAdmin}
                 width="w-44"
+            />
+
+            <ConfirmDialog
+                isOpen={deleteConfirmOpen}
+                onClose={() => setDeleteConfirmOpen(false)}
+                onConfirm={async () => {
+                    if (!selectedMemberId) return;
+                    setDeleteConfirmOpen(false);
+
+                    const { error } = await supabase
+                        .from("profiles")
+                        .delete()
+                        .eq("id", selectedMemberId);
+
+                    if (error) {
+                        console.error("삭제 실패:", error.message);
+                        showError("삭제에 실패했습니다.");
+                        return;
+                    }
+
+                    showSuccess("삭제 완료");
+                    setActionOpen(false);
+                    setActionAnchor(null);
+                    await fetchMembers();
+                }}
+                title="구성원 삭제"
+                message="정말 삭제하시겠습니까?"
+                confirmText="삭제"
+                cancelText="취소"
+                confirmVariant="danger"
             />
 
             {/* Reset Password Modal */}

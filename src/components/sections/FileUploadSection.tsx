@@ -349,6 +349,7 @@ interface FileUploadSectionProps {
 }
 
 export default function FileUploadSection({ workLogId }: FileUploadSectionProps) {
+    const { reportType } = useWorkReportStore();
     const [previewFile, setPreviewFile] = useState<{
         url: string;
         name: string;
@@ -380,20 +381,24 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
 
             {/* 4개 카드 그리드 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <FileCard
-                    icon={<IconBed />}
-                    title="숙박 영수증"
-                    category="숙박영수증"
-                    onPreview={openPreview}
-                    workLogId={workLogId}
-                />
-                <FileCard
-                    icon={<IconTool />}
-                    title="자재 영수증"
-                    category="자재구매영수증"
-                    onPreview={openPreview}
-                    workLogId={workLogId}
-                />
+                {reportType !== "education" && (
+                    <>
+                        <FileCard
+                            icon={<IconBed />}
+                            title="숙박 영수증"
+                            category="숙박영수증"
+                            onPreview={openPreview}
+                            workLogId={workLogId}
+                        />
+                        <FileCard
+                            icon={<IconTool />}
+                            title="자재 영수증"
+                            category="자재구매영수증"
+                            onPreview={openPreview}
+                            workLogId={workLogId}
+                        />
+                    </>
+                )}
                 <FileCard
                     icon={<IconRestaurant />}
                     title="식비 및 유대 영수증"

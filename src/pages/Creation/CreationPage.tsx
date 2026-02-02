@@ -71,6 +71,7 @@ export default function CreationPage() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [isSubmittedWorkLog, setIsSubmittedWorkLog] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+    const [navigateConfirmOpen, setNavigateConfirmOpen] = useState(false);
 
 
     
@@ -336,6 +337,7 @@ useEffect(() => {
                     subject,
                     workers,
                     entries: workLogEntries.map((entry) => ({
+                        id: entry.id,
                         dateFrom: entry.dateFrom,
                         timeFrom: entry.timeFrom || undefined,
                         dateTo: entry.dateTo,
@@ -655,16 +657,7 @@ useEffect(() => {
         };
 
         function handlePopState() {
-            const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-            if (!ok) {
-                // ✅ 취소면 현재 페이지 유지
-                pushState();
-                return;
-            }
-        
-            // ✅ 확인이면: (C→B는 이미 발생) 이제 B→A로 실제 이동
-            cleanup();
-            navigate(-1);
+            setNavigateConfirmOpen(true);
         }
 
         window.addEventListener("beforeunload", handleBeforeUnload);
@@ -683,8 +676,8 @@ useEffect(() => {
 // 뒤로가기 버튼 클릭 (dirty일 때만 확인)
 const handleBackClick = () => {
     if (isDirty) {
-        const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-        if (!ok) return;
+        setNavigateConfirmOpen(true);
+        return;
     }
     navigate("/report");
 };
@@ -815,6 +808,23 @@ const handleBackClick = () => {
                 cancelText="취소"
                 confirmVariant="primary"
                 isLoading={submitting}
+            />
+
+            {/* 나감 확인 다이얼로그 */}
+            <ConfirmDialog
+                isOpen={navigateConfirmOpen}
+                onClose={() => {
+                    setNavigateConfirmOpen(false);
+                }}
+                onConfirm={() => {
+                    setNavigateConfirmOpen(false);
+                    navigate("/report");
+                }}
+                title="나가기"
+                message="작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?"
+                confirmText="나가기"
+                cancelText="취소"
+                confirmVariant="danger"
             />
         </div>
     );

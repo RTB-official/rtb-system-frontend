@@ -5,6 +5,7 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import BasicInfoSection from "../../components/sections/BasicInfoSection";
+import EducationBasicInfoSection from "../../components/sections/EducationBasicInfoSection";
 import WorkerSection from "../../components/sections/WorkerSection";
 import WorkLogSection from "../../components/sections/WorkLogSection";
 import ExpenseSection from "../../components/sections/ExpenseSection";
@@ -12,13 +13,14 @@ import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import CreationSkeleton from "../../components/common/CreationSkeleton";
+import SectionCard from "../../components/ui/SectionCard";
+import WorkloadLegend from "../../components/common/WorkloadLegend";
 import { useWorkReportStore, LOCATIONS } from "../../store/workReportStore";
 import { IconArrowBack, IconReport } from "../../components/icons/Icons";
 import {
     uploadReceiptFile,
     updateWorkLog,
     getWorkLogById,
-    type WorkLog,
 } from "../../lib/workLogApi";
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
@@ -67,9 +69,10 @@ export default function ReportEditPage() {
     const [submitting, setSubmitting] = useState(false);
     const [savingDraft, setSavingDraft] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [isSubmittedWorkLog, setIsSubmittedWorkLog] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+    const [navigateConfirmOpen, setNavigateConfirmOpen] = useState(false);
+    const [reportType, setReportType] = useState<"work" | "education">("work");
 
 
     // ✅ 최초 작성자 유지용
@@ -94,6 +97,7 @@ export default function ReportEditPage() {
         materials,
         uploadedFiles,
         resetForm,
+        setReportType: setReportTypeInStore,
         setVessel,
         setEngine,
         setSubject,
@@ -106,6 +110,7 @@ export default function ReportEditPage() {
         setExpenses,
         setMaterials,
         setWorkLogEntries,
+        setInstructor,
     } = useWorkReportStore();
 
         // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
@@ -211,6 +216,15 @@ useEffect(() => {
                     setVehicles(vehicleList);
                 }
 
+                // 리포트 타입 판별
+                const isEducation = data.workLog.subject?.includes("[교육]");
+                setReportType(isEducation ? "education" : "work");
+                setReportTypeInStore(isEducation ? "education" : "work");
+
+                if (isEducation && data.workLog.order_person) {
+                    setInstructor(data.workLog.order_person);
+                }
+
                 // 작업자 설정
                 setWorkers(data.workers);
 
@@ -302,15 +316,16 @@ useEffect(() => {
                 const workLogData = {
                     author: originalAuthor || authorName,
                 
-                    vessel,
-                    engine,
-                    order_group: orderGroup || undefined,
-                    order_person: orderPerson || undefined,
+                    vessel: reportType === "work" ? vessel : undefined,
+                    engine: reportType === "work" ? engine : undefined,
+                    order_group: reportType === "work" ? orderGroup : undefined,
+                    order_person: reportType === "education" ? useWorkReportStore.getState().instructor : orderPerson,
                     location: resolvedLocation || undefined,
-                    vehicle: resolvedVehicle || undefined,
+                    vehicle: reportType === "work" ? (resolvedVehicle || undefined) : undefined,
                     subject,
                     workers,
                     entries: workLogEntries.map((entry) => ({
+                        id: entry.id,
                         dateFrom: entry.dateFrom,
                         timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
                         dateTo: entry.dateTo,
@@ -420,7 +435,6 @@ useEffect(() => {
             showSuccess("수정이 완료되었습니다!");
             resetForm();
             setLastSavedAt(null);
-            setHasUnsavedChanges(false);
             navigate("/report");
         } catch (error: any) {
             console.error("Error updating work log:", error);
@@ -437,9 +451,17 @@ useEffect(() => {
     // 제출 핸들러 (확인 다이얼로그 열기)
     const handleSubmit = () => {
         // 필수 항목 체크
-        if (!vessel || !engine || !subject) {
-            showError("기본정보(호선/엔진/목적)는 필수입니다.");
-            return;
+        if (reportType === "work") {
+            if (!vessel || !engine || !subject) {
+                showError("기본정보(호선/엔진/목적)는 필수입니다.");
+                return;
+            }
+        } else {
+            const currentInstructor = useWorkReportStore.getState().instructor;
+            if (!currentInstructor || !subject) {
+                showError("기본정보(강사/내용)는 필수입니다.");
+                return;
+            }
         }
         if (workers.length === 0) {
             showError("인원을 선택해주세요.");
@@ -532,7 +554,6 @@ useEffect(() => {
                 await updateWorkLog(workLogId, draftData);
 
                 setLastSavedAt(new Date());
-                setHasUnsavedChanges(false);
                 setIsSubmittedWorkLog(false); // ✅ 제출완료 → 임시저장 상태로 전환
                 
                 if (!silent) {
@@ -612,14 +633,7 @@ useEffect(() => {
         };
 
         function handlePopState() {
-            const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-            if (!ok) {
-                pushState();
-                return;
-            }
-        
-            cleanup();
-            navigate(-1);
+            setNavigateConfirmOpen(true);
         }
 
         window.addEventListener("beforeunload", handleBeforeUnload);
@@ -638,8 +652,8 @@ useEffect(() => {
     // 뒤로가기 버튼 클릭 (dirty일 때만 확인)
     const handleBackClick = () => {
         if (isDirty) {
-            const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-            if (!ok) return;
+            setNavigateConfirmOpen(true);
+            return;
         }
         navigate("/report");
     };
@@ -726,10 +740,14 @@ useEffect(() => {
                     <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-12 lg:px-24 xl:px-48 py-6 md:py-9">
                         <div className="max-w-[960px] mx-auto flex flex-col gap-4 md:gap-6">
                             {/* 기본 정보 */}
-                            <BasicInfoSection />
+                            {reportType === "work" ? (
+                                <BasicInfoSection />
+                            ) : (
+                                <EducationBasicInfoSection />
+                            )}
 
                             {/* 작업자 */}
-                            <WorkerSection />
+                            <WorkerSection title={reportType === "work" ? "투입 인원" : "교육 참석자"} />
 
                             {/* 출장 업무 일지 */}
                             <WorkLogSection />
@@ -743,8 +761,27 @@ useEffect(() => {
                             {/* 첨부파일 업로드 */}
                             <FileUploadSection workLogId={workLogId} />
 
-                            {/* 타임라인 요약 */}
-                            <TimelineSummarySection />
+                        {/* 타임라인 요약 */}
+                        {reportType === "work" && (
+                            <SectionCard
+                                title="타임라인"
+                                headerContent={
+                                    <WorkloadLegend
+                                        items={[
+                                            { key: "work", label: "작업", color: "#3b82f6" },
+                                            { key: "move", label: "이동", color: "#10b981" },
+                                            { key: "wait", label: "대기", color: "#f59e0b" },
+                                        ]}
+                                        className="flex items-center gap-4"
+                                        itemClassName="flex items-center gap-1.5"
+                                        labelClassName="text-[12px] text-[#6a7282]"
+                                        swatchClassName="w-[14px] h-[14px] rounded-md"
+                                    />
+                                }
+                            >
+                                <TimelineSummarySection />
+                            </SectionCard>
+                        )}
                         </div>
                     </div>
                 )}
@@ -764,6 +801,25 @@ useEffect(() => {
                 cancelText="취소"
                 confirmVariant="primary"
                 isLoading={submitting}
+            />
+
+            {/* 나감 확인 다이얼로그 */}
+            <ConfirmDialog
+                isOpen={navigateConfirmOpen}
+                onClose={() => {
+                    setNavigateConfirmOpen(false);
+                    // popstate 가드인 경우 history stack을 복구해야 할 수 있음. 
+                    // 하지만 pushState로 이미 쌓여있다면 뒤로가기 시도가 막힌 상태임.
+                }}
+                onConfirm={() => {
+                    setNavigateConfirmOpen(false);
+                    navigate("/report");
+                }}
+                title="나가기"
+                message="작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?"
+                confirmText="나가기"
+                cancelText="취소"
+                confirmVariant="danger"
             />
         </div>
     );

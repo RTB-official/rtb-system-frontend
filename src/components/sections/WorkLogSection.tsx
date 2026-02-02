@@ -8,7 +8,6 @@ import Button from "../common/Button";
 import RequiredIndicator from "../ui/RequiredIndicator";
 import {
     useWorkReportStore,
-    calcDurationHours,
     toKoreanTime,
 } from "../../store/workReportStore";
 import { IconEdit, IconTrash, IconClose } from "../icons/Icons";
@@ -201,10 +200,15 @@ const minuteOptions = [
 ];
 
 // 작업 분류 옵션
-const descTypeOptions = [
+const descTypeOptionsWork = [
     { value: "작업", label: "작업" },
     { value: "이동", label: "이동" },
     { value: "대기", label: "대기" },
+];
+
+const descTypeOptionsEducation = [
+    { value: "교육", label: "교육" },
+    { value: "이동", label: "이동" },
 ];
 
 // 이동 장소 옵션
@@ -227,8 +231,10 @@ export default function WorkLogSection() {
         deleteWorkLogEntry,
         editWorkLogEntry,
         cancelEditEntry,
+
         location,
         locationCustom,
+        reportType, // ✅ Report Type 추가
     } = useWorkReportStore();
 
     // ✅ Toast 훅 추가
@@ -413,7 +419,7 @@ export default function WorkLogSection() {
         
 
     return (
-        <SectionCard title="출장 업무 일지">
+        <SectionCard title={reportType === "education" ? "교육 일지" : "출장 업무 일지"}>
             <div className="flex flex-col gap-5">
                 {/* 입력 폼 */}
                 <div ref={formRef} className="flex flex-col gap-5 scroll-mt-20">
@@ -503,13 +509,13 @@ export default function WorkLogSection() {
                             <div className="h-px bg-gray-200 md:hidden" />
                             {/* 종료 */}
                             <div className="flex-1 p-4 bg-gray-50">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <div className="w-3 h-3 rounded-[4px] bg-red-500"></div>
-                                    <p className="font-semibold text-[14px] text-gray-800">
-                                        종료
-                                        <RequiredIndicator />
-                                    </p>
-                                </div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="w-3 h-3 rounded-[4px] bg-red-500"></div>
+                                        <p className="font-semibold text-[14px] text-gray-800">
+                                            종료
+                                            <RequiredIndicator />
+                                        </p>
+                                    </div>
                                 <div className="flex flex-col gap-2">
                                     <DatePicker
                                         value={currentEntry.dateTo || ""}
@@ -589,15 +595,24 @@ export default function WorkLogSection() {
                         </div>
 
                         <div className="flex gap-2">
-                            {(["작업", "이동", "대기"] as const).map((t) => (
+                            {(reportType === "education"
+                                ? descTypeOptionsEducation
+                                : descTypeOptionsWork
+                            ).map((opt) => (
                                 <Button
-                                    key={t}
+                                    key={opt.value}
                                     type="button"
                                     size="lg"
                                     fullWidth
-                                    variant={currentEntry.descType === t ? "primary" : "outline"}
+                                    variant={
+                                        currentEntry.descType === opt.value
+                                            ? "primary"
+                                            : "outline"
+                                    }
                                     onClick={() => {
-                                        setCurrentEntry({ descType: t });
+                                        setCurrentEntry({
+                                            descType: opt.value as any, // type assertion needed due to extended union
+                                        });
 
                                         if (errors.descType) {
                                             setErrors((prev) => ({
@@ -607,7 +622,7 @@ export default function WorkLogSection() {
                                         }
                                     }}
                                 >
-                                    {t}
+                                    {opt.label}
                                 </Button>
                             ))}
                         </div>
@@ -770,34 +785,29 @@ export default function WorkLogSection() {
                             >
                                 모두 추가
                             </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => addRegionPersonsToEntry("BC")}
-                            >
-                                부산/창원
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => addRegionPersonsToEntry("UL")}
-                            >
-                                울산
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => addRegionPersonsToEntry("JY")}
-                            >
-                                정관/양산
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => addRegionPersonsToEntry("GJ")}
-                            >
-                                거제
-                            </Button>
+                            {/* Dynamic Region Buttons */}
+                            {Array.from(new Set(useWorkReportStore.getState().allStaff.map(s => s.region)))
+                                .filter(Boolean)
+                                .sort()
+                                .map(region => {
+                                    const regionNames: Record<string, string> = {
+                                        'BC': '부산/창원',
+                                        'UL': '울산',
+                                        'JY': '정관/양산',
+                                        'GJ': '거제'
+                                    };
+                                    return (
+                                        <Button
+                                            key={region}
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => addRegionPersonsToEntry(region)}
+                                        >
+                                            {regionNames[region] || region}
+                                        </Button>
+                                    );
+                                })
+                            }
                         </div>
 
                         {/* 선택된 인원 */}

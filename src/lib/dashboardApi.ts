@@ -404,6 +404,10 @@ export async function getWorkLogsForDashboard(
     }
 
     if (!workLogs || workLogs.length === 0) return [];
+    const filteredWorkLogs = workLogs.filter(
+        (log) => !String(log.subject || "").includes("[교육]")
+    );
+    if (filteredWorkLogs.length === 0) return [];
 
     if (personsError) {
         console.error("Error fetching work log persons:", personsError);
@@ -517,7 +521,7 @@ export async function getWorkLogsForDashboard(
     // 4. 결과 조합
     const result: WorkLogWithPersons[] = [];
 
-    for (const log of workLogs) {
+    for (const log of filteredWorkLogs) {
         const persons = personsMap.get(log.id) || [];
         const dates = datesMap.get(log.id);
         const leaderName = pickLeaderName(persons);

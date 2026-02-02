@@ -7,6 +7,7 @@ import Select from "../common/Select";
 import Table from "../common/Table";
 import TextInput from "../ui/TextInput";
 import RequiredIndicator from "../ui/RequiredIndicator";
+import ConfirmDialog from "../ui/ConfirmDialog";
 import {
     useWorkReportStore,
     formatCurrency,
@@ -34,6 +35,12 @@ export default function ExpenseSection() {
     const [typeCustom, setTypeCustom] = useState("");
     const [detail, setDetail] = useState("");
     const [amount, setAmount] = useState("");
+
+    // 삭제 확인 상태
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [expenseToDelete, setExpenseToDelete] = useState<number | string | null>(
+        null
+    );
 
     // 에러 상태
     const [errors, setErrors] = useState<{
@@ -377,9 +384,9 @@ export default function ExpenseSection() {
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (confirm("삭제하시겠습니까?")) {
-                                                        deleteExpense(row.id);
-                                                    }
+                                                    e.stopPropagation();
+                                                    setExpenseToDelete(row.id);
+                                                    setDeleteConfirmOpen(true);
                                                 }}
                                                 className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${isSelected
                                                         ? "opacity-100"
@@ -425,6 +432,26 @@ export default function ExpenseSection() {
                     />
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={deleteConfirmOpen}
+                onClose={() => {
+                    setDeleteConfirmOpen(false);
+                    setExpenseToDelete(null);
+                }}
+                onConfirm={() => {
+                    if (expenseToDelete !== null) {
+                        deleteExpense(expenseToDelete as number);
+                    }
+                    setDeleteConfirmOpen(false);
+                    setExpenseToDelete(null);
+                }}
+                title="지출 내역 삭제"
+                message="해당 지출 내역을 삭제하시겠습니까?"
+                confirmText="삭제"
+                cancelText="취소"
+                confirmVariant="danger"
+            />
         </SectionCard>
     );
 }

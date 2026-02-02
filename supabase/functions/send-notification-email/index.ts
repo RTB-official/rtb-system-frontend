@@ -36,6 +36,16 @@ const formatTimeRange = (start?: string, end?: string, allDay?: boolean) => {
   return `${s} ~ ${e}`;
 };
 
+const normalizeTimeValue = (value?: string) => {
+  const raw = normalize(value);
+  if (!raw) return "";
+  const hhmmss = raw.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (hhmmss) return `${hhmmss[1].padStart(2, "0")}:${hhmmss[2]}`;
+  const hhmm = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (hhmm) return `${hhmm[1].padStart(2, "0")}:${hhmm[2]}`;
+  return raw;
+};
+
 const formatLeaveType = (value?: string) => {
   const raw = normalize(value);
   if (!raw) return "휴가";
@@ -75,11 +85,73 @@ const roleOrder: Record<string, number> = {
   "인턴": 9,
 };
 
+const fetchWorkLogInfo = async (workLogId?: number) => {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey || !workLogId) {
+    return { author: "", subject: "", location: "", vessel: "" };
+  }
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const { data, error } = await admin
+    .from("work_logs")
+    .select("author, subject, location, vessel")
+    .eq("id", workLogId)
+    .single();
+  if (error) return { author: "", subject: "", location: "", vessel: "" };
+  return {
+    author: normalize(data?.author),
+    subject: normalize(data?.subject),
+    location: normalize(data?.location),
+    vessel: normalize(data?.vessel),
+  };
+};
+
+type WorkLogEntrySummary = {
+  date_from?: string;
+  time_from?: string;
+  date_to?: string;
+  time_to?: string;
+  desc_type?: string;
+  details?: string;
+  note?: string;
+  move_from?: string;
+  move_to?: string;
+};
+
+const formatEntryLine = (entry: WorkLogEntrySummary) => {
+  const date = formatDateRange(entry.date_from, entry.date_to);
+  const time = formatTimeRange(entry.time_from, entry.time_to, false);
+  const type = normalize(entry.desc_type) || "작업";
+  const detail = normalize(entry.details);
+  const note = normalize(entry.note);
+  const moveFrom = normalize(entry.move_from);
+  const moveTo = normalize(entry.move_to);
+
+  const pieces = [
+    [date, time].filter(Boolean).join(" "),
+    type,
+  ].filter(Boolean);
+
+  let line = pieces.join(" · ");
+  if (moveFrom || moveTo) {
+    line += ` (${moveFrom || "-"} → ${moveTo || "-"})`;
+  }
+  if (detail) {
+    line += ` | ${detail}`;
+  }
+  if (note) {
+    line += ` | 특이사항: ${note}`;
+  }
+  return line;
+};
+
 const getWorkLogExtras = async (workLogId?: number) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey || !workLogId) {
-    return { participants: [] as string[], leaderName: "", period: "" };
+    return { participants: [] as string[], leaderName: "", period: "", entries: [] as string[] };
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -93,7 +165,7 @@ const getWorkLogExtras = async (workLogId?: number) => {
       .eq("work_log_id", workLogId),
     admin
       .from("work_log_entries")
-      .select("date_from, date_to")
+      .select("date_from, time_from, date_to, time_to, desc_type, details, note, move_from, move_to")
       .eq("work_log_id", workLogId),
   ]);
 
@@ -106,10 +178,16 @@ const getWorkLogExtras = async (workLogId?: number) => {
   );
 
   let period = "";
+  let entries: string[] = [];
   if (entriesRes.data && entriesRes.data.length > 0) {
     let minDate = "";
     let maxDate = "";
-    entriesRes.data.forEach((entry: any) => {
+    const sortedEntries = entriesRes.data.slice().sort((a: any, b: any) => {
+      const aKey = `${normalize(a.date_from)} ${normalize(a.time_from)}`;
+      const bKey = `${normalize(b.date_from)} ${normalize(b.time_from)}`;
+      return aKey.localeCompare(bKey);
+    });
+    sortedEntries.forEach((entry: any) => {
       const start = normalize(entry.date_from) || normalize(entry.date_to);
       const end = normalize(entry.date_to) || normalize(entry.date_from);
       if (start) {
@@ -120,6 +198,8 @@ const getWorkLogExtras = async (workLogId?: number) => {
       }
     });
     period = formatDateRange(minDate, maxDate);
+
+    entries = sortedEntries.slice(0, 5).map((entry: any) => formatEntryLine(entry));
   }
 
   let leaderName = "";
@@ -153,7 +233,7 @@ const getWorkLogExtras = async (workLogId?: number) => {
       })[0] || "";
   }
 
-  return { participants, leaderName, period };
+  return { participants, leaderName, period, entries };
 };
 
 const buildFriendlyContent = async (
@@ -185,11 +265,24 @@ const buildFriendlyContent = async (
     date_to: "종료일",
     author: "작성자",
   };
+  const entryChangeLabelMap: Record<string, string> = {
+    date_from: "시작일",
+    time_from: "시작시간",
+    date_to: "종료일",
+    time_to: "종료시간",
+    desc_type: "구분",
+    details: "작업 내용",
+    note: "특이 사항",
+    move_from: "출발지",
+    move_to: "도착지",
+    lunch_worked: "점심",
+  };
   const skipChangeKeys = new Set([
     "id",
     "created_at",
     "updated_at",
     "is_draft",
+    "work_log_id",
   ]);
 
   const formatChangeValue = (key: string, value: unknown) => {
@@ -197,15 +290,21 @@ const buildFriendlyContent = async (
     if (key === "date_from" || key === "date_to") {
       return formatKoreanDate(String(value));
     }
+    if (key === "time_from" || key === "time_to") {
+      return normalizeTimeValue(String(value));
+    }
+    if (key === "lunch_worked") {
+      return value ? "점심 안 먹고 작업" : "점심 식사";
+    }
     return String(value);
   };
 
-  const buildChangeLines = () => {
+  const buildChangeLines = (labelMap: Record<string, string>) => {
     if (!changes || typeof changes !== "object") return [];
     return Object.entries(changes)
       .filter(([key]) => !skipChangeKeys.has(key))
       .map(([key, diff]) => {
-        const label = changeLabelMap[key] || key;
+        const label = labelMap[key] || key;
         const before = formatChangeValue(key, diff?.before);
         const after = formatChangeValue(key, diff?.after);
         return `${label}: ${before} → ${after}`;
@@ -240,7 +339,7 @@ const buildFriendlyContent = async (
     const vessel = normalize(record.vessel);
     const location = normalize(record.location);
     const authorName = normalize(record.author) || actorName;
-    const { participants, leaderName, period } = await getWorkLogExtras(
+    const { participants, leaderName, period, entries } = await getWorkLogExtras(
       Number(record.id)
     );
     const date = formatDateRange(record.date_from, record.date_to);
@@ -256,8 +355,63 @@ const buildFriendlyContent = async (
     );
     baseDetails.push(`작업 기간 : ${period || date || "-"}`);
     if (vessel && !isUpdate) baseDetails.push(`호선: ${vessel}`);
+    if (entries.length > 0) {
+      baseDetails.push("작업 일지");
+      baseDetails.push(...entries);
+    }
     if (isUpdate) {
-      const changeLines = buildChangeLines();
+      const changeLines = buildChangeLines(changeLabelMap);
+      if (changeLines.length > 0) {
+        changeDetails.push(...changeLines);
+      }
+    }
+  } else if (table === "work_log_entries") {
+    const isUpdate = operation === "UPDATE" || hasChanges || updatedDifferent;
+    const workLogId = Number(record.work_log_id);
+    const { participants, leaderName, period } = await getWorkLogExtras(
+      workLogId
+    );
+    const info = await fetchWorkLogInfo(workLogId);
+    const title = info.subject || "출장보고서";
+    const entryActor =
+      info.author || (await fetchUserName(userId)) || actorName;
+    subject = isUpdate
+      ? `${subjectPrefix} ${entryActor}님이 작업 일지를 수정했습니다.`
+      : `${subjectPrefix} ${entryActor}님이 작업 일지를 등록했습니다.`;
+    summary = isUpdate
+      ? `${entryActor}님이 "${title}" 작업 일지를 수정하셨습니다.`
+      : `${entryActor}님이 "${title}" 작업 일지를 등록하셨습니다.`;
+    baseDetails.push(`작성자: ${info.author || entryActor || "-"}`);
+    baseDetails.push(`출장목적: ${title || "-"}`);
+    baseDetails.push(`출장지: ${info.location || "-"}`);
+    baseDetails.push(`팀장: ${leaderName || "-"}`);
+    baseDetails.push(
+      `참가자: ${participants.length > 0 ? participants.join(", ") : "-"}`
+    );
+    baseDetails.push(`작업 기간: ${period || "-"}`);
+    const entryDate = formatDateRange(record.date_from, record.date_to);
+    const entryTime = formatTimeRange(
+      record.time_from,
+      record.time_to,
+      record.all_day
+    );
+    const entryType = normalize(record.desc_type) || "-";
+    const entryDetails = normalize(record.details);
+    const entryNote = normalize(record.note);
+    if (entryDate) baseDetails.push(`작업 일자: ${entryDate}`);
+    if (entryTime) baseDetails.push(`작업 시간: ${entryTime}`);
+    baseDetails.push(`작업 유형: ${entryType}`);
+    if (normalize(record.move_from) || normalize(record.move_to)) {
+      baseDetails.push(
+        `이동: ${normalize(record.move_from) || "-"} → ${
+          normalize(record.move_to) || "-"
+        }`
+      );
+    }
+    if (entryDetails) baseDetails.push(`상세 내용: ${entryDetails}`);
+    if (entryNote) baseDetails.push(`특이 사항: ${entryNote}`);
+    if (isUpdate) {
+      const changeLines = buildChangeLines(entryChangeLabelMap);
       if (changeLines.length > 0) {
         changeDetails.push(...changeLines);
       }

@@ -10,6 +10,7 @@ import VehiclesSkeleton from "../../components/common/VehiclesSkeleton";
 import Input from "../../components/common/Input";
 import DatePicker from "../../components/ui/DatePicker";
 import { useToast } from "../../components/ui/ToastProvider";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useUser } from "../../hooks/useUser";
 import {
     VehicleForm,
@@ -82,6 +83,7 @@ export default function VehiclesPage() {
     const [registrationFile, setRegistrationFile] = useState<File | null>(null);
     const [sortKey, setSortKey] = useState<SortKey>("type");
     const [sortDir, setSortDir] = useState<SortDir>("asc");
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const sortedVehicles = useMemo(() => {
         const next = [...vehicles];
@@ -264,7 +266,12 @@ export default function VehiclesPage() {
 
     const handleDelete = async () => {
         if (!selectedVehicleId) return;
-        if (!confirm("선택한 차량을 삭제하시겠습니까?")) return;
+        setDeleteConfirmOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!selectedVehicleId) return;
+        setDeleteConfirmOpen(false);
         try {
             await deleteVehicle(selectedVehicleId);
             showSuccess("차량이 삭제되었습니다.");
@@ -661,6 +668,17 @@ export default function VehiclesPage() {
                     </div>
                 </BaseModal>
             )}
+            
+            <ConfirmDialog
+                isOpen={deleteConfirmOpen}
+                onClose={() => setDeleteConfirmOpen(false)}
+                onConfirm={confirmDelete}
+                title="차량 삭제"
+                message="선택한 차량을 삭제하시겠습니까?"
+                confirmText="삭제"
+                cancelText="취소"
+                confirmVariant="danger"
+            />
         </div>
     );
 }

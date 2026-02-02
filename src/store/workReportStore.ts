@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { supabase } from '../lib/supabase';
 
 // 타입 정의
 export interface WorkLogEntry {
@@ -7,7 +8,7 @@ export interface WorkLogEntry {
   timeFrom: string;
   dateTo: string;
   timeTo: string;
-  descType: '작업' | '이동' | '대기' | '';
+  descType: '작업' | '이동' | '대기' | '교육' | ''; // ✅ '교육' 추가
   details: string;
   persons: string[];
   note: string;
@@ -47,23 +48,14 @@ export interface UploadedFile {
   isExisting?: boolean; // 기존 영수증인지 여부
 }
 
-// 직급별 직원 데이터
-export const STAFF_DATA: Record<string, string[]> = {
-  '부장': ['김춘근', '안재훈', '온권태', '정영철', '김희규'],
-  '차장': ['이효익', '정상민', '김동민', '손재진', '우상윤', '성기형', '류성관'],
-  '과장': [],
-  '대리': ['이종훈', '조용남', '고두형'],
-  '주임': ['박영성', '문채훈', '김민규', '김상민', '박민욱'],
-  '인턴': ['강민지'],
-};
+export interface StaffProfile {
+  id: string;
+  name: string;
+  position: string;
+  region: string;
+  department: string;
+}
 
-// 지역별 인원 매핑
-export const REGION_GROUPS: Record<string, string[]> = {
-  BC: ['김희규', '이효익', '정상민', '손재진', '류성관', '이종훈', '조용남', '박영성', '문채훈', '김민규', '박민욱', '김상민', '고두형'],
-  UL: ['온권태', '김동민', '성기형'],
-  JY: ['김춘근', '안재훈', '정영철'],
-  GJ: ['우상윤'],
-};
 
 // 참관 감독 그룹별 인원
 export const ORDER_PERSONS: Record<string, string[]> = {
@@ -108,8 +100,12 @@ export const EXPENSE_TYPES = [
 ];
 
 interface WorkReportState {
+  // 모드
+  reportType: 'work' | 'education';
+  
   // 기본정보
   author: string;
+  instructor: string; // 교육 보고서용 강사
   vessel: string;
   engine: string;
   orderGroup: string;
@@ -140,6 +136,13 @@ interface WorkReportState {
   // 첨부파일
   uploadedFiles: UploadedFile[];
   
+  // 전체 직원 데이터 (DB에서 로드됨)
+  allStaff: StaffProfile[];
+  staffLoading: boolean;
+  
+  // Actions - 데이터 패칭
+  fetchAllStaff: () => Promise<void>;
+  
   // Actions - 기본정보
   setAuthor: (author: string) => void;
   setVessel: (vessel: string) => void;
@@ -151,6 +154,10 @@ interface WorkReportState {
   toggleVehicle: (vehicle: string) => void;
   setVehicles: (vehicles: string[]) => void;
   setSubject: (subject: string) => void;
+  
+  // Actions - 모드/추가필드 (삭제했던 중복 제거 확인됨)
+  setReportType: (type: 'work' | 'education') => void;
+  setInstructor: (name: string) => void;
   
   // Actions - 작업자
   addWorker: (name: string) => void;
@@ -215,7 +222,9 @@ const initialCurrentEntry: Partial<WorkLogEntry> = {
 
 export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   // 초기 상태
+  reportType: 'work',
   author: '',
+  instructor: '', // 초기화
   vessel: '',
   engine: '',
   orderGroup: '',
@@ -233,6 +242,26 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   editingExpenseId: null,
   materials: [],
   uploadedFiles: [],
+  allStaff: [],
+  staffLoading: false,
+  
+  // 데이터 패칭 Actions
+  fetchAllStaff: async () => {
+    set({ staffLoading: true });
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, position, region, department')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      set({ allStaff: data || [] });
+    } catch (err) {
+      console.error('Failed to fetch staff data:', err);
+    } finally {
+      set({ staffLoading: false });
+    }
+  },
   
   // 기본정보 Actions
   setAuthor: (author) => set({ author }),
@@ -250,6 +279,9 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   setVehicles: (vehicles) => set({ vehicles }),
   setSubject: (subject) => set({ subject }),
   
+  setReportType: (reportType) => set({ reportType }),
+  setInstructor: (instructor) => set({ instructor }),
+  
   // 작업자 Actions
   addWorker: (name) => set((state) => {
     const trimmed = name.trim();
@@ -263,7 +295,10 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     workers: state.workers.filter((w) => w !== name),
   })),
   addWorkersByRegion: (region) => set((state) => {
-    const regionWorkers = REGION_GROUPS[region] || [];
+    const regionWorkers = state.allStaff
+      .filter((s) => s.region === region)
+      .map((s) => s.name);
+    
     const newWorkers = regionWorkers.filter(
       (w) => !state.workers.some((existing) => existing.toLowerCase() === w.toLowerCase())
     );
@@ -285,7 +320,10 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     currentEntryPersons: [...state.workers],
   })),
   addRegionPersonsToEntry: (region) => set((state) => {
-    const regionWorkers = REGION_GROUPS[region] || [];
+    const regionWorkers = state.allStaff
+      .filter((s) => s.region === region)
+      .map((s) => s.name);
+      
     const validWorkers = regionWorkers.filter((w) =>
       state.workers.includes(w) && !state.currentEntryPersons.includes(w)
     );
@@ -438,7 +476,9 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   
   // 전체 Actions
   resetForm: () => set({
+    reportType: 'work',
     author: '',
+    instructor: '',
     vessel: '',
     engine: '',
     orderGroup: '',

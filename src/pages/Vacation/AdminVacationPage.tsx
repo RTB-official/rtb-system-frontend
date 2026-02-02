@@ -20,6 +20,7 @@ import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
 import { calculateAnnualLeave } from "../../lib/vacationCalculator";
 import { useToast } from "../../components/ui/ToastProvider";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 
 // 직원별 통계
 interface EmployeeStats {
@@ -49,6 +50,7 @@ export default function AdminVacationPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [year, setYear] = useState(() => String(new Date().getFullYear()));
     const [loading, setLoading] = useState(false);
+    const [calculateConfirmOpen, setCalculateConfirmOpen] = useState(false);
 
     // 직원별 통계
     const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
@@ -404,11 +406,12 @@ export default function AdminVacationPage() {
         }
     };
 
-    // 모든 직원의 연차 계산 (2025년부터)
-    const handleCalculateAllVacations = async () => {
-        if (!confirm("모든 직원의 연차를 2025년부터 현재 연도까지 계산하시겠습니까?\n이 작업은 시간이 걸릴 수 있습니다.")) {
-            return;
-        }
+    const handleCalculateAllVacations = () => {
+        setCalculateConfirmOpen(true);
+    };
+
+    const confirmCalculateAllVacations = async () => {
+        setCalculateConfirmOpen(false);
 
         try {
             setLoading(true);
@@ -765,6 +768,16 @@ export default function AdminVacationPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={calculateConfirmOpen}
+                onClose={() => setCalculateConfirmOpen(false)}
+                onConfirm={confirmCalculateAllVacations}
+                title="연차 일괄 계산"
+                message={"모든 직원의 연차를 2025년부터 현재 연도까지 계산하시겠습니까?\n이 작업은 시간이 걸릴 수 있습니다."}
+                confirmText="계산 시작"
+                cancelText="취소"
+            />
         </div>
     );
 }

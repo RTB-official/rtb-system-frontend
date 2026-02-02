@@ -128,28 +128,6 @@ function calcWorkMinutesWithLunchRule(params: {
     return result < 0 ? 0 : result;
 }
 
-function calcMinutes(params: {
-    dateFrom: string;
-    timeFrom?: string;
-    dateTo: string;
-    timeTo?: string;
-}) {
-    const { dateFrom, timeFrom, dateTo, timeTo } = params;
-
-    const from = normalizeTime(timeFrom);
-    const to = normalizeTime(timeTo);
-
-    if (!dateFrom || !dateTo || !from || !to) return 0;
-
-    const start = toDateSafe(dateFrom, from);
-    const end = toDateSafe(dateTo, to);
-
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
-    if (end <= start) return 0;
-
-    return Math.floor((end.getTime() - start.getTime()) / 60000);
-}
 
 function formatHoursMinutes(totalMinutes: number) {
     const h = Math.floor(totalMinutes / 60);
@@ -282,6 +260,7 @@ export default function ReportViewPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ViewData | null>(null);
+    const [reportType, setReportType] = useState<"work" | "education">("work");
 
     const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
     const [receiptLoading, setReceiptLoading] = useState(false);
@@ -330,6 +309,10 @@ export default function ReportViewPage() {
                     return;
                 }
                 setData(res as ViewData);
+
+                // 리포트 타입 판별
+                const isEducation = res.workLog.subject?.includes("[교육]");
+                setReportType(isEducation ? "education" : "work");
 
 
 // ✅ TimelineSummarySection을 위한 WorkLogEntry 형식으로 변환하여 store에 주입
@@ -393,6 +376,7 @@ try {
     }, [id]);
 
     const workLog = data?.workLog;
+    const isEducationReport = reportType === "education";
 
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
@@ -418,7 +402,7 @@ try {
             {/* Main */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
-                    title="출장 보고서 보기"
+                    title={reportType === "work" ? "출장 보고서 보기" : "교육 보고서 보기"}
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         <div className="flex items-center gap-3">
@@ -490,29 +474,48 @@ try {
                 {loading ? (
                     <CreationSkeleton />
                 ) : (
-                    <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-12 lg:px-24 xl:px-48 py-6 md:py-9">
+                    <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-12 lg:px-24 xl:px-48 pt-6 md:pt-9 pb-12 md:pb-14">
                         <div className="max-w-[960px] mx-auto flex flex-col gap-4 md:gap-6">
                             {/* 기본 정보 */}
                             <SectionCard title="기본 정보">
                                 <div className="bg-white border border-gray-200 rounded-2xl divide-y">
                                     {/* 핵심 정보 */}
                                     <div className="grid grid-cols-1 md:grid-cols-[120px_220px_1fr] gap-4 p-5">
+                                        {reportType === "work" ? (
+                                            <>
+                                                <div>
+                                                    <p className="text-xs text-gray-400 mb-1">호선</p>
+                                                    <p className="text-lg font-semibold text-gray-900">
+                                                        {workLog?.vessel?.trim() ? workLog.vessel : "—"}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-gray-400 mb-1">엔진</p>
+                                                    <p className="text-lg font-semibold text-gray-900">
+                                                        {workLog?.engine?.trim() ? workLog.engine : "—"}
+                                                    </p>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div>
+                                                    <p className="text-xs text-gray-400 mb-1">교육 강사</p>
+                                                    <p className="text-lg font-semibold text-gray-900">
+                                                        {workLog?.order_person?.trim() ? workLog.order_person : "—"}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-gray-400 mb-1">교육 장소</p>
+                                                    <p className="text-lg font-semibold text-gray-900">
+                                                        {workLog?.location?.trim() ? workLog.location : "—"}
+                                                    </p>
+                                                </div>
+                                            </>
+                                        )}
                                         <div>
-                                            <p className="text-xs text-gray-400 mb-1">호선</p>
-                                            <p className="text-lg font-semibold text-gray-900">
-                                                {workLog?.vessel?.trim() ? workLog.vessel : "—"}
+                                            <p className="text-xs text-gray-400 mb-1">
+                                                {reportType === "work" ? "목적(제목)" : "교육 내용(제목)"}
                                             </p>
-                                        </div>
-
-                                        <div>
-                                            <p className="text-xs text-gray-400 mb-1">엔진</p>
-                                            <p className="text-lg font-semibold text-gray-900">
-                                                {workLog?.engine?.trim() ? workLog.engine : "—"}
-                                            </p>
-                                        </div>
-
-                                        <div>
-                                            <p className="text-xs text-gray-400 mb-1">목적(제목)</p>
                                             <p className="text-lg font-semibold text-gray-900">
                                                 {workLog?.subject?.trim() ? workLog.subject : "—"}
                                             </p>
@@ -521,33 +524,34 @@ try {
 
                                     {/* 상세 정보 */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 p-5 text-sm">
-                                        <div className="flex">
-                                            <span className="w-28 text-gray-400 shrink-0">출장지</span>
-                                            <span className="text-gray-900">
-                                                {workLog?.location?.trim() ? workLog.location : "—"}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex">
-                                            <span className="w-28 text-gray-400 shrink-0">작업 지시</span>
-                                            <span className="text-gray-900">
-                                                {workLog?.order_group?.trim() ? workLog.order_group : "—"}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex">
-                                            <span className="w-28 text-gray-400 shrink-0">참관감독</span>
-                                            <span className="text-gray-900">
-                                                {workLog?.order_person?.trim() ? workLog.order_person : "—"}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex">
-                                            <span className="w-28 text-gray-400 shrink-0">차량</span>
-                                            <span className="text-gray-900">
-                                                {workLog?.vehicle?.trim() ? workLog.vehicle : "—"}
-                                            </span>
-                                        </div>
+                                        {reportType === "work" ? (
+                                            <>
+                                                <div className="flex">
+                                                    <span className="w-28 text-gray-400 shrink-0">출장지</span>
+                                                    <span className="text-gray-900">
+                                                        {workLog?.location?.trim() ? workLog.location : "—"}
+                                                    </span>
+                                                </div>
+                                                <div className="flex">
+                                                    <span className="w-28 text-gray-400 shrink-0">작업 지시</span>
+                                                    <span className="text-gray-900">
+                                                        {workLog?.order_group?.trim() ? workLog.order_group : "—"}
+                                                    </span>
+                                                </div>
+                                                <div className="flex">
+                                                    <span className="w-28 text-gray-400 shrink-0">참관감독</span>
+                                                    <span className="text-gray-900">
+                                                        {workLog?.order_person?.trim() ? workLog.order_person : "—"}
+                                                    </span>
+                                                </div>
+                                                <div className="flex">
+                                                    <span className="w-28 text-gray-400 shrink-0">차량</span>
+                                                    <span className="text-gray-900">
+                                                        {workLog?.vehicle?.trim() ? workLog.vehicle : "—"}
+                                                    </span>
+                                                </div>
+                                            </>
+                                        ) : null}
 
                                         <div className="flex">
                                             <span className="w-28 text-gray-400 shrink-0">작성자 / 작성일</span>
@@ -560,11 +564,11 @@ try {
                                         </div>
 
                                         <div className="flex">
-                                            <span className="w-28 text-gray-400 shrink-0">투입 인원</span>
+                                            <span className="w-28 text-gray-400 shrink-0">
+                                                {reportType === "work" ? "투입 인원" : "교육 참석자"}
+                                            </span>
                                             <span className="text-gray-900">
-                                            {data?.workers?.length
-                                                ? data?.workers?.join(", ")
-                                                : "—"}
+                                                {data?.workers?.length ? data?.workers?.join(", ") : "—"}
                                             </span>
                                         </div>
                                     </div>
@@ -974,25 +978,26 @@ try {
     )}
 </SectionCard>
 
-{/* 타임라인 */}
-<SectionCard
-    title="타임라인"
-    headerContent={
-        <WorkloadLegend
-            items={[
-                { key: "work", label: "작업", color: "#3b82f6" },
-                { key: "move", label: "이동", color: "#10b981" },
-                { key: "wait", label: "대기", color: "#f59e0b" },
-            ]}
-            className="flex items-center gap-4"
-            itemClassName="flex items-center gap-1.5"
-            labelClassName="text-[12px] text-[#6a7282]"
-            swatchClassName="w-[14px] h-[14px] rounded-md"
-        />
-    }
->
-<TimelineSummarySection />
-</SectionCard>
+{!isEducationReport && (
+    <SectionCard
+        title="타임라인"
+        headerContent={
+            <WorkloadLegend
+                items={[
+                    { key: "work", label: "작업", color: "#3b82f6" },
+                    { key: "move", label: "이동", color: "#10b981" },
+                    { key: "wait", label: "대기", color: "#f59e0b" },
+                ]}
+                className="flex items-center gap-4"
+                itemClassName="flex items-center gap-1.5"
+                labelClassName="text-[12px] text-[#6a7282]"
+                swatchClassName="w-[14px] h-[14px] rounded-md"
+            />
+        }
+    >
+        <TimelineSummarySection />
+    </SectionCard>
+)}
 
 
                         </div>

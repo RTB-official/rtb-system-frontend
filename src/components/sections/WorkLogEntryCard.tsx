@@ -98,7 +98,7 @@ export default function WorkLogEntryCard({
                     >
                         <IconChevronRight
                             className={`w-5 h-5 transition-transform duration-200 ${
-                                isExpanded ? "rotate-90" : ""
+                                isExpanded ? "-rotate-90" : "rotate-90"
                             }`}
                         />
                     </button>

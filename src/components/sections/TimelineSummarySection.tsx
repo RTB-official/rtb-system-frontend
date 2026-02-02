@@ -2,6 +2,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { useWorkReportStore } from "../../store/workReportStore";
 import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
+import SectionCard from "../ui/SectionCard";
 
 // 분 → 시간 문자열 (0.5시간 단위)
 const toHourStr = (minutes: number): string => {
@@ -491,10 +492,7 @@ const personChunks = useMemo(() => {
 
     if (overallGroups.length === 0) {
         return (
-            <div className="bg-white p-4 md:p-7" style={{ width: "100%" }}>
-                <h2 className="text-[18px] md:text-[22px] font-semibold text-[#364153] mb-4">
-                    타임라인
-                </h2>
+            <div className="w-full">
                 <p className="text-[#99a1af] text-center py-8">
                     저장된 스케줄이 없습니다.
                 </p>
@@ -549,7 +547,7 @@ const personChunks = useMemo(() => {
     };
 
     return (
-        <div className="bg-white" style={{ width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
+        <>
             {/* 그룹별 타임라인 */}
             <div className="flex flex-col gap-8" style={{ width: "100%" }}>
                 {overallGroups.map((group, groupIdx) => {
@@ -957,6 +955,6 @@ const personChunks = useMemo(() => {
                     position={hoveredSegment.position}
                 />
             )}
-        </div>
+        </>
     );
 }

@@ -1,11 +1,9 @@
-//workerSection.tsx
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import SectionCard from "../ui/SectionCard";
 import TextInput from "../ui/TextInput";
 import Button from "../common/Button";
 import { useWorkReportStore } from "../../store/workReportStore";
 import { IconClose } from "../icons/Icons";
-import { supabase } from "../../lib/supabase";
 
 // 직급 순서 정의 (높은 순)
 const ROLE_ORDER: Record<string, number> = {
@@ -20,21 +18,17 @@ const ROLE_ORDER: Record<string, number> = {
     "인턴": 9,
 };
 
-type StaffMember = {
-    name: string;
-    position: string;
-    department: string;
-};
+interface WorkerSectionProps {
+    title?: string;
+}
 
-export default function WorkerSection() {
-    const { workers, addWorker, removeWorker } = useWorkReportStore();
+export default function WorkerSection({ title = "전체 인원" }: WorkerSectionProps) {
+    const { workers, addWorker, removeWorker, allStaff, staffLoading: loading } = useWorkReportStore();
     const [showDirectInput, setShowDirectInput] = useState(false);
     const [adminTeamOpen, setAdminTeamOpen] = useState(false); // 공무팀 기본 숨김(접힘)
     const [inputValue, setInputValue] = useState("");
     const [isAdding, setIsAdding] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
-    const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
-    const [loading, setLoading] = useState(true);
 
     const handleAddWorker = () => {
         if (isAdding) return; // 이미 추가 중이면 무시
@@ -68,44 +62,11 @@ export default function WorkerSection() {
         }
     };
 
-    // 구성원 데이터 로드
-    useEffect(() => {
-        const fetchStaffMembers = async () => {
-            try {
-                setLoading(true);
-                const { data, error } = await supabase
-                    .from("profiles")
-                    .select("name, position, department")
-                    .not("name", "is", null)
-                    .neq("name", "");
-
-                if (error) {
-                    console.error("구성원 데이터 로드 실패:", error);
-                    return;
-                }
-
-                const members: StaffMember[] = (data || []).map((p: any) => ({
-                    name: p.name ?? "",
-                    position: p.position ?? p.role ?? "",
-                    department: p.department ?? "",
-                }));
-
-                setStaffMembers(members);
-            } catch (err) {
-                console.error("구성원 데이터 로드 중 오류:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchStaffMembers();
-    }, []);
-
     // 공무팀과 일반 직원 분리
-    const adminTeamMembers = staffMembers.filter(
+    const adminTeamMembers = allStaff.filter(
         (m) => m.department === "공무팀"
     );
-    const regularMembers = staffMembers.filter(
+    const regularMembers = allStaff.filter(
         (m) => m.department !== "공무팀"
     );
 
@@ -154,7 +115,7 @@ export default function WorkerSection() {
         });
 
     return (
-        <SectionCard title="전체 인원">
+        <SectionCard title={title}>
             <div className="flex flex-col gap-4">
                 {loading ? (
                     <div className="text-center text-gray-500 py-4">

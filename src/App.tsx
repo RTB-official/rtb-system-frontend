@@ -15,7 +15,7 @@ const DashboardPage = lazy(() => import("./pages/Dashboard/DashboardPage"));
 const WorkloadPage = lazy(() => import("./pages/Workload/WorkloadPage"));
 const WorkloadDetailPage = lazy(() => import("./pages/Workload/WorkloadDetailPage"));
 
-const CreationPage = lazy(() => import("./pages/Creation/CreationPage"));
+const CreationPage = lazy(() => import("./pages/Report/ReportCreatePage"));
 const ReportListPage = lazy(() => import("./pages/Report/ReportListPage"));
 const ReportEditPage = lazy(() => import("./pages/Report/ReportEditPage"));
 const ReportViewPage = lazy(() => import("./pages/Report/ReportViewPage"));

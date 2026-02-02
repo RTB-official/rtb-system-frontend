@@ -86,6 +86,7 @@ export interface CreateWorkLogInput {
     subject?: string;
     workers?: string[];
     entries?: Array<{
+        id?: number;
         dateFrom: string;
         timeFrom?: string;
         dateTo: string;
@@ -319,7 +320,7 @@ export async function createWorkLog(
             }
         }
 
-        // 6. 첨부파일 저장 (work_log_receipts)
+        // 6. 첨부파일 저장 (work_log_receipt)
         if (data.receipts && data.receipts.length > 0) {
             const receiptsData = data.receipts.map((receipt) => ({
                 work_log_id: workLogId,
@@ -331,7 +332,7 @@ export async function createWorkLog(
             }));
 
             const { error: receiptsError } = await supabase
-                .from("work_log_receipts")
+                .from("work_log_receipt")
                 .insert(receiptsData);
 
             if (receiptsError) {
@@ -408,7 +409,7 @@ export async function uploadReceiptFile(
         });
 
     if (uploadError) {
-        throw new Error(`파일 업로드 실패: ${uploadError.message || uploadError.error || "알 수 없는 오류"}`);
+        throw new Error(`파일 업로드 실패: ${uploadError.message || "알 수 없는 오류"}`);
     }
 
     return filePath;
@@ -641,10 +642,9 @@ export async function updateWorkLog(
     }
 
     try {
-        // 2. 기존 관련 데이터 삭제
+        // 2. 기존 관련 데이터 삭제 (entries는 변경 감지를 위해 개별 update 처리)
         await Promise.all([
             supabase.from("work_log_persons").delete().eq("work_log_id", workLogId),
-            supabase.from("work_log_entries").delete().eq("work_log_id", workLogId),
             supabase.from("work_log_expenses").delete().eq("work_log_id", workLogId),
             supabase.from("work_log_materials").delete().eq("work_log_id", workLogId),
         ]);
@@ -669,39 +669,98 @@ export async function updateWorkLog(
         }
 
         // 4. 업무 일지 저장 (work_log_entries + work_log_entry_persons)
-        if (data.entries && data.entries.length > 0) {
-            for (const entry of data.entries) {
-                const { data: entryData, error: entryError } = await supabase
+        const incomingEntries = data.entries ?? [];
+        const { data: existingEntries, error: existingEntriesError } =
+            await supabase
+                .from("work_log_entries")
+                .select("id")
+                .eq("work_log_id", workLogId);
+
+        if (existingEntriesError) {
+            console.error("Error loading work log entries:", existingEntriesError);
+            throw new Error(
+                `업무 일지 조회 실패: ${existingEntriesError.message}`
+            );
+        }
+
+        const existingIds = new Set(
+            (existingEntries || []).map((entry) => entry.id)
+        );
+        const incomingIds = new Set(
+            incomingEntries
+                .map((entry) => entry.id)
+                .filter((id): id is number => typeof id === "number")
+        );
+
+        const idsToDelete = (existingEntries || [])
+            .map((entry) => entry.id)
+            .filter((id) => !incomingIds.has(id));
+
+        if (idsToDelete.length > 0) {
+            await Promise.all([
+                supabase
+                    .from("work_log_entry_persons")
+                    .delete()
+                    .in("entry_id", idsToDelete),
+                supabase.from("work_log_entries").delete().in("id", idsToDelete),
+            ]);
+        }
+
+        for (const entry of incomingEntries) {
+            const payload = {
+                work_log_id: workLogId,
+                date_from: entry.dateFrom || null,
+                time_from: entry.timeFrom || null,
+                date_to: entry.dateTo || null,
+                time_to: entry.timeTo || null,
+                desc_type: entry.descType,
+                details: entry.details || null,
+                note: entry.note || null,
+                move_from: entry.moveFrom || null,
+                move_to: entry.moveTo || null,
+                lunch_worked: entry.lunch_worked ?? false,
+            };
+
+            let entryId: number | null = null;
+
+            if (entry.id && existingIds.has(entry.id)) {
+                const { error: entryUpdateError } = await supabase
                     .from("work_log_entries")
-                    .insert([
-                        {
-                            work_log_id: workLogId,
-                            date_from: entry.dateFrom || null,
-                            time_from: entry.timeFrom || null,
-                            date_to: entry.dateTo || null,
-                            time_to: entry.timeTo || null,
-                            desc_type: entry.descType,
-                            details: entry.details || null,
-                            note: entry.note || null,
-                            move_from: entry.moveFrom || null,
-                            move_to: entry.moveTo || null,
-                            lunch_worked: entry.lunch_worked ?? false,
-                        },
-                    ])
+                    .update(payload)
+                    .eq("id", entry.id);
+
+                if (entryUpdateError) {
+                    console.error("Error updating work log entry:", entryUpdateError);
+                    throw new Error(
+                        `업무 일지 수정 실패: ${entryUpdateError.message}`
+                    );
+                }
+                entryId = entry.id;
+            } else {
+                const { data: entryData, error: entryInsertError } = await supabase
+                    .from("work_log_entries")
+                    .insert([payload])
                     .select()
                     .single();
 
-                if (entryError) {
-                    console.error("Error creating work log entry:", entryError);
+                if (entryInsertError) {
+                    console.error("Error creating work log entry:", entryInsertError);
                     throw new Error(
-                        `업무 일지 저장 실패: ${entryError.message}`
+                        `업무 일지 저장 실패: ${entryInsertError.message}`
                     );
                 }
+                entryId = entryData?.id ?? null;
+            }
 
-                // 각 entry의 참여자 저장
-                if (entry.persons && entry.persons.length > 0 && entryData) {
+            if (entryId) {
+                await supabase
+                    .from("work_log_entry_persons")
+                    .delete()
+                    .eq("entry_id", entryId);
+
+                if (entry.persons && entry.persons.length > 0) {
                     const entryPersonsData = entry.persons.map((name) => ({
-                        entry_id: entryData.id,
+                        entry_id: entryId,
                         person_name: name,
                     }));
 
@@ -963,9 +1022,9 @@ export async function deleteWorkLog(workLogId: number): Promise<void> {
             .delete()
             .eq("work_log_id", workLogId);
 
-        // work_log_receipts
+        // work_log_receipt
         await supabase
-            .from("work_log_receipts")
+            .from("work_log_receipt")
             .delete()
             .eq("work_log_id", workLogId);
 

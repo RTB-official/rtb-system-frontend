@@ -11,6 +11,7 @@ import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import PersonalExpenseSkeleton from "../../components/common/PersonalExpenseSkeleton";
 import { useAuth } from "../../store/auth";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import {
     createPersonalExpense,
     createPersonalMileage,
@@ -43,6 +44,12 @@ export default function PersonalExpensePage() {
     const [loading, setLoading] = useState(false);
     const [expenses, setExpenses] = useState<PersonalExpense[]>([]);
     const [mileages, setMileages] = useState<PersonalMileage[]>([]);
+
+    const [confirmState, setConfirmState] = useState<{
+        open: boolean;
+        type: "mileage" | "expense" | "submit_all";
+        id?: number;
+    }>({ open: false, type: "mileage" });
 
     const allItemsToSubmitCount = useMemo(() => {
         // is_submitted가 false인 항목만 카운트
@@ -77,48 +84,47 @@ export default function PersonalExpensePage() {
     }, []);
 
     // 데이터 로드
-    useEffect(() => {
+    const loadData = async () => {
         if (!user?.id) return;
+        setLoading(true);
+        try {
+            const yearNum = parseInt(year.replace("년", ""));
+            const monthNum = parseInt(month.replace("월", "")) - 1;
 
-        const loadData = async () => {
-            setLoading(true);
-            try {
-                const yearNum = parseInt(year.replace("년", ""));
-                const monthNum = parseInt(month.replace("월", "")) - 1;
+            const [expensesData, mileagesData] = await Promise.all([
+                getPersonalExpenses(user.id, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+                getPersonalMileages(user.id, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+            ]);
 
-                const [expensesData, mileagesData] = await Promise.all([
-                    getPersonalExpenses(user.id, {
-                        year: yearNum,
-                        month: monthNum,
-                    }),
-                    getPersonalMileages(user.id, {
-                        year: yearNum,
-                        month: monthNum,
-                    }),
-                ]);
+            setExpenses(expensesData);
+            setMileages(mileagesData);
 
-                setExpenses(expensesData);
-                setMileages(mileagesData);
+            // 제출된 항목 ID 추출 (백엔드에서 가져온 is_submitted 필드 기반)
+            const submittedExpenseIds = expensesData
+                .filter((e) => e.is_submitted)
+                .map((e) => e.id);
+            const submittedMileageIds = mileagesData
+                .filter((m) => m.is_submitted)
+                .map((m) => m.id);
+            setSubmittedIds([
+                ...submittedExpenseIds,
+                ...submittedMileageIds,
+            ]);
+        } catch (error) {
+            console.error("데이터 로드 실패:", error);
+            showError("데이터를 불러오는데 실패했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
-                // 제출된 항목 ID 추출 (백엔드에서 가져온 is_submitted 필드 기반)
-                const submittedExpenseIds = expensesData
-                    .filter((e) => e.is_submitted)
-                    .map((e) => e.id);
-                const submittedMileageIds = mileagesData
-                    .filter((m) => m.is_submitted)
-                    .map((m) => m.id);
-                setSubmittedIds([
-                    ...submittedExpenseIds,
-                    ...submittedMileageIds,
-                ]);
-            } catch (error) {
-                console.error("데이터 로드 실패:", error);
-                showError("데이터를 불러오는데 실패했습니다.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
+    useEffect(() => {
         loadData();
     }, [user?.id, year, month]);
 
@@ -171,14 +177,7 @@ export default function PersonalExpensePage() {
                 amount_won: calculatedCost,
             });
 
-            // 목록 새로고침
-            const yearNum = parseInt(year.replace("년", ""));
-            const monthNum = parseInt(month.replace("월", "")) - 1;
-            const data = await getPersonalMileages(user.id, {
-                year: yearNum,
-                month: monthNum,
-            });
-            setMileages(data);
+            await loadData();
         } catch (error: any) {
             console.error("마일리지 등록 실패:", error);
             showError(error.message || "마일리지 등록에 실패했습니다.");
@@ -231,14 +230,7 @@ export default function PersonalExpensePage() {
                 receipt_path: receiptPath,
             });
 
-            // 목록 새로고침
-            const yearNum = parseInt(year.replace("년", ""));
-            const monthNum = parseInt(month.replace("월", "")) - 1;
-            const data = await getPersonalExpenses(user.id, {
-                year: yearNum,
-                month: monthNum,
-            });
-            setExpenses(data);
+            await loadData();
         } catch (error: any) {
             console.error("지출 등록 실패:", error);
             showError(error.message || "지출 등록에 실패했습니다.");
@@ -246,18 +238,20 @@ export default function PersonalExpensePage() {
     };
 
     // 마일리지 삭제 핸들러
-    const handleRemoveMileage = async (id: number) => {
+    const handleRemoveMileage = (id: number) => {
         if (!user?.id) {
             showError("로그인이 필요합니다.");
             return;
         }
+        setConfirmState({ open: true, type: "mileage", id });
+    };
 
-        if (!confirm("정말 삭제하시겠습니까?")) return;
-
+    const confirmRemoveMileage = async (id: number) => {
+        if (!user?.id) return;
         try {
             await deletePersonalMileage(id, user.id);
-            setMileages((prev) => prev.filter((item) => item.id !== id));
-            setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
+            showSuccess("삭제되었습니다.");
+            await loadData();
         } catch (error: any) {
             console.error("마일리지 삭제 실패:", error);
             showError(error.message || "마일리지 삭제에 실패했습니다.");
@@ -265,18 +259,20 @@ export default function PersonalExpensePage() {
     };
 
     // 지출 삭제 핸들러
-    const handleRemoveExpense = async (id: number) => {
+    const handleRemoveExpense = (id: number) => {
         if (!user?.id) {
             showError("로그인이 필요합니다.");
             return;
         }
+        setConfirmState({ open: true, type: "expense", id });
+    };
 
-        if (!confirm("정말 삭제하시겠습니까?")) return;
-
+    const confirmRemoveExpense = async (id: number) => {
+        if (!user?.id) return;
         try {
             await deletePersonalExpense(id, user.id);
-            setExpenses((prev) => prev.filter((item) => item.id !== id));
-            setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
+            showSuccess("삭제되었습니다.");
+            await loadData();
         } catch (error: any) {
             console.error("지출 삭제 실패:", error);
             showError(error.message || "지출 삭제에 실패했습니다.");
@@ -348,37 +344,29 @@ export default function PersonalExpensePage() {
     }, [expenses, year, month]);
 
     // 모두 제출 핸들러
-    const handleSubmitAll = async () => {
+    const handleSubmitAll = () => {
         if (!user?.id) {
             showError("로그인이 필요합니다.");
             return;
         }
 
-        const unsubmittedExpenses = expenses.filter(
-            (item) => !item.is_submitted
-        );
-        const unsubmittedMileages = mileages.filter(
-            (item) => !item.is_submitted
-        );
-
-        const currentItemsToSubmitCount =
-            unsubmittedExpenses.length + unsubmittedMileages.length;
-
-        if (currentItemsToSubmitCount === 0) {
+        if (allItemsToSubmitCount === 0) {
             showError("제출할 항목이 없습니다.");
             return;
         }
 
-        const confirmSubmit = window.confirm(
-            `총 ${currentItemsToSubmitCount}개의 항목을 제출하시겠습니까?`
-        );
-        if (!confirmSubmit) return;
+        setConfirmState({ open: true, type: "submit_all" });
+    };
+
+    const confirmSubmitAll = async () => {
+        if (!user?.id) return;
+
+        const unsubmittedExpenses = expenses.filter((item) => !item.is_submitted);
+        const unsubmittedMileages = mileages.filter((item) => !item.is_submitted);
 
         try {
-            // 백엔드에 제출 상태 업데이트
             const updatePromises: Promise<any>[] = [];
 
-            // 지출 항목 제출 상태 업데이트
             for (const expense of unsubmittedExpenses) {
                 updatePromises.push(
                     updatePersonalExpense(expense.id, user.id, {
@@ -387,7 +375,6 @@ export default function PersonalExpensePage() {
                 );
             }
 
-            // 마일리지 항목 제출 상태 업데이트
             for (const mileage of unsubmittedMileages) {
                 updatePromises.push(
                     updatePersonalMileage(mileage.id, user.id, {
@@ -397,34 +384,8 @@ export default function PersonalExpensePage() {
             }
 
             await Promise.all(updatePromises);
-
-            // 데이터 새로고침
-            const yearNum = parseInt(year.replace("년", ""));
-            const monthNum = parseInt(month.replace("월", "")) - 1;
-            const [expensesData, mileagesData] = await Promise.all([
-                getPersonalExpenses(user.id, {
-                    year: yearNum,
-                    month: monthNum,
-                }),
-                getPersonalMileages(user.id, {
-                    year: yearNum,
-                    month: monthNum,
-                }),
-            ]);
-
-            setExpenses(expensesData);
-            setMileages(mileagesData);
-
-            // 제출된 항목 ID 업데이트
-            const submittedExpenseIds = expensesData
-                .filter((e) => e.is_submitted)
-                .map((e) => e.id);
-            const submittedMileageIds = mileagesData
-                .filter((m) => m.is_submitted)
-                .map((m) => m.id);
-            setSubmittedIds([...submittedExpenseIds, ...submittedMileageIds]);
-
-            showSuccess(`총 ${currentItemsToSubmitCount}개의 항목이 제출되었습니다.`);
+            showSuccess(`총 ${allItemsToSubmitCount}개의 항목이 제출되었습니다.`);
+            await loadData();
         } catch (error: any) {
             console.error("제출 실패:", error);
             showError(error.message || "제출에 실패했습니다.");
@@ -539,6 +500,33 @@ export default function PersonalExpensePage() {
                     )}
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={confirmState.open}
+                onClose={() => setConfirmState({ ...confirmState, open: false })}
+                onConfirm={() => {
+                    if (confirmState.type === "mileage" && confirmState.id) {
+                        confirmRemoveMileage(confirmState.id);
+                    } else if (confirmState.type === "expense" && confirmState.id) {
+                        confirmRemoveExpense(confirmState.id);
+                    } else if (confirmState.type === "submit_all") {
+                        confirmSubmitAll();
+                    }
+                    setConfirmState({ ...confirmState, open: false });
+                }}
+                title={
+                    confirmState.type === "submit_all" ? "청구 제출" : "항목 삭제"
+                }
+                message={
+                    confirmState.type === "submit_all"
+                        ? `총 ${allItemsToSubmitCount}개의 항목을 제출하시겠습니까?`
+                        : "정말 삭제하시겠습니까?"
+                }
+                confirmText={confirmState.type === "submit_all" ? "제출" : "삭제"}
+                confirmVariant={
+                    confirmState.type === "submit_all" ? "primary" : "danger"
+                }
+            />
         </div>
     );
 }

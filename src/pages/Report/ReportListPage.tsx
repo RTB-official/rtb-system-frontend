@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
+import Tabs from "../../components/common/Tabs";
 import Input from "../../components/common/Input";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
@@ -47,6 +48,9 @@ export default function ReportListPage() {
     const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
     const [loading, setLoading] = useState(true);
+    // ✅ 탭 상태 추가 ("work" | "education")
+    const [activeTab, setActiveTab] = useState<"work" | "education">("work");
+    
     const itemsPerPage = 10;
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
@@ -64,8 +68,6 @@ export default function ReportListPage() {
           try {
             // ✅ 여기서 바로 소비
             sessionStorage.setItem("rtb:safety_toast_pending", "0");
-      
-
       
             const { data: settings } = await supabase
             .from("safe_settings")
@@ -102,11 +104,6 @@ export default function ReportListPage() {
       
         run();
       }, [showSuccess]);
-      
-
-    
-
-    
 
 // 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
 const formatDate = (dateString: string) => {
@@ -116,8 +113,6 @@ const formatDate = (dateString: string) => {
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}.${month}.${day}.`;
 };
-
-
 
 // ✅ 기간 표기용 (한국어)
 const formatKoreanDate = (dateString: string) => {
@@ -148,23 +143,7 @@ const formatKoreanPeriod = (start?: string, end?: string) => {
 };
 
 
-// ✅ 기간 포맷팅 (start~end)
-// - WorkLog 필드명이 프로젝트마다 다를 수 있어서 여러 후보를 안전하게 확인합니다.
-const formatPeriod = (start?: string | null, end?: string | null) => {
-    if (!start && !end) return null;
 
-    const fmt = (d: string) => {
-        const date = new Date(d);
-        const y = date.getFullYear();
-        const m = String(date.getMonth() + 1).padStart(2, "0");
-        const day = String(date.getDate()).padStart(2, "0");
-        return `${y}.${m}.${day}`;
-    };
-
-    if (start && end) return `${fmt(start)}~${fmt(end)}`;
-    if (start) return `${fmt(start)}`;
-    return `${fmt(end!)}`;
-};
 
 // WorkLog를 ReportItem으로 변환
 const convertToReportItem = (workLog: WorkLog): ReportItem => {
@@ -180,8 +159,6 @@ const convertToReportItem = (workLog: WorkLog): ReportItem => {
         status: workLog.is_draft ? "pending" : "submitted",
     };
 };
-
-
 
     // 데이터 로드
     const loadReports = async () => {
@@ -272,9 +249,6 @@ const convertToReportItem = (workLog: WorkLog): ReportItem => {
             }
 
             const reportItems = workLogs.map(convertToReportItem);
-
-
-
 
 // ✅ WorkLog id 목록
 const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
@@ -411,6 +385,7 @@ const reportsWithTitle = reportItems.map((item) => {
     };
 
     const filtered = useMemo(() => {
+        // ... (getRange, overlapsMonth 함수 생략 - 기존 코드 유지)
         const getRange = (r: ReportItem) => {
             const startRaw = r.periodStart || r.periodEnd || r.createdAt || "";
             const endRaw = r.periodEnd || r.periodStart || r.createdAt || "";
@@ -447,6 +422,17 @@ const reportsWithTitle = reportItems.map((item) => {
 
         const q = search.trim().toLowerCase();
         return reports.filter((r) => {
+            // 1. 교육 보고서 필터링 (제목에 '교육' 포함 여부)
+            const isEducation = r.title.includes("교육");
+            
+            // 탭에 따른 필터링
+            if (activeTab === "education") {
+                if (!isEducation) return false;
+            } else {
+                // work 탭에서는 교육 보고서 제외
+                if (isEducation) return false;
+            }
+
             const matchSearch =
                 q === "" ||
                 r.title.toLowerCase().includes(q) ||
@@ -473,11 +459,11 @@ const reportsWithTitle = reportItems.map((item) => {
 
             return matchSearch && matchYear && matchMonth;
         });
-    }, [reports, search, year, month]);
+    }, [reports, search, year, month, activeTab]);
 
     useEffect(() => {
         setCurrentPage(1);
-    }, [search, year, month]);
+    }, [search, year, month, activeTab]);
 
     const totalPages = Math.ceil(filtered.length / itemsPerPage);
     const currentData = useMemo(() => {
@@ -507,8 +493,21 @@ const reportsWithTitle = reportItems.map((item) => {
 
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
-                    title="출장 보고서 목록"
+                    title="보고서 목록"
                     onMenuClick={() => setSidebarOpen(true)}
+                    // ✅ 헤더 하단에 탭 추가
+                    bottomContent={
+                        <div className="px-6">
+                            <Tabs
+                                items={[
+                                    { value: "work", label: "출장 보고서" },
+                                    { value: "education", label: "교육 보고서" },
+                                ]}
+                                value={activeTab}
+                                onChange={(value) => setActiveTab(value as "work" | "education")}
+                            />
+                        </div>
+                    }
                     rightContent={
                         <Button
                             variant="primary"
@@ -527,7 +526,7 @@ const reportsWithTitle = reportItems.map((item) => {
                     ) : (
                         <div className="flex flex-col gap-4">
                             {/* 검색 및 필터 섹션 */}
-                            <div className="bg-white p-0">
+                            <div className="mt-3">
                                 <div className="flex flex-wrap items-center gap-3 justify-between">
                                     <Input
                                         value={search}
