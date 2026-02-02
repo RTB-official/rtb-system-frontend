@@ -222,10 +222,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
     };
 
 
-    const shouldForceInactive = (_kind: "HOME" | "WORKLOAD" | "VACATION" | "MEMBERS" | "VEHICLES") => {
-        if (!menuFocus) return false;
-        return true;
-    };
     const handleLogoutClick = async () => {
         localStorage.removeItem("profile_role");
         localStorage.removeItem("profile_name");
@@ -235,7 +231,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     return (
         <aside className="w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col">
-            <div className="flex flex-col gap-6 px-4 py-5 flex-1">
+            <div className="flex flex-col gap-6 px-4 py-5 flex-1 min-h-0">
                 {/* Logo & Close Button */}
                 <div className="flex gap-2 items-center justify-between p-2">
                     <button
@@ -261,7 +257,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 </div>
 
                 {/* User Section */}
-                <div className="flex flex-col gap-3 flex-1">
+                <div className="flex flex-col gap-3 flex-1 min-h-0">
                     <div
                         ref={usernameRef}
                         className="flex gap-3 items-center p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
@@ -394,7 +390,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                     type: n.type,
                                     created_at: n.created_at,
                                     read_at: n.read_at,
-                                    meta: n.meta,
+                                    meta: n.meta ?? undefined,
                                 }))}
                                 onNotificationRead={async () => {
                                     await refreshNotifications();
@@ -416,7 +412,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     <div className="h-px bg-gray-200 rounded-full" />
 
                     <nav
-                        className="flex flex-col gap-2 flex-1 overflow-y-auto
+                        className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0
                         [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                     >
                         {canShowHome && (
@@ -557,9 +553,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         />
                     </nav>
 
-                    <div className="h-px bg-gray-200 rounded-full mt-2" />
-
-                    <div className="mt-auto">
+                    <div className="flex-none mt-auto">
+                        <div className="h-px bg-gray-200 rounded-full mt-2 mb-3" />
                         <div className={isAdmin ? "" : "invisible pointer-events-none"}>
                             <MenuButton
                                 icon={<IconSettings />}
