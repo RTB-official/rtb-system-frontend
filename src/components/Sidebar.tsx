@@ -430,7 +430,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         <div className="-pb-1">
                             <MenuButton
                                 icon={<IconReport />}
-                                label="출장 보고서"
+                                label="보고서"
                                 isActive={reportActive}
                                 onClick={() => {
                                     setTbmOpen(false);

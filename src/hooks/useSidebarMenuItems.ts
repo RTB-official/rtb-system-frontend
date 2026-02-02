@@ -18,9 +18,9 @@ export function useSidebarMenuItems(
 ) {
     const reportSubMenuItems = useMemo<MenuItem[]>(
         () => [
-            { label: "출장 보고서 목록", to: PATHS.reportList },
+            { label: "보고서 목록", to: PATHS.reportList },
             {
-                label: isReportEditRoute ? "출장 보고서 작성(수정)" : "출장 보고서 작성",
+                label: isReportEditRoute ? "보고서 작성(수정)" : "보고서 작성",
                 to: isReportEditRoute ? `${location.pathname}${location.search}` : PATHS.reportCreate,
             },
         ],
