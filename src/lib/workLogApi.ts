@@ -57,7 +57,7 @@ export interface WorkLogMaterial {
     id: number;
     work_log_id: number;
     material_name: string;
-    qty: number;
+    qty: string;
     unit: string | null;
     created_at: string;
 }
@@ -107,7 +107,7 @@ export interface CreateWorkLogInput {
     }>;
     materials?: Array<{
         name: string;
-        qty: number;
+        qty: string;
         unit?: string;
     }>;
     receipts?: Array<{

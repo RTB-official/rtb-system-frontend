@@ -9,7 +9,7 @@ import ExpenseHistorySection, {
 } from "./components/ExpenseHistorySection";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
-import PersonalExpenseSkeleton from "../../components/common/PersonalExpenseSkeleton";
+import PersonalExpenseSkeleton from "../../components/common/skeletons/PersonalExpenseSkeleton";
 import { useAuth } from "../../store/auth";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import {

@@ -1136,16 +1136,12 @@ export default function ReportPdfPage() {
                                             <tr key={i}>
                                                 <td>{a?.material_name ?? ""}</td>
                                                 <td className="right">
-                                                    {a
-                                                        ? `${Number(a.qty ?? 0)} ${a.unit ?? ""}`
-                                                        : ""}
+                                                    {a ? `${String(a.qty ?? "")} ${a.unit ?? ""}` : ""}
                                                 </td>
     
                                                 <td>{b?.material_name ?? ""}</td>
                                                 <td className="right">
-                                                    {b
-                                                        ? `${Number(b.qty ?? 0)} ${b.unit ?? ""}`
-                                                        : ""}
+                                                    {b ? `${String(b.qty ?? "")} ${b.unit ?? ""}` : ""}
                                                 </td>
                                             </tr>
                                         );

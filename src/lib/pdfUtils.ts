@@ -1,5 +1,9 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import html2canvas from "html2canvas";
+import React from "react";
+import { createRoot } from "react-dom/client";
+import TbmDetailSheet from "../components/tbm/TbmDetailSheet";
 import {
     type EmployeeMileageDetail,
     type EmployeeCardExpenseDetail,
@@ -65,89 +69,73 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
     return btoa(binary);
 }
 
-// 나눔고딕 폰트 추가 (로컬 파일 사용 - Regular + Bold)
-// 반환값: { success: boolean, hasBold: boolean }
-export async function addNanumGothicFont(doc: jsPDF): Promise<{ success: boolean; hasBold: boolean }> {
+// 프리텐다드 폰트 추가 (CDN TTF 파일 사용 - Regular + Bold)
+export async function addPretendardFont(doc: jsPDF): Promise<{ success: boolean; hasBold: boolean }> {
     try {
         let regularAdded = false;
         let boldAdded = false;
         
         // Regular 폰트 추가
         try {
-            const regularUrl = "/fonts/NanumGothic-Regular.ttf";
-            console.log("나눔고딕 Regular 폰트 로드 시작...", regularUrl);
+            const regularUrl = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-Regular.ttf";
+            console.log("프리텐다드 Regular 폰트 로드 시작...", regularUrl);
             const regularResponse = await fetch(regularUrl);
             
             if (regularResponse.ok) {
                 const regularArrayBuffer = await regularResponse.arrayBuffer();
                 const regularBase64 = arrayBufferToBase64(regularArrayBuffer);
                 
-                // jsPDF v4.0.0 방식으로 폰트 추가
-                (doc as any).addFileToVFS("NanumGothic-Regular.ttf", regularBase64);
+                (doc as any).addFileToVFS("Pretendard-Regular.ttf", regularBase64);
                 
-                // 폰트 추가 시도
                 try {
-                    (doc as any).addFont("NanumGothic-Regular.ttf", "NanumGothic", "normal");
+                    (doc as any).addFont("Pretendard-Regular.ttf", "Pretendard", "normal");
                     regularAdded = true;
-                    console.log("나눔고딕 Regular 폰트 추가 성공");
+                    console.log("프리텐다드 Regular 폰트 추가 성공");
                 } catch (fontError: any) {
-                    console.warn("나눔고딕 Regular 폰트 등록 실패:", fontError?.message || fontError);
-                    // 오류를 무시하고 계속 진행
+                    console.warn("프리텐다드 Regular 폰트 등록 실패:", fontError?.message || fontError);
                 }
             }
         } catch (error) {
-            console.warn("나눔고딕 Regular 폰트 로드 실패:", error);
+            console.warn("프리텐다드 Regular 폰트 로드 실패:", error);
         }
         
         // Bold 폰트 추가
         try {
-            const boldUrl = "/fonts/NanumGothic-Bold.ttf";
-            console.log("나눔고딕 Bold 폰트 로드 시작...", boldUrl);
+            const boldUrl = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-Bold.ttf";
+            console.log("프리텐다드 Bold 폰트 로드 시작...", boldUrl);
             const boldResponse = await fetch(boldUrl);
             
             if (boldResponse.ok) {
                 const boldArrayBuffer = await boldResponse.arrayBuffer();
                 const boldBase64 = arrayBufferToBase64(boldArrayBuffer);
                 
-                // jsPDF v4.0.0 방식으로 폰트 추가
-                (doc as any).addFileToVFS("NanumGothic-Bold.ttf", boldBase64);
+                (doc as any).addFileToVFS("Pretendard-Bold.ttf", boldBase64);
                 
-                // 폰트 추가 시도
                 try {
-                    // jsPDF v4.0.0에서 일부 폰트는 Unicode cmap 오류가 발생할 수 있음
-                    // 이 오류는 폰트 파일 형식 문제이지만, PDF 생성에는 영향 없음
-                    (doc as any).addFont("NanumGothic-Bold.ttf", "NanumGothic", "bold");
+                    (doc as any).addFont("Pretendard-Bold.ttf", "Pretendard", "bold");
                     boldAdded = true;
-                    console.log("나눔고딕 Bold 폰트 추가 성공");
+                    console.log("프리텐다드 Bold 폰트 추가 성공");
                 } catch (fontError: any) {
-                    // Unicode cmap 오류는 무시 (PDF 생성에는 영향 없음)
                     const errorMsg = fontError?.message || String(fontError);
                     if (!errorMsg.includes("unicode cmap") && !errorMsg.includes("No unicode cmap")) {
-                        console.warn("나눔고딕 Bold 폰트 등록 실패:", errorMsg);
+                        console.warn("프리텐다드 Bold 폰트 등록 실패:", errorMsg);
                     }
-                    // 오류를 무시하고 계속 진행
                 }
             }
         } catch (error) {
-            console.warn("나눔고딕 Bold 폰트 로드 실패:", error);
+            console.warn("프리텐다드 Bold 폰트 로드 실패:", error);
         }
         
         if (regularAdded || boldAdded) {
-            // 폰트 등록 확인 및 실제 사용 가능 여부 테스트
             try {
                 const fontList = doc.getFontList();
-                console.log("등록된 폰트 목록:", Object.keys(fontList));
-                
-                // 폰트가 실제로 등록되었는지 확인
-                if (!("NanumGothic" in fontList)) {
-                    console.warn("NanumGothic 폰트가 등록 목록에 없음");
-                    return false;
+                if (!("Pretendard" in fontList)) {
+                    console.warn("Pretendard 폰트가 등록 목록에 없음");
+                    return { success: false, hasBold: false };
                 }
                 
-                // 기본 폰트 설정 시도 (실제로 사용 가능한지 테스트)
                 try {
-                    doc.setFont("NanumGothic", regularAdded ? "normal" : "bold");
-                    // 폰트 설정이 성공하면 사용 가능
+                    doc.setFont("Pretendard", regularAdded ? "normal" : "bold");
                     return { success: true, hasBold: boldAdded };
                 } catch (setFontError: any) {
                     console.warn("폰트 설정 실패, 기본 폰트 사용:", setFontError?.message || setFontError);
@@ -161,7 +149,7 @@ export async function addNanumGothicFont(doc: jsPDF): Promise<{ success: boolean
         
         return { success: false, hasBold: false };
     } catch (error) {
-        console.error("나눔고딕 폰트 추가 실패:", error);
+        console.error("프리텐다드 폰트 추가 실패:", error);
         return { success: false, hasBold: false };
     }
 }
@@ -190,24 +178,19 @@ export async function generateExpenseReportPDF({
             format: "a4",
         });
         
-        // 나눔고딕 폰트 추가 시도
+        // 프리텐다드 폰트 추가 시도
         let fontAdded = false;
-        let hasBold = false;
         try {
-            const fontResult = await addNanumGothicFont(doc);
+            const fontResult = await addPretendardFont(doc);
             fontAdded = fontResult.success;
-            hasBold = fontResult.hasBold;
         } catch (error) {
             console.warn("폰트 추가 중 오류 발생, 기본 폰트 사용:", error);
-            fontAdded = false;
-            hasBold = false;
         }
         
-        // 폰트 등록 실패 시 무조건 기본 폰트 사용
-        const fontName = fontAdded ? "NanumGothic" : "helvetica";
-        const fontStyle = fontAdded ? "normal" : "bold"; // helvetica는 bold 사용 가능
+        const fontName = fontAdded ? "Pretendard" : "helvetica";
+        const fontStyle = fontAdded ? "normal" : "bold"; 
         
-        console.log("사용할 폰트:", fontName, fontAdded ? "(나눔고딕)" : "(기본 폰트)");
+        console.log("사용할 폰트:", fontName, fontAdded ? "(프리텐다드)" : "(기본 폰트)");
         
         // 기본 폰트로 설정 (안전하게 시작)
         try {
@@ -331,7 +314,7 @@ export async function generateExpenseReportPDF({
                 // 테이블 생성 실패 시 기본 텍스트로 표시
                 doc.setFontSize(9);
                 doc.setFont(fontName, "normal");
-                mileageTableData.forEach((row, idx) => {
+                mileageTableData.forEach((row) => {
                     doc.text(row.join(" | "), margin, yPos);
                     yPos += 5;
                 });
@@ -455,7 +438,7 @@ export async function generateExpenseReportPDF({
                 // 테이블 생성 실패 시 기본 텍스트로 표시
                 doc.setFontSize(9);
                 doc.setFont(fontName, "normal");
-                cardTableData.forEach((row, idx) => {
+                cardTableData.forEach((row) => {
                     doc.text(row.join(" | "), margin, yPos);
                     yPos += 5;
                 });
@@ -482,16 +465,13 @@ export async function generateExpenseReportPDF({
         // 폰트 설정: Normal 스타일만 사용 (Bold 제거)
         try {
             if (fontAdded) {
-                // 나눔고딕이 등록된 경우 - normal 사용
-                doc.setFont("NanumGothic", "normal");
+                doc.setFont("Pretendard", "normal");
             } else {
-                // 나눔고딕이 등록되지 않은 경우 - helvetica normal 사용
                 doc.setFont("helvetica", "normal");
             }
         } catch (e) {
-            // 오류 발생 시 안전하게 처리
             if (fontAdded) {
-                doc.setFont("NanumGothic", "normal");
+                doc.setFont("Pretendard", "normal");
             } else {
                 doc.setFont("helvetica", "normal");
             }
@@ -525,7 +505,7 @@ export async function generateExpenseReportPDF({
                 doc.text(receiptText, margin, yPos);
                 
                 // 영수증 이미지 추가
-                const receiptUrl = getReceiptUrl(item.receipt_path);
+                const receiptUrl = item.receipt_path ? getReceiptUrl(item.receipt_path) : null;
                 if (receiptUrl) {
                     try {
                         // 이미지 로드 및 추가
@@ -603,5 +583,115 @@ export async function generateExpenseReportPDF({
             onError(errorMessage);
         }
         // onError가 없으면 에러만 로깅 (alert 제거)
+    }
+}
+
+type TbmPdfParams = {
+    tbmId: string;
+    onError?: (message: string) => void;
+};
+
+const formatDateForFilename = (value?: string | null) =>
+    value ? String(value).replace(/-/g, "") : "TBM";
+
+export async function generateTbmPdf({
+    tbmId,
+    onError,
+}: TbmPdfParams): Promise<void> {
+    let container: HTMLDivElement | null = null;
+    let root: ReturnType<typeof createRoot> | null = null;
+
+    try {
+        const { tbm, participants } = await import("./tbmApi").then((mod) =>
+            mod.getTbmDetail(tbmId)
+        );
+
+        if (!tbm) throw new Error("TBM 정보를 불러오지 못했습니다.");
+
+        container = document.createElement("div");
+        container.style.position = "fixed";
+        container.style.left = "-10000px";
+        container.style.top = "0";
+        container.style.width = "794px";
+        container.style.padding = "0";
+        container.style.background = "#ffffff";
+        container.style.zIndex = "-1";
+        document.body.appendChild(container);
+
+        root = createRoot(container);
+        root.render(
+            React.createElement(
+                "div",
+                {
+                    style: {
+                        width: "794px",
+                        padding: "24px",
+                        boxSizing: "border-box",
+                        background: "#ffffff",
+                        fontFamily: '"Pretendard JP", sans-serif'
+                    },
+                },
+                React.createElement(TbmDetailSheet, {
+                    tbm,
+                    participants: participants || [],
+                    variant: "pdf",
+                })
+            )
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if ("fonts" in document) {
+            await (document as any).fonts.ready;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        const sheet = container.querySelector("[data-tbm-sheet]") as HTMLElement | null;
+        if (!sheet) {
+            throw new Error("TBM PDF 렌더링에 실패했습니다.");
+        }
+
+        const canvas = await html2canvas(sheet, {
+            scale: 2,
+            backgroundColor: "#ffffff",
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const doc = new jsPDF({
+            orientation: "portrait",
+            unit: "pt",
+            format: "a4",
+        });
+
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const imgWidth = canvas.width;
+        const imgHeight = canvas.height;
+
+        // 설정: 좌우 여백 40pt, 상단 여백 40pt
+        const horizontalMargin = 40;
+        const topMargin = 40;
+
+        // 가로 너비를 페이지 너비에서 양쪽 여백을 뺀 크기로 설정
+        const renderWidth = pageWidth - (horizontalMargin * 2);
+        // 세로 길이는 가로 너비 비율에 맞춰 계산
+        const renderHeight = (imgHeight * renderWidth) / imgWidth;
+
+        const offsetX = horizontalMargin;
+        const offsetY = topMargin;
+
+        doc.addImage(imgData, "PNG", offsetX, offsetY, renderWidth, renderHeight);
+
+        const filename = `TBM_${formatDateForFilename(tbm.tbm_date)}_${tbm.line_name || ""}_${tbm.work_name || ""}.pdf`;
+        doc.save(filename.replace(/\s+/g, "_"));
+    } catch (error: any) {
+        console.error("TBM PDF 생성 오류:", error);
+        const message = error?.message || "TBM PDF 생성에 실패했습니다.";
+        onError?.(message);
+    } finally {
+        if (root) {
+            root.unmount();
+        }
+        if (container && container.parentNode) {
+            container.parentNode.removeChild(container);
+        }
     }
 }

@@ -4,7 +4,7 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
-import AdminVacationSkeleton from "../../components/common/AdminVacationSkeleton";
+import AdminVacationSkeleton from "../../components/common/skeletons/AdminVacationSkeleton";
 import Select from "../../components/common/Select";
 import {
     getVacations,

@@ -28,7 +28,7 @@ export interface ExpenseEntry {
 export interface MaterialEntry {
   id: number;
   name: string;
-  qty: number;
+  qty: string;
   unit: string;
 }
 
@@ -59,7 +59,7 @@ export interface StaffProfile {
 
 // 참관 감독 그룹별 인원
 export const ORDER_PERSONS: Record<string, string[]> = {
-  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형', '이영철', '장덕훈'],
+  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형'],
   PRIME: ['이유수', '김효민', '안희재'],
 };
 
@@ -75,6 +75,8 @@ export const VEHICLES = ['5423', '4272', '0892', '5739', '0598', '7203', '6297',
 export const MATERIAL_UNITS: Record<string, string> = {
   '장갑': '타',
   '보루': 'EA',
+  '청테이프': 'EA',
+  '지퍼백': 'EA',
   '실리콘그리스': 'EA',
   '그리스': 'EA',
   '방청윤활유(WD40)': 'EA',
@@ -357,10 +359,18 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     };
     
     // 다음 엔트리의 시작 시간을 현재 종료 시간으로 자동 설정
+    const toHourOnly = (time?: string) => {
+      const raw = (time || '').trim();
+      if (!raw) return '';
+      const parts = raw.split(':');
+      const hh = parts[0] || '';
+      return hh ? `${hh}:00` : '';
+    };
+
     const nextEntry = {
       ...initialCurrentEntry,
       dateFrom: currentEntry.dateTo || '',
-      timeFrom: currentEntry.timeTo || '',
+      timeFrom: toHourOnly(currentEntry.timeTo),
       dateTo: currentEntry.dateTo || '',
     };
     

@@ -10,7 +10,7 @@ import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
-import ReportListSkeleton from "../../components/common/ReportListSkeleton";
+import ReportListSkeleton from "../../components/common/skeletons/ReportListSkeleton";
 import { IconMore, IconPlus, IconReport } from "../../components/icons/Icons";
 import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";

@@ -16,7 +16,7 @@ export type PdfEntry = {
 
 export type PdfMaterial = {
     material_name: string | null;
-    qty: number | null;
+    qty: string | null;
     unit: string | null;
 };
 
@@ -116,7 +116,7 @@ export async function getReportPdfData(workLogId: number) {
 
     const materials = (materialsRows ?? []).map((r: any) => ({
         material_name: r.material_name ?? null,
-        qty: typeof r.qty === "number" ? r.qty : Number(r.qty ?? 0),
+        qty: r.qty !== null && r.qty !== undefined ? String(r.qty) : null,
         unit: r.unit ?? null,
     })) as PdfMaterial[];
 

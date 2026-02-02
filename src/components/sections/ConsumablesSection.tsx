@@ -41,14 +41,28 @@ export default function ConsumablesSection() {
         { value: "OTHER", label: "기타(직접입력)" },
     ];
 
+    const parseQuantity = (value: string) => {
+        const raw = value.trim();
+        if (!raw) return null;
+        if (/^\d+(\.\d+)?$/.test(raw)) return Number(raw);
+        const fractionMatch = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+        if (fractionMatch) {
+            const numerator = Number(fractionMatch[1]);
+            const denominator = Number(fractionMatch[2]);
+            if (!denominator) return null;
+            return numerator / denominator;
+        }
+        return null;
+    };
+
     const handleAdd = () => {
         // 유효성 검사
         const newErrors: typeof errors = {};
         if (!materialName) {
             newErrors.material = "자재명을 선택하거나 입력해주세요";
         }
-        const qty = Number(quantity);
-        if (qty <= 0) {
+        const parsedQty = parseQuantity(quantity);
+        if (!parsedQty || parsedQty <= 0) {
             newErrors.quantity = "수량을 입력해주세요";
         }
 
@@ -61,7 +75,7 @@ export default function ConsumablesSection() {
 
         addMaterial({
             name: materialName,
-            qty,
+            qty: quantity.trim(),
             unit,
         });
 
@@ -78,9 +92,15 @@ export default function ConsumablesSection() {
     };
 
     // 표시용 라벨 생성
-    const formatLabel = (name: string, qty: number, unit: string) => {
+    const formatLabel = (name: string, qty: string, unit: string) => {
         if (name === "보루") {
-            return `${name} ${qty * 5}kg`;
+            const parsedQty = parseQuantity(qty) ?? 0;
+            const kgValue = parsedQty * 5;
+            const kgLabel =
+                Number.isFinite(kgValue) && kgValue % 1 !== 0
+                    ? kgValue.toFixed(2).replace(/\.?0+$/, "")
+                    : String(kgValue);
+            return `${name} ${kgLabel}kg`;
         }
         return unit ? `${name} ${qty}${unit}` : `${name} ${qty}`;
     };
@@ -132,8 +152,9 @@ export default function ConsumablesSection() {
                 <TextInput
                     label="수량"
                     required
-                    type="number"
+                    type="text"
                     value={quantity}
+                    placeholder="예: 1, 0.5, 1/3"
                     onChange={(val) => {
                         setQuantity(val);
                         if (errors.quantity) {

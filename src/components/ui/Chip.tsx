@@ -178,11 +178,35 @@ export default function Chip({
         } ${colorClasses.bg} ${colorClasses.border} ${onClick ? "cursor-pointer hover:opacity-80" : "cursor-default"
         } ${className}`;
 
+    const content = (
+        <>
+            {icon && <span className="mr-1 flex items-center">{icon}</span>}
+            <span>{children}</span>
+            {onRemove && (
+                <span
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove();
+                    }}
+                    className="ml-2 hover:bg-black/10 rounded-full p-0.5 transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path
+                            d="M3 3L9 9M9 3L3 9"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                        />
+                    </svg>
+                </span>
+            )}
+        </>
+    );
+
     if (!onClick) {
         return (
             <span className={combinedClasses}>
-                {icon && <span className="mr-1 flex items-center">{icon}</span>}
-                {children}
+                {content}
             </span>
         );
     }
@@ -195,26 +219,7 @@ export default function Chip({
             onDragStart={onDragStart}
             className={combinedClasses}
         >
-            {icon && <span className="mr-1 flex items-center">{icon}</span>}
-            <span>{children}</span>
-            {onRemove && (
-                <span
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onRemove();
-                    }}
-                    className="ml-2 hover:bg-black/10 rounded-full p-0.5 transition-colors flex items-center justify-center shrink-0"
-                >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path
-                            d="M3 3L9 9M9 3L3 9"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                        />
-                    </svg>
-                </span>
-            )}
+            {content}
         </button>
     );
 }

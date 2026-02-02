@@ -4,11 +4,13 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
+import { IconArrowBack } from "../../components/icons/Icons";
 import DatePicker from "../../components/ui/DatePicker";
 import Select from "../../components/common/Select";
 import { useToast } from "../../components/ui/ToastProvider";
 import { supabase } from "../../lib/supabase";
 import { createTbm, getTbmDetail, updateTbm } from "../../lib/tbmApi";
+import Chip from "../../components/ui/Chip";
 
 export default function TbmCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -105,17 +107,17 @@ export default function TbmCreatePage() {
     }, []);
 
     const processColorMap: Record<string, string> = {
-        P1: "bg-yellow-200 text-gray-800",
-        P2: "bg-green-200 text-gray-800",
-        P3: "bg-blue-200 text-gray-800",
-        P4: "bg-red-200 text-gray-800",
+        P1: "orange-500",
+        P2: "green-500",
+        P3: "blue-500",
+        P4: "red-600",
     };
 
     const processColorByName: Record<string, string> = {
-        "\uBD84\uD574\uC870\uB9BD(\uAE30\uBCF8)": "bg-yellow-200 text-gray-800",
-        "\uC720\uC555": "bg-green-200 text-gray-800",
-        "\uCC54\uBC84": "bg-blue-200 text-gray-800",
-        "\uC808\uB2E8/\uD654\uAE30": "bg-red-200 text-gray-800",
+        "\uBD84\uD574\uC870\uB9BD(\uAE30\uBCF8)": "orange-500",
+        "\uC720\uC555": "green-500",
+        "\uCC54\uBC84": "blue-500",
+        "\uC808\uB2E8/\uD654\uAE30": "red-600",
     };
 
     const getProcessColor = (value: string) =>
@@ -504,15 +506,17 @@ export default function TbmCreatePage() {
                 <Header
                     title="TBM 작성"
                     onMenuClick={() => setSidebarOpen(true)}
+                    leftContent={
+                        <button
+                            onClick={() => navigate("/tbm")}
+                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                            title="목록으로 돌아가기"
+                        >
+                            <IconArrowBack />
+                        </button>
+                    }
                     rightContent={
                         <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="lg"
-                                onClick={() => navigate("/tbm")}
-                            >
-                                목록
-                            </Button>
                             <Button variant="primary" size="lg" onClick={handleSave} disabled={isSaving}>
                                 {isEdit ? "수정" : "저장"}
                             </Button>
@@ -672,7 +676,7 @@ export default function TbmCreatePage() {
                                         </td>
                                     </tr>
 
-                                    <tr className="border-b border-gray-300">
+                                    <tr className="">
                                         <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
                                             대책
                                         </th>
@@ -692,11 +696,12 @@ export default function TbmCreatePage() {
                                                 {selectedCombos.length > 0 && (
                                                     <div className="flex flex-wrap gap-2">
                                                         {selectedCombos.map((c) => (
-                                                            <button
+                                                            <Chip
                                                                 key={`${c.processId}-${c.hazardId}-${c.measureId}`}
-                                                                type="button"
-                                                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${c.colorClass}`}
-                                                                onClick={() =>
+                                                                color={c.colorClass}
+                                                                variant="filled"
+                                                                size="md"
+                                                                onRemove={() =>
                                                                     handleRemoveCombo(
                                                                         c.processId,
                                                                         c.hazardId,
@@ -704,9 +709,8 @@ export default function TbmCreatePage() {
                                                                     )
                                                                 }
                                                             >
-                                                                <span>{`${c.processLabel} > ${c.hazardLabel} > ${c.measureLabel}`}</span>
-                                                                <span className="text-gray-400">x</span>
-                                                            </button>
+                                                                {`${c.processLabel} > ${c.hazardLabel} > ${c.measureLabel}`}
+                                                            </Chip>
                                                         ))}
                                                     </div>
                                                 )}
@@ -766,7 +770,7 @@ export default function TbmCreatePage() {
                                             const leftRow = participants[leftIndex];
                                             const rightRow = participants[rightIndex];
                                             return (
-                                            <tr key={rowIndex} className="border-b border-gray-300">
+                                            <tr key={rowIndex} className="border-b border-gray-300 last:border-b-0">
                                                 <td className="px-3 py-2 border-r border-gray-300 relative">
                                                     <input
                                                         type="text"

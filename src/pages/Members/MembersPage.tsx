@@ -12,7 +12,7 @@ import Chip from "../../components/ui/Chip";
 import { IconDownload, IconMore } from "../../components/icons/Icons";
 import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 import Avatar from "../../components/common/Avatar";
-import MembersSkeleton from "../../components/common/MembersSkeleton";
+import MembersSkeleton from "../../components/common/skeletons/MembersSkeleton";
 import { useToast } from "../../components/ui/ToastProvider";
 import MiniIconButton from "../../components/ui/MiniIconButton";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";

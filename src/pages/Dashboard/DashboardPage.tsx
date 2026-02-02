@@ -19,7 +19,7 @@ import {
     deleteCalendarEvent,
     calendarEventRecordToCalendarEvent,
 } from "../../lib/dashboardApi";
-import DashboardSkeleton from "../../components/common/DashboardSkeleton";
+import DashboardSkeleton from "../../components/common/skeletons/DashboardSkeleton";
 import { useHolidays } from "../../hooks/useHolidays";
 import {
     useDashboardEvents,
