@@ -320,7 +320,7 @@ export default function MemberExpensePage() {
         },
         {
             key: "details",
-            label: "상세 내용",
+            label: "호선 및 기타사항",
             render: (value) => {
                 if (value && value.trim()) {
                     return <span className="text-gray-700">{value}</span>;
