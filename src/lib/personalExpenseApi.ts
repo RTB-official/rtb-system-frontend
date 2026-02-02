@@ -119,10 +119,15 @@ export async function getPersonalExpenses(
             2,
             "0"
         )}-01`;
+        const lastDay = new Date(
+            filters.year,
+            filters.month + 1,
+            0
+        ).getDate();
         const endDate = `${filters.year}-${String(filters.month + 1).padStart(
             2,
             "0"
-        )}-31`;
+        )}-${String(lastDay).padStart(2, "0")}`;
         query = query
             .gte("expense_date", startDate)
             .lte("expense_date", endDate);
@@ -231,10 +236,15 @@ export async function getPersonalMileages(
             2,
             "0"
         )}-01`;
+        const lastDay = new Date(
+            filters.year,
+            filters.month + 1,
+            0
+        ).getDate();
         const endDate = `${filters.year}-${String(filters.month + 1).padStart(
             2,
             "0"
-        )}-31`;
+        )}-${String(lastDay).padStart(2, "0")}`;
         query = query.gte("m_date", startDate).lte("m_date", endDate);
     }
 
