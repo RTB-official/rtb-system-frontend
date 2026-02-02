@@ -1,5 +1,7 @@
+// tbmApi.ts
 import { supabase } from "./supabase";
-import { createNotificationsForUsers } from "./notificationApi";
+import { createNotificationsForUsers, getAdminUserIds } from "./notificationApi";
+
 
 export interface TbmRecord {
     id: string;
@@ -163,20 +165,45 @@ export async function createTbm(input: CreateTbmInput) {
             .map((r) => r.user_id)
             .filter((id) => id && id !== user.id);
 
-        if (participantIds.length > 0) {
-            const meta = JSON.stringify({ tbm_id: tbm.id });
-            try {
+        try {
+            const adminIds = await getAdminUserIds();
+
+            // ✅ 참여자: 서명 요청 (작성자 제외)
+            const participantRecipients = Array.from(new Set(participantIds)).filter(
+                (id) => id && id !== user.id
+            );
+
+            // ✅ admin: "작성됨" 알림만 (작성자 제외)
+            const adminRecipients = Array.from(new Set(adminIds)).filter(
+                (id) => id && id !== user.id
+            );
+
+            const metaToTbm = JSON.stringify({ tbm_id: tbm.id });
+
+            if (participantRecipients.length > 0) {
                 await createNotificationsForUsers(
-                    participantIds,
+                    participantRecipients,
                     "TBM 서명 요청",
                     "새로운 TBM이 등록되었습니다. 서명 확인을 해주세요.",
                     "other",
-                    meta
+                    metaToTbm
                 );
-            } catch (e) {
-                console.error("TBM 알림 생성 실패:", e);
             }
+
+            if (adminRecipients.length > 0) {
+                await createNotificationsForUsers(
+                    adminRecipients,
+                    "TBM 작성 완료",
+                    "새로운 TBM이 작성되었습니다.",
+                    "other",
+                    metaToTbm
+                );
+            }
+        } catch (e) {
+            console.error("TBM 알림 생성 실패:", e);
         }
+
+
     }
 
     return tbm as TbmRecord;
@@ -381,7 +408,50 @@ export async function signTbm(tbmId: string, userId: string) {
     if (error) {
         throw new Error(`서명 처리 실패: ${error.message}`);
     }
+
+    // ✅ 전원 서명 완료 시 작성자에게 알림
+    try {
+        const { data: unsigned, error: unsignedError } = await supabase
+            .from("tbm_participants")
+            .select("id")
+            .eq("tbm_id", tbmId)
+            .is("signed_at", null)
+            .limit(1);
+
+        if (unsignedError) {
+            console.error("서명 상태 확인 실패:", unsignedError);
+            return;
+        }
+
+        const allSigned = !unsigned || unsigned.length === 0;
+        if (!allSigned) return;
+
+        const { data: tbm, error: tbmError } = await supabase
+            .from("tbm")
+            .select("id, created_by")
+            .eq("id", tbmId)
+            .single();
+
+        if (tbmError || !tbm?.created_by) {
+            console.error("TBM 작성자 조회 실패:", tbmError);
+            return;
+        }
+
+        // 작성자가 마지막 서명자와 같으면(본인이 만든 TBM에 본인이 마지막 서명)도 알림은 보냄
+        const meta = JSON.stringify({ tbm_id: tbmId, kind: "tbm_all_signed" });
+
+        await createNotificationsForUsers(
+            [tbm.created_by],
+            "TBM 서명 완료",
+            "참여자 전원이 TBM 서명을 완료했습니다.",
+            "other",
+            meta
+        );
+    } catch (e) {
+        console.error("TBM 서명 완료 알림 생성 실패:", e);
+    }
 }
+
 
 
 export async function deleteTbm(id: string) {

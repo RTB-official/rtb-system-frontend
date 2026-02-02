@@ -52,6 +52,7 @@ export async function createNotification(
                 title: data.title,
                 message: data.message,
                 type: data.type,
+                meta: data.meta ?? null,
             },
             headers: Object.keys(headers).length > 0 ? headers : undefined,
         }
@@ -102,6 +103,7 @@ export async function createNotificationsForUsers(
                 title,
                 message,
                 type,
+                meta: meta ?? null,
             },
             headers: Object.keys(headers).length > 0 ? headers : undefined,
         }

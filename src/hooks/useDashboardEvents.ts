@@ -1,3 +1,4 @@
+// useDashboardEvents.ts
 import { useState, useEffect, useMemo } from "react";
 import { CalendarEvent } from "../types";
 import { useAuth } from "../store/auth";

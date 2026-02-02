@@ -20,6 +20,13 @@ import {
     uploadProfilePhoto,
 } from "../../lib/memberFilesApi";
 
+import {
+    createNotificationsForUsers,
+    getAdminUserIds,
+} from "../../lib/notificationApi";
+
+
+
 type Member = {
     id: string;
 
@@ -166,6 +173,112 @@ export default function MembersPage() {
 
         return null;
     };
+
+    const notifyPassportExpiryWithinOneYear = async (mappedMembers: Member[]) => {
+        try {
+            // admin 계정들(대표 포함) 조회
+            const adminIds = await getAdminUserIds();
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const oneYearLater = new Date(today);
+            oneYearLater.setFullYear(today.getFullYear() + 1);
+
+            // 만료 1년 이내(오늘 이후 ~ 1년 이내)인 멤버만 추림
+            const expiring = mappedMembers.filter((m) => {
+                if (!m.passportExpiryISO) return false;
+                const expiry = new Date(m.passportExpiryISO);
+                if (Number.isNaN(expiry.getTime())) return false;
+                expiry.setHours(0, 0, 0, 0);
+                return expiry >= today && expiry <= oneYearLater;
+            });
+
+            if (expiring.length === 0) return;
+
+
+            const hasPassportExpiryNotification = async (
+                memberId: string,
+                expiryISO: string
+            ) => {
+                try {
+                    const { data, error } = await supabase
+                        .from("notifications")
+                        .select("id")
+                        .like("meta", '%"kind":"passport_expiry_within_1y"%')
+                        .like("meta", `"user_id":"${memberId}"`)
+                        .like(
+                            "meta",
+                            `"passport_expiry_date":"${expiryISO}"`
+                        )
+                        .limit(1);
+
+                    if (error) {
+                        console.warn(
+                            "Passport expiry notification dedupe check failed:",
+                            error.message
+                        );
+                        return false;
+                    }
+
+                    return (data ?? []).length > 0;
+                } catch (err) {
+                    console.warn(
+                        "Passport expiry notification dedupe check failed:",
+                        err
+                    );
+                    return false;
+                }
+            };
+
+            for (const m of expiring) {
+                // 중복 전송 방지 (같은 만료일에 대해 1회만)
+                const key = `passport_expiry_1y_notified:${m.id}:${m.passportExpiryISO}`;
+                if (localStorage.getItem(key) === "1") continue;
+
+                const alreadyNotified = await hasPassportExpiryNotification(
+                    m.id,
+                    m.passportExpiryISO
+                );
+                if (alreadyNotified) {
+                    localStorage.setItem(key, "1");
+                    continue;
+                }
+
+
+                // 수신자: 당사자 + admin들 (중복 제거)
+                const recipients = Array.from(new Set([m.id, ...adminIds]));
+
+                // 보기 좋은 날짜(YY년 M월 만료) - 기존 UI 표기와 맞춤
+                let label = "";
+                try {
+                    const d = new Date(m.passportExpiryISO);
+                    const yy = String(d.getFullYear()).slice(2);
+                    const mm = d.getMonth() + 1;
+                    label = `${yy}년 ${mm}월`;
+                } catch {
+                    label = "";
+                }
+
+                await createNotificationsForUsers(
+                    recipients,
+                    "여권 만료 임박",
+                    `${m.name}님의 여권이 1년 이내(${label ? `${label} 만료` : "만료 임박"})에 만료됩니다.`,
+                    "other",
+                    JSON.stringify({
+                        kind: "passport_expiry_within_1y",
+                        user_id: m.id,
+                        passport_expiry_date: m.passportExpiryISO,
+                    })
+                );
+
+                localStorage.setItem(key, "1");
+            }
+        } catch (e) {
+            console.error("여권 만료 1년 이내 알림 전송 실패:", e);
+        }
+    };
+
 
     const fetchMyRole = async () => {
         const {
@@ -345,6 +458,11 @@ export default function MembersPage() {
             };
         });
 
+                // ✅ 여권 만료 1년 이내 알림 (당사자 + admin)
+                await notifyPassportExpiryWithinOneYear(mapped);
+
+                setMembers(mapped);
+        
 
         setMembers(mapped);
         try {

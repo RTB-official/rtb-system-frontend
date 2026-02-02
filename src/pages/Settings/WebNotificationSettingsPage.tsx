@@ -10,16 +10,16 @@ import { useNavigate } from "react-router-dom";
 import {
     IconHome,
     IconReport,
-    IconCard,
+    IconShieldCheck,
     IconVacation,
     IconMembers,
   } from "../../components/icons/Icons";
 
-type WebNotiKey =
+  type WebNotiKey =
   | "vacation_create"
   | "vacation_decision"
   | "dashboard_schedule_add"
-  | "expense_create"
+  | "tbm_create"
   | "biz_report_submit_update"
   | "member_passport_expiry";
 
@@ -30,13 +30,13 @@ type WebPrefsRow = {
 };
 
 const DEFAULT_PREFS: Record<WebNotiKey, boolean> = {
-  vacation_create: true,
-  vacation_decision: true,
-  dashboard_schedule_add: true,
-  expense_create: true,
-  biz_report_submit_update: true,
-  member_passport_expiry: true,
-};
+    vacation_create: true,
+    vacation_decision: true,
+    dashboard_schedule_add: true,
+    tbm_create: true,
+    biz_report_submit_update: true,
+    member_passport_expiry: true,
+  };
 
 function safeMergePrefs(
   fromDb: WebPrefsRow["prefs"] | undefined | null
@@ -84,16 +84,23 @@ export default function WebNotificationSettingsPage() {
         ],
       },
       {
-        title: "지출 관리",
-        icon: <IconCard />,
+        title: "TBM",
+        icon: (
+            <span>
+              <IconShieldCheck />
+            </span>
+          ),
+          
         items: [
           {
-            key: "expense_create" as const,
-            label: "개인 지출 등록 알림",
-            desc: "개인 지출이 등록되면 웹 알림을 받습니다.",
+            key: "tbm_create" as const,
+            label: "TBM 등록 알림",
+            desc: "TBM이 등록되면 웹 알림을 받습니다.",
           },
         ],
       },
+
+
       {
         title: "휴가 관리",
         icon: <IconVacation />,
