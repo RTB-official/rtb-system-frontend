@@ -9,6 +9,8 @@ export function useMenuNotifications() {
     const { currentUser, currentUserId, userPermissions } = useUser();
     const { showInfo } = useToast();
 
+    const intervalMs = 24 * 60 * 60 * 1000; // 1 day
+
     const [notis, setNotis] = useState(() => {
         const cached = localStorage.getItem("sidebar_notis_cache");
         return cached ? JSON.parse(cached) : {
@@ -46,7 +48,6 @@ export function useMenuNotifications() {
     const checkNotifications = async () => {
         if (!currentUserId || !userPermissions.initialized) return;
         const now = new Date();
-        const intervalMs = 60 * 1000; // 1 minute for testing
 
         // 1. Vehicles
         let vehicleDot = false;
@@ -61,11 +62,6 @@ export function useMenuNotifications() {
                     const diff = expiry.getTime() - now.getTime();
                     if (diff > 0 && diff <= twoMonthsInMs) {
                         foundVehicles.push(v);
-                        
-                        // Check if this vehicle's toast was suppressed
-                        const lastShown = localStorage.getItem(`noti_toast_vehicle_${v.id}`);
-                        const isExpired = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
-                        if (isExpired) vehicleDot = true;
                     }
                 }
             }
@@ -73,6 +69,11 @@ export function useMenuNotifications() {
             console.error("Vehicle check failed:", err);
         }
         setPendingVehicles(foundVehicles);
+        if (foundVehicles.length > 0) {
+            const lastShown = localStorage.getItem("noti_toast_vehicles");
+            const isExpired = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
+            if (isExpired) vehicleDot = true;
+        }
 
         // 2. Members
         let memberDot = false;
@@ -93,10 +94,6 @@ export function useMenuNotifications() {
                         if (diff > 0 && diff <= oneYearInMs) {
                             const profileName = profiles?.find(prof => prof.id === p.user_id)?.name || "구성원";
                             foundMembers.push({ ...p, profileName });
-
-                            const lastShown = localStorage.getItem(`noti_toast_passport_${p.user_id}`);
-                            const isExpired = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
-                            if (isExpired) memberDot = true;
                         }
                     }
                 }
@@ -105,6 +102,11 @@ export function useMenuNotifications() {
             console.error("Passport check failed:", err);
         }
         setPendingMembers(foundMembers);
+        if (foundMembers.length > 0) {
+            const lastShown = localStorage.getItem("noti_toast_members");
+            const isExpired = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
+            if (isExpired) memberDot = true;
+        }
 
         // 3. Vacation
         let vacationDot = false;
@@ -114,7 +116,7 @@ export function useMenuNotifications() {
                 const pendingVacations = await getVacations(undefined, { status: "pending" });
                 vCount = pendingVacations.length;
                 if (vCount > 0) {
-                    const lastShown = localStorage.getItem(`noti_toast_vacation_ceo`);
+                    const lastShown = localStorage.getItem("noti_toast_vacation");
                     const isExpired = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
                     if (isExpired) vacationDot = true;
                 }
@@ -142,38 +144,39 @@ export function useMenuNotifications() {
     // 사용자가 메뉴를 클릭했을 때 호출될 함수
     const triggerToast = async (type: "vehicles" | "members" | "vacation") => {
         const now = new Date();
-        const intervalMs = 60 * 1000;
 
         if (type === "vehicles") {
-            pendingVehicles.forEach(v => {
-                const lastShown = localStorage.getItem(`noti_toast_vehicle_${v.id}`);
+            if (pendingVehicles.length > 0) {
+                const lastShown = localStorage.getItem("noti_toast_vehicles");
                 const shouldShow = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
-                
                 if (shouldShow) {
-                    const remainingLabel = getRemainingTimeLabel(v.inspection_date);
-                    showInfo(`${v.plate} 차량의 검사 주기가 ${remainingLabel} 남았습니다.`);
-                    localStorage.setItem(`noti_toast_vehicle_${v.id}`, now.getTime().toString());
+                    pendingVehicles.forEach((v) => {
+                        const remainingLabel = getRemainingTimeLabel(v.inspection_date);
+                        showInfo(`${v.plate} 차량의 검사 주기가 ${remainingLabel} 남았습니다.`);
+                    });
+                    localStorage.setItem("noti_toast_vehicles", now.getTime().toString());
                 }
-            });
+            }
         } else if (type === "members") {
-            pendingMembers.forEach(p => {
-                const lastShown = localStorage.getItem(`noti_toast_passport_${p.user_id}`);
+            if (pendingMembers.length > 0) {
+                const lastShown = localStorage.getItem("noti_toast_members");
                 const shouldShow = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
-
                 if (shouldShow) {
-                    const remainingLabel = getRemainingTimeLabel(p.passport_expiry_date);
-                    showInfo(`${p.profileName}님 여권 만료일이 ${remainingLabel} 남았습니다. 갱신해 주세요.`);
-                    localStorage.setItem(`noti_toast_passport_${p.user_id}`, now.getTime().toString());
+                    pendingMembers.forEach((p) => {
+                        const remainingLabel = getRemainingTimeLabel(p.passport_expiry_date);
+                        showInfo(`${p.profileName}님 여권 만료일이 ${remainingLabel} 남았습니다. 갱신해 주세요.`);
+                    });
+                    localStorage.setItem("noti_toast_members", now.getTime().toString());
                 }
-            });
+            }
         } else if (type === "vacation") {
             if (pendingVacationCount > 0) {
-                const lastShown = localStorage.getItem(`noti_toast_vacation_ceo`);
+                const lastShown = localStorage.getItem("noti_toast_vacation");
                 const shouldShow = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
 
                 if (shouldShow) {
                     showInfo(`대기 중인 휴가 신청이 ${pendingVacationCount}건 있습니다.`);
-                    localStorage.setItem(`noti_toast_vacation_ceo`, now.getTime().toString());
+                    localStorage.setItem("noti_toast_vacation", now.getTime().toString());
                 }
             }
         }

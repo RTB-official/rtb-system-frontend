@@ -26,7 +26,16 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error("useToast must be used within ToastProvider");
+    if (import.meta.env?.DEV) {
+      console.warn("useToast used outside ToastProvider; falling back to no-op");
+    }
+    const noop = () => {};
+    return {
+      showToast: noop,
+      showSuccess: noop,
+      showError: noop,
+      showInfo: noop,
+    };
   }
   return context;
 }
