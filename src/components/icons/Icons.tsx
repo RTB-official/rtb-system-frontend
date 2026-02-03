@@ -183,14 +183,11 @@ export const IconDownload = (props: { className?: string }) => (
 
 export const IconLock = (props: { className?: string }) => (
     <svg
-        className={props.className || "w-4 h-4"}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
+        className={props.className || "w-5 h-5"}
+        viewBox="0 -960 960 960"
+        fill="currentColor"
     >
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-        <path d="M7 11V7a5 5 0 0110 0v4" />
+        <path d="M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h40v-80q0-83 58.5-141.5T480-920q83 0 141.5 58.5T680-720v80h40q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm0-80h480v-400H240v400Zm240-120q33 0 56.5-23.5T560-360q0-33-23.5-56.5T480-440q-33 0-56.5 23.5T400-360q0 33 23.5 56.5T480-280ZM360-640h240v-80q0-50-35-85t-85-35q-50 0-85 35t-35 85v80ZM240-160v-400 400Z" />
     </svg>
 );
 
@@ -226,15 +223,11 @@ export const IconEyeOff = (props: { className?: string }) => (
 
 export const IconLogout = (props: { className?: string }) => (
     <svg
-        className={props.className || "w-4 h-4"}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
+        className={props.className || "w-5 h-5"}
+        viewBox="0 -960 960 960"
+        fill="currentColor"
     >
-        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-        <path d="M16 17l5-5-5-5" />
-        <path d="M21 12H9" />
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h280v80H200Zm440-160-55-58 102-102H360v-80h327L585-622l55-58 200 200-200 200Z" />
     </svg>
 );
 
@@ -581,4 +574,3 @@ export const IconSettings = (props: { className?: string }) => (
         </defs>
     </svg>
 );
-

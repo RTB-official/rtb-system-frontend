@@ -15,6 +15,7 @@ export interface UserPermissions {
     isStaff: boolean;
     showHomeMenu: boolean;
     showVacationMenu: boolean;
+    initialized: boolean;
 }
 
 export function useUser() {
@@ -69,12 +70,25 @@ export function useUser() {
         initialized: false,
     });
 
-    const [userPermissions, setUserPermissions] = useState<UserPermissions>({
-        isCEO: false,
-        isAdmin: false,
-        isStaff: false,
-        showHomeMenu: false,
-        showVacationMenu: false,
+    const [userPermissions, setUserPermissions] = useState<UserPermissions>(() => {
+        const role = localStorage.getItem("sidebarRole");
+        const position = localStorage.getItem("sidebarPosition");
+        const id = localStorage.getItem("sidebarLoginId");
+
+        const isCEO = position === "대표";
+        const isAdmin = role === "admin";
+        const isStaff = role === "staff";
+        const showHomeMenu = isCEO || isAdmin;
+        const showVacationMenu = isCEO || !isStaff;
+
+        return {
+            isCEO,
+            isAdmin,
+            isStaff,
+            showHomeMenu,
+            showVacationMenu,
+            initialized: !!id, // If we have an ID, we at least have cached info
+        };
     });
 
     // 사용자 정보 로드
@@ -179,7 +193,7 @@ export function useUser() {
             return;
         }
 
-        if (!currentUser) {
+        if (!currentUserId || !currentUser) {
             return;
         }
 
@@ -188,10 +202,6 @@ export function useUser() {
             userRole !== null && userRole !== undefined
                 ? userRole
                 : currentUser.role || localStorage.getItem("sidebarRole");
-        const department =
-            userDepartment !== null && userDepartment !== undefined
-                ? userDepartment
-                : currentUser.department || localStorage.getItem("sidebarDepartment");
 
         // 권한 계산 (한 번만 계산하고 절대 변경되지 않음)
         // 대표는 예외로 모든 권한 가짐
@@ -219,6 +229,7 @@ export function useUser() {
             isStaff,
             showHomeMenu,
             showVacationMenu,
+            initialized: true,
         });
     }, [currentUser, userRole, userDepartment]);
 

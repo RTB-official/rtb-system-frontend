@@ -1,6 +1,9 @@
 //workLogApi.ts
 import { supabase } from "./supabase";
-import { notificationService } from "./notificationService";
+import {
+    createNotificationsForUsers,
+    getGongmuTeamUserIds,
+} from "./notificationApi";
 
 
 const workLogCache = new Map<number, WorkLogFullData>();
@@ -351,7 +354,7 @@ export async function createWorkLog(
                 // 본인 제외
                 const creatorId = data.created_by || null;
                 const targetUserIds = creatorId 
-                    ? gongmuUserIds.filter(id => id !== creatorId)
+                    ? gongmuUserIds.filter((id: string) => id !== creatorId)
                     : gongmuUserIds;
                 
                 if (targetUserIds.length > 0) {
@@ -852,7 +855,7 @@ export async function updateWorkLog(
                     
                     // 본인 제외
                     const targetUserIds = creatorId 
-                        ? gongmuUserIds.filter(id => id !== creatorId)
+                        ? gongmuUserIds.filter((id: string) => id !== creatorId)
                         : gongmuUserIds;
                     
                     if (targetUserIds.length > 0) {

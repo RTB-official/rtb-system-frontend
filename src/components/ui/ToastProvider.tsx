@@ -26,7 +26,16 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error("useToast must be used within ToastProvider");
+    if (import.meta.env?.DEV) {
+      console.warn("useToast used outside ToastProvider; falling back to no-op");
+    }
+    const noop = () => {};
+    return {
+      showToast: noop,
+      showSuccess: noop,
+      showError: noop,
+      showInfo: noop,
+    };
   }
   return context;
 }
@@ -70,7 +79,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
   const showSuccess = useCallback((input: ToastInput) => showToast(input, "success"), [showToast]);
   const showError = useCallback((input: ToastInput) => showToast(input, "error", 4000), [showToast]);
-  const showInfo = useCallback((input: ToastInput) => showToast(input, "info"), [showToast]);
+  const showInfo = useCallback((input: ToastInput) => showToast(input, "info", 5000), [showToast]);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));

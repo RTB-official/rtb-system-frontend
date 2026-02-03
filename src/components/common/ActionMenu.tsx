@@ -196,7 +196,7 @@ export default function ActionMenu({
 
             {onResetPassword && (
                 <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                     onClick={() => {
                         onResetPassword();
                         onClose();
