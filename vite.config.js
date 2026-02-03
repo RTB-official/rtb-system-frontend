@@ -12,6 +12,8 @@ export default defineConfig({
         alias: {
             "@": path.resolve(__dirname, "src"),
         },
+        // React 중복 로딩 방지
+        dedupe: ["react", "react-dom"],
     },
     build: {
         // 최신 브라우저 타겟 (더 작은 번들)
