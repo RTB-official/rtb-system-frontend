@@ -410,7 +410,7 @@ export async function uploadReceiptFile(
         });
 
     if (uploadError) {
-        throw new Error(`파일 업로드 실패: ${uploadError.message || uploadError.error || "알 수 없는 오류"}`);
+        throw new Error(`파일 업로드 실패: ${uploadError.message || "알 수 없는 오류"}`);
     }
 
     return filePath;
@@ -816,6 +816,8 @@ export async function updateWorkLog(
     } catch (error) {
         throw error;
     }
+
+    return workLog;
 }
 
 /**

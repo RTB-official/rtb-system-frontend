@@ -1,21 +1,8 @@
 //workloadPage.tsx
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    Line,
-    ReferenceLine,
-    Scatter,
-} from "recharts";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
-import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
 import { useUser } from "../../hooks/useUser";
@@ -30,101 +17,15 @@ import {
     type WorkloadChartData,
     type WorkloadTableRow,
 } from "../../lib/workloadApi";
-
-// 워크로드 타입별 색상 및 라벨 상수
-const WORKLOAD_TYPES = [
-    { key: "작업", label: "작업", color: "#51a2ff", dataKey: "작업" },
-    { key: "이동", label: "이동", color: "#fd9a00", dataKey: "이동" },
-    { key: "대기", label: "대기", color: "#d1d5dc", dataKey: "대기" },
-];
-
-// 테이블 컬럼 정의
-const TABLE_COLUMNS = [
-    { key: "name", label: "이름" },
-    { key: "work", label: "작업" },
-    { key: "travel", label: "이동" },
-    { key: "wait", label: "대기" },
-    { key: "days", label: "일수" },
-];
-
-// 커스텀 툴팁
-const CustomTooltip = ({ active, payload, label, showLastMonth }: any) => {
-    if (active && payload && payload.length) {
-        const byKey = (key: string) =>
-            payload.find((p: any) => p?.dataKey === key)?.value ?? 0;
-
-        const lastWork = byKey("lastWork");
-
-        return (
-            <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-lg">
-                <p className="font-semibold text-sm text-gray-900 mb-2">{label}</p>
-                <div className="flex flex-col gap-1.5">
-                    {WORKLOAD_TYPES.map((type) => (
-                        <div key={type.key} className="flex items-center gap-1.5">
-                            <div
-                                className="w-3.5 h-3.5 rounded"
-                                style={{ backgroundColor: type.color }}
-                            />
-                            <span className="text-sm text-gray-600">
-                                {type.label} {byKey(type.dataKey)}시간
-                            </span>
-                        </div>
-                    ))}
-
-                    {/* ✅ 지난달 데이터 ON일 때만 툴팁에 표시 */}
-                    {showLastMonth && (
-                        <div className="flex items-center gap-1.5 mt-1 pt-2 border-t border-gray-100">
-                            <div
-                                className="w-3.5 h-3.5 rounded"
-                                style={{ backgroundColor: "#d1d5db" }}
-                            />
-                            <span className="text-sm text-gray-600">
-                                지난달 작업 {lastWork}시간
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    }
-    return null;
-};
-
-
-// 차트 설정 상수
-const CHART_MARGIN = { top: 20, right: 20, left: 0, bottom: 5 };
-const BAR_RADIUS = 4;
-const Y_AXIS_INTERVAL = 35;
-const X_AXIS_HEIGHT = 30; // ✅ 두 레이어 0기준 맞추기용
-const Y_AXIS_WIDTH = 40; // ✅ 두 레이어 차트 Y축 폭 고정(정렬용)
-
-// 커스텀 Bar Shape - 각 데이터 포인트에서 실제로 맨 위에 있는 Bar만 위쪽 radius 적용
-const CustomBarShape = (props: any) => {
-    const { fill, x, y, width, height, payload, dataKey } = props;
-    const { 작업, 이동, 대기 } = payload as WorkloadChartData;
-
-    // 실제로 맨 위에 있는 Bar인지 확인
-    // Recharts 스택 순서: 작업(아래) -> 이동(중간) -> 대기(위)
-    const isTopBar =
-        (dataKey === "대기" && 대기 > 0) ||
-        (dataKey === "이동" && 대기 === 0 && 이동 > 0) ||
-        (dataKey === "작업" && 대기 === 0 && 이동 === 0 && 작업 > 0);
-
-    if (isTopBar) {
-        // 위쪽만 radius 적용 (path 사용)
-        const path = `M ${x + BAR_RADIUS} ${y} 
-                      L ${x + width - BAR_RADIUS} ${y} 
-                      Q ${x + width} ${y} ${x + width} ${y + BAR_RADIUS} 
-                      L ${x + width} ${y + height} 
-                      L ${x} ${y + height} 
-                      L ${x} ${y + BAR_RADIUS} 
-                      Q ${x} ${y} ${x + BAR_RADIUS} ${y} Z`;
-        return <path d={path} fill={fill} />;
-    }
-
-    return <rect x={x} y={y} width={width} height={height} fill={fill} />;
-};
-
+import WorkloadChartSection from "./components/WorkloadChartSection";
+import WorkloadReasonSection from "./components/WorkloadReasonSection";
+import WorkloadTableSection from "./components/WorkloadTableSection";
+import WorkloadXAxisTick from "./components/WorkloadXAxisTick";
+import { useChartSize } from "./hooks/useChartSize";
+import {
+    TABLE_COLUMNS,
+    Y_AXIS_INTERVAL,
+} from "./workloadConstants";
 
 export default function WorkloadPage() {
     const navigate = useNavigate();
@@ -331,9 +232,8 @@ export default function WorkloadPage() {
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
     const [lastMonthChartData, setLastMonthChartData] = useState<WorkloadChartData[]>([]);
-    const chartContainerRef = useRef<HTMLDivElement>(null);
     const [showLastMonth, setShowLastMonth] = useState(false);
-    const [chartSize, setChartSize] = useState({ width: 0, height: 300 });
+    const { chartContainerRef, chartSize } = useChartSize(chartData.length);
     const selectedYearNum = useMemo(
         () => parseInt(selectedYear.replace("년", "")),
         [selectedYear]
@@ -359,52 +259,10 @@ export default function WorkloadPage() {
             return set;
         }, [reasonByName, reasonGovByName]);
     
-        // ✅ X축 이름 + 말풍선 아이콘
         const CustomXAxisTick = useCallback(
             (props: any) => {
-                const { x, y, payload } = props;
-                const name = payload?.value ?? "";
-                const hasReason = namesWithReason.has(name);
-    
-                return (
-                    <g transform={`translate(${x},${y})`}>
-                        <text
-                            x={0}
-                            y={0}
-                            dy={14}
-                            textAnchor="middle"
-                            fill="#6a7282"
-                            fontSize={12}
-                        >
-                            {name}
-                        </text>
-    
-                        {hasReason && (
-                            // 말풍선 아이콘 (이름 오른쪽)
-                            <g transform="translate(22, 2)">
-                                <svg
-                                    width="14"
-                                    height="14"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                >
-                                    <path
-                                        d="M21 12c0 4.418-4.03 8-9 8-1.05 0-2.06-.16-3-.46L3 21l1.62-4.06C3.61 15.65 3 13.9 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                                        stroke="#9CA3AF"
-                                        strokeWidth="1.8"
-                                        strokeLinejoin="round"
-                                    />
-                                    <path
-                                        d="M8 12h8M8 9h6M8 15h5"
-                                        stroke="#9CA3AF"
-                                        strokeWidth="1.8"
-                                        strokeLinecap="round"
-                                    />
-                                </svg>
-                            </g>
-                        )}
-                    </g>
-                );
+                const name = props?.payload?.value ?? "";
+                return <WorkloadXAxisTick {...props} hasReason={namesWithReason.has(name)} />;
             },
             [namesWithReason]
         );
@@ -418,16 +276,6 @@ const chartDataWithLastWork = useMemo(() => {
         lastWork: lastMap.get(d.name) ?? null,
     }));
 }, [chartData, lastMonthChartData]);
-// 지난달 점 표시용 데이터 (지난달 '작업시간' 위치에 점)
-const lastMonthDotData = useMemo(() => {
-    return lastMonthChartData.map((d) => ({
-        name: d.name,
-        midY: d.작업 ?? 0, // ✅ 지난달 작업시간(예: 50)이 그대로 y값이 됨
-    }));
-}, [lastMonthChartData]);
-
-
-
     const itemsPerPage = 10;
 
     // ✅ useUser 훅으로 사용자 정보 및 권한 가져오기
@@ -467,59 +315,6 @@ const lastMonthDotData = useMemo(() => {
             });
         }
     }, [isStaff, staffPersonName, navigate]);
-
-    // 차트 컨테이너 크기 측정 (성능 최적화: 즉시 측정)
-    useEffect(() => {
-        if (!chartData.length) return;
-
-        let resizeTimer: NodeJS.Timeout | null = null;
-        let lastWidth = 0;
-
-        const updateChartSize = () => {
-            if (!chartContainerRef.current) return;
-
-            const rect = chartContainerRef.current.getBoundingClientRect();
-            const newWidth = Math.round(rect.width);
-
-            // 크기가 실제로 변경된 경우에만 업데이트 (10px 이상 차이)
-            if (newWidth > 0 && Math.abs(lastWidth - newWidth) >= 10) {
-                lastWidth = newWidth;
-                setChartSize({ width: newWidth, height: 300 });
-            }
-        };
-
-        // 초기 크기 확인 (즉시 측정으로 로딩 속도 개선)
-        if (chartContainerRef.current) {
-            const rect = chartContainerRef.current.getBoundingClientRect();
-            const width = Math.round(rect.width);
-            if (width > 0) {
-                lastWidth = width;
-                setChartSize({ width, height: 300 });
-            } else {
-                // 크기가 0이면 약간 지연 후 재시도
-                const timeout = setTimeout(() => {
-                    updateChartSize();
-                }, 100);
-                return () => clearTimeout(timeout);
-            }
-        }
-
-        // resize 이벤트에 debounce 적용 (500ms로 증가하여 성능 개선)
-        const handleResize = () => {
-            if (resizeTimer) clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => {
-                updateChartSize();
-                resizeTimer = null;
-            }, 500);
-        };
-
-        window.addEventListener('resize', handleResize, { passive: true });
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            if (resizeTimer) clearTimeout(resizeTimer);
-        };
-    }, [chartData.length]);
 
     // 행 클릭 핸들러 (메모이제이션)
     const handleRowClick = useCallback(
@@ -788,265 +583,43 @@ const { maxYValue, yAxisTicks } = useMemo(() => {
                             </div>
 
                             {/* 인원별 작업시간 차트 */}
-                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
-    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight">
-            인원별 작업시간
-        </h2>
+                            <WorkloadChartSection
+                                chartData={chartData}
+                                chartDataWithLastWork={chartDataWithLastWork}
+                                chartContainerRef={chartContainerRef}
+                                chartSize={chartSize}
+                                showLastMonth={showLastMonth}
+                                onToggleLastMonth={() => setShowLastMonth((v) => !v)}
+                                onChartMouseMove={handleChartMouseMove}
+                                onChartMouseLeave={() => setHoveredName(null)}
+                                onChartClick={handleChartClick}
+                                onBarClick={handleBarClick}
+                                CustomXAxisTick={CustomXAxisTick}
+                                maxYValue={maxYValue}
+                                yAxisTicks={yAxisTicks}
+                                averageWorkTime={averageWorkTime}
+                            />
 
-        <div className="flex items-center gap-4">
-            {/* 지난달 데이터 토글 버튼 (UI만) */}
-            <button
-                type="button"
-                onClick={() => setShowLastMonth((v) => !v)}
-                className={`px-3 py-1.5 rounded-lg text-[13px] font-medium border transition
-                    ${showLastMonth
-                        ? "bg-red-50 border-red-200 text-red-600"
-                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                    }`}
-            >
-                지난달 데이터 {showLastMonth ? "ON" : "OFF"}
-            </button>
+                            <WorkloadReasonSection
+                                reasonTargetName={reasonTargetName}
+                                selectedMonthNum={selectedMonthNum}
+                                reasonText={reasonText}
+                                reasonGovText={reasonGovText}
+                                onReasonTextChange={setReasonText}
+                                onReasonGovTextChange={setReasonGovText}
+                                onSave={handleReasonSave}
+                                onClose={handleReasonClose}
+                            />
 
-            {/* 범례 */}
-            <div className="flex items-center gap-5">
-                {WORKLOAD_TYPES.map((type) => (
-                    <div key={type.key} className="flex items-center gap-1.5">
-                        <div
-                            className="w-4 h-4 rounded"
-                            style={{ backgroundColor: type.color }}
-                        />
-                        <span className="text-[13px] text-gray-500">
-                            {type.label}
-                        </span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    </div>
-
-    {chartData.length === 0 ? (
-        <div className="h-[300px] flex items-center justify-center">
-            <div className="text-gray-500">데이터가 없습니다.</div>
-        </div>
-    ) : (
-        <div
-            ref={chartContainerRef}
-            className="w-full"
-            style={{
-                height: "300px",
-                minHeight: "300px",
-                position: "relative",
-                width: "100%",
-            }}
-        >
-{chartSize.width > 0 ? (
-    <div className="relative w-full h-[300px]">
-        {/* ✅ 이번달 레이어 (아래) */}
-        <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-                data={chartDataWithLastWork}
-                margin={CHART_MARGIN}
-                onMouseMove={handleChartMouseMove}
-                onMouseLeave={() => setHoveredName(null)}
-                onClick={handleChartClick}
-            >
-                    <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#e5e7eb"
-                    />
-                    <XAxis
-                        height={X_AXIS_HEIGHT}
-                        dataKey="name"
-                        tick={CustomXAxisTick}
-                        axisLine={false}
-                        tickLine={false}
-                    />
-
-                    <YAxis
-                        width={Y_AXIS_WIDTH}
-                        tick={{ fontSize: 14, fill: "#99a1af" }}
-                        axisLine={false}
-                        tickLine={false}
-                        domain={[0, maxYValue]}
-                        ticks={yAxisTicks}
-                    />
-                    <Tooltip
-                        content={<CustomTooltip showLastMonth={showLastMonth} />}
-                        cursor={{ fill: "rgba(0,0,0,0.05)" }}
-                    />
-                    {WORKLOAD_TYPES.map((type) => (
-                        <Bar
-                            key={type.key}
-                            dataKey={type.dataKey}
-                            stackId="a"
-                            fill={type.color}
-                            shape={CustomBarShape}
-                            onClick={handleBarClick}   // ✅ 막대 클릭
-                            cursor="pointer"           // ✅ 포인터
-                        />
-                    ))}
-
-{/* 순수 작업시간 평균선 */}
-<Line
-    type="monotone"
-    dataKey={() => averageWorkTime}
-    stroke="#ef4444"
-    strokeWidth={1}
-    strokeDasharray="6 6"
-    dot={false}
-    activeDot={false}          // ✅ hover 시 빨간 원 제거
-    isAnimationActive={false}
-/>
-
-{/* 평균선 AVG 라벨 */}
-<ReferenceLine
-    y={averageWorkTime}
-    stroke="transparent"
-    label={{
-        value: `AVG=${averageWorkTime}`,
-        position: "insideRight",
-        offset: 10,
-        dy: -8,                 // ✅ 위로 이동 (겹침 해결)
-        fill: "#ef4444",
-        fontSize: 12,
-        fontWeight: 600,
-    }}
-/>
-{/* ✅ 지난달 데이터 점 표시 (이번달 막대의 중간 높이) */}
-{showLastMonth && (
-    <Line
-        type="linear"
-        dataKey="lastWork"
-        stroke="#d1d5db"          // ✅ 연한 회색
-        strokeWidth={2}
-        dot={{ r: 4, fill: "#d1d5db" }}   // ✅ 연한 회색
-        activeDot={{ r: 5 }}
-        connectNulls={false}
-        isAnimationActive={false}
-    />
-)}
-                </BarChart>
-            </ResponsiveContainer>
-        </div>
-
-
-
-    </div>
-) : (
-    <div className="h-[300px] w-full bg-gray-100 rounded-xl animate-pulse" />
-)}
-
-
-
-        </div>
-    )}
-</div>
-
-                            {/* ✅ 사유 섹션 (막대 클릭 시 표시) */}
-                            <div
-                                className={[
-                                    "bg-white border border-gray-200 rounded-2xl px-7 overflow-hidden",
-                                    "transition-all duration-300 ease-out",
-                                    reasonTargetName
-                                        ? "max-h-[260px] opacity-100 translate-y-0 py-6"
-                                        : "max-h-0 opacity-0 -translate-y-2 py-0 border-transparent",
-                                ].join(" ")}
-                            >
-                                {reasonTargetName && (
-                                    <>
-                                        <div className="flex items-center justify-between gap-3 mb-3">
-                                        <h2 className="text-lg font-semibold text-gray-800">
-                                                {reasonTargetName} 사유 ({selectedMonthNum}월)
-                                            </h2>
-
-
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={handleReasonSave}
-                                                    className="px-3 py-1.5 rounded-lg text-[13px] font-semibold bg-gray-900 text-white hover:bg-gray-800 transition"
-                                                >
-                                                    저장
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleReasonClose}
-                                                    className="px-3 py-1.5 rounded-lg text-[13px] font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition"
-                                                >
-                                                    닫기
-                                                </button>
-                                            </div>
-                                            </div>
-
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                                            {/* 왼쪽: 개인 사유 */}
-                                            <div className="flex flex-col gap-2">
-                                                <div className="text-sm font-semibold text-gray-700">
-                                                    개인 사유
-                                                </div>
-                                                <textarea
-                                                    value={reasonText}
-                                                    onChange={(e) => setReasonText(e.target.value)}
-                                                    placeholder="개인 사유를 입력하세요."
-                                                    className="w-full h-[140px] resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                                                />
-                                            </div>
-
-                                            {/* 오른쪽: 공무팀 사유 */}
-                                            <div className="flex flex-col gap-2">
-                                                <div className="text-sm font-semibold text-gray-700">
-                                                    공무팀 사유
-                                                </div>
-                                                <textarea
-                                                    value={reasonGovText}
-                                                    onChange={(e) => setReasonGovText(e.target.value)}
-                                                    placeholder="공무팀 사유를 입력하세요."
-                                                    className="w-full h-[140px] resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-200"
-                                                />
-                                            </div>
-                                        </div>
-
-
-                                    </>
-                                )}
-                            </div>
-
-                            {/* 상세 데이터 테이블 */}
-                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
-                                <h2 className="text-lg font-semibold text-gray-800 mb-1">
-                                    상세 데이터
-                                </h2>
-                                <p className="text-sm text-gray-500 mb-4">
-                                    클릭하여 상세 내역을 확인하세요
-                                </p>
-
-                                {tableData.length === 0 ? (
-                                    <div className="py-8 text-center text-gray-500">
-                                        데이터가 없습니다.
-                                    </div>
-                                ) : (
-                                    <Table
-                                        columns={TABLE_COLUMNS}
-                                        data={currentTableData}
-                                        rowKey="id"
-                                        onRowClick={handleRowClick}
-                                        pagination={
-                                            totalPages > 1
-                                                ? {
-                                                    currentPage,
-                                                    totalPages,
-                                                    onPageChange:
-                                                        setCurrentPage,
-                                                }
-                                                : undefined
-                                        }
-                                    />
-                                )}
-                            </div>
+                            <WorkloadTableSection
+                                columns={TABLE_COLUMNS}
+                                tableData={tableData}
+                                currentTableData={currentTableData}
+                                totalPages={totalPages}
+                                currentPage={currentPage}
+                                onPageChange={setCurrentPage}
+                                onRowClick={handleRowClick}
+                            />
                         </div>
                     )}
                 </main>
@@ -1054,5 +627,3 @@ const { maxYValue, yAxisTicks } = useMemo(() => {
         </div>
     );
 }  
-
-
