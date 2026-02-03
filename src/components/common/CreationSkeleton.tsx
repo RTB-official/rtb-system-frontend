@@ -1,7 +1,7 @@
 /**
  * 출장 보고서 작성 페이지 로딩 스켈레톤 컴포넌트
  */
-import SkeletonSectionCard from "./SkeletonSectionCard";
+import SkeletonSectionCard from "./skeletons/SkeletonSectionCard";
 
 export default function CreationSkeleton() {
     return (
