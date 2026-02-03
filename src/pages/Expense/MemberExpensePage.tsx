@@ -1,3 +1,4 @@
+// MemberExpensePage.tsx
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -9,10 +10,12 @@ import {
     getAllUsersExpenseSummary,
     getUserMileageDetails,
     getUserCardExpenseDetails,
+    getPersonalExpenseReceiptUrl,
     type EmployeeExpenseSummary,
     type EmployeeMileageDetail,
     type EmployeeCardExpenseDetail,
 } from "../../lib/personalExpenseApi";
+
 import { TableSkeleton } from "./components/TableSkeleton";
 import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
@@ -364,7 +367,11 @@ export default function MemberExpensePage() {
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedReceipt(row.receipt_path || null);
+                                setSelectedReceipt(
+                                    row.receipt_path
+                                        ? getPersonalExpenseReceiptUrl(row.receipt_path)
+                                        : null
+                                );
                             }}
                             className="text-blue-500 underline cursor-pointer hover:text-blue-700"
                         >
@@ -375,6 +382,7 @@ export default function MemberExpensePage() {
                 return "";
             },
         },
+        
     ];
 
     // 드롭다운 행의 상세 데이터 로드
