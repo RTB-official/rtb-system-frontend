@@ -10,6 +10,10 @@ import {
 } from "./personalExpenseApi";
 import { getPersonalExpenseReceiptUrl } from "./personalExpenseApi";
 
+// =====================
+// 공통 유틸
+// =====================
+
 // 요일 변환 함수
 const getDayOfWeek = (date: Date): string => {
     const days = ["일", "월", "화", "수", "목", "금", "토"];
@@ -17,7 +21,9 @@ const getDayOfWeek = (date: Date): string => {
 };
 
 // 날짜 파싱 (YYYY-MM-DD 형식)
-const parseDate = (dateStr: string): { year: number; month: number; day: number; dayOfWeek: string } => {
+const parseDate = (
+    dateStr: string
+): { year: number; month: number; day: number; dayOfWeek: string } => {
     if (!dateStr) {
         const now = new Date();
         return {
@@ -27,7 +33,6 @@ const parseDate = (dateStr: string): { year: number; month: number; day: number;
             dayOfWeek: getDayOfWeek(now),
         };
     }
-    // YYYY-MM-DD 형식으로 파싱
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) {
         const now = new Date();
@@ -61,7 +66,7 @@ const getReceiptUrl = (receiptPath: string | null): string | null => {
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
     const bytes = new Uint8Array(buffer);
     let binary = "";
-    const chunkSize = 8192; // 청크 크기
+    const chunkSize = 8192;
     for (let i = 0; i < bytes.length; i += chunkSize) {
         const chunk = bytes.slice(i, i + chunkSize);
         binary += String.fromCharCode.apply(null, Array.from(chunk));
@@ -69,90 +74,108 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
     return btoa(binary);
 }
 
-// 프리텐다드 폰트 추가 (CDN TTF 파일 사용 - Regular + Bold)
-export async function addPretendardFont(doc: jsPDF): Promise<{ success: boolean; hasBold: boolean }> {
+// =====================
+// ✅ 나눔고딕 폰트 임베딩 (jsPDF용)
+// =====================
+
+/**
+ * NanumGothic 폰트를 jsPDF VFS에 등록해서 한글 깨짐을 막는다.
+ * public/fonts 에 아래 파일이 있어야 함:
+ * - /fonts/NanumGothic-Regular.ttf
+ * - /fonts/NanumGothic-Bold.ttf
+ */
+export async function addNanumGothicFont(
+    doc: jsPDF
+): Promise<{ success: boolean; hasBold: boolean }> {
     try {
         let regularAdded = false;
         let boldAdded = false;
-        
-        // Regular 폰트 추가
+
+        // Regular
         try {
-            const regularUrl = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-Regular.ttf";
-            console.log("프리텐다드 Regular 폰트 로드 시작...", regularUrl);
-            const regularResponse = await fetch(regularUrl);
-            
-            if (regularResponse.ok) {
-                const regularArrayBuffer = await regularResponse.arrayBuffer();
-                const regularBase64 = arrayBufferToBase64(regularArrayBuffer);
-                
-                (doc as any).addFileToVFS("Pretendard-Regular.ttf", regularBase64);
-                
+            const regularUrl = "/fonts/NanumGothic-Regular.ttf";
+            const res = await fetch(regularUrl);
+            if (res.ok) {
+                const buf = await res.arrayBuffer();
+                const base64 = arrayBufferToBase64(buf);
+                (doc as any).addFileToVFS("NanumGothic-Regular.ttf", base64);
                 try {
-                    (doc as any).addFont("Pretendard-Regular.ttf", "Pretendard", "normal");
+                    (doc as any).addFont(
+                        "NanumGothic-Regular.ttf",
+                        "NanumGothic",
+                        "normal"
+                    );
                     regularAdded = true;
-                    console.log("프리텐다드 Regular 폰트 추가 성공");
-                } catch (fontError: any) {
-                    console.warn("프리텐다드 Regular 폰트 등록 실패:", fontError?.message || fontError);
+                } catch (e: any) {
+                    console.warn("나눔고딕 Regular addFont 실패:", e?.message || e);
                 }
+            } else {
+                console.warn("나눔고딕 Regular fetch 실패:", res.status);
             }
-        } catch (error) {
-            console.warn("프리텐다드 Regular 폰트 로드 실패:", error);
+        } catch (e) {
+            console.warn("나눔고딕 Regular 로드 실패:", e);
         }
-        
-        // Bold 폰트 추가
+
+        // Bold
         try {
-            const boldUrl = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/public/static/Pretendard-Bold.ttf";
-            console.log("프리텐다드 Bold 폰트 로드 시작...", boldUrl);
-            const boldResponse = await fetch(boldUrl);
-            
-            if (boldResponse.ok) {
-                const boldArrayBuffer = await boldResponse.arrayBuffer();
-                const boldBase64 = arrayBufferToBase64(boldArrayBuffer);
-                
-                (doc as any).addFileToVFS("Pretendard-Bold.ttf", boldBase64);
-                
+            const boldUrl = "/fonts/NanumGothic-Bold.ttf";
+            const res = await fetch(boldUrl);
+            if (res.ok) {
+                const buf = await res.arrayBuffer();
+                const base64 = arrayBufferToBase64(buf);
+                (doc as any).addFileToVFS("NanumGothic-Bold.ttf", base64);
                 try {
-                    (doc as any).addFont("Pretendard-Bold.ttf", "Pretendard", "bold");
+                    (doc as any).addFont(
+                        "NanumGothic-Bold.ttf",
+                        "NanumGothic",
+                        "bold"
+                    );
                     boldAdded = true;
-                    console.log("프리텐다드 Bold 폰트 추가 성공");
-                } catch (fontError: any) {
-                    const errorMsg = fontError?.message || String(fontError);
-                    if (!errorMsg.includes("unicode cmap") && !errorMsg.includes("No unicode cmap")) {
-                        console.warn("프리텐다드 Bold 폰트 등록 실패:", errorMsg);
+                } catch (e: any) {
+                    const msg = e?.message || String(e);
+                    // 일부 환경 unicode cmap 경고는 무시 가능
+                    if (!msg.includes("unicode cmap") && !msg.includes("No unicode cmap")) {
+                        console.warn("나눔고딕 Bold addFont 실패:", msg);
                     }
                 }
+            } else {
+                console.warn("나눔고딕 Bold fetch 실패:", res.status);
             }
-        } catch (error) {
-            console.warn("프리텐다드 Bold 폰트 로드 실패:", error);
+        } catch (e) {
+            console.warn("나눔고딕 Bold 로드 실패:", e);
         }
-        
-        if (regularAdded || boldAdded) {
-            try {
-                const fontList = doc.getFontList();
-                if (!("Pretendard" in fontList)) {
-                    console.warn("Pretendard 폰트가 등록 목록에 없음");
-                    return { success: false, hasBold: false };
-                }
-                
-                try {
-                    doc.setFont("Pretendard", regularAdded ? "normal" : "bold");
-                    return { success: true, hasBold: boldAdded };
-                } catch (setFontError: any) {
-                    console.warn("폰트 설정 실패, 기본 폰트 사용:", setFontError?.message || setFontError);
-                    return { success: false, hasBold: false };
-                }
-            } catch (error) {
-                console.warn("폰트 목록 확인 실패:", error);
+
+        if (!(regularAdded || boldAdded)) {
+            return { success: false, hasBold: false };
+        }
+
+        // 등록 확인 + 사용 테스트
+        try {
+            const fontList = doc.getFontList();
+            if (!("NanumGothic" in fontList)) {
+                console.warn("NanumGothic 폰트가 getFontList에 없음");
                 return { success: false, hasBold: false };
             }
+            try {
+                doc.setFont("NanumGothic", regularAdded ? "normal" : "bold");
+                return { success: true, hasBold: boldAdded };
+            } catch (e: any) {
+                console.warn("NanumGothic setFont 실패:", e?.message || e);
+                return { success: false, hasBold: false };
+            }
+        } catch (e) {
+            console.warn("폰트 목록 확인 실패:", e);
+            return { success: false, hasBold: false };
         }
-        
-        return { success: false, hasBold: false };
-    } catch (error) {
-        console.error("프리텐다드 폰트 추가 실패:", error);
+    } catch (e) {
+        console.error("나눔고딕 폰트 추가 실패:", e);
         return { success: false, hasBold: false };
     }
 }
+
+// =====================
+// 청구서 PDF
+// =====================
 
 export interface GeneratePDFParams {
     employeeName: string;
@@ -177,29 +200,29 @@ export async function generateExpenseReportPDF({
             unit: "mm",
             format: "a4",
         });
-        
-        // 프리텐다드 폰트 추가 시도
+
+        // ✅ 나눔고딕 폰트 등록
         let fontAdded = false;
+        let hasBold = false;
         try {
-            const fontResult = await addPretendardFont(doc);
-            fontAdded = fontResult.success;
-        } catch (error) {
-            console.warn("폰트 추가 중 오류 발생, 기본 폰트 사용:", error);
-        }
-        
-        const fontName = fontAdded ? "Pretendard" : "helvetica";
-        const fontStyle = fontAdded ? "normal" : "bold"; 
-        
-        console.log("사용할 폰트:", fontName, fontAdded ? "(프리텐다드)" : "(기본 폰트)");
-        
-        // 기본 폰트로 설정 (안전하게 시작)
-        try {
-            doc.setFont(fontName, fontStyle);
+            const r = await addNanumGothicFont(doc);
+            fontAdded = r.success;
+            hasBold = r.hasBold;
         } catch (e) {
-            console.warn("폰트 설정 실패, helvetica로 전환:", e);
+            console.warn("폰트 추가 중 오류, 기본 폰트 사용:", e);
+        }
+
+        const fontName = fontAdded ? "NanumGothic" : "helvetica";
+        const titleStyle = fontAdded ? (hasBold ? "bold" : "normal") : "bold";
+        const normalStyle = "normal"; // 본문은 normal 고정
+
+        // 안전한 초기 설정
+        try {
+            doc.setFont(fontName, titleStyle);
+        } catch (e) {
             doc.setFont("helvetica", "bold");
         }
-        
+
         const pageWidth = doc.internal.pageSize.getWidth();
         const margin = 20;
         let yPos = margin;
@@ -207,17 +230,16 @@ export async function generateExpenseReportPDF({
         // 제목
         const title = `${employeeName} - ${year} ${month} 개인차량 및 지출 청구서`;
         doc.setFontSize(16);
-        doc.setFont(fontName, fontStyle);
+        doc.setFont(fontName, titleStyle);
         doc.text(title, pageWidth / 2, yPos, { align: "center" });
         yPos += 20;
 
-        // 1. 개인차량 마일리지 섹션
+        // 1. 개인차량 마일리지
         doc.setFontSize(14);
-        doc.setFont(fontName, fontStyle);
+        doc.setFont(fontName, titleStyle);
         doc.text("1. 개인차량 마일리지", margin, yPos);
         yPos += 10;
 
-        // 마일리지 테이블 데이터 준비 (dateRaw 사용)
         const mileageTableData = mileageDetails.map((item) => {
             const dateInfo = parseDate(item.dateRaw || item.date || "");
             const routeParts = (item.route || "").split(" → ");
@@ -238,82 +260,89 @@ export async function generateExpenseReportPDF({
 
         if (mileageTableData.length > 0) {
             try {
-                // 폰트가 등록되었고 실제로 사용 가능한지 확인
-                let tableFont = "helvetica"; // 기본값
+                // ✅ 테이블용 폰트 확정 (한글 깨짐 방지)
+                let tableFont = "helvetica";
                 if (fontAdded) {
                     try {
-                        const fontList = doc.getFontList();
-                        if (fontName in fontList) {
-                            // 폰트 사용 테스트
-                            doc.setFont(fontName, "normal");
-                            tableFont = fontName;
-                        }
-                    } catch (e) {
-                        console.warn("폰트 확인 실패, 기본 폰트 사용:", e);
+                        doc.setFont("NanumGothic", "normal");
+                        tableFont = "NanumGothic";
+                    } catch {
                         tableFont = "helvetica";
                     }
                 }
-                
-                // 페이지 사용 가능 너비 계산 (A4: 210mm, margin 20mm씩 = 170mm 사용 가능)
-                const availableWidth = pageWidth - (margin * 2);
-                
+
+                const availableWidth = pageWidth - margin * 2;
+
                 autoTable(doc, {
                     startY: yPos,
-                    head: [["년", "월", "일", "요일", "장소 From", "장소 To", "거리 (km)", "마일리지 (KRW)", "비고"]],
+                    head: [
+                        [
+                            "년",
+                            "월",
+                            "일",
+                            "요일",
+                            "장소 From",
+                            "장소 To",
+                            "거리 (km)",
+                            "마일리지 (KRW)",
+                            "비고",
+                        ],
+                    ],
                     body: mileageTableData,
-                    styles: { 
+                    styles: {
                         fontSize: 9,
-                        font: tableFont, // 폰트 사용 가능 여부에 따라 선택
+                        font: tableFont,
                         fontStyle: "normal",
                         textColor: [0, 0, 0],
                         cellPadding: 3,
-                        lineColor: [0, 0, 0], // 모든 셀 테두리 색상
-                        lineWidth: 0.5, // 모든 셀 테두리 두께
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
-                    headStyles: { 
-                        fillColor: [255, 255, 200], // 노란색 헤더
-                        textColor: [0, 0, 0], 
-                        fontStyle: tableFont === "helvetica" ? "bold" : "normal", // helvetica는 bold, 나눔고딕은 normal
+                    headStyles: {
+                        fillColor: [255, 255, 200],
+                        textColor: [0, 0, 0],
+                        font: tableFont,
+                        fontStyle: tableFont === "helvetica" ? "bold" : "normal",
                         fontSize: 9,
                         cellPadding: 3,
-                        font: tableFont, // 헤더에도 폰트 명시
-                        lineColor: [0, 0, 0], // 헤더 셀 테두리 색상
-                        lineWidth: 0.5, // 헤더 셀 테두리 두께
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
                     bodyStyles: {
-                        font: tableFont, // 바디에도 폰트 명시
+                        font: tableFont,
                         fontStyle: "normal",
-                        lineColor: [0, 0, 0], // 바디 셀 테두리 색상
-                        lineWidth: 0.5, // 바디 셀 테두리 두께
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
                     alternateRowStyles: {
-                        fillColor: [250, 250, 250], // 짝수 행 배경색
-                        lineColor: [0, 0, 0], // 짝수 행 테두리 색상
-                        lineWidth: 0.5, // 짝수 행 테두리 두께
+                        fillColor: [250, 250, 250],
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
                     columnStyles: {
-                        0: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 년
-                        1: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 월
-                        2: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 일
-                        3: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 요일
-                        4: { cellWidth: availableWidth * 0.15, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 장소 From
-                        5: { cellWidth: availableWidth * 0.15, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 장소 To
-                        6: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 거리
-                        7: { cellWidth: availableWidth * 0.15, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 마일리지
-                        8: { cellWidth: availableWidth * 0.11, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 비고
+                        0: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        1: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        2: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        3: { cellWidth: availableWidth * 0.08, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        4: { cellWidth: availableWidth * 0.15, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        5: { cellWidth: availableWidth * 0.15, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        6: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        7: { cellWidth: availableWidth * 0.15, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        8: { cellWidth: availableWidth * 0.11, lineColor: [0, 0, 0], lineWidth: 0.5 },
                     },
                     margin: { left: margin, right: margin },
                     theme: "grid",
-                    tableLineColor: [0, 0, 0], // 검은색 테두리로 선명하게
-                    tableLineWidth: 0.5, // 테두리 두께 증가
+                    tableLineColor: [0, 0, 0],
+                    tableLineWidth: 0.5,
                 });
 
-                yPos = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : yPos + 50;
-            } catch (tableError: any) {
-                console.error("테이블 생성 오류:", tableError);
-                // 테이블 생성 실패 시 기본 텍스트로 표시
+                yPos = (doc as any).lastAutoTable?.finalY
+                    ? (doc as any).lastAutoTable.finalY + 10
+                    : yPos + 50;
+            } catch (e) {
+                console.error("마일리지 테이블 생성 오류:", e);
                 doc.setFontSize(9);
-                doc.setFont(fontName, "normal");
+                doc.setFont(fontName, normalStyle);
                 mileageTableData.forEach((row) => {
                     doc.text(row.join(" | "), margin, yPos);
                     yPos += 5;
@@ -322,33 +351,30 @@ export async function generateExpenseReportPDF({
             }
         } else {
             doc.setFontSize(11);
-            doc.setFont(fontName, "normal");
+            doc.setFont(fontName, normalStyle);
             doc.text("마일리지 내역이 없습니다.", margin, yPos);
             yPos += 15;
         }
 
-        // 마일리지 합계 (한 줄에 표시)
+        // 마일리지 합계
         const totalDistance = mileageDetails.reduce((sum, item) => sum + (item.distance || 0), 0);
         const totalMileage = mileageDetails.reduce((sum, item) => sum + (item.amount || 0), 0);
 
         doc.setFontSize(11);
-        doc.setFont(fontName, "normal");
-        const summaryText = `총 거리: ${totalDistance.toLocaleString("ko-KR")} km | 총 마일리지: ${totalMileage.toLocaleString("ko-KR")} 원`;
-        doc.text(summaryText, margin, yPos);
+        doc.setFont(fontName, normalStyle);
+        doc.text(
+            `총 거리: ${totalDistance.toLocaleString("ko-KR")} km | 총 마일리지: ${totalMileage.toLocaleString("ko-KR")} 원`,
+            margin,
+            yPos
+        );
         yPos += 15;
 
-        // 2. 개인카드/현금 지출 섹션
+        // 2. 개인카드/현금 지출
         doc.setFontSize(14);
-        // 폰트 설정 시도 (실패 시 기본 폰트)
-        try {
-            doc.setFont(fontName, fontStyle);
-        } catch (e) {
-            doc.setFont("helvetica", "bold");
-        }
+        doc.setFont(fontName, titleStyle);
         doc.text("2. 개인카드/현금 지출", margin, yPos);
         yPos += 10;
 
-        // 카드 지출 테이블 데이터 준비 (dateRaw 사용)
         const cardTableData = cardDetails.map((item) => {
             const dateInfo = parseDate(item.dateRaw || item.date || "");
             return [
@@ -364,80 +390,74 @@ export async function generateExpenseReportPDF({
 
         if (cardTableData.length > 0) {
             try {
-                // 폰트가 등록되었고 실제로 사용 가능한지 확인
-                let tableFont = "helvetica"; // 기본값
+                let tableFont = "helvetica";
                 if (fontAdded) {
                     try {
-                        const fontList = doc.getFontList();
-                        if (fontName in fontList) {
-                            // 폰트 사용 테스트
-                            doc.setFont(fontName, "normal");
-                            tableFont = fontName;
-                        }
-                    } catch (e) {
-                        console.warn("폰트 확인 실패, 기본 폰트 사용:", e);
+                        doc.setFont("NanumGothic", "normal");
+                        tableFont = "NanumGothic";
+                    } catch {
                         tableFont = "helvetica";
                     }
                 }
-                
-                // 페이지 사용 가능 너비 계산 (A4: 210mm, margin 20mm씩 = 170mm 사용 가능)
-                const availableWidth = pageWidth - (margin * 2);
-                
+
+                const availableWidth = pageWidth - margin * 2;
+
                 autoTable(doc, {
                     startY: yPos,
                     head: [["년", "월", "일", "요일", "구분", "금액 (KRW)", "비고"]],
                     body: cardTableData,
-                    styles: { 
+                    styles: {
                         fontSize: 9,
-                        font: tableFont, // 폰트 사용 가능 여부에 따라 선택
+                        font: tableFont,
                         fontStyle: "normal",
                         textColor: [0, 0, 0],
                         cellPadding: 3,
-                        lineColor: [0, 0, 0], // 모든 셀 테두리 색상
-                        lineWidth: 0.5, // 모든 셀 테두리 두께
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
-                    headStyles: { 
-                        fillColor: [255, 255, 200], // 노란색 헤더
-                        textColor: [0, 0, 0], 
-                        fontStyle: tableFont === "helvetica" ? "bold" : "normal", // helvetica는 bold, 나눔고딕은 normal
+                    headStyles: {
+                        fillColor: [255, 255, 200],
+                        textColor: [0, 0, 0],
+                        font: tableFont,
+                        fontStyle: tableFont === "helvetica" ? "bold" : "normal",
                         fontSize: 9,
                         cellPadding: 3,
-                        font: tableFont, // 헤더에도 폰트 명시
-                        lineColor: [0, 0, 0], // 헤더 셀 테두리 색상
-                        lineWidth: 0.5, // 헤더 셀 테두리 두께
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
                     bodyStyles: {
-                        font: tableFont, // 바디에도 폰트 명시
+                        font: tableFont,
                         fontStyle: "normal",
-                        lineColor: [0, 0, 0], // 바디 셀 테두리 색상
-                        lineWidth: 0.5, // 바디 셀 테두리 두께
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
                     alternateRowStyles: {
-                        fillColor: [250, 250, 250], // 짝수 행 배경색
-                        lineColor: [0, 0, 0], // 짝수 행 테두리 색상
-                        lineWidth: 0.5, // 짝수 행 테두리 두께
+                        fillColor: [250, 250, 250],
+                        lineColor: [0, 0, 0],
+                        lineWidth: 0.5,
                     },
                     columnStyles: {
-                        0: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 년
-                        1: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 월
-                        2: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 일
-                        3: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 요일
-                        4: { cellWidth: availableWidth * 0.18, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 구분
-                        5: { cellWidth: availableWidth * 0.18, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 금액
-                        6: { cellWidth: availableWidth * 0.16, lineColor: [0, 0, 0], lineWidth: 0.5 }, // 비고
+                        0: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        1: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        2: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        3: { cellWidth: availableWidth * 0.12, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        4: { cellWidth: availableWidth * 0.18, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        5: { cellWidth: availableWidth * 0.18, lineColor: [0, 0, 0], lineWidth: 0.5 },
+                        6: { cellWidth: availableWidth * 0.16, lineColor: [0, 0, 0], lineWidth: 0.5 },
                     },
                     margin: { left: margin, right: margin },
                     theme: "grid",
-                    tableLineColor: [0, 0, 0], // 검은색 테두리로 선명하게
-                    tableLineWidth: 0.5, // 테두리 두께 증가
+                    tableLineColor: [0, 0, 0],
+                    tableLineWidth: 0.5,
                 });
 
-                yPos = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : yPos + 50;
-            } catch (tableError: any) {
-                console.error("테이블 생성 오류:", tableError);
-                // 테이블 생성 실패 시 기본 텍스트로 표시
+                yPos = (doc as any).lastAutoTable?.finalY
+                    ? (doc as any).lastAutoTable.finalY + 10
+                    : yPos + 50;
+            } catch (e) {
+                console.error("카드 테이블 생성 오류:", e);
                 doc.setFontSize(9);
-                doc.setFont(fontName, "normal");
+                doc.setFont(fontName, normalStyle);
                 cardTableData.forEach((row) => {
                     doc.text(row.join(" | "), margin, yPos);
                     yPos += 5;
@@ -446,7 +466,7 @@ export async function generateExpenseReportPDF({
             }
         } else {
             doc.setFontSize(11);
-            doc.setFont(fontName, "normal");
+            doc.setFont(fontName, normalStyle);
             doc.text("카드 지출 내역이 없습니다.", margin, yPos);
             yPos += 15;
         }
@@ -455,39 +475,33 @@ export async function generateExpenseReportPDF({
         const totalExpense = cardDetails.reduce((sum, item) => sum + (item.amount || 0), 0);
 
         doc.setFontSize(11);
-        doc.setFont(fontName, "normal");
+        doc.setFont(fontName, normalStyle);
         doc.text(`총 지출: ${totalExpense.toLocaleString("ko-KR")}원`, margin, yPos);
         yPos += 15;
 
-        // 총 청구 금액 (크게만 표시, Bold 없음)
+        // 총 청구 금액 (크게, normal)
         const totalClaim = totalMileage + totalExpense;
-        doc.setFontSize(18); // 폰트 크기 증가 (16 -> 18)
-        // 폰트 설정: Normal 스타일만 사용 (Bold 제거)
+        doc.setFontSize(18);
         try {
             if (fontAdded) {
-                doc.setFont("Pretendard", "normal");
+                doc.setFont("NanumGothic", "normal");
             } else {
                 doc.setFont("helvetica", "normal");
             }
-        } catch (e) {
-            if (fontAdded) {
-                doc.setFont("Pretendard", "normal");
-            } else {
-                doc.setFont("helvetica", "normal");
-            }
+        } catch {
+            doc.setFont("helvetica", "normal");
         }
         doc.text(`총 청구 금액: ${totalClaim.toLocaleString("ko-KR")} 원`, margin, yPos);
-        yPos += 25; // 여백도 조금 증가
+        yPos += 25;
 
-        // 3. 영수증 섹션
+        // 3. 영수증
         const receipts = cardDetails.filter((item) => item.receipt_path);
         if (receipts.length > 0) {
             doc.setFontSize(14);
-            doc.setFont(fontName, fontStyle);
+            doc.setFont(fontName, titleStyle);
             doc.text("3. 영수증", margin, yPos);
             yPos += 10;
 
-            // 영수증을 날짜순으로 정렬 (dateRaw 사용)
             const sortedReceipts = [...receipts].sort((a, b) => {
                 const dateA = a.dateRaw ? new Date(a.dateRaw).getTime() : 0;
                 const dateB = b.dateRaw ? new Date(b.dateRaw).getTime() : 0;
@@ -496,57 +510,50 @@ export async function generateExpenseReportPDF({
 
             for (const item of sortedReceipts) {
                 const dateInfo = parseDate(item.dateRaw || item.date || "");
-                const dateStr = `${dateInfo.year}.${String(dateInfo.month).padStart(2, "0")}.${String(dateInfo.day).padStart(2, "0")}`;
-                
-                // 텍스트 표시
+                const dateStr = `${dateInfo.year}.${String(dateInfo.month).padStart(2, "0")}.${String(
+                    dateInfo.day
+                ).padStart(2, "0")}`;
+
+                // 텍스트
                 doc.setFontSize(10);
-                doc.setFont(fontName, "normal");
-                const receiptText = `${dateStr} - ${item.category || "기타"} (${(item.amount || 0).toLocaleString("ko-KR")}원)`;
+                doc.setFont(fontName, normalStyle);
+                const receiptText = `${dateStr} - ${item.category || "기타"} (${(item.amount || 0).toLocaleString(
+                    "ko-KR"
+                )}원)`;
                 doc.text(receiptText, margin, yPos);
-                
-                // 영수증 이미지 추가
+
                 const receiptUrl = item.receipt_path ? getReceiptUrl(item.receipt_path) : null;
+
                 if (receiptUrl) {
                     try {
-                        // 이미지 로드 및 추가
                         const img = new Image();
                         img.crossOrigin = "anonymous";
-                        
+
                         await new Promise<void>((resolve) => {
                             const timeout = setTimeout(() => {
                                 console.warn("이미지 로드 타임아웃:", receiptUrl);
                                 yPos += 20;
                                 resolve();
-                            }, 5000);
-                            
+                            }, 7000);
+
                             img.onload = () => {
                                 clearTimeout(timeout);
                                 try {
-                                    // 이미지 크기 조정 (최대 너비 60mm)
                                     const maxWidth = 60;
                                     const maxHeight = 60;
                                     let imgWidth = img.width;
                                     let imgHeight = img.height;
                                     const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
-                                    imgWidth = imgWidth * ratio;
-                                    imgHeight = imgHeight * ratio;
+                                    imgWidth *= ratio;
+                                    imgHeight *= ratio;
 
-                                    // 페이지 여백 확인
                                     const pageHeight = doc.internal.pageSize.getHeight();
                                     if (yPos + imgHeight + 10 > pageHeight - margin) {
                                         doc.addPage();
                                         yPos = margin;
                                     }
 
-                                    // 이미지 추가
-                                    doc.addImage(
-                                        img,
-                                        "JPEG",
-                                        margin,
-                                        yPos + 5,
-                                        imgWidth,
-                                        imgHeight
-                                    );
+                                    doc.addImage(img, "JPEG", margin, yPos + 5, imgWidth, imgHeight);
                                     yPos += imgHeight + 15;
                                     resolve();
                                 } catch (err) {
@@ -555,16 +562,18 @@ export async function generateExpenseReportPDF({
                                     resolve();
                                 }
                             };
+
                             img.onerror = () => {
                                 clearTimeout(timeout);
                                 console.error("이미지 로드 실패:", receiptUrl);
                                 yPos += 20;
                                 resolve();
                             };
+
                             img.src = receiptUrl;
                         });
-                    } catch (error) {
-                        console.error("영수증 이미지 처리 실패:", error);
+                    } catch (e) {
+                        console.error("영수증 이미지 처리 실패:", e);
                         yPos += 20;
                     }
                 } else {
@@ -573,18 +582,18 @@ export async function generateExpenseReportPDF({
             }
         }
 
-        // PDF 다운로드
         const fileName = `${employeeName}_${year.replace("년", "")}_${month.replace("월", "")}_청구서.pdf`;
         doc.save(fileName);
     } catch (error) {
         console.error("PDF 생성 오류:", error);
         const errorMessage = `PDF 생성 실패: ${error instanceof Error ? error.message : String(error)}`;
-        if (onError) {
-            onError(errorMessage);
-        }
-        // onError가 없으면 에러만 로깅 (alert 제거)
+        onError?.(errorMessage);
     }
 }
+
+// =====================
+// TBM PDF (html2canvas → 이미지 → PDF)
+// =====================
 
 type TbmPdfParams = {
     tbmId: string;
@@ -594,10 +603,7 @@ type TbmPdfParams = {
 const formatDateForFilename = (value?: string | null) =>
     value ? String(value).replace(/-/g, "") : "TBM";
 
-export async function generateTbmPdf({
-    tbmId,
-    onError,
-}: TbmPdfParams): Promise<void> {
+export async function generateTbmPdf({ tbmId, onError }: TbmPdfParams): Promise<void> {
     let container: HTMLDivElement | null = null;
     let root: ReturnType<typeof createRoot> | null = null;
 
@@ -619,6 +625,10 @@ export async function generateTbmPdf({
         document.body.appendChild(container);
 
         root = createRoot(container);
+
+        // ✅ TBM은 캔버스로 “화면을 찍는” 방식이라
+        // CSS 폰트가 제대로 적용되어야 한글이 안 깨짐.
+        // 그래서 fontFamily를 NanumGothic으로 강제.
         root.render(
             React.createElement(
                 "div",
@@ -628,7 +638,7 @@ export async function generateTbmPdf({
                         padding: "24px",
                         boxSizing: "border-box",
                         background: "#ffffff",
-                        fontFamily: '"Pretendard JP", sans-serif'
+                        fontFamily: '"NanumGothic", sans-serif',
                     },
                 },
                 React.createElement(TbmDetailSheet, {
@@ -639,20 +649,21 @@ export async function generateTbmPdf({
             )
         );
 
+        // 렌더/폰트 로딩 대기
         await new Promise((resolve) => setTimeout(resolve, 0));
         if ("fonts" in document) {
             await (document as any).fonts.ready;
         }
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, 100));
 
         const sheet = container.querySelector("[data-tbm-sheet]") as HTMLElement | null;
-        if (!sheet) {
-            throw new Error("TBM PDF 렌더링에 실패했습니다.");
-        }
+        if (!sheet) throw new Error("TBM PDF 렌더링에 실패했습니다.");
 
         const canvas = await html2canvas(sheet, {
             scale: 2,
             backgroundColor: "#ffffff",
+            useCORS: true,
+            allowTaint: false,
         });
 
         const imgData = canvas.toDataURL("image/png");
@@ -666,32 +677,21 @@ export async function generateTbmPdf({
         const imgWidth = canvas.width;
         const imgHeight = canvas.height;
 
-        // 설정: 좌우 여백 40pt, 상단 여백 40pt
         const horizontalMargin = 40;
         const topMargin = 40;
 
-        // 가로 너비를 페이지 너비에서 양쪽 여백을 뺀 크기로 설정
-        const renderWidth = pageWidth - (horizontalMargin * 2);
-        // 세로 길이는 가로 너비 비율에 맞춰 계산
+        const renderWidth = pageWidth - horizontalMargin * 2;
         const renderHeight = (imgHeight * renderWidth) / imgWidth;
 
-        const offsetX = horizontalMargin;
-        const offsetY = topMargin;
-
-        doc.addImage(imgData, "PNG", offsetX, offsetY, renderWidth, renderHeight);
+        doc.addImage(imgData, "PNG", horizontalMargin, topMargin, renderWidth, renderHeight);
 
         const filename = `TBM_${formatDateForFilename(tbm.tbm_date)}_${tbm.line_name || ""}_${tbm.work_name || ""}.pdf`;
         doc.save(filename.replace(/\s+/g, "_"));
     } catch (error: any) {
         console.error("TBM PDF 생성 오류:", error);
-        const message = error?.message || "TBM PDF 생성에 실패했습니다.";
-        onError?.(message);
+        onError?.(error?.message || "TBM PDF 생성에 실패했습니다.");
     } finally {
-        if (root) {
-            root.unmount();
-        }
-        if (container && container.parentNode) {
-            container.parentNode.removeChild(container);
-        }
+        if (root) root.unmount();
+        if (container?.parentNode) container.parentNode.removeChild(container);
     }
 }
