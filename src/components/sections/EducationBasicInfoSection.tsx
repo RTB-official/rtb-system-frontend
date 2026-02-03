@@ -7,6 +7,14 @@ import {
     LOCATIONS,
 } from "../../store/workReportStore";
 
+const EDUCATION_LOCATION_BLACKLIST = [
+    "PNC",
+    "PNIT",
+    "HPNT",
+    "BNCT",
+    "HJNC",
+];
+
 export default function EducationBasicInfoSection() {
     const {
         instructor,
@@ -19,9 +27,12 @@ export default function EducationBasicInfoSection() {
         setSubject,
     } = useWorkReportStore();
 
-    // 출장지 옵션 (Work Report와 동일하게 사용)
+    const educationLocations = LOCATIONS.filter(
+        (loc) => !EDUCATION_LOCATION_BLACKLIST.includes(loc)
+    );
+
     const locationOptions = [
-        ...LOCATIONS.map((loc) => ({ value: loc, label: loc })),
+        ...educationLocations.map((loc) => ({ value: loc, label: loc })),
         { value: "OTHER", label: "기타(직접입력)" },
     ];
 
