@@ -1,3 +1,4 @@
+// ExpenseFilterBar.tsx
 import Select from "./Select";
 
 interface ExpenseFilterBarProps {
@@ -24,12 +25,11 @@ export default function ExpenseFilterBar({
     userOptions,
 }: ExpenseFilterBarProps) {
     const yearOpts = yearOptions ?? [
-        { value: "2025년", label: "2025년" },
         { value: "2024년", label: "2024년" },
+        { value: "2025년", label: "2025년" },
         { value: "2026년", label: "2026년" },
     ];
     const monthOpts = monthOptions ?? [
-        { value: "12월", label: "12월" },
         { value: "1월", label: "1월" },
         { value: "2월", label: "2월" },
         { value: "3월", label: "3월" },
@@ -41,6 +41,7 @@ export default function ExpenseFilterBar({
         { value: "9월", label: "9월" },
         { value: "10월", label: "10월" },
         { value: "11월", label: "11월" },
+        { value: "12월", label: "12월" },
     ];
     const userOpts = userOptions ?? [{ value: "전체", label: "전체" }];
 
