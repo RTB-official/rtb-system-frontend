@@ -49,8 +49,8 @@ export default defineConfig({
         },
         // 빌드 최적화 옵션
         minify: "esbuild",
-        // 소스맵 생성 비활성화 (프로덕션 성능 향상)
-        sourcemap: false,
+        // 배포 런타임 에러 추적을 위해 소스맵 활성화
+        sourcemap: true,
         // 청크 크기 경고 임계값 증가 (큰 페이지가 있을 수 있음)
         chunkSizeWarningLimit: 1500,
         // CSS 코드 스플리팅
