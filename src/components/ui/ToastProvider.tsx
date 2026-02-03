@@ -70,7 +70,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
   const showSuccess = useCallback((input: ToastInput) => showToast(input, "success"), [showToast]);
   const showError = useCallback((input: ToastInput) => showToast(input, "error", 4000), [showToast]);
-  const showInfo = useCallback((input: ToastInput) => showToast(input, "info"), [showToast]);
+  const showInfo = useCallback((input: ToastInput) => showToast(input, "info", 5000), [showToast]);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));

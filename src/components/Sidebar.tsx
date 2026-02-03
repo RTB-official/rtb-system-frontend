@@ -34,6 +34,7 @@ import { useSidebarRouteSync } from "../hooks/useSidebarRouteSync";
 import { PATHS } from "../utils/paths";
 import MenuButton from "./sidebar/MenuButton";
 import SubMenu from "./sidebar/SubMenu";
+import { useMenuNotifications } from "../hooks/useMenuNotifications";
 
 interface SidebarProps {
     onClose?: () => void;
@@ -135,6 +136,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
     const usernameRef = useRef<HTMLDivElement>(null);
+
+    const menuNotis = useMenuNotifications();
 
     const { isReportRoute, isTbmRoute, isExpenseRoute, isReportEditRoute, location: routeLocation } = useSidebarRoutes();
 
@@ -534,7 +537,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 icon={<IconCar />}
                                 label="차량 관리"
                                 isActive={routeLocation.pathname.startsWith(PATHS.vehicles) && !menuFocus}
-                                onClick={() => go(PATHS.vehicles, null)}
+                                onClick={() => {
+                                    if (menuNotis.vehicles) menuNotis.triggerToast("vehicles");
+                                    go(PATHS.vehicles, null);
+                                }}
+                                showDot={menuNotis.vehicles}
                             />
                         )}
                         {canShowVacation && (
@@ -542,14 +549,22 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 icon={<IconVacation />}
                                 label="휴가 관리"
                                 isActive={routeLocation.pathname.startsWith(PATHS.vacation) && !menuFocus}
-                                onClick={() => go(PATHS.vacation, null)}
+                                onClick={() => {
+                                    if (menuNotis.vacation) menuNotis.triggerToast("vacation");
+                                    go(PATHS.vacation, null);
+                                }}
+                                showDot={menuNotis.vacation}
                             />
                         )}
                         <MenuButton
                             icon={<IconMembers />}
                             label="구성원 관리"
                             isActive={routeLocation.pathname.startsWith(PATHS.members) && !menuFocus}
-                            onClick={() => go(PATHS.members, null)}
+                            onClick={() => {
+                                if (menuNotis.members) menuNotis.triggerToast("members");
+                                go(PATHS.members, null);
+                            }}
+                            showDot={menuNotis.members}
                         />
                     </nav>
 
