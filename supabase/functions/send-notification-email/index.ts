@@ -446,7 +446,18 @@ const buildFriendlyContent = async (
   const sloganBlock = sloganUrl
     ? `<tr>
         <td style="background:#7a1b1b;padding:0;">
-          <img src="${sloganUrl}" alt="RTB Slogan" style="display:block;width:100%;height:auto;border:0;outline:none;text-decoration:none;" />
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px;margin:0 auto;">
+            <tr>
+              <td style="padding:0;">
+                <img
+                  src="${sloganUrl}"
+                  alt="RTB Slogan"
+                  width="600"
+                  style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;"
+                />
+              </td>
+            </tr>
+          </table>
         </td>
       </tr>`
     : `<tr>
@@ -461,7 +472,7 @@ const buildFriendlyContent = async (
     <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f7f6f2;padding:28px 0;">
       <tr>
         <td align="center" style="padding:0 12px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #ebe7e4;">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="width:100%;max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #ebe7e4;">
             ${sloganBlock}
             <tr>
               <td style="padding:26px 28px;">

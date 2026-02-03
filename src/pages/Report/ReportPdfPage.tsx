@@ -1208,7 +1208,7 @@ export default function ReportPdfPage() {
                                 { key: "숙박영수증", title: "숙박 영수증" },
                                 { key: "자재구매영수증", title: "자재 영수증" },
                                 { key: "식비및유대영수증", title: "식비 및 유대 영수증" },
-                                { key: "기타", title: "기타 (TBM사진 등)" },
+                                { key: "기타", title: "기타" },
                             ] as const;
 
                             const grouped = categories.map((c) => ({
