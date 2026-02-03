@@ -1,6 +1,6 @@
 // tbmApi.ts
 import { supabase } from "./supabase";
-import { createNotificationsForUsers, getAdminUserIds } from "./notificationApi";
+import { createNotificationsForUsers } from "./notificationApi";
 
 
 export interface TbmRecord {
@@ -166,17 +166,13 @@ export async function createTbm(input: CreateTbmInput) {
             .filter((id) => id && id !== user.id);
 
         try {
-            const adminIds = await getAdminUserIds();
+
 
             // ✅ 참여자: 서명 요청 (작성자 제외)
             const participantRecipients = Array.from(new Set(participantIds)).filter(
                 (id) => id && id !== user.id
             );
 
-            // ✅ admin: "작성됨" 알림만 (작성자 제외)
-            const adminRecipients = Array.from(new Set(adminIds)).filter(
-                (id) => id && id !== user.id
-            );
 
             const metaToTbm = JSON.stringify({ tbm_id: tbm.id });
 
@@ -185,16 +181,6 @@ export async function createTbm(input: CreateTbmInput) {
                     participantRecipients,
                     "TBM 서명 요청",
                     "새로운 TBM이 등록되었습니다. 서명 확인을 해주세요.",
-                    "other",
-                    metaToTbm
-                );
-            }
-
-            if (adminRecipients.length > 0) {
-                await createNotificationsForUsers(
-                    adminRecipients,
-                    "TBM 작성 완료",
-                    "새로운 TBM이 작성되었습니다.",
                     "other",
                     metaToTbm
                 );

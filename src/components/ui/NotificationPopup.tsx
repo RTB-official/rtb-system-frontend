@@ -95,6 +95,14 @@ export default function NotificationPopup({
             return "/members";
         }
 
+                // 🚗 차량 검사기간 임박 알림
+                if (
+                    meta?.kind === "vehicle_inspection_due" ||
+                    /차량|검사/i.test(`${item.title ?? ""} ${item.message ?? ""}`)
+                ) {
+                    return "/vehicles";
+                }
+
         const title = `${item.title ?? ""} ${item.message ?? ""}`;
         if (/tbm/i.test(title)) return "/tbm";
         if (/여권|passport/i.test(title)) return "/members";

@@ -164,8 +164,10 @@ export async function createCalendarEvent(
 export async function updateCalendarEvent(
     eventId: string,
     data: UpdateCalendarEventInput,
-    currentUserId?: string
+    currentUserId?: string,
+    isAdmin?: boolean
 ): Promise<CalendarEventRecord> {
+
     // 권한 체크 및 기존 일정 정보 가져오기
     let existingEvent: { user_id?: string; attendees?: string[] | null; title?: string } | null = null;
     
@@ -181,9 +183,10 @@ export async function updateCalendarEvent(
             throw new Error(`일정 조회 실패: ${fetchError.message}`);
         }
 
-        if (fetchedEvent?.user_id !== currentUserId) {
-            throw new Error("일정을 수정할 권한이 없습니다. 생성자만 수정할 수 있습니다.");
+        if (fetchedEvent?.user_id !== currentUserId && !isAdmin) {
+            throw new Error("일정을 수정할 권한이 없습니다. 생성자 또는 관리자만 수정할 수 있습니다.");
         }
+
 
         existingEvent = fetchedEvent;
     } else {
@@ -266,7 +269,8 @@ export async function updateCalendarEvent(
  */
 export async function deleteCalendarEvent(
     eventId: string,
-    currentUserId?: string
+    currentUserId?: string,
+    isAdmin?: boolean
 ): Promise<void> {
     // 권한 체크: 생성자만 삭제 가능
     if (currentUserId) {
@@ -281,15 +285,19 @@ export async function deleteCalendarEvent(
             throw new Error(`일정 조회 실패: ${fetchError.message}`);
         }
 
-        if (existingEvent?.user_id !== currentUserId) {
-            throw new Error("일정을 삭제할 권한이 없습니다. 생성자만 삭제할 수 있습니다.");
+        if (existingEvent?.user_id !== currentUserId && !isAdmin) {
+            throw new Error("일정을 삭제할 권한이 없습니다. 생성자 또는 관리자만 삭제할 수 있습니다.");
         }
+
     }
 
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
         .from("calendar_events")
         .delete()
-        .eq("id", eventId);
+        .eq("id", eventId)
+        .select("id"); // ✅ 삭제된 row 반환
+
+    console.log("deletedRows:", deletedRows);
 
     if (error) {
         console.error("Error deleting calendar event:", error);
@@ -404,10 +412,6 @@ export async function getWorkLogsForDashboard(
     }
 
     if (!workLogs || workLogs.length === 0) return [];
-    const filteredWorkLogs = workLogs.filter(
-        (log) => !String(log.subject || "").includes("[교육]")
-    );
-    if (filteredWorkLogs.length === 0) return [];
 
     if (personsError) {
         console.error("Error fetching work log persons:", personsError);
@@ -521,7 +525,7 @@ export async function getWorkLogsForDashboard(
     // 4. 결과 조합
     const result: WorkLogWithPersons[] = [];
 
-    for (const log of filteredWorkLogs) {
+    for (const log of workLogs) {
         const persons = personsMap.get(log.id) || [];
         const dates = datesMap.get(log.id);
         const leaderName = pickLeaderName(persons);
