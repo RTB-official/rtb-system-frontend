@@ -1,7 +1,7 @@
 /**
  * 보고서 목록 페이지 로딩 스켈레톤 컴포넌트
  */
-import SkeletonFilter from "./skeletons/SkeletonFilter";
+import SkeletonFilter from "./SkeletonFilter";
 
 export default function ReportListSkeleton() {
     return (
@@ -50,4 +50,3 @@ export default function ReportListSkeleton() {
         </div>
     );
 }
-

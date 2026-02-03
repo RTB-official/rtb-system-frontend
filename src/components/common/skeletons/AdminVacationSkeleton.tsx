@@ -1,7 +1,7 @@
 /**
  * 관리자 휴가 관리 페이지 로딩 스켈레톤 컴포넌트
  */
-import { TableSkeleton } from "../../pages/Expense/components/TableSkeleton";
+import { TableSkeleton } from "../../../pages/Expense/components/TableSkeleton";
 
 export default function AdminVacationSkeleton() {
     return (

@@ -408,7 +408,7 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                 />
                 <FileCard
                     icon={<IconFolder />}
-                    title="기타 (TBM사진 등)"
+                    title="기타"
                     category="기타"
                     onPreview={openPreview}
                     workLogId={workLogId}

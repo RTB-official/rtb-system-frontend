@@ -6,6 +6,7 @@ interface MenuButtonProps {
   label: string;
   isActive: boolean;
   onClick: () => void;
+  showDot?: boolean;
 }
 
 export default function MenuButton({
@@ -13,13 +14,14 @@ export default function MenuButton({
   label,
   isActive,
   onClick,
+  showDot,
 }: MenuButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={[
-        "w-full flex gap-6 items-center p-3 rounded-xl",
+        "w-full flex gap-6 items-center p-3 rounded-xl relative",
         "transition-all duration-300",
         "active:scale-[0.99]",
         isActive
@@ -30,9 +32,14 @@ export default function MenuButton({
         transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
-      <div className="flex gap-3 items-center w-[162px]">
+      <div className="flex gap-3 items-center w-[162px] relative">
         {icon}
-        <p className="font-medium text-[16px]">{label}</p>
+        <p className="font-medium text-[16px] relative">
+          {label}
+          {showDot && (
+            <span className="absolute -right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
+          )}
+        </p>
       </div>
     </button>
   );

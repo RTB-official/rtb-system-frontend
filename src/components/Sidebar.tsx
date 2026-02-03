@@ -34,6 +34,7 @@ import { useSidebarRouteSync } from "../hooks/useSidebarRouteSync";
 import { PATHS } from "../utils/paths";
 import MenuButton from "./sidebar/MenuButton";
 import SubMenu from "./sidebar/SubMenu";
+import { useMenuNotifications } from "../hooks/useMenuNotifications";
 
 interface SidebarProps {
     onClose?: () => void;
@@ -136,6 +137,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
     const [logoutConfirmModalOpen, setLogoutConfirmModalOpen] = useState(false);
     const usernameRef = useRef<HTMLDivElement>(null);
 
+    const menuNotis = useMenuNotifications();
+
     const { isReportRoute, isTbmRoute, isExpenseRoute, isReportEditRoute, location: routeLocation } = useSidebarRoutes();
 
     const prevReportRouteRef = useRef<boolean>(isReportRoute);
@@ -222,10 +225,6 @@ export default function Sidebar({ onClose }: SidebarProps) {
     };
 
 
-    const shouldForceInactive = (_kind: "HOME" | "WORKLOAD" | "VACATION" | "MEMBERS" | "VEHICLES") => {
-        if (!menuFocus) return false;
-        return true;
-    };
     const handleLogoutClick = async () => {
         localStorage.removeItem("profile_role");
         localStorage.removeItem("profile_name");
@@ -235,7 +234,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
     return (
         <aside className="w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col">
-            <div className="flex flex-col gap-6 px-4 py-5 flex-1">
+            <div className="flex flex-col gap-6 px-4 py-5 flex-1 min-h-0">
                 {/* Logo & Close Button */}
                 <div className="flex gap-2 items-center justify-between p-2">
                     <button
@@ -261,7 +260,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 </div>
 
                 {/* User Section */}
-                <div className="flex flex-col gap-3 flex-1">
+                <div className="flex flex-col gap-3 flex-1 min-h-0">
                     <div
                         ref={usernameRef}
                         className="flex gap-3 items-center p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
@@ -394,7 +393,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                     type: n.type,
                                     created_at: n.created_at,
                                     read_at: n.read_at,
-                                    meta: n.meta,
+                                    meta: n.meta ?? undefined,
                                 }))}
                                 onNotificationRead={async () => {
                                     await refreshNotifications();
@@ -416,7 +415,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     <div className="h-px bg-gray-200 rounded-full" />
 
                     <nav
-                        className="flex flex-col gap-2 flex-1 overflow-y-auto
+                        className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0
                         [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                     >
                         {canShowHome && (
@@ -434,7 +433,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         <div className="-pb-1">
                             <MenuButton
                                 icon={<IconReport />}
-                                label="출장 보고서"
+                                label="보고서"
                                 isActive={reportActive}
                                 onClick={() => {
                                     setTbmOpen(false);
@@ -538,7 +537,11 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 icon={<IconCar />}
                                 label="차량 관리"
                                 isActive={routeLocation.pathname.startsWith(PATHS.vehicles) && !menuFocus}
-                                onClick={() => go(PATHS.vehicles, null)}
+                                onClick={() => {
+                                    if (menuNotis.vehicles) menuNotis.triggerToast("vehicles");
+                                    go(PATHS.vehicles, null);
+                                }}
+                                showDot={menuNotis.vehicles}
                             />
                         )}
                         {canShowVacation && (
@@ -546,20 +549,27 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 icon={<IconVacation />}
                                 label="휴가 관리"
                                 isActive={routeLocation.pathname.startsWith(PATHS.vacation) && !menuFocus}
-                                onClick={() => go(PATHS.vacation, null)}
+                                onClick={() => {
+                                    if (menuNotis.vacation) menuNotis.triggerToast("vacation");
+                                    go(PATHS.vacation, null);
+                                }}
+                                showDot={menuNotis.vacation}
                             />
                         )}
                         <MenuButton
                             icon={<IconMembers />}
                             label="구성원 관리"
                             isActive={routeLocation.pathname.startsWith(PATHS.members) && !menuFocus}
-                            onClick={() => go(PATHS.members, null)}
+                            onClick={() => {
+                                if (menuNotis.members) menuNotis.triggerToast("members");
+                                go(PATHS.members, null);
+                            }}
+                            showDot={menuNotis.members}
                         />
                     </nav>
 
-                    <div className="h-px bg-gray-200 rounded-full mt-2" />
-
-                    <div className="mt-auto">
+                    <div className="flex-none mt-auto">
+                        <div className="h-px bg-gray-200 rounded-full mt-2 mb-3" />
                         <div className={isAdmin ? "" : "invisible pointer-events-none"}>
                             <MenuButton
                                 icon={<IconSettings />}

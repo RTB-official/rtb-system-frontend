@@ -395,7 +395,6 @@ export default function ReportCreatePage() {
                                 <WorkerSection title="교육 참석자" />
                                 <WorkLogSection />
                                 <ExpenseSection />
-                                <ConsumablesSection />
                                 <FileUploadSection />
                             </>
                         )}

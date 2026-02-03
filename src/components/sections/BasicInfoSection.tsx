@@ -4,6 +4,7 @@ import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
 import Button from "../common/Button";
 import RequiredIndicator from "../ui/RequiredIndicator";
+import { useEffect, useMemo, useState } from "react";
 import {
     useWorkReportStore,
     ORDER_PERSONS,
@@ -38,14 +39,40 @@ export default function BasicInfoSection() {
         { value: "OTHER", label: "기타 (직접입력)" },
     ];
 
-    // 그룹에 따른 인원 옵션
-    const orderPersonOptions =
-        orderGroup && orderGroup !== "OTHER"
-            ? (ORDER_PERSONS[orderGroup] || []).map((name) => ({
-                  value: name,
-                  label: name,
-              }))
-            : [];
+    const [customOrderPerson, setCustomOrderPerson] = useState("");
+    const [selectedOrderPerson, setSelectedOrderPerson] = useState("");
+    const customValue = "__CUSTOM__";
+
+    const orderPersonOptions = useMemo(() => {
+        if (!orderGroup || orderGroup === "OTHER") return [];
+        const baseOptions = (ORDER_PERSONS[orderGroup] || []).map((name) => ({
+            value: name,
+            label: name,
+        }));
+        return [
+            ...baseOptions,
+            { value: customValue, label: "직접입력" },
+        ];
+    }, [orderGroup]);
+
+    const isCustomSelected =
+        !!orderGroup &&
+        orderGroup !== "OTHER" &&
+        orderPerson &&
+        !orderPersonOptions.some((opt) => opt.value === orderPerson);
+
+    const selectOrderPersonValue = selectedOrderPerson || (isCustomSelected ? customValue : orderPerson);
+
+    useEffect(() => {
+        if (!orderGroup || orderGroup === "OTHER") return;
+        if (isCustomSelected) {
+            setSelectedOrderPerson(customValue);
+            setCustomOrderPerson(orderPerson);
+        } else if (orderPerson) {
+            setSelectedOrderPerson(orderPerson);
+            setCustomOrderPerson("");
+        }
+    }, [orderGroup, isCustomSelected, orderPerson]);
 
     // 출장지 옵션
     const locationOptions = [
@@ -80,12 +107,36 @@ export default function BasicInfoSection() {
                             fullWidth
                             required
                             options={orderPersonOptions}
-                            value={orderPerson}
-                            onChange={setOrderPerson}
+                            value={selectOrderPersonValue}
+                            onChange={(value) => {
+                                setSelectedOrderPerson(value);
+                                if (value === customValue) {
+                                    setCustomOrderPerson(orderPerson);
+                                    setOrderPerson(customOrderPerson || "");
+                                    return;
+                                }
+                                setOrderPerson(value);
+                                setCustomOrderPerson("");
+                            }}
                         />
                     ) : (
                         <div className="hidden sm:block" />
                     )}
+                    {(orderGroup && orderGroup !== "OTHER") &&
+                        (selectOrderPersonValue === customValue || isCustomSelected) && (
+                            <>
+                                <div className="hidden sm:block" />
+                                <TextInput
+                                    placeholder="직급 없이 이름만 기입해 주세요"
+                                    value={customOrderPerson || orderPerson}
+                                    onChange={(val) => {
+                                        setCustomOrderPerson(val);
+                                        setOrderPerson(val);
+                                    }}
+                                    required
+                                />
+                            </>
+                        )}
                 </div>
 
                 {/* 운행차량 */}

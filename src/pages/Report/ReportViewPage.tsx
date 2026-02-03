@@ -7,7 +7,7 @@ import CreationSkeleton from "../../components/common/CreationSkeleton";
 import SectionCard from "../../components/ui/SectionCard";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
-import { IconArrowBack } from "../../components/icons/Icons";
+import { IconArrowBack, IconDownload, IconEdit } from "../../components/icons/Icons";
 import { getWorkLogById } from "../../lib/workLogApi";
 import { getWorkLogReceipts } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -420,6 +420,7 @@ try {
                             <Button
                                 variant="outline"
                                 size="lg"
+                                icon={<IconEdit />}
                                 onClick={() => navigate(`/report/${id}/edit`)}
                             >
                                 수정하기
@@ -428,43 +429,13 @@ try {
                             <Button
                                 variant="primary"
                                 size="lg"
+                                icon={<IconDownload />}
                                 onClick={() => {
                                     // ✅ PDF 페이지로 이동 (ReportPdfPage.tsx는 ?id= 로 받음)
                                     window.open(`/report/pdf?id=${id}`, "_blank");
                                 }}
                             >
-                                <span className="inline-flex items-center gap-2">
-                                    <svg
-                                        width="18"
-                                        height="18"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                    >
-                                        <path
-                                            d="M4 3h12l4 4v14H4V3z"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinejoin="round"
-                                        />
-                                        <path
-                                            d="M8 3v6h8V3"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinejoin="round"
-                                        />
-                                        <rect
-                                            x="8"
-                                            y="13"
-                                            width="8"
-                                            height="6"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinejoin="round"
-                                        />
-                                    </svg>
-                                    PDF
-                                </span>
+                                PDF 저장
                             </Button>
                         </div>
                     }
@@ -804,34 +775,55 @@ try {
     </div>
 </SectionCard>
 
-{/* 소모 자재 */}
-<SectionCard title="소모 자재">
-    {data?.materials?.length ? (
-        <div className="flex flex-wrap gap-2">
-            {(data?.materials ?? []).map((m: any, idx: number) => {
-                // 표시용 라벨 (작성 페이지 로직 반영)
-                const label =
-                    m.name === "보루"
-                        ? `${m.name} ${Number(m.qty) * 5}kg`
-                        : m.unit
-                        ? `${m.name} ${m.qty}${m.unit}`
-                        : `${m.name} ${m.qty}`;
+{!isEducationReport && (
+    <SectionCard title="소모 자재">
+        {data?.materials?.length ? (
+            <div className="flex flex-wrap gap-2">
+                {(data?.materials ?? []).map((m: any, idx: number) => {
+                    // 표시용 라벨 (작성 페이지 로직 반영)
+                    const parseQty = (value?: string | number | null) => {
+                        const raw = String(value ?? "").trim();
+                        if (!raw) return null;
+                        if (/^\d+(\.\d+)?$/.test(raw)) return Number(raw);
+                        const fractionMatch = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+                        if (fractionMatch) {
+                            const numerator = Number(fractionMatch[1]);
+                            const denominator = Number(fractionMatch[2]);
+                            if (!denominator) return null;
+                            return numerator / denominator;
+                        }
+                        return null;
+                    };
+                    const formatKg = (qty: string | number | null | undefined) => {
+                        const parsedQty = parseQty(qty) ?? 0;
+                        const kgValue = parsedQty * 5;
+                        return Number.isFinite(kgValue) && kgValue % 1 !== 0
+                            ? kgValue.toFixed(2).replace(/\.?0+$/, "")
+                            : String(kgValue);
+                    };
+                    const label =
+                        m.name === "보루"
+                            ? `${m.name} ${formatKg(m.qty)}kg`
+                            : m.unit
+                            ? `${m.name} ${m.qty}${m.unit}`
+                            : `${m.name} ${m.qty}`;
 
-                return (
-                    <span
-                        key={m.id ?? `${m.name}-${idx}`}
-                        className="inline-flex items-center px-3 py-2 rounded-xl
-                                   bg-gray-100 text-gray-800 text-sm font-medium"
-                    >
-                        {label}
-                    </span>
-                );
-            })}
-        </div>
-    ) : (
-        <div className="text-gray-400">소모 자재가 없습니다.</div>
-    )}
-</SectionCard>
+                    return (
+                        <span
+                            key={m.id ?? `${m.name}-${idx}`}
+                            className="inline-flex items-center px-3 py-2 rounded-xl
+                                       bg-gray-100 text-gray-800 text-sm font-medium"
+                        >
+                            {label}
+                        </span>
+                    );
+                })}
+            </div>
+        ) : (
+            <div className="text-gray-400">소모 자재가 없습니다.</div>
+        )}
+    </SectionCard>
+)}
 
 
 
@@ -841,12 +833,12 @@ try {
         <div className="text-gray-400">첨부파일을 불러오는 중...</div>
     ) : (
         (() => {
-            const categories = [
-                { key: "숙박영수증", title: "숙박 영수증" },
-                { key: "자재구매영수증", title: "자재 영수증" },
-                { key: "식비및유대영수증", title: "식비 및 유대 영수증" },
-                { key: "기타", title: "기타 (TBM사진 등)" },
-            ] as const;
+                const categories = [
+                    { key: "숙박영수증", title: "숙박 영수증" },
+                    { key: "자재구매영수증", title: "자재 영수증" },
+                    { key: "식비및유대영수증", title: "식비 및 유대 영수증" },
+                    { key: "기타", title: "기타" },
+                ] as const;
 
             const grouped = categories.map((c) => ({
                 ...c,

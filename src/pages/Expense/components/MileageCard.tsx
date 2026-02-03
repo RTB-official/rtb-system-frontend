@@ -161,10 +161,10 @@ export default function MileageCard({
                 <div className="space-y-3">
                     <div>
                         <Input
-                            label="상세내용"
+                            label="호선 및 기타사항"
                             value={note}
                             onChange={setNote}
-                            placeholder="상세내용"
+                            placeholder="호선 및 기타사항"
                         />
                     </div>
                 </div>

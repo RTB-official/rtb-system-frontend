@@ -11,6 +11,9 @@ import ActionMenu from "../../components/common/ActionMenu";
 import { IconMore, IconPlus } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
 import { deleteTbm, getTbmList, TbmRecord } from "../../lib/tbmApi";
+import { generateTbmPdf } from "../../lib/pdfUtils";
+import Chip from "../../components/ui/Chip";
+import TbmListSkeleton from "../../components/common/skeletons/TbmListSkeleton";
 
 interface TbmListItem extends TbmRecord {
     participant_total: number;
@@ -20,8 +23,8 @@ interface TbmListItem extends TbmRecord {
 export default function TbmListPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [search, setSearch] = useState("");
-    const [year, setYear] = useState("전체");
-    const [month, setMonth] = useState("전체");
+    const [year, setYear] = useState("년도 전체");
+    const [month, setMonth] = useState("월 전체");
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
@@ -30,26 +33,11 @@ export default function TbmListPage() {
     const { showError, showSuccess } = useToast();
     const [loading, setLoading] = useState(true);
     const [tbmList, setTbmList] = useState<TbmListItem[]>([]);
-    const openTbmPdfWindow = (tbmId: string) => {
-        const url = `/tbm/${tbmId}/pdf`;
-        window.open(
-            url,
-            `tbm_pdf_window_${tbmId}`,
-            [
-                "width=980",
-                "height=820",
-                "left=120",
-                "top=60",
-                "scrollbars=yes",
-                "resizable=yes",
-                "toolbar=yes",
-                "menubar=yes",
-                "location=yes",
-                "status=no",
-                "noopener=yes",
-                "noreferrer=yes",
-            ].join(",")
-        );
+    const handleDownloadPdf = async (tbmId: string) => {
+        await generateTbmPdf({
+            tbmId,
+            onError: showError,
+        });
     };
 
     useEffect(() => {
@@ -111,11 +99,11 @@ export default function TbmListPage() {
                 (r.location || "").includes(search);
 
             const matchYear =
-                year === "전체" ||
+                year === "년도 전체" ||
                 (r.tbm_date || "").startsWith(year.replace("년", ""));
 
             let matchMonth = true;
-            if (month !== "전체") {
+            if (month !== "월 전체") {
                 const monthNum = month.replace("월", "");
                 const dateParts = (r.tbm_date || "").split("-");
                 matchMonth = dateParts.length > 1 && dateParts[1] === monthNum.padStart(2, "0");
@@ -168,159 +156,176 @@ export default function TbmListPage() {
                 />
 
                 <div className="flex-1 overflow-y-auto px-4 lg:px-12 pt-6 pb-24">
-                    <div className="flex flex-col gap-4">
-                        <div className="bg-white p-0">
-                            <div className="flex flex-wrap items-center gap-3 justify-between">
-                                <Input
-                                    value={search}
-                                    onChange={setSearch}
-                                    placeholder="검색어를 입력해 주세요"
-                                />
-                                <YearMonthSelector
-                                    year={year}
-                                    month={month}
-                                    onYearChange={(val) => {
-                                        setYear(val);
-                                        setCurrentPage(1);
-                                    }}
-                                    onMonthChange={(val) => {
-                                        setMonth(val);
-                                        setCurrentPage(1);
-                                    }}
-                                    yearOptions={[
-                                        { value: "전체", label: "전체" },
-                                        { value: "2025년", label: "2025년" },
-                                        { value: "2026년", label: "2026년" },
-                                    ]}
-                                    monthOptions={[
-                                        { value: "전체", label: "전체" },
-                                        { value: "1월", label: "1월" },
-                                        { value: "2월", label: "2월" },
-                                        { value: "3월", label: "3월" },
-                                        { value: "4월", label: "4월" },
-                                        { value: "5월", label: "5월" },
-                                        { value: "6월", label: "6월" },
-                                        { value: "7월", label: "7월" },
-                                        { value: "8월", label: "8월" },
-                                        { value: "9월", label: "9월" },
-                                        { value: "10월", label: "10월" },
-                                        { value: "11월", label: "11월" },
-                                        { value: "12월", label: "12월" },
-                                    ]}
-                                />
-                            </div>
-                        </div>
-
-                            <Table
-                                className="text-[14px]"
-                                columns={[
-                                    {
-                                        key: "tbm_date",
-                                        label: "TBM 일시",
-                                        width: "5%",
-                                        render: (value) =>
-                                            value
-                                                ? String(value).replaceAll("-", ".") + "."
-                                                : "-",
-                                    },
-                                    { key: "line_name", label: "호선명", width: "15%" }, // ✅ 추가
-                                    { key: "work_name", label: "작업명", width: "35%" },
-                                    { key: "location", label: "장소", width: "10%" },
-                                    {
-                                        key: "created_by_name",
-                                        label: "작성자",
-                                        width: "5%",
-                                    },
-                                    {
-                                        key: "status",
-                                        label: "상태",
-                                        width: "5%",
-                                        render: (_, row: TbmListItem) => (
-                                            <span
-                                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                                                    row.participant_total > 0 &&
-                                                    row.participant_total ===
-                                                        row.participant_signed
-                                                    ? "bg-blue-100 text-blue-700"
-                                                    : "bg-gray-100 text-gray-600"
-                                                }`}
+                    {loading ? (
+                        <TbmListSkeleton />
+                    ) : (
+                        <div className="flex flex-col gap-4">
+                            <div className="bg-white p-0">
+                                <div className="flex items-center gap-3">
+                                    <Input
+                                        value={search}
+                                        onChange={setSearch}
+                                        placeholder="검색어를 입력해 주세요"
+                                        icon={
+                                            <svg
+                                                width="16"
+                                                height="16"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
                                             >
-                                                {row.participant_total > 0 &&
-                                                row.participant_total ===
-                                                    row.participant_signed
-                                                    ? "완료"
-                                                    : "진행중"}
-                                            </span>
+                                                <circle cx="11" cy="11" r="7" />
+                                                <line x1="16.65" y1="16.65" x2="21" y2="21" />
+                                            </svg>
+                                        }
+                                        iconPosition="left"
+                                        className="flex-1 min-w-[300px]"
+                                    />
+                                    <YearMonthSelector
+                                        className="shrink-0"
+                                        year={year}
+                                        month={month}
+                                        onYearChange={(val) => {
+                                            setYear(val);
+                                            setCurrentPage(1);
+                                        }}
+                                        onMonthChange={(val) => {
+                                            setMonth(val);
+                                            setCurrentPage(1);
+                                        }}
+                                        yearOptions={[
+                                            { value: "년도 전체", label: "년도 전체" },
+                                            { value: "2025년", label: "2025년" },
+                                            { value: "2026년", label: "2026년" },
+                                        ]}
+                                        monthOptions={[
+                                            { value: "월 전체", label: "월 전체" },
+                                            { value: "1월", label: "1월" },
+                                            { value: "2월", label: "2월" },
+                                            { value: "3월", label: "3월" },
+                                            { value: "4월", label: "4월" },
+                                            { value: "5월", label: "5월" },
+                                            { value: "6월", label: "6월" },
+                                            { value: "7월", label: "7월" },
+                                            { value: "8월", label: "8월" },
+                                            { value: "9월", label: "9월" },
+                                            { value: "10월", label: "10월" },
+                                            { value: "11월", label: "11월" },
+                                            { value: "12월", label: "12월" },
+                                        ]}
+                                    />
+                                </div>
+                            </div>
+
+                                <Table
+                                    className="text-[14px]"
+                                    columns={[
+                                        {
+                                            key: "tbm_date",
+                                            label: "TBM 일시",
+                                            width: "110px",
+                                            render: (value) =>
+                                                value
+                                                    ? String(value).replace(/-/g, ".") + "."
+                                                    : "-",
+                                        },
+                                        { key: "line_name", label: "호선명", width: "150px" },
+                                        { key: "work_name", label: "작업명" },
+                                        { key: "location", label: "장소", width: "150px" },
+                                        {
+                                            key: "created_by_name",
+                                            label: "작성자",
+                                            width: "90px",
+                                        },
+                                        {
+                                            key: "status",
+                                            label: "상태",
+                                            width: "100px",
+                                            align: "center",
+                                            render: (_, row: TbmListItem) => {
+                                                const isComplete = row.participant_total > 0 && row.participant_total === row.participant_signed;
+                                                return (
+                                                    <Chip
+                                                        color={isComplete ? "blue-500" : "gray-400"}
+                                                        variant="solid"
+                                                        size="md"
+                                                    >
+                                                        {isComplete ? "완료" : "진행중"}
+                                                    </Chip>
+                                                );
+                                            },
+                                        },
+                                    {
+                                        key: "actions",
+                                        label: "",
+                                        width: "60px",
+                                        align: "right",
+                                        render: (_, row: TbmListItem) => (
+                                            <div className="relative inline-flex">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setOpenMenuId(
+                                                            openMenuId === row.id
+                                                                ? null
+                                                                : row.id
+                                                        );
+                                                        setMenuAnchor(
+                                                            openMenuId === row.id
+                                                                ? null
+                                                                : e.currentTarget
+                                                        );
+                                                    }}
+                                                    className="p-2 rounded hover:bg-gray-100 text-gray-600"
+                                                    aria-label="메뉴"
+                                                >
+                                                    <IconMore className="w-[18px] h-[18px]" />
+                                                </button>
+
+                                                <div
+                                                    onMouseDown={(e) =>
+                                                        e.stopPropagation()
+                                                    }
+                                                    onClick={(e) =>
+                                                        e.stopPropagation()
+                                                    }
+                                                >
+                                                            <ActionMenu
+                                                                isOpen={
+                                                                    openMenuId === row.id
+                                                                }
+                                                                anchorEl={menuAnchor}
+                                                                onClose={() => {
+                                                                    setOpenMenuId(null);
+                                                                    setMenuAnchor(null);
+                                                                }}
+                                                                onEdit={() => navigate(`/tbm/create?edit=${row.id}`)}
+                                                                onPdf={() => handleDownloadPdf(row.id)}
+                                                                pdfLabel="PDF 저장"
+                                                                onDelete={() => handleDeleteTbm(row.id)}
+                                                                showPdf
+                                                                showDelete
+                                                                showLogout={false}
+                                                                width="w-44"
+                                                            />
+                                                </div>
+                                            </div>
                                         ),
                                     },
-                                {
-                                    key: "actions",
-                                    label: "",
-                                    width: "5%",
-                                    align: "right",
-                                    render: (_, row: TbmListItem) => (
-                                        <div className="relative inline-flex">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setOpenMenuId(
-                                                        openMenuId === row.id
-                                                            ? null
-                                                            : row.id
-                                                    );
-                                                    setMenuAnchor(
-                                                        openMenuId === row.id
-                                                            ? null
-                                                            : e.currentTarget
-                                                    );
-                                                }}
-                                                className="p-2 rounded hover:bg-gray-100 text-gray-600"
-                                                aria-label="메뉴"
-                                            >
-                                                <IconMore className="w-[18px] h-[18px]" />
-                                            </button>
-
-                                            <div
-                                                onMouseDown={(e) =>
-                                                    e.stopPropagation()
-                                                }
-                                                onClick={(e) =>
-                                                    e.stopPropagation()
-                                                }
-                                            >
-                                                    <ActionMenu
-                                                        isOpen={
-                                                            openMenuId === row.id
-                                                        }
-                                                        anchorEl={menuAnchor}
-                                                        onClose={() => {
-                                                            setOpenMenuId(null);
-                                                            setMenuAnchor(null);
-                                                        }}
-                                                        onEdit={() => navigate(`/tbm/create?edit=${row.id}`)}
-                                                        onPdf={() => openTbmPdfWindow(row.id)}   // ✅ PDF 추가
-                                                        onDelete={() => handleDeleteTbm(row.id)}
-                                                        showPdf                                     // ✅ PDF 표시
-                                                        showDelete
-                                                        showLogout={false}
-                                                        width="w-44"
-                                                    />
-                                            </div>
-                                        </div>
-                                    ),
-                                },
-                            ]}
-                            data={currentData}
-                            rowKey="id"
-                            emptyText={loading ? "로딩 중..." : "결과가 없습니다."}
-                            onRowClick={(row: TbmListItem) => navigate(`/tbm/${row.id}`)}
-                            pagination={{
-                                currentPage,
-                                totalPages,
-                                onPageChange: setCurrentPage,
-                            }}
-                        />
-                    </div>
+                                ]}
+                                data={currentData}
+                                rowKey="id"
+                                emptyText={"결과가 없습니다."}
+                                onRowClick={(row: TbmListItem) => navigate(`/tbm/${row.id}`)}
+                                pagination={{
+                                    currentPage,
+                                    totalPages,
+                                    onPageChange: setCurrentPage,
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

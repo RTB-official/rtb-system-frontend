@@ -12,7 +12,7 @@ import Chip from "../../components/ui/Chip";
 import { IconDownload, IconMore } from "../../components/icons/Icons";
 import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 import Avatar from "../../components/common/Avatar";
-import MembersSkeleton from "../../components/common/MembersSkeleton";
+import MembersSkeleton from "../../components/common/skeletons/MembersSkeleton";
 import { useToast } from "../../components/ui/ToastProvider";
 import MiniIconButton from "../../components/ui/MiniIconButton";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
@@ -658,7 +658,7 @@ export default function MembersPage() {
                                             {
                                                 key: "name",
                                                 label: "이름",
-                                                width: "10%",
+                                                width: "11%",
                                                 render: (_, row) => {
                                                     const canDownload =
                                                         isAdmin ||
@@ -684,7 +684,7 @@ export default function MembersPage() {
                                                             <div className="text-[12px] text-gray-500">
                                                                 {row.username ? (
                                                                     row.username
-                                                                ) : (
+                                                                ) : isStaff && row.id !== myUserId ? null : (
                                                                     <EmptyValueIndicator />
                                                                 )}
                                                             </div>
@@ -719,9 +719,9 @@ export default function MembersPage() {
                                             {
                                                 key: "role",
                                                 label: "직급",
-                                                width: "10%",
+                                                width: "6%",
                                                 render: (value) => (
-                                                    <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
+                                                    <div className="text-[14px] text-gray-900 w-[60px] min-w-[60px]">
                                                         {value ? <span>{value}</span> : <EmptyValueIndicator />}
                                                     </div>
                                                 ),
@@ -765,9 +765,9 @@ export default function MembersPage() {
                                             {
                                                 key: "joinDate",
                                                 label: "입사일",
-                                                width: "10%",
+                                                width: "8%",
                                                 render: (value) => (
-                                                    <div className="text-[14px] text-gray-900 w-[100px] min-w-[100px]">
+                                                    <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
                                                         {value ? <span>{value}</span> : <EmptyValueIndicator />}
                                                     </div>
                                                 ),
@@ -775,9 +775,9 @@ export default function MembersPage() {
                                             {
                                                 key: "birth",
                                                 label: "생년월일",
-                                                width: "1%",
+                                                width: "8%",
                                                 render: (value) => (
-                                                    <div className="text-[14px] text-gray-900 w-[110px] min-w-[110px]">
+                                                    <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
                                                         {value ? <span>{value}</span> : <EmptyValueIndicator />}
                                                     </div>
                                                 ),

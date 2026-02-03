@@ -259,7 +259,7 @@ useEffect(() => {
                 const materialEntries = data.materials.map((mat) => ({
                     id: mat.id || Date.now() + Math.random(),
                     name: mat.name,
-                    qty: mat.qty,
+                    qty: String(mat.qty ?? ""),
                     unit: mat.unit || "",
                 }));
                 setMaterials(materialEntries);
@@ -346,7 +346,7 @@ useEffect(() => {
                     })),
                     materials: materials.map((mat) => ({
                         name: mat.name,
-                        qty: mat.qty,
+                        qty: String(mat.qty ?? ""),
                         unit: mat.unit || undefined,
                     })),
                     is_draft: false,

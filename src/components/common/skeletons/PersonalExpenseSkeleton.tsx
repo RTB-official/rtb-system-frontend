@@ -1,7 +1,7 @@
 /**
  * 개인 지출 기록 페이지 전용 스켈레톤
  */
-import SkeletonSectionCard from "./skeletons/SkeletonSectionCard";
+import SkeletonSectionCard from "./SkeletonSectionCard";
 
 export default function PersonalExpenseSkeleton() {
     return (

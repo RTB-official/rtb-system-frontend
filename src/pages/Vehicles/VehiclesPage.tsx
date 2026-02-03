@@ -58,6 +58,15 @@ const emptyForm: VehicleForm = {
     registrationName: "",
 };
 
+const onlyDigits = (value: string) => value.replace(/\D/g, "");
+
+const formatWithCommas = (value?: string) => {
+    if (!value) return "";
+    const digits = onlyDigits(value);
+    if (!digits) return "";
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
 export default function VehiclesPage() {
     const { showError, showSuccess } = useToast();
     const { userPermissions } = useUser();
@@ -373,25 +382,26 @@ export default function VehiclesPage() {
                                 <VehiclesSkeleton />
                             ) : (
                                 <Table
+                                    className="min-w-[1250px]"
                                     columns={[
                                         {
                                             key: "type",
                                             label: renderSortLabel("차종", "type"),
-                                            width: "8%",
+                                            width: "100px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.type ?? "",
                                         },
                                         {
                                             key: "plate",
                                             label: "차량번호",
-                                            width: "8%",
+                                            width: "120px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.plate ?? "",
                                         },
                                         {
                                             key: "color",
                                             label: renderSortLabel("색상", "color"),
-                                            width: "8%",
+                                            width: "80px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.color ?? "",
                                         },
@@ -401,7 +411,7 @@ export default function VehiclesPage() {
                                                 "주 사용자",
                                                 "primaryUser"
                                             ),
-                                            width: "8%",
+                                            width: "100px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.primaryUser ?? "",
                                         },
@@ -411,7 +421,7 @@ export default function VehiclesPage() {
                                                 "대여 개시일",
                                                 "rentalStart"
                                             ),
-                                            width: "8%",
+                                            width: "110px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.rentalStart ?? "",
                                         },
@@ -421,49 +431,49 @@ export default function VehiclesPage() {
                                                 "계약 만료일",
                                                 "contractEnd"
                                             ),
-                                            width: "8%",
+                                            width: "110px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.contractEnd ?? "",
                                         },
                                         {
                                             key: "insurer",
                                             label: renderSortLabel("보험사", "insurer"),
-                                            width: "8%",
+                                            width: "110px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.insurer ?? "",
                                         },
                                         {
                                             key: "inspection",
                                             label: renderSortLabel("검사 만료일", "inspection"),
-                                            width: "8%",
+                                            width: "110px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.inspection ?? "",
                                         },
                                         {
                                             key: "engineOil",
                                             label: renderSortLabel("엔진오일 정비", "engineOil"),
-                                            width: "8%",
+                                            width: "110px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.engineOil ?? "",
                                         },
                                         {
                                             key: "engineOilKm",
                                             label: "정비 km",
-                                            width: "8%",
+                                            width: "100px",
                                             render: (_, row: VehicleRow) =>
-                                                row.form.engineOilKm ?? "",
+                                                formatWithCommas(row.form.engineOilKm),
                                         },
                                         {
                                             key: "repair",
                                             label: "기타수리",
-                                            width: "12%",
+                                            width: "120px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.repair ?? "",
                                         },
                                         {
                                             key: "actions",
                                             label: "",
-                                            width: "4%",
+                                            width: "60px",
                                             render: (_, row: VehicleRow) => (
                                                 <button
                                                     className="w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
@@ -625,9 +635,12 @@ export default function VehiclesPage() {
                         />
                         <Input
                             label="엔진오일 정비 km"
-                            value={editForm.engineOilKm}
+                            value={formatWithCommas(editForm.engineOilKm)}
                             onChange={(v) =>
-                                setEditForm({ ...editForm, engineOilKm: v })
+                                setEditForm({
+                                    ...editForm,
+                                    engineOilKm: onlyDigits(v),
+                                })
                             }
                             placeholder="예) 120000"
                         />
