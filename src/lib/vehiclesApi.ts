@@ -1,4 +1,6 @@
+// vehiclesApi.ts
 import { supabase } from "./supabase";
+import { createNotificationsForUsers, getAdminUserIds } from "./notificationApi";
 
 export type VehicleRecord = {
     id: string;
@@ -16,6 +18,8 @@ export type VehicleRecord = {
     registration_doc_bucket: string | null;
     registration_doc_path: string | null;
     registration_doc_name: string | null;
+    inspection_alert_2m_at?: string | null;
+    inspection_alert_1m_at?: string | null;
     created_at: string;
 };
 
@@ -74,19 +78,113 @@ const mapFormToRecordInput = (form: VehicleForm) => ({
     registration_doc_name: toDbValue(form.registrationName),
 });
 
+const isWithinDays = (targetDate: string, days: number) => {
+    const now = new Date();
+    const target = new Date(targetDate);
+
+    if (Number.isNaN(target.getTime())) return false;
+
+    // 이미 지난 날짜는 제외
+    if (target.getTime() < now.getTime()) return false;
+
+    const diffMs = target.getTime() - now.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays <= days;
+};
+
+async function notifyAdminsForVehicleInspectionDue(vehicles: VehicleRecord[]) {
+    try {
+        const adminIds = await getAdminUserIds();
+        if (!adminIds || adminIds.length === 0) return;
+
+        // ✅ 2달(60일) 이내 + 아직 2달 알림 안 보낸 차량만
+        const due2m = vehicles.filter(
+            (v) =>
+                !!v.inspection_date &&
+                isWithinDays(v.inspection_date, 60) &&
+                !v.inspection_alert_2m_at
+        );
+
+        // ✅ 1달(30일) 이내 + 아직 1달 알림 안 보낸 차량만
+        const due1m = vehicles.filter(
+            (v) =>
+                !!v.inspection_date &&
+                isWithinDays(v.inspection_date, 30) &&
+                !v.inspection_alert_1m_at
+        );
+
+        // ✅ 2달 알림: "한 개만" 생성
+        if (due2m.length > 0) {
+            const plates = due2m.map((v) => v.plate).filter(Boolean);
+            const meta = JSON.stringify({
+                kind: "vehicle_inspection_due_2m",
+                route: "/vehicles",
+                plates,
+            });
+
+            await createNotificationsForUsers(
+                adminIds,
+                "차량 검사 만료 2달 이내",
+                `검사 만료일이 2달 이내인 차량이 있습니다: ${plates.join(", ")}`,
+                "other",
+                meta
+            );
+
+            // ✅ 해당 차량들 2달 알림 보냄 처리(차량별 1회 보장)
+            await supabase
+                .from("vehicles")
+                .update({ inspection_alert_2m_at: new Date().toISOString() })
+                .in("id", due2m.map((v) => v.id));
+        }
+
+        // ✅ 1달 알림: "한 개만" 생성
+        if (due1m.length > 0) {
+            const plates = due1m.map((v) => v.plate).filter(Boolean);
+            const meta = JSON.stringify({
+                kind: "vehicle_inspection_due_1m",
+                route: "/vehicles",
+                plates,
+            });
+
+            await createNotificationsForUsers(
+                adminIds,
+                "차량 검사 만료 1달 이내",
+                `검사 만료일이 1달 이내인 차량이 있습니다: ${plates.join(", ")}`,
+                "other",
+                meta
+            );
+
+            // ✅ 해당 차량들 1달 알림 보냄 처리(차량별 1회 보장)
+            await supabase
+                .from("vehicles")
+                .update({ inspection_alert_1m_at: new Date().toISOString() })
+                .in("id", due1m.map((v) => v.id));
+        }
+    } catch (e) {
+        console.error("차량 검사 만료 임박 알림 생성 실패:", e);
+    }
+}
+
+
+
 export async function listVehicles(): Promise<VehicleRecord[]> {
     const { data, error } = await supabase
         .from("vehicles")
         .select(
-            "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,engine_oil_km,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,created_at"
+             "id,type,plate,color,primary_user,rental_start,contract_end,insurer,inspection_date,engine_oil_date,engine_oil_km,repair_note,registration_doc_bucket,registration_doc_path,registration_doc_name,inspection_alert_2m_at,inspection_alert_1m_at,created_at"
         )
         .order("created_at", { ascending: false });
 
-    if (error) {
-        throw error;
+        if (error) {
+            throw error;
+        }
+    
+        // ✅ 검사 만료일 2달 이내 차량이 있으면 admin에게 알림 생성
+        await notifyAdminsForVehicleInspectionDue(data ?? []);
+    
+        return data ?? [];
     }
-    return data ?? [];
-}
+    
 
 export async function createVehicle(form: VehicleForm): Promise<VehicleRecord> {
     const { data, error } = await supabase

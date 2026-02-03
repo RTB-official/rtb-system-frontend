@@ -1,3 +1,4 @@
+// workReportStore.ts
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 
@@ -59,7 +60,7 @@ export interface StaffProfile {
 
 // 참관 감독 그룹별 인원
 export const ORDER_PERSONS: Record<string, string[]> = {
-  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형', '이영철', '장덕훈'],
+  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형'],
   PRIME: ['이유수', '김효민', '안희재'],
 };
 

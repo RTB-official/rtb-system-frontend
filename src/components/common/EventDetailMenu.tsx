@@ -1,3 +1,4 @@
+// EventDetailMenu.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +21,7 @@ interface EventDetailMenuProps {
     onEdit: (event: CalendarEvent) => void;
     onDelete: (eventId: string) => void;
     currentUserId?: string; // 현재 로그인한 사용자 ID
+    isAdmin?: boolean; // ✅ 관리자 여부
 }
 
 const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
@@ -31,11 +33,13 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
     onEdit,
     onDelete,
     currentUserId,
+    isAdmin,
 }) => {
     const navigate = useNavigate();
     const menuRef = useRef<HTMLDivElement>(null);
     const vacationCacheRef = useRef<Map<string, any>>(new Map());
     const profileCacheRef = useRef<Map<string, any>>(new Map());
+    const attendeeProfileCacheRef = useRef<Map<string, any>>(new Map()); // ✅ 참여자 캐시
     const [vacationData, setVacationData] = useState<any>(null);
     const [workLogData, setWorkLogData] = useState<any>(null);
     const [userProfile, setUserProfile] = useState<any>(null);
@@ -403,9 +407,9 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                                     참여자
                                 </span>
                                 <div className="flex flex-col gap-2">
-                                    {event.attendees.map((attendeeName, i) => (
+                                {event.attendees.map((attendeeName) => (
                                         <AttendeeProfile
-                                            key={i}
+                                            key={attendeeName} // ✅ 고정 key
                                             attendeeName={attendeeName}
                                         />
                                     ))}
@@ -414,8 +418,8 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                         )}
                     </div>
                 </div>
-                {/* 생성자만 수정/삭제 버튼 표시 */}
-                {event.userId === currentUserId && (
+                {/* 생성자 또는 관리자만 수정/삭제 버튼 표시 */}
+                {(event.userId === currentUserId || isAdmin) && (
                     <div className="flex gap-2 mt-2">
                         <Button
                             variant="outline"
@@ -474,11 +478,22 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
 
     // 참여자 프로필 컴포넌트
     const AttendeeProfile: React.FC<{ attendeeName: string }> = ({ attendeeName }) => {
-        const [profile, setProfile] = useState<any>(null);
+        const [profile, setProfile] = useState<any>(() => {
+            return attendeeProfileCacheRef.current.get(attendeeName) || null;
+        });
 
         useEffect(() => {
+            let cancelled = false;
+
             const loadProfile = async () => {
                 try {
+                    // ✅ 캐시 먼저 확인
+                    const cached = attendeeProfileCacheRef.current.get(attendeeName);
+                    if (cached) {
+                        if (!cancelled) setProfile(cached);
+                        return;
+                    }
+
                     const { data } = await supabase
                         .from("profiles")
                         .select("name, email, position")
@@ -486,15 +501,23 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                         .single();
 
                     if (data) {
-                        setProfile(data);
+                        attendeeProfileCacheRef.current.set(attendeeName, data); // ✅ 캐시에 저장
+                        if (!cancelled) setProfile(data);
                     }
                 } catch (error) {
-                    console.error("프로필 로드 실패:", error);
+                    if (!cancelled) {
+                        console.error("프로필 로드 실패:", error);
+                    }
                 }
             };
 
             loadProfile();
+
+            return () => {
+                cancelled = true;
+            };
         }, [attendeeName]);
+
 
         if (!profile) {
             // 프로필을 찾지 못한 경우 이름만 표시

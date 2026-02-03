@@ -328,7 +328,8 @@ useEffect(() => {
                             all_day: data.allDay,
                             attendees: data.attendees || [],
                         },
-                        user.id
+                        user.id,
+                        userPermissions.isAdmin
                     );
                 } else {
                     // 다른 타입의 이벤트는 수정 불가
@@ -377,7 +378,7 @@ useEffect(() => {
             // event- 접두사가 있는 경우만 삭제 가능 (calendar_events 테이블의 일정)
             if (eventId.startsWith("event-")) {
                 const id = eventId.replace("event-", "");
-                await deleteCalendarEvent(id, user?.id);
+                await deleteCalendarEvent(id, user?.id, userPermissions.isAdmin);
             } else {
                 // 다른 타입의 이벤트는 삭제 불가
                 console.warn("Cannot delete this type of event");
@@ -648,6 +649,7 @@ useEffect(() => {
                 onClose={() => setEventDetailMenuOpen(false)}
                 event={selectedEventForMenu}
                 currentUserId={user?.id}
+                isAdmin={userPermissions.isAdmin}
                 onEdit={(eventToEdit) => {
                     setEventDetailMenuOpen(false);
                     setEditingEvent(eventToEdit);
