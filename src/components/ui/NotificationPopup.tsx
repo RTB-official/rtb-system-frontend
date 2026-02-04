@@ -19,7 +19,10 @@ interface NotificationPopupProps {
     anchorEl?: HTMLElement | null;
     onMarkAllAsRead?: () => void;
     onNotificationRead?: (id: string) => void;
+    triggerMenuToast?: (type: "vehicles" | "members" | "vacation") => Promise<void> | void;
 }
+
+
 
 // 날짜 표시 포맷터
 function formatNotificationDate(dateString: string): string {
@@ -49,6 +52,7 @@ export default function NotificationPopup({
     anchorEl,
     onMarkAllAsRead,
     onNotificationRead,
+    triggerMenuToast,
 }: NotificationPopupProps) {
     const popupRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
@@ -120,6 +124,38 @@ export default function NotificationPopup({
         }
     };
 
+    const resolveMenuType = (
+        item: NotificationItem
+    ): "vehicles" | "members" | "vacation" | null => {
+        const meta = parseMeta(item.meta);
+        const title = `${item.title ?? ""} ${item.message ?? ""}`;
+
+        // 🚗 차량
+        if (
+            meta?.kind === "vehicle_inspection_due" ||
+            /차량|검사/i.test(title)
+        ) {
+            return "vehicles";
+        }
+
+        // 🛂 구성원(여권)
+        if (
+            meta?.kind === "passport_expiry_within_1y" ||
+            meta?.kind === "member_passport_expiry" ||
+            /여권|passport/i.test(title)
+        ) {
+            return "members";
+        }
+
+        // 🏖️ 휴가
+        if (item.type === "vacation" || /휴가/i.test(title)) {
+            return "vacation";
+        }
+
+        return null;
+    };
+
+
 
     // 알림 클릭 핸들러
     const handleNotificationClick = async (item: NotificationItem) => {
@@ -139,9 +175,15 @@ export default function NotificationPopup({
             navigate(route);
         }
 
+        // ✅ 알림 팝업으로 들어가도 토스트 띄우고 점 제거
+        const menuType = resolveMenuType(item);
+        if (menuType) {
+            await triggerMenuToast?.(menuType);
+        }
 
         onClose();
     };
+
 
     return (
         <div

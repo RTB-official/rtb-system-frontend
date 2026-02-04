@@ -20,7 +20,7 @@ export interface ToastItem {
 
 interface ToastProps {
   toast: ToastItem;
-  onClose: () => void;
+  onClose: (id: string) => void;
   offset?: number;
 }
 
@@ -44,7 +44,7 @@ function Toast({ toast, onClose, offset = 0 }: ToastProps) {
 
     const autoCloseTimer = setTimeout(() => {
       setIsVisible(false);
-      setTimeout(onClose, 200);
+      setTimeout(() => onClose(toast.id), 200);
     }, duration);
 
     return () => {
@@ -52,7 +52,8 @@ function Toast({ toast, onClose, offset = 0 }: ToastProps) {
       clearTimeout(autoCloseTimer);
       clearInterval(progressInterval);
     };
-  }, [toast.duration, onClose]);
+  }, [toast.id, toast.duration]);
+
 
   const iconBgColors = {
     success: "bg-green-500",

@@ -384,15 +384,21 @@ export async function getTbmDetail(id: string) {
 }
 
 export async function signTbm(tbmId: string, userId: string) {
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
         .from("tbm_participants")
         .update({ signed_at: new Date().toISOString() })
         .eq("tbm_id", tbmId)
         .eq("user_id", userId)
-        .is("signed_at", null);
+        .is("signed_at", null)
+        .select("id");
 
     if (error) {
         throw new Error(`서명 처리 실패: ${error.message}`);
+    }
+
+    // ✅ 이미 서명된 상태에서 또 호출된 경우(더블 클릭 등) → 여기서 종료
+    if (!updatedRows || updatedRows.length === 0) {
+        return;
     }
 
     // ✅ 전원 서명 완료 시 작성자에게 알림
@@ -423,7 +429,6 @@ export async function signTbm(tbmId: string, userId: string) {
             return;
         }
 
-        // 작성자가 마지막 서명자와 같으면(본인이 만든 TBM에 본인이 마지막 서명)도 알림은 보냄
         const meta = JSON.stringify({ tbm_id: tbmId, kind: "tbm_all_signed" });
 
         await createNotificationsForUsers(
@@ -437,6 +442,7 @@ export async function signTbm(tbmId: string, userId: string) {
         console.error("TBM 서명 완료 알림 생성 실패:", e);
     }
 }
+
 
 
 

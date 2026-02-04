@@ -1,3 +1,4 @@
+// TbmDetailPage.tsx
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -20,6 +21,7 @@ export default function TbmDetailPage() {
     const [loading, setLoading] = useState(true);
     const [tbm, setTbm] = useState<TbmRecord | null>(null);
     const [participants, setParticipants] = useState<TbmParticipant[]>([]);
+    const [signing, setSigning] = useState(false);
 
     useEffect(() => {
         const load = async () => {
@@ -43,9 +45,12 @@ export default function TbmDetailPage() {
         if (!id || !currentUserId) return;
         if (participant.user_id !== currentUserId) return;
         if (participant.signed_at) return;
-
+        if (signing) return; // ✅ 이미 서명 처리 중이면 무시
+    
         try {
+            setSigning(true); // ✅ 서명 시작
             await signTbm(id, currentUserId);
+    
             setParticipants((prev) =>
                 prev.map((p) =>
                     p.user_id === currentUserId
@@ -53,11 +58,15 @@ export default function TbmDetailPage() {
                         : p
                 )
             );
+    
             showSuccess("서명 처리되었습니다.");
         } catch (e: any) {
             showError(e?.message || "서명 처리에 실패했습니다.");
+        } finally {
+            setSigning(false); // ✅ 성공/실패 상관없이 해제
         }
     };
+    
 
     return (
         <div className="flex h-screen bg-white overflow-hidden">
