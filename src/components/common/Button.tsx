@@ -2,7 +2,7 @@ import React from "react";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
-    size?: "sm" | "md" | "lg";
+    size?: "xs" | "sm" | "md" | "lg";
     icon?: React.ReactNode;
     fullWidth?: boolean;
     width?: string | number; // 예: "50%", "200px", 50 (숫자면 %로 처리)
@@ -24,7 +24,7 @@ export default function Button({
 
     const variantStyles = {
         primary:
-            "bg-gray-700 text-white hover:bg-gray-600 focus:ring-gray-600",
+            "bg-gray-800 text-white hover:bg-gray-700 focus:ring-gray-800",
         secondary:
             "bg-[#eef7ff] text-[#3b82f6] hover:bg-[#dbeafe] focus:ring-[#3b82f6]",
         outline:
@@ -34,9 +34,10 @@ export default function Button({
     };
 
     const sizeStyles = {
-        sm: "h-[30px] px-2 text-[13px] rounded-[8px] gap-0.5",
-        md: "h-[36px] px-3 text-[14px] rounded-[10px] gap-0.5",
-        lg: "h-12 px-4 text-[16px] rounded-xl gap-1",
+        xs: "h-[28px] px-2 text-[12px] rounded-[6px] gap-0.5",
+        sm: "h-[30px] px-2 text-[13px] rounded-[6px] gap-0.5",
+        md: "h-[36px] px-3 text-[14px] rounded-[8px] gap-0.5",
+        lg: "h-12 px-4 text-[16px] rounded-[10px] gap-1",
     };
 
     const widthStyle = fullWidth ? "w-full" : "";

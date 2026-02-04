@@ -136,7 +136,7 @@ export default function VacationManagementSection({
             </div>
 
             {/* filter */}
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
                 <div className="text-[24px] font-semibold text-gray-900">
                     조회 기간
                 </div>
@@ -164,8 +164,9 @@ export default function VacationManagementSection({
 
             {/* table */}
             {tab === "사용 내역" ? (
-                <Table
-                    columns={[
+                <div className="overflow-x-auto">
+                    <Table
+                        columns={[
                         {
                             key: "period",
                             label: "기간",
@@ -299,25 +300,28 @@ export default function VacationManagementSection({
                             },
                         },
                     ]}
-                    data={rows}
-                    rowKey="id"
-                    className="text-[13px]"
-                    emptyText="휴가 사용 내역이 없습니다."
-                    pagination={{
-                        currentPage: page,
-                        totalPages,
-                        onPageChange,
-                    }}
-                />
+                        data={rows}
+                        rowKey="id"
+                        className="text-[13px]"
+                        emptyText="휴가 사용 내역이 없습니다."
+                        pagination={{
+                            currentPage: page,
+                            totalPages,
+                            onPageChange,
+                        }}
+                    />
+                </div>
             ) : (
-                <GrantExpireTable
-                    rows={grantExpireRows ?? []}
-                    pagination={{
-                        currentPage: page,
-                        totalPages,
-                        onPageChange,
-                    }}
-                />
+                <div className="overflow-x-auto">
+                    <GrantExpireTable
+                        rows={grantExpireRows ?? []}
+                        pagination={{
+                            currentPage: page,
+                            totalPages,
+                            onPageChange,
+                        }}
+                    />
+                </div>
             )}
         </div>
     );

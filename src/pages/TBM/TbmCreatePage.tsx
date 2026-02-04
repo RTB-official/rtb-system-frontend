@@ -495,8 +495,8 @@ export default function TbmCreatePage() {
 
             <div
                 className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
-                        ? "translate-x-0"
-                        : "-translate-x-full lg:translate-x-0"
+                    ? "translate-x-0"
+                    : "-translate-x-full lg:translate-x-0"
                     }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -524,20 +524,20 @@ export default function TbmCreatePage() {
                     }
                 />
 
-                <div className="flex-1 overflow-y-auto px-4 lg:px-12 pt-6 pb-24">
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-12 pt-4 md:pt-6 pb-24">
                     <div className="max-w-[900px] mx-auto">
                         <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
-                            <div className="text-center font-semibold py-3 border-b border-gray-300">
+                            <div className="text-center font-semibold py-3 px-2 md:px-3 border-b border-gray-300 text-sm md:text-base">
                                 TBM 회의록
                             </div>
 
                             <table className="w-full text-sm border-collapse">
                                 <tbody>
                                     <tr className="border-b border-gray-300">
-                                        <th className="w-[140px] bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="w-[120px] min-w-[100px] bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             TBM 일시
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <DatePicker
                                                 value={tbmDate}
                                                 onChange={setTbmDate}
@@ -548,10 +548,10 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="border-b border-gray-300">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             {"\uD638\uC120\uBA85"}
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <input
                                                 type="text"
                                                 className="w-full bg-transparent outline-none"
@@ -563,10 +563,10 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="border-b border-gray-300">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             작업명
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <input
                                                 type="text"
                                                 className="w-full bg-transparent outline-none"
@@ -578,10 +578,10 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="border-b border-gray-300">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             작업내용
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <textarea
                                                 rows={3}
                                                 className="w-full bg-transparent outline-none resize-none"
@@ -593,10 +593,10 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="border-b border-gray-300">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             TBM 장소
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <input
                                                 type="text"
                                                 className="w-full bg-transparent outline-none"
@@ -608,11 +608,11 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="border-b border-gray-300">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             위험성평가 실시여부
                                         </th>
-                                        <td className="px-3 py-2">
-                                            <div className="flex gap-6 items-center">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
+                                            <div className="flex gap-3 md:gap-6 items-center flex-wrap">
                                                 <label className="flex items-center gap-2">
                                                     <input
                                                         type="radio"
@@ -636,10 +636,10 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="border-b border-gray-300">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             공정
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <div className="flex flex-col gap-2">
                                                 <Select
                                                     options={processOptions.map((p) => ({
@@ -656,10 +656,10 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="border-b border-gray-300">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             잠재적 위험요인
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <div className="flex flex-col gap-2">
                                                 <Select
                                                     options={hazardOptions.map((h) => ({
@@ -677,10 +677,10 @@ export default function TbmCreatePage() {
                                     </tr>
 
                                     <tr className="">
-                                        <th className="bg-gray-50 text-left px-3 py-2 border-r border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             대책
                                         </th>
-                                        <td className="px-3 py-2">
+                                        <td className="px-2 py-2 md:px-3 md:py-2">
                                             <div className="flex flex-col gap-2">
                                                 <Select
                                                     options={measureOptions.map((m) => ({

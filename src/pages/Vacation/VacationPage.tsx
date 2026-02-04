@@ -423,7 +423,7 @@ export default function VacationPage() {
                 />
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto px-9 py-6 md:py-9">
+                <div className="flex-1 overflow-y-auto px-4 md:px-9 py-6 md:py-9">
                     <div className="flex flex-col gap-4 md:gap-6 w-full">
                         {loading ? (
                             <VacationSkeleton />

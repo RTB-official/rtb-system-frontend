@@ -517,13 +517,13 @@ export default function AdminVacationPage() {
                 />
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto px-9 py-6 md:py-9">
+                <div className="flex-1 overflow-y-auto px-4 md:px-9 py-6 md:py-9">
                     {loading ? (
                         <AdminVacationSkeleton />
                     ) : (
                         <div className="flex flex-col gap-6 w-full">
                             {/* 연도 선택 */}
-                            <div className="flex items-center gap-4">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
                                 <div className="text-[24px] font-semibold text-gray-900">
                                     조회 기간
                                 </div>
@@ -544,7 +544,8 @@ export default function AdminVacationPage() {
                                 <h2 className="text-[20px] font-semibold text-gray-900 mb-4">
                                     직원별 휴가 사용 현황
                                 </h2>
-                                <Table<EmployeeStats>
+                                <div className="overflow-x-auto">
+                                    <Table<EmployeeStats>
                                     columns={[
                                         {
                                             key: "userName",
@@ -619,6 +620,7 @@ export default function AdminVacationPage() {
                                     }
                                     emptyText="사용한 휴가가 없습니다."
                                 />
+                                </div>
                             </div>
 
                             {/* 휴가 신청 목록 */}
@@ -644,7 +646,8 @@ export default function AdminVacationPage() {
                                         </button>
                                     )}
                                 </div>
-                                <Table
+                                <div className="overflow-x-auto">
+                                    <Table
                                     columns={[
                                         {
                                             key: "employeeName",
@@ -693,6 +696,7 @@ export default function AdminVacationPage() {
                                         onPageChange: setPage,
                                     }}
                                 />
+                                </div>
                             </div>
                         </div>
                     )}

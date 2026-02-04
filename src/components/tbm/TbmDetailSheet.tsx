@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import Chip from "../ui/Chip";
 import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 import { TbmParticipant, TbmRecord } from "../../lib/tbmApi";
+import useIsMobile from "../../hooks/useIsMobile";
 
 type TbmDetailSheetProps = {
     tbm: TbmRecord;
@@ -69,7 +70,12 @@ const badgeBgMap: Record<string, string> = {
     "gray-500": "#6b7280",
 };
 
-const renderBadge = (label: string, color: string, variant: "screen" | "pdf") => {
+const renderBadge = (
+    label: string,
+    color: string,
+    variant: "screen" | "pdf",
+    usePlainText?: boolean
+) => {
     if (!label) {
         return <EmptyValueIndicator />;
     }
@@ -99,6 +105,13 @@ const renderBadge = (label: string, color: string, variant: "screen" | "pdf") =>
             </span>
         );
     }
+    if (usePlainText) {
+        return (
+            <span className="block text-left text-gray-900 text-sm leading-relaxed break-keep">
+                {label}
+            </span>
+        );
+    }
     return (
         <Chip color={color} variant="filled" size="lg">
             {label}
@@ -113,6 +126,7 @@ export default function TbmDetailSheet({
     currentUserId,
     onSign,
 }: TbmDetailSheetProps) {
+    const isMobile = useIsMobile();
     const detailRows = useMemo(() => buildRows(tbm), [tbm]);
     const groupedParticipants = useMemo(() => {
         const rows: Array<[TbmParticipant | null, TbmParticipant | null]> = [];
@@ -143,7 +157,7 @@ export default function TbmDetailSheet({
             <div className="flex items-center justify-center">
                 <input
                     type="checkbox"
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="w-4 h-4 rounded border-gray-200 text-blue-600 focus:ring-blue-500"
                     checked={!!participant?.signed_at}
                     disabled={!canSign}
                     onChange={() => participant && onSign?.(participant)}
@@ -153,7 +167,7 @@ export default function TbmDetailSheet({
     };
 
     const pdfBorderStyle = {
-        border: "1px solid #d1d5db",
+        border: "1px solid #e5e7eb",
         fontFamily: '"Pretendard JP", sans-serif',
         verticalAlign: "middle" as const,
     };
@@ -189,9 +203,9 @@ export default function TbmDetailSheet({
                     <tbody>
                         {/* Title Row */}
                         <tr>
-                            <td 
-                                colSpan={4} 
-                                className="text-center font-semibold -mt-10" 
+                            <td
+                                colSpan={4}
+                                className="text-center font-semibold -mt-10"
                                 style={{
                                     ...pdfBgGrayHead,
                                     paddingTop: "10px",
@@ -231,7 +245,7 @@ export default function TbmDetailSheet({
                             <td colSpan={3} style={pdfTdStyle}>{tbm.location || "-"}</td>
                         </tr>
                         <tr>
-                            <th style={pdfThStyle}>위험성평가 실시여부</th>
+                            <th style={{ ...pdfThStyle, whiteSpace: "nowrap" }}>위험성평가 실시여부</th>
                             <td colSpan={3} style={pdfTdStyle}>
                                 {tbm.risk_assessment === null ? "-" : tbm.risk_assessment ? "예" : "아니오"}
                             </td>
@@ -283,9 +297,9 @@ export default function TbmDetailSheet({
 
                         {/* Result Sections */}
                         <tr>
-                            <td 
-                                colSpan={4} 
-                                className="text-center font-bold" 
+                            <td
+                                colSpan={4}
+                                className="text-center font-bold"
                                 style={{ ...pdfBgGraySubHead, paddingTop: "4px", paddingBottom: "18px", paddingLeft: "10px", paddingRight: "10px", color: "#1f2937" }}
                             >
                                 작업 중 위험요인 안전점검 및 실시 결과
@@ -298,9 +312,9 @@ export default function TbmDetailSheet({
                         </tr>
 
                         <tr>
-                            <td 
-                                colSpan={4} 
-                                className="text-center font-bold" 
+                            <td
+                                colSpan={4}
+                                className="text-center font-bold"
                                 style={{ ...pdfBgGraySubHead, paddingTop: "4px", paddingBottom: "18px", paddingLeft: "10px", paddingRight: "10px", color: "#1f2937" }}
                             >
                                 작업 종료 후 미팅
@@ -314,9 +328,9 @@ export default function TbmDetailSheet({
 
                         {/* Participant Section Header */}
                         <tr>
-                            <td 
-                                colSpan={4} 
-                                className="text-center font-bold" 
+                            <td
+                                colSpan={4}
+                                className="text-center font-bold"
                                 style={{ ...pdfBgGraySubHead, paddingTop: "4px", paddingBottom: "18px", paddingLeft: "10px", paddingRight: "10px", color: "#1f2937" }}
                             >
                                 참석자 확인
@@ -354,138 +368,140 @@ export default function TbmDetailSheet({
 
     return (
         <div
-            className="border rounded-xl overflow-hidden bg-white border-gray-300"
+            className="border rounded-xl overflow-hidden bg-white border-gray-200 overflow-x-auto"
             data-tbm-sheet
         >
-            <div className="text-center font-semibold py-6 border-b border-gray-300 bg-gray-50/30 text-xl">
+            <div className="text-center font-semibold py-4 md:py-6 border-b border-gray-200 bg-gray-50/30 text-lg md:text-xl min-w-0">
                 TBM 회의록
             </div>
 
             <table className="w-full text-sm border-collapse table-fixed">
                 <tbody>
-                    <tr className="border-b border-gray-300">
-                        <th className="w-[150px] text-left px-5 py-3 border-r border-gray-300 font-semibold bg-gray-50/80 text-gray-700">
+                    <tr className="border-b border-gray-200">
+                        <th className="w-[150px] min-w-[120px] text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700">
                             TBM 일시
                         </th>
-                        <td className="px-5 py-3 text-gray-900">
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">
                             {tbm.tbm_date ? String(tbm.tbm_date).replace(/-/g, ".") + "." : "-"}
                         </td>
                     </tr>
-                    <tr className="border-b border-gray-300">
-                        <th className="text-left px-5 py-3 border-r border-gray-300 font-semibold bg-gray-50/80 text-gray-700">
+                    <tr className="border-b border-gray-200">
+                        <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             {"\uD638\uC120\uBA85"}
                         </th>
-                        <td className="px-5 py-3 text-gray-900">{tbm.line_name || "-"}</td>
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">{tbm.line_name || "-"}</td>
                     </tr>
-                    <tr className="border-b border-gray-300">
-                        <th className="text-left px-5 py-3 border-r border-gray-300 font-semibold bg-gray-50/80 text-gray-700">
+                    <tr className="border-b border-gray-200">
+                        <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             작업명
                         </th>
-                        <td className="px-5 py-3 text-gray-900">{tbm.work_name || "-"}</td>
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">{tbm.work_name || "-"}</td>
                     </tr>
-                    <tr className="border-b border-gray-300">
-                        <th className="text-left px-5 py-3 border-r border-gray-300 font-semibold bg-gray-50/80 text-gray-700">
+                    <tr className="border-b border-gray-200">
+                        <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             작업내용
                         </th>
-                        <td className="px-5 py-3 text-gray-900 whitespace-pre-line leading-relaxed">
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900 whitespace-pre-line leading-relaxed">
                             {tbm.work_content || "-"}
                         </td>
                     </tr>
-                    <tr className="border-b border-gray-300">
-                        <th className="text-left px-5 py-3 border-r border-gray-300 font-semibold bg-gray-50/80 text-gray-700">
+                    <tr className="border-b border-gray-200">
+                        <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             TBM 장소
                         </th>
-                        <td className="px-5 py-3 text-gray-900">{tbm.location || "-"}</td>
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">{tbm.location || "-"}</td>
                     </tr>
-                    <tr className="border-b border-gray-300">
-                        <th className="text-left px-5 py-3 border-r border-gray-300 font-semibold bg-gray-50/80 text-gray-700">
+                    <tr className="border-b border-gray-200">
+                        <th className="w-[150px] min-w-[120px] text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 whitespace-nowrap">
                             위험성평가 실시여부
                         </th>
-                        <td className="px-5 py-3 text-gray-900">
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">
                             {tbm.risk_assessment === null ? "-" : tbm.risk_assessment ? "예" : "아니오"}
                         </td>
                     </tr>
                     <tr>
                         <td className="p-0" colSpan={2}>
-                            <table className="w-full text-sm border-collapse table-fixed">
-                                <thead>
-                                    <tr className="border-b bg-gray-50 border-gray-300">
-                                        <th className="w-[140px] text-center px-3 py-2 border-r border-gray-300 text-sm font-bold text-gray-800">
-                                            {"\uACF5\uC815"}
-                                        </th>
-                                        <th className="text-center px-3 py-2 border-r border-gray-300 text-sm font-bold text-gray-800">
-                                            {"\uC7A0\uC7AC\uC801 \uC704\uD5D8\uC694\uC778"}
-                                        </th>
-                                        <th className="text-center px-3 py-2 text-sm font-bold text-gray-800">
-                                            {"\uB300\uCC45"}
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {detailRows.length === 0 ? (
-                                        <tr>
-                                            <td className="px-3 py-4 text-gray-500 text-center" colSpan={3}>정보가 없습니다.</td>
+                            <div className="overflow-x-auto -mx-px">
+                                <table className="w-full text-sm border-collapse min-w-[480px]" style={{ tableLayout: "fixed" }}>
+                                    <thead>
+                                        <tr className="border-b bg-gray-50 border-gray-200">
+                                            <th className="w-[100px] md:w-[140px] text-center px-2 py-1.5 md:px-3 md:py-2 border-r border-gray-200 text-xs md:text-sm font-bold text-gray-800 whitespace-nowrap">
+                                                {"\uACF5\uC815"}
+                                            </th>
+                                            <th className="text-center px-2 py-1.5 md:px-3 md:py-2 border-r border-gray-200 text-xs md:text-sm font-bold text-gray-800 whitespace-nowrap">
+                                                {"\uC7A0\uC7AC\uC801 \uC704\uD5D8\uC694\uC778"}
+                                            </th>
+                                            <th className="text-center px-2 py-1.5 md:px-3 md:py-2 text-xs md:text-sm font-bold text-gray-800 whitespace-nowrap">
+                                                {"\uB300\uCC45"}
+                                            </th>
                                         </tr>
-                                    ) : (
-                                        detailRows.map((row) => (
-                                            <tr key={row.key} className="border-b border-gray-200 last:border-0">
-                                                <td className="px-2 py-3 border-r border-gray-300 align-middle text-center">
-                                                    {renderBadge(row.process, row.badgeClass, "screen")}
-                                                </td>
-                                                <td className="px-3 py-3 border-r border-gray-300 align-middle text-center">
-                                                    {renderBadge(row.hazard, row.badgeClass, "screen")}
-                                                </td>
-                                                <td className="px-3 py-3 align-middle text-center">
-                                                    {renderBadge(row.measure, row.badgeClass, "screen")}
-                                                </td>
+                                    </thead>
+                                    <tbody>
+                                        {detailRows.length === 0 ? (
+                                            <tr>
+                                                <td className="px-2 py-3 md:px-3 md:py-4 text-gray-500 text-center text-xs md:text-sm" colSpan={3}>정보가 없습니다.</td>
                                             </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                                        ) : (
+                                            detailRows.map((row) => (
+                                                <tr key={row.key} className="border-b border-gray-200 last:border-0">
+                                                    <td className="px-1.5 py-2 md:px-2 md:py-3 border-r border-gray-200 align-middle text-center">
+                                                        {renderBadge(row.process, row.badgeClass, "screen", isMobile)}
+                                                    </td>
+                                                    <td className="px-2 py-2 md:px-3 md:py-3 border-r border-gray-200 align-middle text-center min-w-[120px]">
+                                                        {renderBadge(row.hazard, row.badgeClass, "screen", isMobile)}
+                                                    </td>
+                                                    <td className="px-2 py-2 md:px-3 md:py-3 align-middle text-center min-w-[120px]">
+                                                        {renderBadge(row.measure, row.badgeClass, "screen", isMobile)}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </td>
                     </tr>
                 </tbody>
             </table>
 
-            <div className="border-t border-gray-300">
-                <div className="text-center font-bold py-2.5 border-b border-gray-300 bg-gray-50/50 text-gray-800">
+            <div className="border-t border-gray-200">
+                <div className="text-center font-bold py-2 md:py-2.5 border-b border-gray-200 bg-gray-50/50 text-gray-800 text-sm md:text-base">
                     작업 중 위험요인 안전점검 및 실시 결과
                 </div>
-                <div className="p-4 px-6 text-gray-900 whitespace-pre-line leading-relaxed min-h-[60px]">
+                <div className="p-3 px-4 md:p-4 md:px-6 text-gray-900 whitespace-pre-line leading-relaxed min-h-[48px] md:min-h-[60px] text-sm md:text-base">
                     {tbm.during_result || "-"}
                 </div>
             </div>
 
-            <div className="border-t border-gray-300">
-                <div className="text-center font-bold py-2.5 border-b border-gray-300 bg-gray-50/50 text-gray-800">
+            <div className="border-t border-gray-200">
+                <div className="text-center font-bold py-2 md:py-2.5 border-b border-gray-200 bg-gray-50/50 text-gray-800 text-sm md:text-base">
                     작업 종료 후 미팅
                 </div>
-                <div className="p-4 px-6 text-gray-900 whitespace-pre-line leading-relaxed min-h-[60px]">
+                <div className="p-3 px-4 md:p-4 md:px-6 text-gray-900 whitespace-pre-line leading-relaxed min-h-[48px] md:min-h-[60px] text-sm md:text-base">
                     {tbm.after_meeting || "-"}
                 </div>
             </div>
 
-            <div className="border-t border-gray-300">
-                <div className="text-center font-bold py-2.5 border-b border-gray-300 bg-gray-50/50 text-gray-800">
+            <div className="border-t border-gray-200">
+                <div className="text-center font-bold py-2 md:py-2.5 border-b border-gray-200 bg-gray-50/50 text-gray-800 text-sm md:text-base">
                     참석자 확인
                 </div>
-                <table className="w-full text-sm border-collapse table-fixed">
+                <table className="w-full text-xs md:text-sm border-collapse table-fixed">
                     <thead>
-                        <tr className="border-b border-gray-300 bg-gray-50/80">
-                            <th className="py-2.5 border-r border-gray-300 font-bold text-gray-700">이름</th>
-                            <th className="py-2.5 border-r border-gray-300 font-bold text-gray-700">서명</th>
-                            <th className="py-2.5 border-r border-gray-300 font-bold text-gray-700">이름</th>
-                            <th className="py-2.5 font-bold text-gray-700">서명</th>
+                        <tr className="border-b border-gray-200 bg-gray-50/80">
+                            <th className="py-2 md:py-2.5 border-r border-gray-200 font-bold text-gray-700">이름</th>
+                            <th className="py-2 md:py-2.5 border-r border-gray-200 font-bold text-gray-700">서명</th>
+                            <th className="py-2 md:py-2.5 border-r border-gray-200 font-bold text-gray-700">이름</th>
+                            <th className="py-2 md:py-2.5 font-bold text-gray-700">서명</th>
                         </tr>
                     </thead>
                     <tbody>
                         {groupedParticipants.map(([left, right], idx) => (
-                            <tr key={idx} className="border-b border-gray-300 last:border-b-0">
-                                <td className="px-6 py-3 border-r border-gray-300 text-left font-medium text-gray-900">{left?.name || "-"}</td>
-                                <td className="px-4 py-3 border-r border-gray-300 align-middle">{renderSignatureCell(left)}</td>
-                                <td className="px-6 py-3 border-r border-gray-300 text-left font-medium text-gray-900">{right?.name || "-"}</td>
-                                <td className="px-4 py-3 align-middle">{renderSignatureCell(right)}</td>
+                            <tr key={idx} className="border-b border-gray-200 last:border-b-0">
+                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">{left?.name || "-"}</td>
+                                <td className="px-2 py-2 md:px-4 md:py-3 border-r border-gray-200 align-middle">{renderSignatureCell(left)}</td>
+                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">{right?.name || "-"}</td>
+                                <td className="px-2 py-2 md:px-4 md:py-3 align-middle">{renderSignatureCell(right)}</td>
                             </tr>
                         ))}
                     </tbody>

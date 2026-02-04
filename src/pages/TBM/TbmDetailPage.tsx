@@ -79,8 +79,8 @@ export default function TbmDetailPage() {
 
             <div
                 className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
-                        ? "translate-x-0"
-                        : "-translate-x-full lg:translate-x-0"
+                    ? "translate-x-0"
+                    : "-translate-x-full lg:translate-x-0"
                     }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -103,7 +103,8 @@ export default function TbmDetailPage() {
                         id ? (
                             <Button
                                 variant="primary"
-                                size="lg"
+                                size="md"
+                                className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
                                 icon={<IconDownload />}
                                 onClick={() =>
                                     generateTbmPdf({
@@ -112,13 +113,14 @@ export default function TbmDetailPage() {
                                     })
                                 }
                             >
-                                PDF 저장
+                                <span className="hidden sm:inline">PDF 저장</span>
+                                <span className="sm:hidden">PDF</span>
                             </Button>
                         ) : undefined
                     }
                 />
 
-                <div className="flex-1 overflow-y-auto px-4 lg:px-12 pt-6 pb-24">
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-12 pt-4 md:pt-6 pb-24">
                     {loading || !tbm ? (
                         <TbmDetailSkeleton />
                     ) : (
