@@ -1,7 +1,9 @@
 //NotificationPopup.tsx
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { markNotificationAsRead } from "../../lib/notificationApi";
+import useIsMobile from "../../hooks/useIsMobile";
 
 interface NotificationItem {
     id: string;
@@ -56,6 +58,7 @@ export default function NotificationPopup({
 }: NotificationPopupProps) {
     const popupRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
+    const isMobile = useIsMobile();
 
     const parseMeta = (meta?: any) => {
         if (!meta) return null;
@@ -185,28 +188,36 @@ export default function NotificationPopup({
     };
 
 
-    return (
-        <div
-            ref={popupRef}
-            onMouseDown={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-x-hidden overflow-y-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
-        >
+    const content = (
+        <>
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50 shrink-0">
                 <h4 className="text-[20px] font-bold text-[#1e293b]">알림</h4>
-                {items.length > 0 && onMarkAllAsRead && (
-                    <button
-                        onClick={onMarkAllAsRead}
-                        className="text-[14px] text-gray-400 hover:text-gray-600 font-medium transition-colors"
-                    >
-                        모두 읽음
-                    </button>
-                )}
+                <div className="flex items-center gap-2">
+                    {items.length > 0 && onMarkAllAsRead && (
+                        <button
+                            onClick={onMarkAllAsRead}
+                            className="text-[14px] text-gray-400 hover:text-gray-600 font-medium transition-colors"
+                        >
+                            모두 읽음
+                        </button>
+                    )}
+                    {isMobile && (
+                        <button
+                            onClick={onClose}
+                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                            aria-label="닫기"
+                        >
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Notification List */}
-            <div className="max-h-[380px] overflow-y-auto overflow-x-hidden custom-scrollbar">
+            <div className={isMobile ? "flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0" : "max-h-[380px] overflow-y-auto overflow-x-hidden custom-scrollbar"}>
                 {items.length === 0 ? (
                     <div className="px-5 pt-8 pb-16 text-center text-gray-400">
                         알림이 없습니다.
@@ -257,6 +268,33 @@ export default function NotificationPopup({
                     })
                 )}
             </div>
+        </>
+    );
+
+    // 모바일: 전체 화면 레이어로 표시 (잘림 방지, 좌우 16px 패딩)
+    if (isMobile) {
+        return createPortal(
+            <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="absolute inset-0 bg-black/35" onClick={onClose} aria-hidden />
+                <div className="relative flex flex-col w-full max-h-[85vh] rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in duration-200">
+                    <div ref={popupRef} className="flex flex-col min-h-0 flex-1" onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                        {content}
+                    </div>
+                </div>
+            </div>,
+            document.body
+        );
+    }
+
+    // 데스크톱: 기존 위치(사이드바 오른쪽) 팝업
+    return (
+        <div
+            ref={popupRef}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-x-hidden overflow-y-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
+        >
+            {content}
         </div>
     );
 }
