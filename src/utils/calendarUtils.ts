@@ -197,9 +197,13 @@ export function formatDateRange(startDate: string, endDate: string): string {
 }
 
 /**
- * 컬럼 패딩 계산
+ * 컬럼 패딩 계산 (모바일에서 좌우 여백 축소)
  */
-export function getColumnPadding(index: number): string {
+export function getColumnPadding(index: number, isMobile?: boolean): string {
+    if (isMobile) {
+        // 모바일: 좌우 대칭으로 7열 균등 유지
+        return "px-1";
+    }
     if (index === 0) return "pl-9 pr-4";
     if (index === 6) return "pl-4 pr-9";
     return "";

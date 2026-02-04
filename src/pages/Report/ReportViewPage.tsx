@@ -278,7 +278,7 @@ export default function ReportViewPage() {
 
     const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
     const toggleCard = (key: string) => {
-    setExpandedCards((prev) => ({ ...prev, [key]: !prev[key] }));
+        setExpandedCards((prev) => ({ ...prev, [key]: !prev[key] }));
     };
 
     const expenseRows = (data?.expenses ?? [])
@@ -291,7 +291,7 @@ export default function ReportViewPage() {
                 : Number(String(ex.amount || "0").replace(/,/g, "")) || 0;
         return sum + n;
     }, 0);
-    
+
     useEffect(() => {
         const load = async () => {
             if (!id) {
@@ -315,41 +315,41 @@ export default function ReportViewPage() {
                 setReportType(isEducation ? "education" : "work");
 
 
-// ✅ TimelineSummarySection을 위한 WorkLogEntry 형식으로 변환하여 store에 주입
-try {
-    const viewData = res as ViewData;
+                // ✅ TimelineSummarySection을 위한 WorkLogEntry 형식으로 변환하여 store에 주입
+                try {
+                    const viewData = res as ViewData;
 
-    const mapped = (viewData.entries || []).map((e: any, idx: number) => {
-        const note = String(e.note ?? "");
+                    const mapped = (viewData.entries || []).map((e: any, idx: number) => {
+                        const note = String(e.note ?? "");
 
-        const noLunch =
-            !!e.noLunch ||
-            !!e.lunch_worked ||
-            note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
-            note.includes("점심 안먹고 작업진행(12:00~13:00)");
+                        const noLunch =
+                            !!e.noLunch ||
+                            !!e.lunch_worked ||
+                            note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
+                            note.includes("점심 안먹고 작업진행(12:00~13:00)");
 
-        return {
-            id: e.id ?? idx + 1,
-            dateFrom: e.dateFrom ?? "",
-            timeFrom: e.timeFrom ?? "",
-            dateTo: e.dateTo ?? "",
-            timeTo: e.timeTo ?? "",
-            descType: (e.descType ?? "") as "작업" | "이동" | "대기" | "",
-            details: e.details ?? "",
-            persons: Array.isArray(e.persons) ? e.persons : [],
-            note,
-            noLunch,
-            moveFrom: e.moveFrom,
-            moveTo: e.moveTo,
-        };
-    });
+                        return {
+                            id: e.id ?? idx + 1,
+                            dateFrom: e.dateFrom ?? "",
+                            timeFrom: e.timeFrom ?? "",
+                            dateTo: e.dateTo ?? "",
+                            timeTo: e.timeTo ?? "",
+                            descType: (e.descType ?? "") as "작업" | "이동" | "대기" | "",
+                            details: e.details ?? "",
+                            persons: Array.isArray(e.persons) ? e.persons : [],
+                            note,
+                            noLunch,
+                            moveFrom: e.moveFrom,
+                            moveTo: e.moveTo,
+                        };
+                    });
 
-    setWorkLogEntries(mapped);
-} catch (err) {
-    console.error("Failed to set workLogEntries for timeline:", err);
-}
+                    setWorkLogEntries(mapped);
+                } catch (err) {
+                    console.error("Failed to set workLogEntries for timeline:", err);
+                }
 
-                
+
                 setReceiptLoading(true);
                 try {
                     const list = await getWorkLogReceipts(Number(id));
@@ -390,11 +390,10 @@ try {
 
             {/* Sidebar */}
             <div
-                className={`fixed lg:static inset-y-0 left-0 z-30 w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
-                    sidebarOpen
+                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
                         ? "translate-x-0"
                         : "-translate-x-full lg:translate-x-0"
-                }`}
+                    }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
@@ -425,7 +424,7 @@ try {
                             >
                                 수정하기
                             </Button>
-                    
+
                             <Button
                                 variant="primary"
                                 size="lg"
@@ -439,7 +438,7 @@ try {
                             </Button>
                         </div>
                     }
-                    
+
                 />
 
                 {loading ? (
@@ -546,450 +545,450 @@ try {
                                 </div>
                             </SectionCard>
 
-{/* 출장 업무 일지 */}
-<SectionCard title="출장 업무 일지">
-    {data?.entries?.length ? (
-        <div className="flex flex-col gap-3">
-            {(() => {
-                const baseSorted = [...(data?.entries ?? [])].sort((a: any, b: any) => {
-                    const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
-                    const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
-                    return aKey.localeCompare(bKey);
-                });
+                            {/* 출장 업무 일지 */}
+                            <SectionCard title="출장 업무 일지">
+                                {data?.entries?.length ? (
+                                    <div className="flex flex-col gap-3">
+                                        {(() => {
+                                            const baseSorted = [...(data?.entries ?? [])].sort((a: any, b: any) => {
+                                                const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
+                                                const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
+                                                return aKey.localeCompare(bKey);
+                                            });
 
-                // ✅ 날짜별 표시용 분할
-                const displayEntries = baseSorted
-                    .flatMap((e: any, index: number) => {
-                        const fallbackKey = `${e.dateFrom}-${e.timeFrom}-${e.dateTo}-${e.timeTo}-${index}`;
-                        return splitEntryByDayForDisplay(e, fallbackKey);
-                    })
-                    .sort((a: any, b: any) => {
-                        const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
-                        const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
-                        return aKey.localeCompare(bKey);
-                    });
+                                            // ✅ 날짜별 표시용 분할
+                                            const displayEntries = baseSorted
+                                                .flatMap((e: any, index: number) => {
+                                                    const fallbackKey = `${e.dateFrom}-${e.timeFrom}-${e.dateTo}-${e.timeTo}-${index}`;
+                                                    return splitEntryByDayForDisplay(e, fallbackKey);
+                                                })
+                                                .sort((a: any, b: any) => {
+                                                    const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
+                                                    const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;
+                                                    return aKey.localeCompare(bKey);
+                                                });
 
-                // ✅ 날짜별 n일차 맵 생성 (카드 상단/날짜변경선용)
-                const dayIndexMap = new Map<string, number>();
-                let dayNoCounter = 0;
-                for (const it of displayEntries) {
-                    const d = it?.dateFrom;
-                    if (!d) continue;
-                    if (!dayIndexMap.has(d)) {
-                        dayNoCounter += 1;
-                        dayIndexMap.set(d, dayNoCounter);
-                    }
-                }
+                                            // ✅ 날짜별 n일차 맵 생성 (카드 상단/날짜변경선용)
+                                            const dayIndexMap = new Map<string, number>();
+                                            let dayNoCounter = 0;
+                                            for (const it of displayEntries) {
+                                                const d = it?.dateFrom;
+                                                if (!d) continue;
+                                                if (!dayIndexMap.has(d)) {
+                                                    dayNoCounter += 1;
+                                                    dayIndexMap.set(d, dayNoCounter);
+                                                }
+                                            }
 
-                return displayEntries.map((e: any, index: number, arr: any[]) => {
-                    const key = e.__segKey;
-                    const note = String(e.note ?? "");
+                                            return displayEntries.map((e: any, index: number, arr: any[]) => {
+                                                const key = e.__segKey;
+                                                const note = String(e.note ?? "");
 
-                    // ✅ 점심 안먹음 플래그(작성 페이지와 최대한 동일하게 흡수)
-                    const effectiveNoLunch =
-                        !!e.noLunch ||
-                        !!e.lunch_worked ||
-                        note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
-                        note.includes("점심 안먹고 작업진행(12:00~13:00)");
+                                                // ✅ 점심 안먹음 플래그(작성 페이지와 최대한 동일하게 흡수)
+                                                const effectiveNoLunch =
+                                                    !!e.noLunch ||
+                                                    !!e.lunch_worked ||
+                                                    note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
+                                                    note.includes("점심 안먹고 작업진행(12:00~13:00)");
 
-                    const minutes = calcWorkMinutesWithLunchRule({
-                        dateFrom: e.dateFrom,
-                        timeFrom: e.timeFrom,
-                        dateTo: e.dateTo,
-                        timeTo: e.timeTo,
-                        descType: (e.descType ?? "") as any,
-                        noLunch: effectiveNoLunch, // ✅ true면 점심 제외 안함
-                    });
-                    const hoursLabel = formatHoursMinutes(minutes);
-                    const isExpanded = expandedCards[String(key)] ?? false;
+                                                const minutes = calcWorkMinutesWithLunchRule({
+                                                    dateFrom: e.dateFrom,
+                                                    timeFrom: e.timeFrom,
+                                                    dateTo: e.dateTo,
+                                                    timeTo: e.timeTo,
+                                                    descType: (e.descType ?? "") as any,
+                                                    noLunch: effectiveNoLunch, // ✅ true면 점심 제외 안함
+                                                });
+                                                const hoursLabel = formatHoursMinutes(minutes);
+                                                const isExpanded = expandedCards[String(key)] ?? false;
 
-                    const prev = arr[index - 1];
-                    const showDayHeader = !prev || prev.dateFrom !== e.dateFrom;
+                                                const prev = arr[index - 1];
+                                                const showDayHeader = !prev || prev.dateFrom !== e.dateFrom;
 
-                    const thisDayNo = dayIndexMap.get(e.dateFrom) ?? 1;
-                    const md = formatMDFromYMD(e.dateFrom);
-                    const dayHeaderText = `${thisDayNo}일차(${md})`;
+                                                const thisDayNo = dayIndexMap.get(e.dateFrom) ?? 1;
+                                                const md = formatMDFromYMD(e.dateFrom);
+                                                const dayHeaderText = `${thisDayNo}일차(${md})`;
 
-                    return (
-                        <div key={String(key)}>
-                            {showDayHeader && (
-                                <div className="w-full flex items-center gap-3 my-4">
-                                    <div className="flex-1 border-t border-rose-300" />
-                                    <span className="text-[12px] font-semibold text-rose-500 px-2 whitespace-nowrap">
-                                        {dayHeaderText}
-                                    </span>
-                                    <div className="flex-1 border-t border-rose-300" />
+                                                return (
+                                                    <div key={String(key)}>
+                                                        {showDayHeader && (
+                                                            <div className="w-full flex items-center gap-3 my-4">
+                                                                <div className="flex-1 border-t border-rose-300" />
+                                                                <span className="text-[12px] font-semibold text-rose-500 px-2 whitespace-nowrap">
+                                                                    {dayHeaderText}
+                                                                </span>
+                                                                <div className="flex-1 border-t border-rose-300" />
+                                                            </div>
+                                                        )}
+
+                                                        <WorkLogEntryCard
+                                                            descType={e.descType as any}
+                                                            hoursLabel={hoursLabel}
+                                                            meta={
+                                                                <div className="space-y-2">
+                                                                    <div className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                                        <svg
+                                                                            width="16"
+                                                                            height="16"
+                                                                            viewBox="0 0 24 24"
+                                                                            fill="currentColor"
+                                                                            className="text-gray-400"
+                                                                        >
+                                                                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                                                                        </svg>
+                                                                        <span>
+                                                                            {e.dateFrom} {toKoreanTime(e.timeFrom)}
+                                                                        </span>
+                                                                        <span className="text-gray-400">→</span>
+                                                                        <span>
+                                                                            {e.dateTo} {toKoreanTime(e.timeTo)}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    {Array.isArray(e.persons) && (
+                                                                        <div className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                                            <svg
+                                                                                width="16"
+                                                                                height="16"
+                                                                                viewBox="0 0 24 24"
+                                                                                fill="currentColor"
+                                                                                className="text-gray-400"
+                                                                            >
+                                                                                <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                                                                            </svg>
+                                                                            <span className="font-medium">{e.persons.length}명</span>
+                                                                            <span className="text-gray-400">|</span>
+                                                                            <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
+                                                                                {Array.isArray(e.persons) && e.persons.length > 0
+                                                                                    ? e.persons.join(", ")
+                                                                                    : "—"}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            }
+                                                            showNoLunch={effectiveNoLunch}
+                                                            noLunchText={NO_LUNCH_TEXT}
+                                                            isExpanded={isExpanded}
+                                                            onToggle={() => toggleCard(String(key))}
+                                                        >
+                                                            <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                                                <p className="text-[13px] text-gray-500 mb-1">상세 내용</p>
+                                                                <p className="text-[15px] text-gray-800 whitespace-pre-line">
+                                                                    {e.details || "—"}
+                                                                </p>
+                                                            </div>
+
+                                                            {e.note?.trim() && (
+                                                                <div className="bg-white border border-gray-100 rounded-xl p-3">
+                                                                    <p className="text-[13px] text-gray-500 mb-1">특이 사항</p>
+                                                                    <p className="text-[15px] text-gray-800 whitespace-pre-line">
+                                                                        {e.note}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+                                                        </WorkLogEntryCard>
+                                                    </div>
+                                                );
+                                            });
+                                        })()}
+                                    </div>
+                                ) : (
+                                    <div className="text-gray-400">업무 일지가 없습니다.</div>
+                                )}
+                            </SectionCard>
+
+
+                            {/* 경비 내역 */}
+                            <SectionCard title="경비 내역">
+                                <div className="overflow-x-auto">
+                                    <Table
+                                        columns={[
+                                            {
+                                                key: "date",
+                                                label: "날짜",
+                                                align: "center",
+                                                headerClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                                                cellClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap",
+                                                render: (value) => formatDateKoreanMD(value),
+                                            },
+                                            {
+                                                key: "type",
+                                                label: "분류",
+                                                align: "center",
+                                                headerClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                                                cellClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-medium",
+                                                render: (value) => {
+                                                    if (value === "유류비" || value === "주유") return "유대";
+                                                    return value || "-";
+                                                },
+                                            },
+                                            {
+                                                key: "detail",
+                                                label: "상세내용",
+                                                headerClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                                                cellClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px]",
+                                            },
+                                            {
+                                                key: "amount",
+                                                label: "금액",
+                                                align: "center",
+                                                headerClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
+                                                cellClassName:
+                                                    "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-semibold",
+                                                render: (value) => {
+                                                    const amountNum =
+                                                        typeof value === "number"
+                                                            ? value
+                                                            : Number(String(value || "0").replace(/,/g, "")) || 0;
+                                                    return `${amountNum.toLocaleString()}원`;
+                                                },
+                                            },
+                                        ]}
+                                        data={expenseRows}
+                                        rowKey={(row: any) => row.id ?? `${row.date || "date"}-${row.type || "type"}`}
+                                        rowClassName={(row: any) => getExpenseTypeRowClass(row.type)}
+                                        className="border-collapse"
+                                        emptyText="등록된 경비 내역이 없습니다."
+                                        footer={
+                                            <tr>
+                                                <td
+                                                    colSpan={3}
+                                                    className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
+                                                >
+                                                    합계
+                                                </td>
+                                                <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px] whitespace-nowrap">
+                                                    {expenseTotal.toLocaleString()}원
+                                                </td>
+                                            </tr>
+                                        }
+                                    />
                                 </div>
+                            </SectionCard>
+
+                            {!isEducationReport && (
+                                <SectionCard title="소모 자재">
+                                    {data?.materials?.length ? (
+                                        <div className="flex flex-wrap gap-2">
+                                            {(data?.materials ?? []).map((m: any, idx: number) => {
+                                                // 표시용 라벨 (작성 페이지 로직 반영)
+                                                const parseQty = (value?: string | number | null) => {
+                                                    const raw = String(value ?? "").trim();
+                                                    if (!raw) return null;
+                                                    if (/^\d+(\.\d+)?$/.test(raw)) return Number(raw);
+                                                    const fractionMatch = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+                                                    if (fractionMatch) {
+                                                        const numerator = Number(fractionMatch[1]);
+                                                        const denominator = Number(fractionMatch[2]);
+                                                        if (!denominator) return null;
+                                                        return numerator / denominator;
+                                                    }
+                                                    return null;
+                                                };
+                                                const formatKg = (qty: string | number | null | undefined) => {
+                                                    const parsedQty = parseQty(qty) ?? 0;
+                                                    const kgValue = parsedQty * 5;
+                                                    return Number.isFinite(kgValue) && kgValue % 1 !== 0
+                                                        ? kgValue.toFixed(2).replace(/\.?0+$/, "")
+                                                        : String(kgValue);
+                                                };
+                                                const label =
+                                                    m.name === "보루"
+                                                        ? `${m.name} ${formatKg(m.qty)}kg`
+                                                        : m.unit
+                                                            ? `${m.name} ${m.qty}${m.unit}`
+                                                            : `${m.name} ${m.qty}`;
+
+                                                return (
+                                                    <span
+                                                        key={m.id ?? `${m.name}-${idx}`}
+                                                        className="inline-flex items-center px-3 py-2 rounded-xl
+                                       bg-gray-100 text-gray-800 text-sm font-medium"
+                                                    >
+                                                        {label}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="text-gray-400">소모 자재가 없습니다.</div>
+                                    )}
+                                </SectionCard>
                             )}
 
-                            <WorkLogEntryCard
-                                descType={e.descType as any}
-                                hoursLabel={hoursLabel}
-                                meta={
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-2 text-[13px] text-gray-600">
-                                            <svg
-                                                width="16"
-                                                height="16"
-                                                viewBox="0 0 24 24"
-                                                fill="currentColor"
-                                                className="text-gray-400"
-                                            >
-                                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-                                            </svg>
-                                            <span>
-                                                {e.dateFrom} {toKoreanTime(e.timeFrom)}
-                                            </span>
-                                            <span className="text-gray-400">→</span>
-                                            <span>
-                                                {e.dateTo} {toKoreanTime(e.timeTo)}
-                                            </span>
-                                        </div>
 
-                                        {Array.isArray(e.persons) && (
-                                            <div className="flex items-center gap-2 text-[13px] text-gray-600">
-                                                <svg
-                                                    width="16"
-                                                    height="16"
-                                                    viewBox="0 0 24 24"
-                                                    fill="currentColor"
-                                                    className="text-gray-400"
-                                                >
-                                                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                                                </svg>
-                                                <span className="font-medium">{e.persons.length}명</span>
-                                                <span className="text-gray-400">|</span>
-                                                <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
-                                                    {Array.isArray(e.persons) && e.persons.length > 0
-                                                        ? e.persons.join(", ")
-                                                        : "—"}
+
+                            {/* 첨부파일(사진) */}
+                            <SectionCard title="첨부파일(사진)">
+                                {receiptLoading ? (
+                                    <div className="text-gray-400">첨부파일을 불러오는 중...</div>
+                                ) : (
+                                    (() => {
+                                        const categories = [
+                                            { key: "숙박영수증", title: "숙박 영수증" },
+                                            { key: "자재구매영수증", title: "자재 영수증" },
+                                            { key: "식비및유대영수증", title: "식비 및 유대 영수증" },
+                                            { key: "기타", title: "기타" },
+                                        ] as const;
+
+                                        const grouped = categories.map((c) => ({
+                                            ...c,
+                                            items: receipts.filter((r) => r.category === c.key),
+                                        }));
+
+                                        const hasAny = grouped.some((g) => g.items.length > 0);
+
+                                        if (!hasAny) {
+                                            return (
+                                                <div className="text-gray-400">
+                                                    첨부된 파일이 없습니다.
                                                 </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                }
-                                showNoLunch={effectiveNoLunch}
-                                noLunchText={NO_LUNCH_TEXT}
-                                isExpanded={isExpanded}
-                                onToggle={() => toggleCard(String(key))}
-                            >
-                                <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                    <p className="text-[13px] text-gray-500 mb-1">상세 내용</p>
-                                    <p className="text-[15px] text-gray-800 whitespace-pre-line">
-                                        {e.details || "—"}
-                                    </p>
-                                </div>
-
-                                {e.note?.trim() && (
-                                    <div className="bg-white border border-gray-100 rounded-xl p-3">
-                                        <p className="text-[13px] text-gray-500 mb-1">특이 사항</p>
-                                        <p className="text-[15px] text-gray-800 whitespace-pre-line">
-                                            {e.note}
-                                        </p>
-                                    </div>
-                                )}
-                            </WorkLogEntryCard>
-                        </div>
-                    );
-                });
-            })()}
-        </div>
-    ) : (
-        <div className="text-gray-400">업무 일지가 없습니다.</div>
-    )}
-</SectionCard>
-
-
-{/* 경비 내역 */}
-<SectionCard title="경비 내역">
-    <div className="overflow-x-auto">
-        <Table
-            columns={[
-                {
-                    key: "date",
-                    label: "날짜",
-                    align: "center",
-                    headerClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
-                    cellClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap",
-                    render: (value) => formatDateKoreanMD(value),
-                },
-                {
-                    key: "type",
-                    label: "분류",
-                    align: "center",
-                    headerClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
-                    cellClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-medium",
-                    render: (value) => {
-                        if (value === "유류비" || value === "주유") return "유대";
-                        return value || "-";
-                    },
-                },
-                {
-                    key: "detail",
-                    label: "상세내용",
-                    headerClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
-                    cellClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px]",
-                },
-                {
-                    key: "amount",
-                    label: "금액",
-                    align: "center",
-                    headerClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
-                    cellClassName:
-                        "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-semibold",
-                    render: (value) => {
-                        const amountNum =
-                            typeof value === "number"
-                                ? value
-                                : Number(String(value || "0").replace(/,/g, "")) || 0;
-                        return `${amountNum.toLocaleString()}원`;
-                    },
-                },
-            ]}
-            data={expenseRows}
-            rowKey={(row: any) => row.id ?? `${row.date || "date"}-${row.type || "type"}`}
-            rowClassName={(row: any) => getExpenseTypeRowClass(row.type)}
-            className="border-collapse"
-            emptyText="등록된 경비 내역이 없습니다."
-            footer={
-                <tr>
-                    <td
-                        colSpan={3}
-                        className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
-                    >
-                        합계
-                    </td>
-                    <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px] whitespace-nowrap">
-                        {expenseTotal.toLocaleString()}원
-                    </td>
-                </tr>
-            }
-        />
-    </div>
-</SectionCard>
-
-{!isEducationReport && (
-    <SectionCard title="소모 자재">
-        {data?.materials?.length ? (
-            <div className="flex flex-wrap gap-2">
-                {(data?.materials ?? []).map((m: any, idx: number) => {
-                    // 표시용 라벨 (작성 페이지 로직 반영)
-                    const parseQty = (value?: string | number | null) => {
-                        const raw = String(value ?? "").trim();
-                        if (!raw) return null;
-                        if (/^\d+(\.\d+)?$/.test(raw)) return Number(raw);
-                        const fractionMatch = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
-                        if (fractionMatch) {
-                            const numerator = Number(fractionMatch[1]);
-                            const denominator = Number(fractionMatch[2]);
-                            if (!denominator) return null;
-                            return numerator / denominator;
-                        }
-                        return null;
-                    };
-                    const formatKg = (qty: string | number | null | undefined) => {
-                        const parsedQty = parseQty(qty) ?? 0;
-                        const kgValue = parsedQty * 5;
-                        return Number.isFinite(kgValue) && kgValue % 1 !== 0
-                            ? kgValue.toFixed(2).replace(/\.?0+$/, "")
-                            : String(kgValue);
-                    };
-                    const label =
-                        m.name === "보루"
-                            ? `${m.name} ${formatKg(m.qty)}kg`
-                            : m.unit
-                            ? `${m.name} ${m.qty}${m.unit}`
-                            : `${m.name} ${m.qty}`;
-
-                    return (
-                        <span
-                            key={m.id ?? `${m.name}-${idx}`}
-                            className="inline-flex items-center px-3 py-2 rounded-xl
-                                       bg-gray-100 text-gray-800 text-sm font-medium"
-                        >
-                            {label}
-                        </span>
-                    );
-                })}
-            </div>
-        ) : (
-            <div className="text-gray-400">소모 자재가 없습니다.</div>
-        )}
-    </SectionCard>
-)}
-
-
-
-{/* 첨부파일(사진) */}
-<SectionCard title="첨부파일(사진)">
-    {receiptLoading ? (
-        <div className="text-gray-400">첨부파일을 불러오는 중...</div>
-    ) : (
-        (() => {
-                const categories = [
-                    { key: "숙박영수증", title: "숙박 영수증" },
-                    { key: "자재구매영수증", title: "자재 영수증" },
-                    { key: "식비및유대영수증", title: "식비 및 유대 영수증" },
-                    { key: "기타", title: "기타" },
-                ] as const;
-
-            const grouped = categories.map((c) => ({
-                ...c,
-                items: receipts.filter((r) => r.category === c.key),
-            }));
-
-            const hasAny = grouped.some((g) => g.items.length > 0);
-
-            if (!hasAny) {
-                return (
-                    <div className="text-gray-400">
-                        첨부된 파일이 없습니다.
-                    </div>
-                );
-            }
-
-            return (
-                <div className="flex flex-col gap-6">
-                    {grouped.map((g) => (
-                        <div
-                            key={g.key}
-                            className="bg-white border border-gray-200 rounded-2xl p-4 md:p-5"
-                        >
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="font-semibold text-[15px] text-gray-900">
-                                    {g.title}
-                                </div>
-                                <div className="text-[12px] text-gray-400">
-                                    {g.items.length}개
-                                </div>
-                            </div>
-
-                            {g.items.length > 0 ? (
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                                    {g.items.map((item) => {
-                                        const type = item.mime_type || "image/jpeg";
-                                        const name = item.original_name || "첨부파일";
+                                            );
+                                        }
 
                                         return (
-                                            <button
-                                                key={item.id}
-                                                type="button"
-                                                onClick={() =>
-                                                    openPreview(item.file_url, name, type)
-                                                }
-                                                className="group text-left rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 hover:shadow-md transition-shadow"
-                                                title="클릭하여 크게 보기"
-                                            >
-                                                <div className="w-full aspect-[1/1] bg-black/5 flex items-center justify-center overflow-hidden">
-                                                    {type.startsWith("image/") ? (
-                                                        <img
-                                                            src={item.file_url}
-                                                            alt={name}
-                                                            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-600">
-                                                            <div className="text-[13px] font-semibold">
-                                                                PDF
+                                            <div className="flex flex-col gap-6">
+                                                {grouped.map((g) => (
+                                                    <div
+                                                        key={g.key}
+                                                        className="bg-white border border-gray-200 rounded-2xl p-4 md:p-5"
+                                                    >
+                                                        <div className="flex items-center justify-between mb-3">
+                                                            <div className="font-semibold text-[15px] text-gray-900">
+                                                                {g.title}
                                                             </div>
-                                                            <div className="text-[12px] text-gray-500 mt-1">
-                                                                클릭하여 열기
+                                                            <div className="text-[12px] text-gray-400">
+                                                                {g.items.length}개
                                                             </div>
                                                         </div>
-                                                    )}
-                                                </div>
 
-                                                <div className="p-3 bg-white">
-                                                    <p className="text-[13px] text-gray-800 truncate">
-                                                        {name}
-                                                    </p>
-                                                </div>
-                                            </button>
+                                                        {g.items.length > 0 ? (
+                                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                                                                {g.items.map((item) => {
+                                                                    const type = item.mime_type || "image/jpeg";
+                                                                    const name = item.original_name || "첨부파일";
+
+                                                                    return (
+                                                                        <button
+                                                                            key={item.id}
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                openPreview(item.file_url, name, type)
+                                                                            }
+                                                                            className="group text-left rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 hover:shadow-md transition-shadow"
+                                                                            title="클릭하여 크게 보기"
+                                                                        >
+                                                                            <div className="w-full aspect-[1/1] bg-black/5 flex items-center justify-center overflow-hidden">
+                                                                                {type.startsWith("image/") ? (
+                                                                                    <img
+                                                                                        src={item.file_url}
+                                                                                        alt={name}
+                                                                                        className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="w-full h-full flex flex-col items-center justify-center text-gray-600">
+                                                                                        <div className="text-[13px] font-semibold">
+                                                                                            PDF
+                                                                                        </div>
+                                                                                        <div className="text-[12px] text-gray-500 mt-1">
+                                                                                            클릭하여 열기
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+
+                                                                            <div className="p-3 bg-white">
+                                                                                <p className="text-[13px] text-gray-800 truncate">
+                                                                                    {name}
+                                                                                </p>
+                                                                            </div>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-gray-400 text-sm py-2">
+                                                                해당 분류에 첨부파일이 없습니다.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+
+                                                {/* 미리보기 모달 */}
+                                                {previewFile && (
+                                                    <div
+                                                        onClick={closePreview}
+                                                        className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4"
+                                                    >
+                                                        <button
+                                                            onClick={closePreview}
+                                                            className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
+                                                        >
+                                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                                <path
+                                                                    d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"
+                                                                    fill="currentColor"
+                                                                />
+                                                            </svg>
+                                                        </button>
+
+                                                        <div
+                                                            className="max-w-[92vw] max-h-[92vh]"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            {previewFile.type.startsWith("image/") ? (
+                                                                <img
+                                                                    src={previewFile.url}
+                                                                    alt={previewFile.name}
+                                                                    className="max-w-full max-h-[85vh] rounded-xl shadow-2xl bg-white object-contain"
+                                                                />
+                                                            ) : (
+                                                                <iframe
+                                                                    src={previewFile.url}
+                                                                    title={previewFile.name}
+                                                                    className="w-[92vw] h-[85vh] bg-white rounded-xl shadow-2xl"
+                                                                />
+                                                            )}
+                                                            <p className="text-white text-center mt-3 text-[14px] truncate">
+                                                                {previewFile.name}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="text-gray-400 text-sm py-2">
-                                    해당 분류에 첨부파일이 없습니다.
-                                </div>
-                            )}
-                        </div>
-                    ))}
-
-                    {/* 미리보기 모달 */}
-                    {previewFile && (
-                        <div
-                            onClick={closePreview}
-                            className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4"
-                        >
-                            <button
-                                onClick={closePreview}
-                                className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
-                            >
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                                    <path
-                                        d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"
-                                        fill="currentColor"
-                                    />
-                                </svg>
-                            </button>
-
-                            <div
-                                className="max-w-[92vw] max-h-[92vh]"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                {previewFile.type.startsWith("image/") ? (
-                                    <img
-                                        src={previewFile.url}
-                                        alt={previewFile.name}
-                                        className="max-w-full max-h-[85vh] rounded-xl shadow-2xl bg-white object-contain"
-                                    />
-                                ) : (
-                                    <iframe
-                                        src={previewFile.url}
-                                        title={previewFile.name}
-                                        className="w-[92vw] h-[85vh] bg-white rounded-xl shadow-2xl"
-                                    />
+                                    })()
                                 )}
-                                <p className="text-white text-center mt-3 text-[14px] truncate">
-                                    {previewFile.name}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        })()
-    )}
-</SectionCard>
+                            </SectionCard>
 
-{!isEducationReport && (
-    <SectionCard
-        title="타임라인"
-        headerContent={
-            <WorkloadLegend
-                items={[
-                    { key: "work", label: "작업", color: "#3b82f6" },
-                    { key: "move", label: "이동", color: "#10b981" },
-                    { key: "wait", label: "대기", color: "#f59e0b" },
-                ]}
-                className="flex items-center gap-4"
-                itemClassName="flex items-center gap-1.5"
-                labelClassName="text-[12px] text-[#6a7282]"
-                swatchClassName="w-[14px] h-[14px] rounded-md"
-            />
-        }
-    >
-        <TimelineSummarySection />
-    </SectionCard>
-)}
+                            {!isEducationReport && (
+                                <SectionCard
+                                    title="타임라인"
+                                    headerContent={
+                                        <WorkloadLegend
+                                            items={[
+                                                { key: "work", label: "작업", color: "#3b82f6" },
+                                                { key: "move", label: "이동", color: "#10b981" },
+                                                { key: "wait", label: "대기", color: "#f59e0b" },
+                                            ]}
+                                            className="flex items-center gap-4"
+                                            itemClassName="flex items-center gap-1.5"
+                                            labelClassName="text-[12px] text-[#6a7282]"
+                                            swatchClassName="w-[14px] h-[14px] rounded-md"
+                                        />
+                                    }
+                                >
+                                    <TimelineSummarySection />
+                                </SectionCard>
+                            )}
 
 
                         </div>

@@ -1,4 +1,4 @@
-﻿// src/components/Sidebar.tsx
+// src/components/Sidebar.tsx
 import { useEffect, useState, useRef, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
@@ -233,7 +233,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
     };
 
     return (
-        <aside className="w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col">
+        <aside className="w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col shadow-xl lg:shadow-none">
             <div className="flex flex-col gap-6 px-4 py-5 flex-1 min-h-0">
                 {/* Logo & Close Button */}
                 <div className="flex gap-2 items-center justify-between p-2">

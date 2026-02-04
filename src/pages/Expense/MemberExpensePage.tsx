@@ -145,13 +145,13 @@ export default function MemberExpensePage() {
 
                 // 직원 프로필 정보 조회 (email, position)
                 const employeeNames = [...new Set(summary.map((emp) => emp.name))];
-                
+
                 // ✅ 캐시된 프로필 정보 먼저 확인
                 let profileMap = new Map<
                     string,
                     { email: string | null; position: string | null }
                 >();
-                
+
                 try {
                     const cached = localStorage.getItem("employeeProfiles_cache");
                     if (cached) {
@@ -168,7 +168,7 @@ export default function MemberExpensePage() {
 
                 // 캐시에 없는 프로필만 조회 (배치 처리로 성능 개선)
                 const uncachedNames = employeeNames.filter((name) => !profileMap.has(name));
-                
+
                 if (uncachedNames.length > 0) {
                     // ✅ Promise.allSettled로 에러 처리 개선
                     const profilesResult = await Promise.allSettled([
@@ -382,7 +382,7 @@ export default function MemberExpensePage() {
                 return "";
             },
         },
-        
+
     ];
 
     // 드롭다운 행의 상세 데이터 로드
@@ -499,7 +499,7 @@ export default function MemberExpensePage() {
             <div
                 className={`
             fixed lg:static inset-y-0 left-0 z-30
-            w-[239px] h-screen shrink-0
+            w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
             transform transition-transform duration-300 ease-in-out
             ${sidebarOpen
                         ? "translate-x-0"
@@ -714,8 +714,8 @@ export default function MemberExpensePage() {
                                                             setCurrentPage(page)
                                                         }
                                                         className={`px-3 py-1 text-sm rounded ${currentPage === page
-                                                                ? "bg-gray-900 text-white"
-                                                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                            ? "bg-gray-900 text-white"
+                                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                                                             }`}
                                                     >
                                                         {page}

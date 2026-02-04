@@ -113,29 +113,10 @@ export default function ReportEditPage() {
         setInstructor,
     } = useWorkReportStore();
 
-        // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
-        const initialSnapshotRef = useRef<string>("");
-        const makeSnapshot = useCallback(() => {
-            return JSON.stringify({
-                vessel,
-                engine,
-                subject,
-                orderGroup,
-                orderPerson,
-                location,
-                locationCustom,
-                vehicles,
-                workers,
-                workLogEntries,
-                expenses,
-                materials,
-                uploadedFiles: uploadedFiles?.map((f: any) => ({
-                    name: f?.file?.name,
-                    category: f?.category,
-                    isExisting: f?.isExisting,
-                })),
-            });
-        }, [
+    // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
+    const initialSnapshotRef = useRef<string>("");
+    const makeSnapshot = useCallback(() => {
+        return JSON.stringify({
             vessel,
             engine,
             subject,
@@ -148,16 +129,35 @@ export default function ReportEditPage() {
             workLogEntries,
             expenses,
             materials,
-            uploadedFiles,
-        ]);
-    
-        const [isDirty, setIsDirty] = useState(false);
-    
-// ✅ 최신 makeSnapshot 참조용 (비동기/timeout에서도 최신값 사용)
-const makeSnapshotRef = useRef(makeSnapshot);
-useEffect(() => {
-    makeSnapshotRef.current = makeSnapshot;
-}, [makeSnapshot]);
+            uploadedFiles: uploadedFiles?.map((f: any) => ({
+                name: f?.file?.name,
+                category: f?.category,
+                isExisting: f?.isExisting,
+            })),
+        });
+    }, [
+        vessel,
+        engine,
+        subject,
+        orderGroup,
+        orderPerson,
+        location,
+        locationCustom,
+        vehicles,
+        workers,
+        workLogEntries,
+        expenses,
+        materials,
+        uploadedFiles,
+    ]);
+
+    const [isDirty, setIsDirty] = useState(false);
+
+    // ✅ 최신 makeSnapshot 참조용 (비동기/timeout에서도 최신값 사용)
+    const makeSnapshotRef = useRef(makeSnapshot);
+    useEffect(() => {
+        makeSnapshotRef.current = makeSnapshot;
+    }, [makeSnapshot]);
 
     // 기존 데이터 로드
     useEffect(() => {
@@ -266,17 +266,16 @@ useEffect(() => {
             } catch (error: any) {
                 console.error("Error loading work log:", error);
                 showError(
-                    `보고서 로드 실패: ${
-                        error.message || "알 수 없는 오류가 발생했습니다."
+                    `보고서 로드 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                     }`
                 );
                 navigate("/report");
             } finally {
-                                // ✅ 로드 완료 시점을 초기 스냅샷으로 고정
-                                setTimeout(() => {
-                                    initialSnapshotRef.current = makeSnapshotRef.current();
-                                    setIsDirty(false);
-                                }, 0);
+                // ✅ 로드 완료 시점을 초기 스냅샷으로 고정
+                setTimeout(() => {
+                    initialSnapshotRef.current = makeSnapshotRef.current();
+                    setIsDirty(false);
+                }, 0);
                 setLoading(false);
             }
         };
@@ -313,47 +312,47 @@ useEffect(() => {
             const resolvedVehicle =
                 vehicles.length > 0 ? vehicles.join(", ") : null;
 
-                const workLogData = {
-                    author: originalAuthor || authorName,
-                
-                    vessel: reportType === "work" ? vessel : undefined,
-                    engine: reportType === "work" ? engine : undefined,
-                    order_group: reportType === "work" ? orderGroup : undefined,
-                    order_person: reportType === "education" ? useWorkReportStore.getState().instructor : orderPerson,
-                    location: resolvedLocation || undefined,
-                    vehicle: reportType === "work" ? (resolvedVehicle || undefined) : undefined,
-                    subject,
-                    workers,
-                    entries: workLogEntries.map((entry) => ({
-                        id: entry.id,
-                        dateFrom: entry.dateFrom,
-                        timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
-                        dateTo: entry.dateTo,
-                        timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,                        
-                        descType: entry.descType,
-                        details: entry.details,
-                        persons: entry.persons,
-                        note: entry.note || undefined,
-                        moveFrom: entry.moveFrom || undefined,
-                        moveTo: entry.moveTo || undefined,
-                        lunch_worked: !!entry.noLunch,
-                    })),
-                    expenses: expenses.map((exp) => ({
-                        date: exp.date,
-                        type: exp.type,
-                        detail: exp.detail,
-                        amount: exp.amount,
-                    })),
-                    materials: materials.map((mat) => ({
-                        name: mat.name,
-                        qty: String(mat.qty ?? ""),
-                        unit: mat.unit || undefined,
-                    })),
-                    is_draft: false,
-                    created_by: originalCreatedBy || user?.id || undefined,
-                };
-                
-                
+            const workLogData = {
+                author: originalAuthor || authorName,
+
+                vessel: reportType === "work" ? vessel : undefined,
+                engine: reportType === "work" ? engine : undefined,
+                order_group: reportType === "work" ? orderGroup : undefined,
+                order_person: reportType === "education" ? useWorkReportStore.getState().instructor : orderPerson,
+                location: resolvedLocation || undefined,
+                vehicle: reportType === "work" ? (resolvedVehicle || undefined) : undefined,
+                subject,
+                workers,
+                entries: workLogEntries.map((entry) => ({
+                    id: entry.id,
+                    dateFrom: entry.dateFrom,
+                    timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
+                    dateTo: entry.dateTo,
+                    timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,
+                    descType: entry.descType,
+                    details: entry.details,
+                    persons: entry.persons,
+                    note: entry.note || undefined,
+                    moveFrom: entry.moveFrom || undefined,
+                    moveTo: entry.moveTo || undefined,
+                    lunch_worked: !!entry.noLunch,
+                })),
+                expenses: expenses.map((exp) => ({
+                    date: exp.date,
+                    type: exp.type,
+                    detail: exp.detail,
+                    amount: exp.amount,
+                })),
+                materials: materials.map((mat) => ({
+                    name: mat.name,
+                    qty: String(mat.qty ?? ""),
+                    unit: mat.unit || undefined,
+                })),
+                is_draft: false,
+                created_by: originalCreatedBy || user?.id || undefined,
+            };
+
+
             // 기존 레코드 업데이트
             const workLog = await updateWorkLog(workLogId, workLogData);
 
@@ -361,19 +360,19 @@ useEffect(() => {
             // 새로 업로드한 파일만 처리 (기존 영수증은 이미 DB에 있음)
             const newFiles = uploadedFiles.filter((f) => !f.isExisting && f.file);
             if (newFiles.length > 0) {
-    const receipts: Array<{
-        category: ReceiptCategoryEnum;
-        storage_bucket: string;
-        storage_path: string;
-        original_name?: string;
-        mime_type?: string;
-        file_size?: number;
-        created_by?: string;
-    }> = [];
+                const receipts: Array<{
+                    category: ReceiptCategoryEnum;
+                    storage_bucket: string;
+                    storage_path: string;
+                    original_name?: string;
+                    mime_type?: string;
+                    file_size?: number;
+                    created_by?: string;
+                }> = [];
 
                 for (const file of newFiles) {
                     if (!file.file) continue;
-                    
+
                     try {
                         const filePath = await uploadReceiptFile(
                             file.file,
@@ -409,16 +408,16 @@ useEffect(() => {
                             storage_bucket: r.storage_bucket,
                             storage_path: r.storage_path,
                         };
-                        
+
                         // 선택적 필드 추가
                         if (r.original_name) insertData.original_name = r.original_name;
                         if (r.mime_type) insertData.mime_type = r.mime_type;
                         if (r.file_size) insertData.file_size = r.file_size;
                         if (user?.id) insertData.created_by = user.id;
-                        
+
                         return insertData;
                     });
-                    
+
                     const { error: receiptsError } = await supabase
                         .from("work_log_receipt")
                         .insert(insertDataList)
@@ -439,8 +438,7 @@ useEffect(() => {
         } catch (error: any) {
             console.error("Error updating work log:", error);
             showError(
-                `수정 실패: ${
-                    error.message || "알 수 없는 오류가 발생했습니다."
+                `수정 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                 }`
             );
         } finally {
@@ -509,53 +507,53 @@ useEffect(() => {
                 const resolvedVehicle =
                     vehicles.length > 0 ? vehicles.join(", ") : null;
 
-                    const draftData = {
-                        author: originalAuthor || authorName,
-                    
-                        vessel: vessel || undefined,
-                        engine: engine || undefined,
-                        order_group: orderGroup || undefined,
-                        order_person: orderPerson || undefined,
-                        location: resolvedLocation || undefined,
-                        vehicle: resolvedVehicle || undefined,
-                        subject: subject || undefined,
-                        workers: workers || [],
-                        entries: workLogEntries.map((entry) => ({
-                            dateFrom: entry.dateFrom,
-                            timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
-                            dateTo: entry.dateTo,
-                            timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,
-                            descType: entry.descType,
-                            details: entry.details,
-                            persons: entry.persons,
-                            note: entry.note || undefined,
-                            moveFrom: entry.moveFrom || undefined,
-                            moveTo: entry.moveTo || undefined,
-                            lunch_worked: !!entry.noLunch,
-                        })),
-                        expenses: expenses.map((exp) => ({
-                            date: exp.date,
-                            type: exp.type,
-                            detail: exp.detail,
-                            amount: exp.amount,
-                        })),
-                        materials: materials.map((mat) => ({
-                            name: mat.name,
-                            qty: mat.qty,
-                            unit: mat.unit || undefined,
-                        })),
-                        is_draft: true,
-                        created_by: originalCreatedBy || user?.id || undefined,
-                    };
-                    
-                    
+                const draftData = {
+                    author: originalAuthor || authorName,
+
+                    vessel: vessel || undefined,
+                    engine: engine || undefined,
+                    order_group: orderGroup || undefined,
+                    order_person: orderPerson || undefined,
+                    location: resolvedLocation || undefined,
+                    vehicle: resolvedVehicle || undefined,
+                    subject: subject || undefined,
+                    workers: workers || [],
+                    entries: workLogEntries.map((entry) => ({
+                        dateFrom: entry.dateFrom,
+                        timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
+                        dateTo: entry.dateTo,
+                        timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,
+                        descType: entry.descType,
+                        details: entry.details,
+                        persons: entry.persons,
+                        note: entry.note || undefined,
+                        moveFrom: entry.moveFrom || undefined,
+                        moveTo: entry.moveTo || undefined,
+                        lunch_worked: !!entry.noLunch,
+                    })),
+                    expenses: expenses.map((exp) => ({
+                        date: exp.date,
+                        type: exp.type,
+                        detail: exp.detail,
+                        amount: exp.amount,
+                    })),
+                    materials: materials.map((mat) => ({
+                        name: mat.name,
+                        qty: mat.qty,
+                        unit: mat.unit || undefined,
+                    })),
+                    is_draft: true,
+                    created_by: originalCreatedBy || user?.id || undefined,
+                };
+
+
 
                 // 기존 레코드 업데이트
                 await updateWorkLog(workLogId, draftData);
 
                 setLastSavedAt(new Date());
                 setIsSubmittedWorkLog(false); // ✅ 제출완료 → 임시저장 상태로 전환
-                
+
                 if (!silent) {
                     showSuccess("임시저장이 완료되었습니다!");
                     navigate("/report"); // ✅ 임시저장 후 목록으로 이동
@@ -564,8 +562,7 @@ useEffect(() => {
                 console.error("Error saving draft:", error);
                 if (!silent) {
                     showError(
-                        `임시저장 실패: ${
-                            error.message || "알 수 없는 오류가 발생했습니다."
+                        `임시저장 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                         }`
                     );
                 }
@@ -671,7 +668,7 @@ useEffect(() => {
             <div
                 className={`
         fixed lg:static inset-y-0 left-0 z-30
-        w-[239px] h-screen shrink-0
+        w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}
@@ -729,8 +726,8 @@ useEffect(() => {
                             </Button>
                         </div>
                     }
-                    
-                    
+
+
                 />
 
                 {/* Content Area - 스크롤 가능 */}
@@ -761,27 +758,27 @@ useEffect(() => {
                             {/* 첨부파일 업로드 */}
                             <FileUploadSection workLogId={workLogId} />
 
-                        {/* 타임라인 요약 */}
-                        {reportType === "work" && (
-                            <SectionCard
-                                title="타임라인"
-                                headerContent={
-                                    <WorkloadLegend
-                                        items={[
-                                            { key: "work", label: "작업", color: "#3b82f6" },
-                                            { key: "move", label: "이동", color: "#10b981" },
-                                            { key: "wait", label: "대기", color: "#f59e0b" },
-                                        ]}
-                                        className="flex items-center gap-4"
-                                        itemClassName="flex items-center gap-1.5"
-                                        labelClassName="text-[12px] text-[#6a7282]"
-                                        swatchClassName="w-[14px] h-[14px] rounded-md"
-                                    />
-                                }
-                            >
-                                <TimelineSummarySection />
-                            </SectionCard>
-                        )}
+                            {/* 타임라인 요약 */}
+                            {reportType === "work" && (
+                                <SectionCard
+                                    title="타임라인"
+                                    headerContent={
+                                        <WorkloadLegend
+                                            items={[
+                                                { key: "work", label: "작업", color: "#3b82f6" },
+                                                { key: "move", label: "이동", color: "#10b981" },
+                                                { key: "wait", label: "대기", color: "#f59e0b" },
+                                            ]}
+                                            className="flex items-center gap-4"
+                                            itemClassName="flex items-center gap-1.5"
+                                            labelClassName="text-[12px] text-[#6a7282]"
+                                            swatchClassName="w-[14px] h-[14px] rounded-md"
+                                        />
+                                    }
+                                >
+                                    <TimelineSummarySection />
+                                </SectionCard>
+                            )}
                         </div>
                     </div>
                 )}

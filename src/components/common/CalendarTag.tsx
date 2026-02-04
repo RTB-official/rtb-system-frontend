@@ -55,34 +55,30 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
         };
     }, [eventId]);
 
-    // 모바일 반응형: 작은 화면에서는 태그 높이와 텍스트 크기 조정
+    // 모바일 반응형: 작은 사각형 태그로 세로 쌓기 (참고 이미지 스타일)
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-    const tagHeight = isMobile ? 'h-4' : 'h-[22px]'; // 데스크톱에서 22px로 조정
-    const textSize = isMobile ? 'text-[13px]' : 'text-[14px]';
+    const tagHeight = isMobile ? 'h-5' : 'h-[22px]'; // 모바일 20px, 데스크톱 22px
+    const textSize = isMobile ? 'text-[11px]' : 'text-[14px]';
 
-    // 모바일에서는 점 형태로 표시
+    // 모바일: 작은 사각형 태그, 아이콘 없이 색상만 유지 (공휴일=빨강, 일반=이벤트 color)
     if (isMobile) {
-        // 점 색상 결정
-        const dotColor = isHoliday
-            ? "rgb(239 68 68)" // red-500
-            : isVacation
-                ? "rgb(59 130 246)" // blue-500
-                : isWorkLog
-                    ? "rgb(34 197 94)" // green-500
-                    : color;
-
-        // 모바일에서 점 위치 계산 (여러 개의 점이 겹치지 않도록)
-        const topOffset = style?.top ? parseFloat(String(style.top)) : 0;
-        const dotTop = topOffset + 6; // 태그 영역 상단에서 6px 아래
+        const isRedTag = isHoliday;
+        const bgStyle = isRedTag
+            ? undefined
+            : { backgroundColor: `${color}20` };
+        const textClass = isRedTag
+            ? "text-red-700"
+            : "text-gray-800";
 
         return (
             <div
-                className="absolute pointer-events-auto z-10 cursor-pointer"
+                className={`absolute pointer-events-auto z-10 cursor-pointer flex items-center rounded-sm px-1.5 h-[20px] overflow-hidden ${isRedTag ? "bg-red-100" : ""}`}
                 style={{
                     position: style?.position,
-                    top: `${dotTop}px`,
+                    top: style?.top,
                     left: style?.left,
                     width: width,
+                    ...bgStyle,
                 }}
                 onClick={(e) => {
                     if (onClick) {
@@ -90,16 +86,11 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                         onClick(e);
                     }
                 }}
+                title={title}
             >
-                {/* 모바일: 작은 점으로 표시 (더 보기 좋게 그림자 추가) */}
-                <div
-                    className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm border border-white/50"
-                    style={{
-                        backgroundColor: dotColor,
-                        marginLeft: isStart ? '10px' : '0px',
-                    }}
-                    title={title} // 툴팁으로 제목 표시
-                />
+                <span className={`text-[11px] font-medium leading-tight truncate w-full block ${textClass}`}>
+                    {title || "일정"}
+                </span>
             </div>
         );
     }

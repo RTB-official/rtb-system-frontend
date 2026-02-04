@@ -428,13 +428,13 @@ export default function MembersPage() {
                 joinDate: shouldMaskOtherFields
                     ? ""
                     : p.join_date
-                    ? toYYMMDD(p.join_date)
-                    : "",
+                        ? toYYMMDD(p.join_date)
+                        : "",
                 birth: shouldMaskOtherFields
                     ? ""
                     : p.birth_date
-                    ? toYYMMDD(p.birth_date)
-                    : "",
+                        ? toYYMMDD(p.birth_date)
+                        : "",
 
                 // 공사팀(스태프)이고 본인이 아닌 경우 여권정보 마스킹
                 passportNo: shouldMaskPassport ? "" : (pp?.passport_number ?? ""),
@@ -443,8 +443,8 @@ export default function MembersPage() {
                 passportExpiry: shouldMaskPassport
                     ? ""
                     : pp?.passport_expiry_date
-                    ? toYYMMDD(pp.passport_expiry_date)
-                    : "",
+                        ? toYYMMDD(pp.passport_expiry_date)
+                        : "",
                 passportExpiryISO: shouldMaskPassport ? "" : (pp?.passport_expiry_date ?? ""),
 
                 profilePhotoBucket: shouldMaskOtherFields
@@ -591,7 +591,7 @@ export default function MembersPage() {
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen shrink-0
+          w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen
                         ? "translate-x-0"
@@ -649,24 +649,24 @@ export default function MembersPage() {
                             </div>
                         )}
 
-{!roleReady || (loading && members.length === 0) ? (
+                        {!roleReady || (loading && members.length === 0) ? (
                             <MembersSkeleton />
                         ) : (
                             <div className="overflow-x-auto w-full">
-                                    <Table
-                                        columns={[
-                                            {
-                                                key: "name",
-                                                label: "이름",
-                                                width: "11%",
-                                                render: (_, row) => {
-                                                    const canDownload =
-                                                        isAdmin ||
-                                                        row.id === myUserId;
-                                                    const hasPhoto =
-                                                        !!row.profilePhotoBucket &&
-                                                        !!row.profilePhotoPath;
-                                                    return (
+                                <Table
+                                    columns={[
+                                        {
+                                            key: "name",
+                                            label: "이름",
+                                            width: "11%",
+                                            render: (_, row) => {
+                                                const canDownload =
+                                                    isAdmin ||
+                                                    row.id === myUserId;
+                                                const hasPhoto =
+                                                    !!row.profilePhotoBucket &&
+                                                    !!row.profilePhotoPath;
+                                                return (
                                                     <div className="relative group flex items-center gap-3">
                                                         <Avatar
                                                             email={row.avatarEmail}
@@ -698,12 +698,12 @@ export default function MembersPage() {
                                                                             row.profilePhotoBucket,
                                                                             row.profilePhotoPath,
                                                                             row.profilePhotoName ||
-                                                                                "profile-photo"
+                                                                            "profile-photo"
                                                                         );
                                                                     } catch (error: any) {
                                                                         showError(
                                                                             error?.message ||
-                                                                                "증명사진 다운로드 실패"
+                                                                            "증명사진 다운로드 실패"
                                                                         );
                                                                     }
                                                                 }}
@@ -714,222 +714,108 @@ export default function MembersPage() {
                                                         )}
                                                     </div>
                                                 );
-                                                },
                                             },
-                                            {
-                                                key: "role",
-                                                label: "직급",
-                                                width: "6%",
-                                                render: (value) => (
-                                                    <div className="text-[14px] text-gray-900 w-[60px] min-w-[60px]">
-                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
-                                                    </div>
-                                                ),
-                                            },
-                                            {
-                                                key: "phone",
-                                                label: "전화번호",
-                                                width: "10%",
-                                                render: (value) => (
-                                                    <div className="text-[14px] text-gray-900 w-[140px] min-w-[140px]">
-                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
-                                                    </div>
-                                                ),
-                                            },
-                                            {
-                                                key: "address",
-                                                label: "주소",
-                                                width: "30%",
-                                                render: (_, row) => {
-                                                    const hasAddress1 = !!row.address1;
-                                                    const hasAddress2 = !!row.address2;
-                                                    if (!hasAddress1 && !hasAddress2) {
-                                                        return <EmptyValueIndicator />;
-                                                    }
-                                                    const primaryAddress =
-                                                        row.address1 || row.address2 || "";
-                                                    return (
-                                                        <div className="text-[14px] text-gray-900 w-full max-w-[520px]">
-                                                            <div className="truncate whitespace-nowrap">
-                                                                {primaryAddress}
-                                                            </div>
-                                                            {hasAddress1 && hasAddress2 && (
-                                                                <div className="text-[12px] text-gray-500 mt-1 truncate whitespace-nowrap">
-                                                                    {row.address2}
-                                                                </div>
-                                                            )}
+                                        },
+                                        {
+                                            key: "role",
+                                            label: "직급",
+                                            width: "6%",
+                                            render: (value) => (
+                                                <div className="text-[14px] text-gray-900 w-[60px] min-w-[60px]">
+                                                    {value ? <span>{value}</span> : <EmptyValueIndicator />}
+                                                </div>
+                                            ),
+                                        },
+                                        {
+                                            key: "phone",
+                                            label: "전화번호",
+                                            width: "10%",
+                                            render: (value) => (
+                                                <div className="text-[14px] text-gray-900 w-[140px] min-w-[140px]">
+                                                    {value ? <span>{value}</span> : <EmptyValueIndicator />}
+                                                </div>
+                                            ),
+                                        },
+                                        {
+                                            key: "address",
+                                            label: "주소",
+                                            width: "30%",
+                                            render: (_, row) => {
+                                                const hasAddress1 = !!row.address1;
+                                                const hasAddress2 = !!row.address2;
+                                                if (!hasAddress1 && !hasAddress2) {
+                                                    return <EmptyValueIndicator />;
+                                                }
+                                                const primaryAddress =
+                                                    row.address1 || row.address2 || "";
+                                                return (
+                                                    <div className="text-[14px] text-gray-900 w-full max-w-[520px]">
+                                                        <div className="truncate whitespace-nowrap">
+                                                            {primaryAddress}
                                                         </div>
-                                                    );
-                                                },
-                                            },
-                                            {
-                                                key: "joinDate",
-                                                label: "입사일",
-                                                width: "8%",
-                                                render: (value) => (
-                                                    <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
-                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
-                                                    </div>
-                                                ),
-                                            },
-                                            {
-                                                key: "birth",
-                                                label: "생년월일",
-                                                width: "8%",
-                                                render: (value) => (
-                                                    <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
-                                                        {value ? <span>{value}</span> : <EmptyValueIndicator />}
-                                                    </div>
-                                                ),
-                                            },
-                                            {
-                                                key: "etc",
-                                                label: "여권정보",
-                                                width: "10%",
-                                                render: (_, row) => {
-                                                    // 여권 정보 확인
-                                                    const hasPassportNo = !!row.passportNo;
-                                                    const hasPassportName =
-                                                        !!(row.passportLastName || row.passportFirstName);
-                                                    const hasExpiry = !!row.passportExpiry;
-                                                    const hasPassportPhoto =
-                                                        !!row.passportPhotoBucket &&
-                                                        !!row.passportPhotoPath;
-                                                    const hasAnyPassportInfo =
-                                                        hasPassportNo ||
-                                                        hasPassportName ||
-                                                        hasExpiry ||
-                                                        hasPassportPhoto;
-                                                    const canDownload =
-                                                        isAdmin ||
-                                                        row.id === myUserId;
-
-                                                    // 여권 정보가 아예 없을 때만 표시
-                                                    if (!hasAnyPassportInfo) {
-                                                        return (
-                                                            <div className="flex items-start pr-2 w-[260px] min-w-[260px]">
-                                                                <div className="flex-1 min-w-0">
-                                                                    <EmptyValueIndicator />
-                                                                </div>
-                                                                {(isAdmin ||
-                                                                    row.id ===
-                                                                    myUserId) && (
-                                                                        <button
-                                                                            className="flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
-                                                                            onClick={(
-                                                                                e
-                                                                            ) => {
-                                                                                e.stopPropagation();
-                                                                                setSelectedMemberId(
-                                                                                    row.id
-                                                                                );
-                                                                                setActionAnchor(
-                                                                                    e.currentTarget
-                                                                                );
-                                                                                setActionOpen(
-                                                                                    true
-                                                                                );
-                                                                            }}
-                                                                            aria-label="more"
-                                                                        >
-                                                                            <IconMore className="w-5 h-5" />
-                                                                        </button>
-                                                                    )}
+                                                        {hasAddress1 && hasAddress2 && (
+                                                            <div className="text-[12px] text-gray-500 mt-1 truncate whitespace-nowrap">
+                                                                {row.address2}
                                                             </div>
-                                                        );
-                                                    }
+                                                        )}
+                                                    </div>
+                                                );
+                                            },
+                                        },
+                                        {
+                                            key: "joinDate",
+                                            label: "입사일",
+                                            width: "8%",
+                                            render: (value) => (
+                                                <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
+                                                    {value ? <span>{value}</span> : <EmptyValueIndicator />}
+                                                </div>
+                                            ),
+                                        },
+                                        {
+                                            key: "birth",
+                                            label: "생년월일",
+                                            width: "8%",
+                                            render: (value) => (
+                                                <div className="text-[14px] text-gray-900 w-[90px] min-w-[90px]">
+                                                    {value ? <span>{value}</span> : <EmptyValueIndicator />}
+                                                </div>
+                                            ),
+                                        },
+                                        {
+                                            key: "etc",
+                                            label: "여권정보",
+                                            width: "10%",
+                                            render: (_, row) => {
+                                                // 여권 정보 확인
+                                                const hasPassportNo = !!row.passportNo;
+                                                const hasPassportName =
+                                                    !!(row.passportLastName || row.passportFirstName);
+                                                const hasExpiry = !!row.passportExpiry;
+                                                const hasPassportPhoto =
+                                                    !!row.passportPhotoBucket &&
+                                                    !!row.passportPhotoPath;
+                                                const hasAnyPassportInfo =
+                                                    hasPassportNo ||
+                                                    hasPassportName ||
+                                                    hasExpiry ||
+                                                    hasPassportPhoto;
+                                                const canDownload =
+                                                    isAdmin ||
+                                                    row.id === myUserId;
 
-                                                    // 251227 -> 25년 12월 만료 형식으로 변환 (YYMMDD)
-                                                    let formattedExpiry = "";
-                                                    let isExpiryWithinYear = false;
-                                                    if (hasExpiry && row.passportExpiry.length === 6) {
-                                                        const yy = parseInt(row.passportExpiry.slice(0, 2), 10);
-                                                        const mm = parseInt(row.passportExpiry.slice(2, 4), 10);
-                                                        formattedExpiry = `${String(yy).padStart(2, '0')}년 ${mm}월 만료`;
-
-                                                        // ISO 날짜가 있으면 직접 사용, 없으면 YYMMDD에서 변환
-                                                        if (row.passportExpiryISO) {
-                                                            const expiryDate = new Date(row.passportExpiryISO);
-                                                            expiryDate.setHours(0, 0, 0, 0);
-
-                                                            const today = new Date();
-                                                            today.setHours(0, 0, 0, 0);
-
-                                                            // 오늘로부터 1년 후 날짜 계산
-                                                            const oneYearLater = new Date(today);
-                                                            oneYearLater.setFullYear(today.getFullYear() + 1);
-
-                                                            // 만료일이 오늘 이후이고 1년 이내인지 확인
-                                                            isExpiryWithinYear = expiryDate >= today && expiryDate <= oneYearLater;
-                                                        }
-                                                    }
-
-                                                    const passportName = `${row.passportLastName || ""} ${row.passportFirstName || ""}`.trim();
-
-                                                    // 여권정보가 있으면 있는 정보만 표시
+                                                // 여권 정보가 아예 없을 때만 표시
+                                                if (!hasAnyPassportInfo) {
                                                     return (
-                                                        <div className="relative group flex items-start pr-2 w-[260px] min-w-[260px]">
+                                                        <div className="flex items-start pr-2 w-[260px] min-w-[260px]">
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    {hasPassportNo && (
-                                                                        <span className="text-[14px] font-semibold text-gray-900 truncate max-w-[140px]">
-                                                                            {row.passportNo}
-                                                                        </span>
-                                                                    )}
-
-                                                                    {formattedExpiry && (
-                                                                        <Chip
-                                                                            color={isExpiryWithinYear ? "red-600" : "gray-400"}
-                                                                            variant="solid"
-                                                                            size="sm"
-                                                                        >
-                                                                            {formattedExpiry}
-                                                                        </Chip>
-                                                                    )}
-                                                                </div>
-
-                                                                {passportName && (
-                                                                    <div className="text-[12px] text-gray-500 uppercase tracking-tight mt-1">
-                                                                        {passportName}
-                                                                    </div>
-                                                                )}
-                                                                {hasPassportPhoto &&
-                                                                    !hasPassportNo &&
-                                                                    !passportName &&
-                                                                    !formattedExpiry && (
-                                                                        <div className="text-[12px] text-gray-500 mt-1">
-                                                                            여권사진 다운로드
-                                                                        </div>
-                                                                    )}
+                                                                <EmptyValueIndicator />
                                                             </div>
-                                                            {canDownload && hasPassportPhoto && (
-                                                                <MiniIconButton
-                                                                    onClick={async (e) => {
-                                                                        e.stopPropagation();
-                                                                        try {
-                                                                            await downloadStorageFile(
-                                                                                row.passportPhotoBucket,
-                                                                                row.passportPhotoPath,
-                                                                                row.passportPhotoName ||
-                                                                                    "passport-photo"
-                                                                            );
-                                                                        } catch (error: any) {
-                                                                            showError(
-                                                                                error?.message ||
-                                                                                    "여권사진 다운로드 실패"
-                                                                            );
-                                                                        }
-                                                                    }}
-                                                                    title="여권사진 다운로드"
-                                                                    icon={<IconDownload className="w-3.5 h-3.5" />}
-                                                                    className="relative -left-1"
-                                                                />
-                                                            )}
                                                             {(isAdmin ||
                                                                 row.id ===
                                                                 myUserId) && (
                                                                     <button
-                                                                        className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
+                                                                        className="flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
                                                                         onClick={(
                                                                             e
                                                                         ) => {
@@ -951,19 +837,133 @@ export default function MembersPage() {
                                                                 )}
                                                         </div>
                                                     );
-                                                },
+                                                }
+
+                                                // 251227 -> 25년 12월 만료 형식으로 변환 (YYMMDD)
+                                                let formattedExpiry = "";
+                                                let isExpiryWithinYear = false;
+                                                if (hasExpiry && row.passportExpiry.length === 6) {
+                                                    const yy = parseInt(row.passportExpiry.slice(0, 2), 10);
+                                                    const mm = parseInt(row.passportExpiry.slice(2, 4), 10);
+                                                    formattedExpiry = `${String(yy).padStart(2, '0')}년 ${mm}월 만료`;
+
+                                                    // ISO 날짜가 있으면 직접 사용, 없으면 YYMMDD에서 변환
+                                                    if (row.passportExpiryISO) {
+                                                        const expiryDate = new Date(row.passportExpiryISO);
+                                                        expiryDate.setHours(0, 0, 0, 0);
+
+                                                        const today = new Date();
+                                                        today.setHours(0, 0, 0, 0);
+
+                                                        // 오늘로부터 1년 후 날짜 계산
+                                                        const oneYearLater = new Date(today);
+                                                        oneYearLater.setFullYear(today.getFullYear() + 1);
+
+                                                        // 만료일이 오늘 이후이고 1년 이내인지 확인
+                                                        isExpiryWithinYear = expiryDate >= today && expiryDate <= oneYearLater;
+                                                    }
+                                                }
+
+                                                const passportName = `${row.passportLastName || ""} ${row.passportFirstName || ""}`.trim();
+
+                                                // 여권정보가 있으면 있는 정보만 표시
+                                                return (
+                                                    <div className="relative group flex items-start pr-2 w-[260px] min-w-[260px]">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                {hasPassportNo && (
+                                                                    <span className="text-[14px] font-semibold text-gray-900 truncate max-w-[140px]">
+                                                                        {row.passportNo}
+                                                                    </span>
+                                                                )}
+
+                                                                {formattedExpiry && (
+                                                                    <Chip
+                                                                        color={isExpiryWithinYear ? "red-600" : "gray-400"}
+                                                                        variant="solid"
+                                                                        size="sm"
+                                                                    >
+                                                                        {formattedExpiry}
+                                                                    </Chip>
+                                                                )}
+                                                            </div>
+
+                                                            {passportName && (
+                                                                <div className="text-[12px] text-gray-500 uppercase tracking-tight mt-1">
+                                                                    {passportName}
+                                                                </div>
+                                                            )}
+                                                            {hasPassportPhoto &&
+                                                                !hasPassportNo &&
+                                                                !passportName &&
+                                                                !formattedExpiry && (
+                                                                    <div className="text-[12px] text-gray-500 mt-1">
+                                                                        여권사진 다운로드
+                                                                    </div>
+                                                                )}
+                                                        </div>
+                                                        {canDownload && hasPassportPhoto && (
+                                                            <MiniIconButton
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    try {
+                                                                        await downloadStorageFile(
+                                                                            row.passportPhotoBucket,
+                                                                            row.passportPhotoPath,
+                                                                            row.passportPhotoName ||
+                                                                            "passport-photo"
+                                                                        );
+                                                                    } catch (error: any) {
+                                                                        showError(
+                                                                            error?.message ||
+                                                                            "여권사진 다운로드 실패"
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                title="여권사진 다운로드"
+                                                                icon={<IconDownload className="w-3.5 h-3.5" />}
+                                                                className="relative -left-1"
+                                                            />
+                                                        )}
+                                                        {(isAdmin ||
+                                                            row.id ===
+                                                            myUserId) && (
+                                                                <button
+                                                                    className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
+                                                                    onClick={(
+                                                                        e
+                                                                    ) => {
+                                                                        e.stopPropagation();
+                                                                        setSelectedMemberId(
+                                                                            row.id
+                                                                        );
+                                                                        setActionAnchor(
+                                                                            e.currentTarget
+                                                                        );
+                                                                        setActionOpen(
+                                                                            true
+                                                                        );
+                                                                    }}
+                                                                    aria-label="more"
+                                                                >
+                                                                    <IconMore className="w-5 h-5" />
+                                                                </button>
+                                                            )}
+                                                    </div>
+                                                );
                                             },
-                                        ]}
-                                        data={pagedMembers}
-                                        rowKey="id"
-                                        emptyText="등록된 구성원이 없습니다."
-                                        pagination={{
-                                            currentPage: page,
-                                            totalPages: pageCount,
-                                            onPageChange: setPage,
-                                        }}
-                                    />
-                                </div>
+                                        },
+                                    ]}
+                                    data={pagedMembers}
+                                    rowKey="id"
+                                    emptyText="등록된 구성원이 없습니다."
+                                    pagination={{
+                                        currentPage: page,
+                                        totalPages: pageCount,
+                                        onPageChange: setPage,
+                                    }}
+                                />
+                            </div>
                         )}
 
                         {/* 바닥 여백 */}
@@ -1049,7 +1049,7 @@ export default function MembersPage() {
                             } catch (e: any) {
                                 showError(
                                     e?.message ||
-                                        "증명사진 업로드에 실패했습니다."
+                                    "증명사진 업로드에 실패했습니다."
                                 );
                             }
                         }
@@ -1111,7 +1111,7 @@ export default function MembersPage() {
                             } catch (e: any) {
                                 showError(
                                     e?.message ||
-                                        "여권사진 업로드에 실패했습니다."
+                                    "여권사진 업로드에 실패했습니다."
                                 );
                             }
                         }

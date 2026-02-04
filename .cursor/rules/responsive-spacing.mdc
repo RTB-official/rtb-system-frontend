@@ -1,5 +1,5 @@
 ---
-description: 반응형·페이지 패딩 공통 규칙 (모바일 우선, 팀/AI 공통 적용)
+description: 반응형·페이지 패딩·UI 컴포넌트 재사용 규칙 (팀/AI 공통)
 alwaysApply: true
 ---
 
@@ -31,3 +31,18 @@ alwaysApply: true
 - 그리드/레이아웃: `grid-cols-1 md:grid-cols-2 lg:grid-cols-3` 등으로 작은 화면에서는 1열 유지.
 - 테이블·카드: 모바일에서 가로 스크롤 또는 스택 레이아웃 고려.
 - 기존 페이지 수정 시 위 패딩 규칙과 `PageContainer` 사용을 맞춘다.
+
+---
+
+# 기존 UI 컴포넌트 재사용 (필수)
+
+새 화면·기능을 만들 때 **이미 있는 컴포넌트를 반드시 재사용**한다. 새로 만들지 말 것.
+
+- **버튼**: `src/components/common/Button.tsx` (variant: primary, outline, ghost 등, size: sm, md, lg)
+- **입력**: `src/components/common/Input.tsx`, `src/components/ui/TextInput.tsx`, `src/components/common/Select.tsx`
+- **테이블**: `src/components/common/Table.tsx`
+- **모달/다이얼로그**: `src/components/ui/BaseModal.tsx`, `src/components/common/ConfirmDialog.tsx`
+- **카드/섹션**: `src/components/ui/SectionCard.tsx`
+- **기타**: `Tabs`, `Chip`, `DatePicker`, `Pagination`, `ActionMenu` 등 `src/components/common/`, `src/components/ui/` 에 있는 컴포넌트
+
+필요한 동작이 없을 때만 확장하고, 새 컴포넌트를 만들기 전에 위 목록을 먼저 확인한다.

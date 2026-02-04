@@ -498,7 +498,7 @@ export default function AdminVacationPage() {
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen shrink-0
+          w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen
                         ? "translate-x-0"

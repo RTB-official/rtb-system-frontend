@@ -303,9 +303,8 @@ export default function PersonalExpensePage() {
                 variant: "mileage" as const,
                 date: formatDate(it.m_date),
                 amount: `${(it.amount_won || 0).toLocaleString("ko-KR")}원`,
-                routeLabel: `${it.from_text || "출발지"} → ${
-                    it.to_text || "도착지"
-                }`,
+                routeLabel: `${it.from_text || "출발지"} → ${it.to_text || "도착지"
+                    }`,
                 distanceLabel: `${Number(it.distance_km || 0)}km`,
                 desc: it.detail || "",
                 isSubmitted: it.is_submitted,
@@ -405,13 +404,12 @@ export default function PersonalExpensePage() {
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen shrink-0
+          w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
-          ${
-              sidebarOpen
-                  ? "translate-x-0"
-                  : "-translate-x-full lg:translate-x-0"
-          }
+          ${sidebarOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full lg:translate-x-0"
+                    }
         `}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />

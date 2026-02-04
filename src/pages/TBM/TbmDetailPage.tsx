@@ -46,11 +46,11 @@ export default function TbmDetailPage() {
         if (participant.user_id !== currentUserId) return;
         if (participant.signed_at) return;
         if (signing) return; // ✅ 이미 서명 처리 중이면 무시
-    
+
         try {
             setSigning(true); // ✅ 서명 시작
             await signTbm(id, currentUserId);
-    
+
             setParticipants((prev) =>
                 prev.map((p) =>
                     p.user_id === currentUserId
@@ -58,7 +58,7 @@ export default function TbmDetailPage() {
                         : p
                 )
             );
-    
+
             showSuccess("서명 처리되었습니다.");
         } catch (e: any) {
             showError(e?.message || "서명 처리에 실패했습니다.");
@@ -66,7 +66,7 @@ export default function TbmDetailPage() {
             setSigning(false); // ✅ 성공/실패 상관없이 해제
         }
     };
-    
+
 
     return (
         <div className="flex h-screen bg-white overflow-hidden">
@@ -78,11 +78,10 @@ export default function TbmDetailPage() {
             )}
 
             <div
-                className={`fixed lg:static inset-y-0 left-0 z-30 w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
-                    sidebarOpen
+                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
                         ? "translate-x-0"
                         : "-translate-x-full lg:translate-x-0"
-                }`}
+                    }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>

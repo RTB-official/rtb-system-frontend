@@ -130,11 +130,10 @@ export default function TbmListPage() {
             )}
 
             <div
-                className={`fixed lg:static inset-y-0 left-0 z-30 w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
-                    sidebarOpen
+                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
                         ? "translate-x-0"
                         : "-translate-x-full lg:translate-x-0"
-                }`}
+                    }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
@@ -218,44 +217,44 @@ export default function TbmListPage() {
                                 </div>
                             </div>
 
-                                <Table
-                                    className="text-[14px]"
-                                    columns={[
-                                        {
-                                            key: "tbm_date",
-                                            label: "TBM 일시",
-                                            width: "110px",
-                                            render: (value) =>
-                                                value
-                                                    ? String(value).replace(/-/g, ".") + "."
-                                                    : "-",
+                            <Table
+                                className="text-[14px]"
+                                columns={[
+                                    {
+                                        key: "tbm_date",
+                                        label: "TBM 일시",
+                                        width: "110px",
+                                        render: (value) =>
+                                            value
+                                                ? String(value).replace(/-/g, ".") + "."
+                                                : "-",
+                                    },
+                                    { key: "line_name", label: "호선명", width: "150px" },
+                                    { key: "work_name", label: "작업명" },
+                                    { key: "location", label: "장소", width: "150px" },
+                                    {
+                                        key: "created_by_name",
+                                        label: "작성자",
+                                        width: "90px",
+                                    },
+                                    {
+                                        key: "status",
+                                        label: "상태",
+                                        width: "100px",
+                                        align: "center",
+                                        render: (_, row: TbmListItem) => {
+                                            const isComplete = row.participant_total > 0 && row.participant_total === row.participant_signed;
+                                            return (
+                                                <Chip
+                                                    color={isComplete ? "blue-500" : "gray-400"}
+                                                    variant="solid"
+                                                    size="md"
+                                                >
+                                                    {isComplete ? "완료" : "진행중"}
+                                                </Chip>
+                                            );
                                         },
-                                        { key: "line_name", label: "호선명", width: "150px" },
-                                        { key: "work_name", label: "작업명" },
-                                        { key: "location", label: "장소", width: "150px" },
-                                        {
-                                            key: "created_by_name",
-                                            label: "작성자",
-                                            width: "90px",
-                                        },
-                                        {
-                                            key: "status",
-                                            label: "상태",
-                                            width: "100px",
-                                            align: "center",
-                                            render: (_, row: TbmListItem) => {
-                                                const isComplete = row.participant_total > 0 && row.participant_total === row.participant_signed;
-                                                return (
-                                                    <Chip
-                                                        color={isComplete ? "blue-500" : "gray-400"}
-                                                        variant="solid"
-                                                        size="md"
-                                                    >
-                                                        {isComplete ? "완료" : "진행중"}
-                                                    </Chip>
-                                                );
-                                            },
-                                        },
+                                    },
                                     {
                                         key: "actions",
                                         label: "",
@@ -291,24 +290,24 @@ export default function TbmListPage() {
                                                         e.stopPropagation()
                                                     }
                                                 >
-                                                            <ActionMenu
-                                                                isOpen={
-                                                                    openMenuId === row.id
-                                                                }
-                                                                anchorEl={menuAnchor}
-                                                                onClose={() => {
-                                                                    setOpenMenuId(null);
-                                                                    setMenuAnchor(null);
-                                                                }}
-                                                                onEdit={() => navigate(`/tbm/create?edit=${row.id}`)}
-                                                                onPdf={() => handleDownloadPdf(row.id)}
-                                                                pdfLabel="PDF 저장"
-                                                                onDelete={() => handleDeleteTbm(row.id)}
-                                                                showPdf
-                                                                showDelete
-                                                                showLogout={false}
-                                                                width="w-44"
-                                                            />
+                                                    <ActionMenu
+                                                        isOpen={
+                                                            openMenuId === row.id
+                                                        }
+                                                        anchorEl={menuAnchor}
+                                                        onClose={() => {
+                                                            setOpenMenuId(null);
+                                                            setMenuAnchor(null);
+                                                        }}
+                                                        onEdit={() => navigate(`/tbm/create?edit=${row.id}`)}
+                                                        onPdf={() => handleDownloadPdf(row.id)}
+                                                        pdfLabel="PDF 저장"
+                                                        onDelete={() => handleDeleteTbm(row.id)}
+                                                        showPdf
+                                                        showDelete
+                                                        showLogout={false}
+                                                        width="w-44"
+                                                    />
                                                 </div>
                                             </div>
                                         ),

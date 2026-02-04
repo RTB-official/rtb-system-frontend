@@ -50,7 +50,7 @@ export default function ReportListPage() {
     const [loading, setLoading] = useState(true);
     // ✅ 탭 상태 추가 ("work" | "education")
     const [activeTab, setActiveTab] = useState<"work" | "education">("work");
-    
+
     const itemsPerPage = 10;
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
@@ -60,105 +60,105 @@ export default function ReportListPage() {
     useEffect(() => {
         if (safetyToastOnceRef.current) return;
         safetyToastOnceRef.current = true;
-      
+
         // ✅ pending이 없으면 절대 안 띄움
         if (sessionStorage.getItem("rtb:safety_toast_pending") !== "1") return;
-      
+
         const run = async () => {
-          try {
-            // ✅ 여기서 바로 소비
-            sessionStorage.setItem("rtb:safety_toast_pending", "0");
-      
-            const { data: settings } = await supabase
-            .from("safe_settings")
-            .select("safe_phrase, slogan_path")
-            .eq("id", 1)
-            .single();
-      
-            if (settings?.slogan_path) {
-              const { data: signed } = await supabase.storage
-                .from("safe-slogans")
-                .createSignedUrl(settings.slogan_path, 60 * 60);
-      
-              if (signed?.signedUrl) {
+            try {
+                // ✅ 여기서 바로 소비
+                sessionStorage.setItem("rtb:safety_toast_pending", "0");
+
+                const { data: settings } = await supabase
+                    .from("safe_settings")
+                    .select("safe_phrase, slogan_path")
+                    .eq("id", 1)
+                    .single();
+
+                if (settings?.slogan_path) {
+                    const { data: signed } = await supabase.storage
+                        .from("safe-slogans")
+                        .createSignedUrl(settings.slogan_path, 60 * 60);
+
+                    if (signed?.signedUrl) {
+                        showSuccess({
+                            message: "",
+                            hideIcon: true,
+                            imageUrl: signed.signedUrl,
+                            imageAlt: "안전 슬로건",
+                            duration: 6000,
+                        });
+                    }
+                }
+
                 showSuccess({
-                  message: "",
-                  hideIcon: true,
-                  imageUrl: signed.signedUrl,
-                  imageAlt: "안전 슬로건",
-                  duration: 6000,
+                    message: settings?.safe_phrase?.trim()
+                        ? settings.safe_phrase
+                        : "등록된 안전 문구가 없습니다.",
+                    duration: 6000,
                 });
-              }
+            } catch (e) {
+                console.error(e);
             }
-      
-            showSuccess({
-              message: settings?.safe_phrase?.trim()
-                ? settings.safe_phrase
-                : "등록된 안전 문구가 없습니다.",
-              duration: 6000,
-            });
-          } catch (e) {
-            console.error(e);
-          }
         };
-      
+
         run();
-      }, [showSuccess]);
+    }, [showSuccess]);
 
-// 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
-const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}.${month}.${day}.`;
-};
-
-// ✅ 기간 표기용 (한국어)
-const formatKoreanDate = (dateString: string) => {
-    const d = new Date(dateString);
-    const month = d.getMonth() + 1;
-    const day = d.getDate();
-    return { month, day };
-};
-
-const formatKoreanPeriod = (start?: string, end?: string) => {
-    if (!start && !end) return "";
-    if (start && !end) {
-        const s = formatKoreanDate(start);
-        return `${s.month}월${s.day}일`;
-    }
-    if (!start && end) {
-        const e = formatKoreanDate(end);
-        return `${e.month}월${e.day}일`;
-    }
-
-    const s = formatKoreanDate(start as string);
-    const e = formatKoreanDate(end as string);
-    if (s.month === e.month) {
-        if (s.day === e.day) return `${s.month}월${s.day}일`;
-        return `${s.month}월${s.day}일~${e.day}일`;
-    }
-    return `${s.month}월${s.day}일~${e.month}월${e.day}일`;
-};
-
-
-
-
-// WorkLog를 ReportItem으로 변환
-const convertToReportItem = (workLog: WorkLog): ReportItem => {
-    return {
-        id: workLog.id,
-        // ✅ title은 loadReports에서 "기간 / 호선 / 목적"으로 다시 조합할 예정
-        title: workLog.subject || "(제목 없음)",
-        place: workLog.location || "",
-        supervisor: workLog.order_person || "",
-        owner: workLog.author || "(작성자 없음)",
-        date: formatDate(workLog.created_at),
-        createdAt: workLog.created_at || "",
-        status: workLog.is_draft ? "pending" : "submitted",
+    // 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        return `${year}.${month}.${day}.`;
     };
-};
+
+    // ✅ 기간 표기용 (한국어)
+    const formatKoreanDate = (dateString: string) => {
+        const d = new Date(dateString);
+        const month = d.getMonth() + 1;
+        const day = d.getDate();
+        return { month, day };
+    };
+
+    const formatKoreanPeriod = (start?: string, end?: string) => {
+        if (!start && !end) return "";
+        if (start && !end) {
+            const s = formatKoreanDate(start);
+            return `${s.month}월${s.day}일`;
+        }
+        if (!start && end) {
+            const e = formatKoreanDate(end);
+            return `${e.month}월${e.day}일`;
+        }
+
+        const s = formatKoreanDate(start as string);
+        const e = formatKoreanDate(end as string);
+        if (s.month === e.month) {
+            if (s.day === e.day) return `${s.month}월${s.day}일`;
+            return `${s.month}월${s.day}일~${e.day}일`;
+        }
+        return `${s.month}월${s.day}일~${e.month}월${e.day}일`;
+    };
+
+
+
+
+    // WorkLog를 ReportItem으로 변환
+    const convertToReportItem = (workLog: WorkLog): ReportItem => {
+        return {
+            id: workLog.id,
+            // ✅ title은 loadReports에서 "기간 / 호선 / 목적"으로 다시 조합할 예정
+            title: workLog.subject || "(제목 없음)",
+            place: workLog.location || "",
+            supervisor: workLog.order_person || "",
+            owner: workLog.author || "(작성자 없음)",
+            date: formatDate(workLog.created_at),
+            createdAt: workLog.created_at || "",
+            status: workLog.is_draft ? "pending" : "submitted",
+        };
+    };
 
     // 데이터 로드
     const loadReports = async () => {
@@ -250,106 +250,106 @@ const convertToReportItem = (workLog: WorkLog): ReportItem => {
 
             const reportItems = workLogs.map(convertToReportItem);
 
-// ✅ WorkLog id 목록
-const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
+            // ✅ WorkLog id 목록
+            const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
 
-// ✅ workLogId -> { start, end } 기간 맵 (entries.dateFrom/dateTo 기반)
-const periodMap = new Map<number, { start?: string; end?: string }>();
+            // ✅ workLogId -> { start, end } 기간 맵 (entries.dateFrom/dateTo 기반)
+            const periodMap = new Map<number, { start?: string; end?: string }>();
 
-// ✅ 작성자 이름 목록 수집 (병렬 처리 준비)
-const ownerNames = [
-    ...new Set(
-        reportItems.map((item) => item.owner).filter(Boolean)
-    ),
-];
+            // ✅ 작성자 이름 목록 수집 (병렬 처리 준비)
+            const ownerNames = [
+                ...new Set(
+                    reportItems.map((item) => item.owner).filter(Boolean)
+                ),
+            ];
 
-// ✅ profiles 맵 초기화 (스코프 문제 해결)
-let profileMap = new Map<
-    string,
-    { email: string | null; position: string | null }
->();
+            // ✅ profiles 맵 초기화 (스코프 문제 해결)
+            let profileMap = new Map<
+                string,
+                { email: string | null; position: string | null }
+            >();
 
-// ✅ entries와 profiles를 병렬로 조회하여 성능 개선
-if (workLogIds.length > 0) {
-    const [entriesResult, profilesResult] = await Promise.allSettled([
-        supabase
-            .from("work_log_entries_with_hours")
-            .select("work_log_id, date_from, date_to")
-            .in("work_log_id", workLogIds),
-        ownerNames.length > 0
-            ? supabase
-                  .from("profiles")
-                  .select("name, email, position")
-                  .in("name", ownerNames)
-            : Promise.resolve({ data: [], error: null }),
-    ]);
+            // ✅ entries와 profiles를 병렬로 조회하여 성능 개선
+            if (workLogIds.length > 0) {
+                const [entriesResult, profilesResult] = await Promise.allSettled([
+                    supabase
+                        .from("work_log_entries_with_hours")
+                        .select("work_log_id, date_from, date_to")
+                        .in("work_log_id", workLogIds),
+                    ownerNames.length > 0
+                        ? supabase
+                            .from("profiles")
+                            .select("name, email, position")
+                            .in("name", ownerNames)
+                        : Promise.resolve({ data: [], error: null }),
+                ]);
 
-    // entries 처리
-    if (entriesResult.status === "fulfilled") {
-        const { data: entries, error: entriesError } = entriesResult.value;
-        if (entriesError) {
-            console.error("기간(entries) 조회 실패:", entriesError);
-        } else if (entries) {
-            entries.forEach((e: any) => {
-                const id = Number(e.work_log_id);
-                if (!id) return;
+                // entries 처리
+                if (entriesResult.status === "fulfilled") {
+                    const { data: entries, error: entriesError } = entriesResult.value;
+                    if (entriesError) {
+                        console.error("기간(entries) 조회 실패:", entriesError);
+                    } else if (entries) {
+                        entries.forEach((e: any) => {
+                            const id = Number(e.work_log_id);
+                            if (!id) return;
 
-                const s = e.date_from ? String(e.date_from) : "";
-                const t = e.date_to ? String(e.date_to) : "";
+                            const s = e.date_from ? String(e.date_from) : "";
+                            const t = e.date_to ? String(e.date_to) : "";
 
-                const prev = periodMap.get(id);
+                            const prev = periodMap.get(id);
 
-                // start = 최소 dateFrom, end = 최대 dateTo
-                const nextStart =
-                    !prev?.start || (s && s < prev.start) ? (s || prev?.start) : prev.start;
-                const nextEnd =
-                    !prev?.end || (t && t > prev.end) ? (t || prev?.end) : prev.end;
+                            // start = 최소 dateFrom, end = 최대 dateTo
+                            const nextStart =
+                                !prev?.start || (s && s < prev.start) ? (s || prev?.start) : prev.start;
+                            const nextEnd =
+                                !prev?.end || (t && t > prev.end) ? (t || prev?.end) : prev.end;
 
-                periodMap.set(id, { start: nextStart, end: nextEnd });
+                            periodMap.set(id, { start: nextStart, end: nextEnd });
+                        });
+                    }
+                } else {
+                    console.error("기간(entries) 조회 실패:", entriesResult.reason);
+                }
+
+                // profiles 처리
+                if (profilesResult.status === "fulfilled") {
+                    const { data: profiles, error: profilesError } = profilesResult.value;
+                    if (profilesError) {
+                        console.error("프로필 조회 실패:", profilesError);
+                    } else if (profiles) {
+                        profiles.forEach((profile: any) => {
+                            profileMap.set(profile.name, {
+                                email: profile.email || null,
+                                position: profile.position || null,
+                            });
+                        });
+                    }
+                } else {
+                    console.error("프로필 조회 실패:", profilesResult.reason);
+                }
+            }
+
+            // ✅ 제목을 "기간 / 호선(vessel) / 출장목적(subject)"으로 재조합 (라벨 없이 내용만)
+            const reportsWithTitle = reportItems.map((item) => {
+                const wl = workLogs.find((w) => w.id === item.id) as any;
+
+                const vessel = wl?.vessel?.trim() ? wl.vessel.trim() : "";
+                const purpose = wl?.subject?.trim() ? wl.subject.trim() : "";
+
+                const p = periodMap.get(item.id);
+                const period = formatKoreanPeriod(p?.start, p?.end);
+
+                const parts = [period, vessel, purpose].filter(Boolean);
+                const combinedTitle = parts.length ? parts.join(" ") : "(제목 없음)";
+
+                return {
+                    ...item,
+                    title: combinedTitle,
+                    periodStart: p?.start,
+                    periodEnd: p?.end,
+                };
             });
-        }
-    } else {
-        console.error("기간(entries) 조회 실패:", entriesResult.reason);
-    }
-
-    // profiles 처리
-    if (profilesResult.status === "fulfilled") {
-        const { data: profiles, error: profilesError } = profilesResult.value;
-        if (profilesError) {
-            console.error("프로필 조회 실패:", profilesError);
-        } else if (profiles) {
-            profiles.forEach((profile: any) => {
-                profileMap.set(profile.name, {
-                    email: profile.email || null,
-                    position: profile.position || null,
-                });
-            });
-        }
-    } else {
-        console.error("프로필 조회 실패:", profilesResult.reason);
-    }
-}
-
-// ✅ 제목을 "기간 / 호선(vessel) / 출장목적(subject)"으로 재조합 (라벨 없이 내용만)
-const reportsWithTitle = reportItems.map((item) => {
-    const wl = workLogs.find((w) => w.id === item.id) as any;
-
-    const vessel = wl?.vessel?.trim() ? wl.vessel.trim() : "";
-    const purpose = wl?.subject?.trim() ? wl.subject.trim() : "";
-
-    const p = periodMap.get(item.id);
-    const period = formatKoreanPeriod(p?.start, p?.end);
-
-    const parts = [period, vessel, purpose].filter(Boolean);
-    const combinedTitle = parts.length ? parts.join(" ") : "(제목 없음)";
-
-    return {
-        ...item,
-        title: combinedTitle,
-        periodStart: p?.start,
-        periodEnd: p?.end,
-    };
-});
 
 
             // ReportItem에 프로필 정보 추가 (profileMap은 위에서 이미 생성됨)
@@ -424,7 +424,7 @@ const reportsWithTitle = reportItems.map((item) => {
         return reports.filter((r) => {
             // 1. 교육 보고서 필터링 (제목에 '교육' 포함 여부)
             const isEducation = r.title.includes("교육");
-            
+
             // 탭에 따른 필터링
             if (activeTab === "education") {
                 if (!isEducation) return false;
@@ -482,11 +482,10 @@ const reportsWithTitle = reportItems.map((item) => {
             )}
 
             <div
-                className={`fixed lg:static inset-y-0 left-0 z-30 w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
-                    sidebarOpen
+                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
                         ? "translate-x-0"
                         : "-translate-x-full lg:translate-x-0"
-                }`}
+                    }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
@@ -772,7 +771,7 @@ const reportsWithTitle = reportItems.map((item) => {
                                                 >
                                                     <IconMore className="w-[18px] h-[18px]" />
                                                 </button>
-                                        
+
                                                 {/* ✅ ActionMenu 영역 클릭 시 row 클릭으로 버블링 방지 */}
                                                 <div
                                                     onMouseDown={(e) => e.stopPropagation()}
@@ -794,7 +793,7 @@ const reportsWithTitle = reportItems.map((item) => {
                                                         }}
                                                         onDownload={() => {
                                                             const url = `/report/pdf?id=${row.id}&autoPrint=1`;
-                                        
+
                                                             window.open(
                                                                 url,
                                                                 "report_pdf_window",
@@ -833,7 +832,7 @@ const reportsWithTitle = reportItems.map((item) => {
                                                 </div>
                                             </div>
                                         ),
-                                        
+
                                     },
                                 ]}
                                 data={currentData}
@@ -871,9 +870,8 @@ const reportsWithTitle = reportItems.map((item) => {
                     } catch (error: any) {
                         console.error("Error deleting report:", error);
                         showError(
-                            `삭제 실패: ${
-                                error.message ||
-                                "알 수 없는 오류가 발생했습니다."
+                            `삭제 실패: ${error.message ||
+                            "알 수 없는 오류가 발생했습니다."
                             }`
                         );
                     } finally {

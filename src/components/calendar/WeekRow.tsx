@@ -2,7 +2,7 @@ import React from "react";
 import DayCell from "./DayCell";
 import { CalendarEvent } from "../../types";
 import { isVacationEvent, CALENDAR_TAG_ICON_SPACING, CALENDAR_TAG_ICON_SIZES } from "../../utils/calendarUtils";
-import { TAG_LAYER_TOP, CELL_PADDING_LEFT, TAG_INNER_PADDING_LEFT } from "../../utils/calendarConstants";
+import { CELL_PADDING_LEFT, TAG_INNER_PADDING_LEFT } from "../../utils/calendarConstants";
 import { useCalendarTagVisibility } from "../../hooks/useCalendarTagVisibility";
 
 interface WeekEventSegment {
@@ -17,11 +17,13 @@ interface WeekRowProps {
     weekIdx: number;
     weekEventRows: WeekEventSegment[];
     today: Date;
+    isMobile?: boolean;
+    tagLayerTop: number;
     dragStart: string | null;
     dragEnd: string | null;
     isDragging: boolean;
     cellRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
-    getColumnPadding: (dayIdx: number) => string;
+    getColumnPadding: (dayIdx: number, isMobile?: boolean) => string;
     getSafeDateKey: (date: Date) => string;
     getEventsForDate: (dateKey: string) => CalendarEvent[];
     maxVisibleRows: number;
@@ -44,6 +46,8 @@ const WeekRow: React.FC<WeekRowProps> = ({
     week,
     weekEventRows,
     today,
+    isMobile = false,
+    tagLayerTop,
     dragStart,
     dragEnd,
     isDragging,
@@ -127,106 +131,106 @@ const WeekRow: React.FC<WeekRowProps> = ({
         <div className="flex-1 grid grid-cols-7 border-b border-gray-200 relative" style={{ overflowX: 'visible' }}>
             {/* 연속된 태그의 텍스트를 WeekRow 레벨에 배치하여 전체 이벤트 너비에 걸쳐 표시 */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            {cellWidth > 0 && weekEventRows
-                .filter(segment => {
-                    // 시작 셀에서만 텍스트 렌더링
-                    const startDayIdx = segment.startOffset;
-                    if (startDayIdx < 0 || startDayIdx >= week.length) return false;
+                {cellWidth > 0 && weekEventRows
+                    .filter(segment => {
+                        // 시작 셀에서만 텍스트 렌더링
+                        const startDayIdx = segment.startOffset;
+                        if (startDayIdx < 0 || startDayIdx >= week.length) return false;
 
-                    const startDate = week[startDayIdx]?.date;
-                    if (!startDate) return false;
+                        const startDate = week[startDayIdx]?.date;
+                        if (!startDate) return false;
 
-                    const startDateKey = `${startDate.getFullYear()}-${pad(
-                        startDate.getMonth() + 1
-                    )}-${pad(startDate.getDate())}`;
+                        const startDateKey = `${startDate.getFullYear()}-${pad(
+                            startDate.getMonth() + 1
+                        )}-${pad(startDate.getDate())}`;
 
-                    const isVisible = isEventVisibleFromStart(segment);
+                        const isVisible = isEventVisibleFromStart(segment);
 
-                    // 연속된 태그만 (단일 셀 태그는 CalendarTag에서 표시)
-                    const isMultiDay = segment.duration > 1;
+                        // 연속된 태그만 (단일 셀 태그는 CalendarTag에서 표시)
+                        const isMultiDay = segment.duration > 1;
 
-                    return isVisible && segment.event.title && isMultiDay;
-                })
-                .map((segment) => {
-                    const startDayIdx = segment.startOffset;
-                    const startDate = week[startDayIdx]?.date;
-                    if (!startDate) return null;
+                        return isVisible && segment.event.title && isMultiDay;
+                    })
+                    .map((segment) => {
+                        const startDayIdx = segment.startOffset;
+                        const startDate = week[startDayIdx]?.date;
+                        if (!startDate) return null;
 
-                    const startDateKey = `${startDate.getFullYear()}-${pad(
-                        startDate.getMonth() + 1
-                    )}-${pad(startDate.getDate())}`;
+                        const startDateKey = `${startDate.getFullYear()}-${pad(
+                            startDate.getMonth() + 1
+                        )}-${pad(startDate.getDate())}`;
 
-                    // 시작 셀의 위치 계산
-                    const startCellLeft = startDayIdx * cellWidth;
-                    const visibleDuration = Math.min(
-                        segment.duration,
-                        week.length - startDayIdx
-                    );
-                    const totalEventWidth = visibleDuration * cellWidth;
+                        // 시작 셀의 위치 계산
+                        const startCellLeft = startDayIdx * cellWidth;
+                        const visibleDuration = Math.min(
+                            segment.duration,
+                            week.length - startDayIdx
+                        );
+                        const totalEventWidth = visibleDuration * cellWidth;
 
-                    // 첫 셀의 패딩: 셀 패딩(12px) + 태그 내부 패딩(4px)
-                    const firstCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT;
-                    const lastCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT + 6;
+                        // 첫 셀의 패딩: 셀 패딩(12px) + 태그 내부 패딩(4px)
+                        const firstCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT;
+                        const lastCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT + 6;
 
-                    const isHoliday = !!segment.event.isHoliday;
-                    const isVacation = isVacationEvent(segment.event.title);
-                    const isWorkLog = segment.event.id.startsWith("worklog-");
-                    const isContinued = segment.event.endDate > weekEndKey;
-                    const displayTitle = segment.event.title;
-                    // 태그 타입별로 다른 간격 적용
-                    // 텍스트 위치는 아이콘 너비 + 태그 타입별 간격을 사용
-                    const iconSize = isHoliday ? CALENDAR_TAG_ICON_SIZES.holiday
-                        : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SIZES.vacation
-                            : CALENDAR_TAG_ICON_SIZES.general;
-                    const iconSpacing = isHoliday ? CALENDAR_TAG_ICON_SPACING.holiday
-                        : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SPACING.vacation
-                            : CALENDAR_TAG_ICON_SPACING.general;
-                    const iconWidth = iconSize + iconSpacing;
+                        const isHoliday = !!segment.event.isHoliday;
+                        const isVacation = isVacationEvent(segment.event.title);
+                        const isWorkLog = segment.event.id.startsWith("worklog-");
+                        const isContinued = segment.event.endDate > weekEndKey;
+                        const displayTitle = segment.event.title;
+                        // 태그 타입별로 다른 간격 적용
+                        // 텍스트 위치는 아이콘 너비 + 태그 타입별 간격을 사용
+                        const iconSize = isHoliday ? CALENDAR_TAG_ICON_SIZES.holiday
+                            : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SIZES.vacation
+                                : CALENDAR_TAG_ICON_SIZES.general;
+                        const iconSpacing = isHoliday ? CALENDAR_TAG_ICON_SPACING.holiday
+                            : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SPACING.vacation
+                                : CALENDAR_TAG_ICON_SPACING.general;
+                        const iconWidth = iconSize + iconSpacing;
 
-                    const top = segment.rowIndex * (tagHeight + tagSpacing);
+                        const top = segment.rowIndex * (tagHeight + tagSpacing);
 
-                    // 모바일 반응형: 모바일에서는 텍스트 숨김 (점만 표시)
-                    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                        // 모바일 반응형: 모바일에서는 텍스트 숨김 (점만 표시)
+                        const isMobileView = typeof window !== 'undefined' && window.innerWidth < 768;
 
-                    // 모바일에서는 텍스트를 표시하지 않음
-                    if (isMobile) {
-                        return null;
-                    }
+                        // 모바일에서는 텍스트를 표시하지 않음
+                        if (isMobileView) {
+                            return null;
+                        }
 
-                    const textSize = 'text-[14px]';
-                    const textWidth = Math.max(
-                        0,
-                        totalEventWidth - firstCellPadding - lastCellPadding - iconWidth
-                    );
+                        const textSize = 'text-[14px]';
+                        const textWidth = Math.max(
+                            0,
+                            totalEventWidth - firstCellPadding - lastCellPadding - iconWidth
+                        );
 
-                    if (textWidth === 0) {
-                        return null;
-                    }
+                        if (textWidth === 0) {
+                            return null;
+                        }
 
-                    return (
-                        <span
-                            key={`text-${segment.event.id}-${startDayIdx}`}
-                            className={`${textSize} leading-none absolute ${isHoliday
-                                ? "font-medium text-red-600"
-                                : "font-medium text-gray-800"
-                                }`}
-                            style={{
-                                display: 'block',
-                                left: `${startCellLeft + firstCellPadding + iconWidth}px`,
-                                width: `${textWidth}px`,
-                                maxWidth: `${textWidth}px`,
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                top: `${TAG_LAYER_TOP + top + tagHeight / 2}px`,
-                                transform: 'translateY(-50%)',
-                                zIndex: 30,
-                            }}
-                        >
-                            {displayTitle}
-                        </span>
-                    );
-                })}
+                        return (
+                            <span
+                                key={`text-${segment.event.id}-${startDayIdx}`}
+                                className={`${textSize} leading-none absolute ${isHoliday
+                                    ? "font-medium text-red-600"
+                                    : "font-medium text-gray-800"
+                                    }`}
+                                style={{
+                                    display: 'block',
+                                    left: `${startCellLeft + firstCellPadding + iconWidth}px`,
+                                    width: `${textWidth}px`,
+                                    maxWidth: `${textWidth}px`,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    top: `${tagLayerTop + top + tagHeight / 2}px`,
+                                    transform: 'translateY(-50%)',
+                                    zIndex: 30,
+                                }}
+                            >
+                                {displayTitle}
+                            </span>
+                        );
+                    })}
             </div>
 
             {/* 날짜 셀 */}
@@ -274,7 +278,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         dateKey={dateKey}
                         isToday={isToday}
                         isInDragRange={!!isInDragRange}
-                        columnPadding={getColumnPadding(dayIdx)}
+                        columnPadding={getColumnPadding(dayIdx, isMobile)}
                         hiddenCount={hiddenEventIds.length}
                         onHiddenCountClick={() =>
                             onHiddenCountClick(dateKey, hiddenEventIds)
@@ -282,7 +286,8 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         cellRefs={cellRefs}
                         tagHeight={tagHeight}
                         tagSpacing={tagSpacing}
-                        tagLayerTop={TAG_LAYER_TOP}
+                        tagLayerTop={tagLayerTop}
+                        isMobile={isMobile}
                         visibleSegments={
                             cellHeight > 0
                                 ? visibleSegments

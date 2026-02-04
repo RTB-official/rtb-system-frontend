@@ -66,10 +66,10 @@ export default function BaseModal({
             {/* Overlay */}
             <div className="absolute inset-0 bg-black/35" onClick={onClose} />
 
-            {/* Modal */}
-            <div className="absolute inset-0 flex items-center justify-center">
+            {/* Modal - 모바일에서 좌우 16px 패딩 */}
+            <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-0">
                 <div
-                    className={`w-full ${maxWidth} bg-white p-5 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden ${className}`}
+                    className={`w-full ${maxWidth} bg-white p-5 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh] sm:max-h-none ${className}`}
                 >
                     {/* Header */}
                     <div className={`flex items-center ${showCloseButton ? 'justify-between' : 'justify-start'}`}>

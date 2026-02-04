@@ -24,6 +24,7 @@ interface DayCellProps {
     tagHeight: number;
     tagSpacing: number;
     tagLayerTop: number;
+    isMobile?: boolean;
     visibleSegments: WeekEventSegment[];
     week: { date: Date; inMonth: boolean }[];
     getSafeDateKey: (date: Date) => string;
@@ -62,6 +63,7 @@ const DayCell: React.FC<DayCellProps> = ({
     onClick,
     getEventsForDate,
     onCellHeightChange,
+    isMobile = false,
 }) => {
 
     // 셀 높이 측정
@@ -125,7 +127,7 @@ const DayCell: React.FC<DayCellProps> = ({
             onMouseDown={onMouseDown}
             onMouseEnter={onMouseEnter}
             onClick={onClick}
-            className={`p-2 relative ${dayIdx < 6 ? "border-r border-gray-200" : ""
+            className={`p-1 md:p-2 relative min-w-0 ${dayIdx < 6 ? "border-r border-gray-200" : ""
                 } ${inMonth ? "cursor-pointer" : "cursor-default"
                 } transition-colors select-none flex flex-col ${isInDragRange
                     ? "bg-blue-50"
@@ -140,14 +142,15 @@ const DayCell: React.FC<DayCellProps> = ({
                 isolation: 'isolate',
             }}
         >
-            <div className={`${columnPadding} flex items-start`}>
-                <div className="w-7.5 h-7.5 flex items-center justify-center relative">
+            <div className={`${columnPadding} flex items-start min-w-0`}>
+                <div className={`${isMobile ? "w-6 h-6" : "w-7.5 h-7.5"} flex flex-shrink-0 items-center justify-center relative`}>
                     {isToday && (
                         <div className="absolute inset-0 rounded-full bg-blue-500" />
                     )}
-                    <div
+                    <span
                         data-date-number
-                        className={`relative z-10 text-[17px] font-medium ${isToday
+                        dir="ltr"
+                        className={`relative z-10 font-medium tabular-nums ${isMobile ? "text-[13px]" : "text-[17px]"} ${isToday
                             ? "text-white"
                             : !inMonth
                                 ? "text-gray-400"
@@ -158,8 +161,8 @@ const DayCell: React.FC<DayCellProps> = ({
                                         : "text-gray-800"
                             }`}
                     >
-                        {date.getDate()}
-                    </div>
+                        {String(date.getDate())}
+                    </span>
                 </div>
             </div>
 
@@ -170,7 +173,7 @@ const DayCell: React.FC<DayCellProps> = ({
                     top: `${tagLayerTop}px`,
                     left: 0,
                     right: 0,
-                    bottom: hiddenCount > 0 ? '16px' : '0px', // +n개 표시 시에만 24px 공간 확보
+                    bottom: hiddenCount > 0 ? '18px' : '0px', // +n 더보기 영역 확보
                     overflowX: 'visible', // 연속된 태그가 셀 경계를 넘어가도록
                     overflowY: 'hidden',
                     zIndex: 10,
@@ -318,20 +321,21 @@ const DayCell: React.FC<DayCellProps> = ({
             </div>
 
 
-            {/* +N개 표시 */}
+            {/* +N 더보기 (참고: 네이버 캘린더 스타일) */}
             {hiddenCount > 0 && (
                 <div
-                    className="absolute left-0 right-0 bottom-0 pointer-events-auto z-40 cursor-pointer flex items-center justify-center"
+                    className="absolute left-0 right-0 bottom-0 pointer-events-auto z-40 cursor-pointer flex items-center justify-center bg-white/80"
                     style={{
-                        height: '16px',
+                        height: '18px',
+                        minHeight: '18px',
                     }}
                     onClick={(e) => {
                         e.stopPropagation();
                         onHiddenCountClick();
                     }}
                 >
-                    <span className="text-[12px] font-semibold text-gray-400 select-none">
-                        +{hiddenCount}개
+                    <span className="text-[11px] font-medium text-gray-500 select-none">
+                        +{hiddenCount}
                     </span>
                 </div>
             )}

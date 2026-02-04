@@ -369,17 +369,17 @@ export default function TbmCreatePage() {
             )
                 ? prev
                 : [
-                      ...prev,
-                      {
-                          processId: process.id,
-                          processLabel: process.label,
-                          hazardId: hazard.id,
-                          hazardLabel: hazard.label,
-                          measureId: measure.id,
-                          measureLabel: measure.label,
-                          colorClass: process.colorClass,
-                      },
-                  ]
+                    ...prev,
+                    {
+                        processId: process.id,
+                        processLabel: process.label,
+                        hazardId: hazard.id,
+                        hazardLabel: hazard.label,
+                        measureId: measure.id,
+                        measureLabel: measure.label,
+                        colorClass: process.colorClass,
+                    },
+                ]
         );
         setHazardId("");
         setMeasureId("");
@@ -411,7 +411,8 @@ export default function TbmCreatePage() {
 
         setIsSaving(true);
         try {
-            const tbm = await (isEdit && editId ? updateTbm({ id: editId, 
+            const tbm = await (isEdit && editId ? updateTbm({
+                id: editId,
                 tbm_date: tbmDate,
                 line_name: lineName.trim(),
                 work_name: workName.trim(),
@@ -493,11 +494,10 @@ export default function TbmCreatePage() {
             )}
 
             <div
-                className={`fixed lg:static inset-y-0 left-0 z-30 w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
-                    sidebarOpen
+                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
                         ? "translate-x-0"
                         : "-translate-x-full lg:translate-x-0"
-                }`}
+                    }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
@@ -725,15 +725,15 @@ export default function TbmCreatePage() {
                                     작업 중 위험요인 안전점검 및 실시 결과
                                 </div>
                                 <div className="p-3">
-                                            <textarea
-                                                rows={5}
-                                                className="w-full bg-transparent outline-none resize-none"
-                                                placeholder="점검 및 실시 결과를 입력하세요"
-                                                value={duringResult}
-                                                onChange={(e) => setDuringResult(e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
+                                    <textarea
+                                        rows={5}
+                                        className="w-full bg-transparent outline-none resize-none"
+                                        placeholder="점검 및 실시 결과를 입력하세요"
+                                        value={duringResult}
+                                        onChange={(e) => setDuringResult(e.target.value)}
+                                    />
+                                </div>
+                            </div>
 
                             <div className="border-t border-gray-300">
                                 <div className="text-center font-semibold py-2 border-b border-gray-300">
@@ -770,92 +770,92 @@ export default function TbmCreatePage() {
                                             const leftRow = participants[leftIndex];
                                             const rightRow = participants[rightIndex];
                                             return (
-                                            <tr key={rowIndex} className="border-b border-gray-300 last:border-b-0">
-                                                <td className="px-3 py-2 border-r border-gray-300 relative">
-                                                    <input
-                                                        type="text"
-                                                        className="w-full bg-transparent outline-none"
-                                                        placeholder="이름 입력"
-                                                        value={leftRow?.name || ""}
-                                                        onChange={(e) =>
-                                                            handleParticipantChange(leftIndex, e.target.value)
-                                                        }
-                                                        onFocus={() => {
-                                                            setActiveRow(leftIndex);
-                                                            setShowResults(true);
-                                                        }}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter" && filteredMembers.length > 0) {
-                                                                e.preventDefault();
-                                                                handleSelectMember(leftIndex, filteredMembers[0]);
+                                                <tr key={rowIndex} className="border-b border-gray-300 last:border-b-0">
+                                                    <td className="px-3 py-2 border-r border-gray-300 relative">
+                                                        <input
+                                                            type="text"
+                                                            className="w-full bg-transparent outline-none"
+                                                            placeholder="이름 입력"
+                                                            value={leftRow?.name || ""}
+                                                            onChange={(e) =>
+                                                                handleParticipantChange(leftIndex, e.target.value)
                                                             }
-                                                        }}
-                                                    />
-                                                    {showResults && activeRow === leftIndex && filteredMembers.length > 0 && (
-                                                        <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                                                            {filteredMembers.map((member) => (
-                                                                <div
-                                                                    key={member.id}
-                                                                    className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
-                                                                    onClick={() => handleSelectMember(leftIndex, member)}
-                                                                >
-                                                                    {member.name}
-                                                                    {member.username && (
-                                                                        <span className="text-gray-400 ml-2">
-                                                                            ({member.username})
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2 border-r border-gray-300 text-center">
-                                                    <input type="checkbox" disabled />
-                                                </td>
-                                                <td className="px-3 py-2 border-r border-gray-300 relative">
-                                                    <input
-                                                        type="text"
-                                                        className="w-full bg-transparent outline-none"
-                                                        placeholder="이름 입력"
-                                                        value={rightRow?.name || ""}
-                                                        onChange={(e) =>
-                                                            handleParticipantChange(rightIndex, e.target.value)
-                                                        }
-                                                        onFocus={() => {
-                                                            setActiveRow(rightIndex);
-                                                            setShowResults(true);
-                                                        }}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === "Enter" && filteredMembers.length > 0) {
-                                                                e.preventDefault();
-                                                                handleSelectMember(rightIndex, filteredMembers[0]);
+                                                            onFocus={() => {
+                                                                setActiveRow(leftIndex);
+                                                                setShowResults(true);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" && filteredMembers.length > 0) {
+                                                                    e.preventDefault();
+                                                                    handleSelectMember(leftIndex, filteredMembers[0]);
+                                                                }
+                                                            }}
+                                                        />
+                                                        {showResults && activeRow === leftIndex && filteredMembers.length > 0 && (
+                                                            <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                                                {filteredMembers.map((member) => (
+                                                                    <div
+                                                                        key={member.id}
+                                                                        className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
+                                                                        onClick={() => handleSelectMember(leftIndex, member)}
+                                                                    >
+                                                                        {member.name}
+                                                                        {member.username && (
+                                                                            <span className="text-gray-400 ml-2">
+                                                                                ({member.username})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2 border-r border-gray-300 text-center">
+                                                        <input type="checkbox" disabled />
+                                                    </td>
+                                                    <td className="px-3 py-2 border-r border-gray-300 relative">
+                                                        <input
+                                                            type="text"
+                                                            className="w-full bg-transparent outline-none"
+                                                            placeholder="이름 입력"
+                                                            value={rightRow?.name || ""}
+                                                            onChange={(e) =>
+                                                                handleParticipantChange(rightIndex, e.target.value)
                                                             }
-                                                        }}
-                                                    />
-                                                    {showResults && activeRow === rightIndex && filteredMembers.length > 0 && (
-                                                        <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                                                            {filteredMembers.map((member) => (
-                                                                <div
-                                                                    key={member.id}
-                                                                    className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
-                                                                    onClick={() => handleSelectMember(rightIndex, member)}
-                                                                >
-                                                                    {member.name}
-                                                                    {member.username && (
-                                                                        <span className="text-gray-400 ml-2">
-                                                                            ({member.username})
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2 text-center">
-                                                    <input type="checkbox" disabled />
-                                                </td>
-                                            </tr>
+                                                            onFocus={() => {
+                                                                setActiveRow(rightIndex);
+                                                                setShowResults(true);
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" && filteredMembers.length > 0) {
+                                                                    e.preventDefault();
+                                                                    handleSelectMember(rightIndex, filteredMembers[0]);
+                                                                }
+                                                            }}
+                                                        />
+                                                        {showResults && activeRow === rightIndex && filteredMembers.length > 0 && (
+                                                            <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                                                {filteredMembers.map((member) => (
+                                                                    <div
+                                                                        key={member.id}
+                                                                        className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
+                                                                        onClick={() => handleSelectMember(rightIndex, member)}
+                                                                    >
+                                                                        {member.name}
+                                                                        {member.username && (
+                                                                            <span className="text-gray-400 ml-2">
+                                                                                ({member.username})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        <input type="checkbox" disabled />
+                                                    </td>
+                                                </tr>
                                             );
                                         })}
                                     </tbody>
