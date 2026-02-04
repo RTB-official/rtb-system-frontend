@@ -17,6 +17,7 @@ import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Avatar from "../../components/common/Avatar";
 import { supabase } from "../../lib/supabase";
+import useIsMobile from "../../hooks/useIsMobile";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -55,6 +56,7 @@ export default function ReportListPage() {
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
     const safetyToastOnceRef = useRef(false);
+    const isMobile = useIsMobile();
 
     // ✅ 안전문구/슬로건 토스트 (세션당 1회)
     useEffect(() => {
@@ -483,8 +485,8 @@ export default function ReportListPage() {
 
             <div
                 className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
-                        ? "translate-x-0"
-                        : "-translate-x-full lg:translate-x-0"
+                    ? "translate-x-0"
+                    : "-translate-x-full lg:translate-x-0"
                     }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -494,9 +496,8 @@ export default function ReportListPage() {
                 <Header
                     title="보고서 목록"
                     onMenuClick={() => setSidebarOpen(true)}
-                    // ✅ 헤더 하단에 탭 추가
                     bottomContent={
-                        <div className="px-6">
+                        <div className="px-4 md:px-6">
                             <Tabs
                                 items={[
                                     { value: "work", label: "출장 보고서" },
@@ -508,23 +509,203 @@ export default function ReportListPage() {
                         </div>
                     }
                     rightContent={
-                        <Button
-                            variant="primary"
-                            size="lg"
-                            onClick={() => navigate("/reportcreate")}
-                            icon={<IconPlus />}
-                        >
-                            새 보고서 작성
-                        </Button>
+                        !isMobile ? (
+                            <Button
+                                variant="primary"
+                                size="lg"
+                                onClick={() => navigate("/reportcreate")}
+                                icon={<IconPlus />}
+                            >
+                                새 보고서 작성
+                            </Button>
+                        ) : undefined
                     }
                 />
 
-                <div className="flex-1 overflow-y-auto px-4 lg:px-12 pt-6 pb-24">
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-12 pt-4 md:pt-6 pb-24 relative">
                     {loading ? (
-                        <ReportListSkeleton />
+                        isMobile ? (
+                            <div className="flex flex-col items-center justify-center py-20 gap-4">
+                                <div className="w-10 h-10 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin" />
+                                <p className="text-sm text-gray-500">로딩 중...</p>
+                            </div>
+                        ) : (
+                            <ReportListSkeleton />
+                        )
+                    ) : isMobile ? (
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-3">
+                                <Input
+                                    value={search}
+                                    onChange={setSearch}
+                                    placeholder="검색어를 입력해 주세요"
+                                    icon={
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <circle cx="11" cy="11" r="7" />
+                                            <line x1="16.65" y1="16.65" x2="21" y2="21" />
+                                        </svg>
+                                    }
+                                    iconPosition="left"
+                                    className="w-full"
+                                />
+                                <div className="flex items-center gap-2">
+                                    <YearMonthSelector
+                                        className="flex-1 min-w-0"
+                                        year={year}
+                                        month={month}
+                                        onYearChange={(value) => {
+                                            setYear(value);
+                                            setCurrentPage(1);
+                                        }}
+                                        onMonthChange={(value) => {
+                                            setMonth(value);
+                                            setCurrentPage(1);
+                                        }}
+                                        yearOptions={[
+                                            { value: "년도 전체", label: "년도 전체" },
+                                            { value: "2025년", label: "2025년" },
+                                            { value: "2026년", label: "2026년" },
+                                        ]}
+                                        monthOptions={[
+                                            { value: "월 전체", label: "월 전체" },
+                                            { value: "1월", label: "1월" },
+                                            { value: "2월", label: "2월" },
+                                            { value: "3월", label: "3월" },
+                                            { value: "4월", label: "4월" },
+                                            { value: "5월", label: "5월" },
+                                            { value: "6월", label: "6월" },
+                                            { value: "7월", label: "7월" },
+                                            { value: "8월", label: "8월" },
+                                            { value: "9월", label: "9월" },
+                                            { value: "10월", label: "10월" },
+                                            { value: "11월", label: "11월" },
+                                            { value: "12월", label: "12월" },
+                                        ]}
+                                    />
+                                    {isFilterActive && (
+                                        <button
+                                            onClick={handleResetFilter}
+                                            className="h-12 w-12 flex items-center justify-center border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-600 shrink-0"
+                                            aria-label="필터 초기화"
+                                        >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                                                <path d="M21 3v5h-5" />
+                                                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                                                <path d="M3 21v-5h5" />
+                                            </svg>
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            {filtered.length === 0 ? (
+                                <div className="py-10 text-center text-gray-500 text-sm">조회된 보고서가 없습니다.</div>
+                            ) : (
+                                <ul className="flex flex-col gap-3 pb-2">
+                                    {filtered.map((row) => {
+                                        const statusConfig: Record<ReportStatus, { color: string; label: string }> = {
+                                            submitted: { color: "blue-500", label: "제출 완료" },
+                                            pending: { color: "green-600", label: "임시저장" },
+                                            not_submitted: { color: "gray-400", label: "미제출" },
+                                        };
+                                        const { color, label } = statusConfig[row.status];
+                                        return (
+                                            <li key={row.id}>
+                                                <div
+                                                    className="rounded-xl border border-gray-200 bg-white p-4 active:bg-gray-50 transition-colors flex items-start gap-3"
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onClick={() => navigate(`/report/${row.id}`)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter" || e.key === " ") {
+                                                            e.preventDefault();
+                                                            navigate(`/report/${row.id}`);
+                                                        }
+                                                    }}
+                                                >
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="text-[16px] font-semibold text-gray-900 truncate">
+                                                                {row.title || "—"}
+                                                            </span>
+                                                            <Chip color={color} variant="solid" size="sm">
+                                                                {label}
+                                                            </Chip>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 mt-1.5 text-[13px] text-gray-500">
+                                                            <span>{row.date}</span>
+                                                            {row.place?.trim() && (
+                                                                <>
+                                                                    <span aria-hidden>·</span>
+                                                                    <span className="truncate">{row.place}</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 mt-2">
+                                                            <Avatar
+                                                                email={row.ownerEmail ?? null}
+                                                                position={row.ownerPosition ?? null}
+                                                                size={20}
+                                                            />
+                                                            <span className="text-[13px] text-gray-600">{row.owner}</span>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="rounded-lg hover:bg-gray-100 text-gray-500 -mr-1 shrink-0"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setOpenMenuId(openMenuId === row.id ? null : row.id);
+                                                            setMenuAnchor(openMenuId === row.id ? null : e.currentTarget);
+                                                        }}
+                                                        aria-label="메뉴"
+                                                    >
+                                                        <IconMore className="w-6 h-6" />
+                                                    </button>
+                                                </div>
+                                                <ActionMenu
+                                                    isOpen={openMenuId === row.id}
+                                                    anchorEl={menuAnchor}
+                                                    onClose={() => {
+                                                        setOpenMenuId(null);
+                                                        setMenuAnchor(null);
+                                                    }}
+                                                    onEdit={() => navigate(`/report/${row.id}/edit`)}
+                                                    onDelete={() => {
+                                                        setDeleteTargetId(row.id);
+                                                        setDeleteConfirmOpen(true);
+                                                    }}
+                                                    onDownload={() => {
+                                                        const url = `/report/pdf?id=${row.id}&autoPrint=1`;
+                                                        window.open(url, "report_pdf_window", [
+                                                            "width=980", "height=820", "left=120", "top=60",
+                                                            "scrollbars=yes", "resizable=yes", "toolbar=yes", "menubar=yes",
+                                                            "location=yes", "status=no", "noopener=yes", "noreferrer=yes",
+                                                        ].join(","));
+                                                    }}
+                                                    width="w-44"
+                                                >
+                                                    <button
+                                                        className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            navigate(`/report/${row.id}`);
+                                                        }}
+                                                    >
+                                                        <div className="w-5 flex justify-center text-gray-500">
+                                                            <IconReport />
+                                                        </div>
+                                                        보고서 보기
+                                                    </button>
+                                                </ActionMenu>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </div>
                     ) : (
                         <div className="flex flex-col gap-4">
-                            {/* 검색 및 필터 섹션 */}
                             <div className="mt-3">
                                 <div className="flex flex-wrap items-center gap-3 justify-between">
                                     <Input
@@ -532,21 +713,9 @@ export default function ReportListPage() {
                                         onChange={setSearch}
                                         placeholder="검색어를 입력해 주세요"
                                         icon={
-                                            <svg
-                                                width="16"
-                                                height="16"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                            >
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                                 <circle cx="11" cy="11" r="7" />
-                                                <line
-                                                    x1="16.65"
-                                                    y1="16.65"
-                                                    x2="21"
-                                                    y2="21"
-                                                />
+                                                <line x1="16.65" y1="16.65" x2="21" y2="21" />
                                             </svg>
                                         }
                                         iconPosition="left"
@@ -565,24 +734,12 @@ export default function ReportListPage() {
                                                 setCurrentPage(1);
                                             }}
                                             yearOptions={[
-                                                {
-                                                    value: "년도 전체",
-                                                    label: "년도 전체",
-                                                },
-                                                {
-                                                    value: "2025년",
-                                                    label: "2025년",
-                                                },
-                                                {
-                                                    value: "2026년",
-                                                    label: "2026년",
-                                                },
+                                                { value: "년도 전체", label: "년도 전체" },
+                                                { value: "2025년", label: "2025년" },
+                                                { value: "2026년", label: "2026년" },
                                             ]}
                                             monthOptions={[
-                                                {
-                                                    value: "월 전체",
-                                                    label: "월 전체",
-                                                },
+                                                { value: "월 전체", label: "월 전체" },
                                                 { value: "1월", label: "1월" },
                                                 { value: "2월", label: "2월" },
                                                 { value: "3월", label: "3월" },
@@ -592,18 +749,9 @@ export default function ReportListPage() {
                                                 { value: "7월", label: "7월" },
                                                 { value: "8월", label: "8월" },
                                                 { value: "9월", label: "9월" },
-                                                {
-                                                    value: "10월",
-                                                    label: "10월",
-                                                },
-                                                {
-                                                    value: "11월",
-                                                    label: "11월",
-                                                },
-                                                {
-                                                    value: "12월",
-                                                    label: "12월",
-                                                },
+                                                { value: "10월", label: "10월" },
+                                                { value: "11월", label: "11월" },
+                                                { value: "12월", label: "12월" },
                                             ]}
                                         />
                                         {isFilterActive && (
@@ -612,16 +760,7 @@ export default function ReportListPage() {
                                                 className="h-12 w-12 flex items-center justify-center border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 transition-colors"
                                                 aria-label="필터 초기화"
                                             >
-                                                <svg
-                                                    width="16"
-                                                    height="16"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="2"
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                >
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                     <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
                                                     <path d="M21 3v5h-5" />
                                                     <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
@@ -633,7 +772,6 @@ export default function ReportListPage() {
                                 </div>
                             </div>
 
-                            {/* 테이블 섹션 */}
                             <Table
                                 className="text-[14px]"
                                 emptyText="조회된 보고서가 없습니다."
