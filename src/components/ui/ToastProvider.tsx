@@ -5,14 +5,14 @@ import Toast, { ToastItem, ToastType } from "./Toast";
 type ToastInput =
   | string
   | {
-      message: string;
-      duration?: number;
-      imageUrl?: string;
-      imageAlt?: string;
+    message: string;
+    duration?: number;
+    imageUrl?: string;
+    imageAlt?: string;
 
-      // ✅ 선택: 아이콘 숨김(슬로건 이미지 토스트용)
-      hideIcon?: boolean;
-    };
+    // ✅ 선택: 아이콘 숨김(슬로건 이미지 토스트용)
+    hideIcon?: boolean;
+  };
 
 interface ToastContextType {
   showToast: (input: ToastInput, type?: ToastType, duration?: number) => void;
@@ -23,13 +23,16 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+let useToastOutsideWarned = false;
+
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
-    if (import.meta.env?.DEV) {
-      console.warn("useToast used outside ToastProvider; falling back to no-op");
+    if (import.meta.env?.DEV && !useToastOutsideWarned) {
+      useToastOutsideWarned = true;
+      console.warn("useToast used outside ToastProvider; falling back to no-op. Ensure ToastProvider wraps your app (e.g. in App.tsx).");
     }
-    const noop = () => {};
+    const noop = () => { };
     return {
       showToast: noop,
       showSuccess: noop,
@@ -55,12 +58,12 @@ export function ToastProvider({ children }: ToastProviderProps) {
         typeof input === "string"
           ? { message: input, duration: defaultDuration }
           : {
-              message: input.message,
-              duration: input.duration ?? defaultDuration,
-              imageUrl: input.imageUrl,
-              imageAlt: input.imageAlt,
-              hideIcon: input.hideIcon,
-            };
+            message: input.message,
+            duration: input.duration ?? defaultDuration,
+            imageUrl: input.imageUrl,
+            imageAlt: input.imageAlt,
+            hideIcon: input.hideIcon,
+          };
 
       const newToast: ToastItem = {
         id,
@@ -91,17 +94,17 @@ export function ToastProvider({ children }: ToastProviderProps) {
 
       {/* 여러 토스트를 세로로 배치 (위에서 아래로) */}
       {toasts.map((toast, index) => (
-  <Toast
-    key={toast.id}
-    toast={toast}
-    onClose={removeToast}
-    offset={toasts.slice(0, index).reduce((acc, t) => {
-        const estimatedHeight = t.imageUrl ? 200 : 80; // ✅ 더 타이트
-        const gap = 12;                                 // ✅ 간격 축소
-      return acc + estimatedHeight + gap;
-    }, 0)}
-  />
-))}
+        <Toast
+          key={toast.id}
+          toast={toast}
+          onClose={removeToast}
+          offset={toasts.slice(0, index).reduce((acc, t) => {
+            const estimatedHeight = t.imageUrl ? 200 : 80; // ✅ 더 타이트
+            const gap = 12;                                 // ✅ 간격 축소
+            return acc + estimatedHeight + gap;
+          }, 0)}
+        />
+      ))}
     </ToastContext.Provider>
   );
 }

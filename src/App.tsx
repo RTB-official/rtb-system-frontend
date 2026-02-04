@@ -49,8 +49,8 @@ function RoleLanding() {
 
 function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
+    <ToastProvider>
+      <AuthProvider>
         <BrowserRouter>
           <Suspense fallback={<PageSkeleton />}>
             <Routes>
@@ -103,8 +103,8 @@ function App() {
             </Routes>
           </Suspense>
         </BrowserRouter>
-      </ToastProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

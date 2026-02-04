@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { markNotificationAsRead } from "../../lib/notificationApi";
 import useIsMobile from "../../hooks/useIsMobile";
+import { IconClose } from "../icons/Icons";
 
 interface NotificationItem {
     id: string;
@@ -102,13 +103,13 @@ export default function NotificationPopup({
             return "/members";
         }
 
-                // 🚗 차량 검사기간 임박 알림
-                if (
-                    meta?.kind === "vehicle_inspection_due" ||
-                    /차량|검사/i.test(`${item.title ?? ""} ${item.message ?? ""}`)
-                ) {
-                    return "/vehicles";
-                }
+        // 🚗 차량 검사기간 임박 알림
+        if (
+            meta?.kind === "vehicle_inspection_due" ||
+            /차량|검사/i.test(`${item.title ?? ""} ${item.message ?? ""}`)
+        ) {
+            return "/vehicles";
+        }
 
         const title = `${item.title ?? ""} ${item.message ?? ""}`;
         if (/tbm/i.test(title)) return "/tbm";
@@ -208,9 +209,7 @@ export default function NotificationPopup({
                             className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
                             aria-label="닫기"
                         >
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z" />
-                            </svg>
+                            <IconClose className="w-6 h-6" />
                         </button>
                     )}
                 </div>
@@ -229,19 +228,17 @@ export default function NotificationPopup({
                             <div
                                 key={it.id}
                                 onClick={() => handleNotificationClick(it)}
-                                className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${
-                                    isRead
-                                        ? "bg-white hover:bg-gray-50"
-                                        : "bg-blue-50 hover:bg-gray-100"
-                                }`}
+                                className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${isRead
+                                    ? "bg-white hover:bg-gray-50"
+                                    : "bg-blue-50 hover:bg-gray-100"
+                                    }`}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <p
-                                        className={`text-[14px] leading-relaxed ${
-                                            isRead
-                                                ? "font-medium text-[#475569]"
-                                                : "font-semibold text-[#1e293b]"
-                                        }`}
+                                        className={`text-[14px] leading-relaxed ${isRead
+                                            ? "font-medium text-[#475569]"
+                                            : "font-semibold text-[#1e293b]"
+                                            }`}
                                     >
                                         {it.title}
                                     </p>
@@ -250,11 +247,10 @@ export default function NotificationPopup({
                                     )}
                                 </div>
                                 <p
-                                    className={`text-[14px] leading-relaxed ${
-                                        isRead
-                                            ? "text-[#64748b]"
-                                            : "text-[#475569]"
-                                    }`}
+                                    className={`text-[14px] leading-relaxed ${isRead
+                                        ? "text-[#64748b]"
+                                        : "text-[#475569]"
+                                        }`}
                                 >
                                     {it.message}
                                 </p>
