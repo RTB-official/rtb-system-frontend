@@ -94,7 +94,7 @@ export function ToastProvider({ children }: ToastProviderProps) {
   <Toast
     key={toast.id}
     toast={toast}
-    onClose={() => removeToast(toast.id)}
+    onClose={removeToast}
     offset={toasts.slice(0, index).reduce((acc, t) => {
         const estimatedHeight = t.imageUrl ? 200 : 80; // ✅ 더 타이트
         const gap = 12;                                 // ✅ 간격 축소

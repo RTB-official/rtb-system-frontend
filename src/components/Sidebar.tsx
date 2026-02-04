@@ -408,8 +408,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                         }
                                     }
                                 }}
+                                triggerMenuToast={menuNotis.triggerToast}
                             />
                         )}
+
                     </div>
 
                     <div className="h-px bg-gray-200 rounded-full" />

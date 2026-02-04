@@ -561,18 +561,25 @@ export function vacationToCalendarEvent(
         PM: "오후반차",
     };
 
+    const statusMap: Record<string, string> = {
+        approved: "승인",
+        pending: "대기중",
+        rejected: "거절",
+    };
+
     const leaveTypeText = leaveTypeMap[vacation.leave_type] || vacation.leave_type;
+    const statusText = statusMap[vacation.status] || vacation.status;
 
     const title = userName
-        ? `휴가 - ${userName} ${leaveTypeText}`
-        : `휴가 ${leaveTypeText}`;
+        ? `휴가 - ${userName} ${leaveTypeText} (${statusText})`
+        : `휴가 ${leaveTypeText} (${statusText})`;
 
     // 상태에 따라 색상 변경
-    let color = "#60a5fa"; // 기본 파란색 (승인 완료)
+    let color = "#60a5fa"; // 승인
     if (vacation.status === "pending") {
-        color = "#fbbf24"; // 노란색 (대기 중)
+        color = "#fbbf24"; // 대기중
     } else if (vacation.status === "rejected") {
-        color = "#ef4444"; // 빨간색 (반려)
+        color = "#ef4444"; // 거절
     }
 
     return {
@@ -584,6 +591,7 @@ export function vacationToCalendarEvent(
         attendees: vacation.user_id ? [vacation.user_id] : undefined,
     };
 }
+
 
 /**
  * 출장보고서를 CalendarEvent로 변환
