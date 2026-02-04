@@ -320,6 +320,7 @@ export default function VehiclesPage() {
             link.click();
             link.remove();
             URL.revokeObjectURL(objectUrl);
+            showSuccess("다운로드되었습니다.");
         } catch (error: any) {
             console.error("등록증 다운로드 실패:", error?.message || error);
             showError("등록증 다운로드에 실패했습니다.");

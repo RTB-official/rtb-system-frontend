@@ -69,9 +69,9 @@ function Toast({ toast, onClose, offset = 0 }: ToastProps) {
       <div
         className={`fixed left-4 right-4 z-[10001] flex justify-center transition-all duration-300 ease-out ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full"
           }`}
-        style={{ top: `${Math.max(12, 12 + offset)}px` }}
+        style={{ top: `${Math.max(24, 24 + offset)}px` }}
       >
-        <div className="bg-gray-800/90 rounded-full shadow-2xl w-fit max-w-[calc(100vw-32px)] px-4 py-3 flex items-center gap-3">
+        <div className="bg-gray-800/90 rounded-lg shadow-2xl w-fit max-w-[calc(100vw-32px)] px-4 py-3 flex items-center gap-3">
           {!toast.hideIcon && (
             <div
               className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${iconBgColors[toast.type || "info"]
