@@ -42,7 +42,7 @@ export default function AppHeader({
   return (
     <header className={`bg-white border-b border-[#eaecf0] ${className}`}>
       {/* 시안 느낌: 좌우 여백 + 높이 통일 */}
-      <div className="px-6 lg:px-9 h-[64px] flex items-center justify-between gap-3">
+      <div className="px-4 md:px-6 lg:px-9 h-[64px] flex items-center justify-between gap-3">
         {/* Left */}
         <div className="flex items-center gap-2 min-w-0">
           {/* 모바일 햄버거 (onMenuClick 있을 때만) */}
@@ -67,9 +67,9 @@ export default function AppHeader({
             </button>
           )}
 
-            <h1 className="text-[20px] sm:text-[20px] font-extrabold text-[#101828] truncate">
+          <h1 className="text-[20px] sm:text-[20px] font-extrabold text-[#101828] truncate">
             {title}
-            </h1>
+          </h1>
         </div>
 
         {/* Right actions */}

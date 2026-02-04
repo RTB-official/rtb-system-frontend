@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
+import PageContainer from "../../components/common/PageContainer";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
 import { useUser } from "../../hooks/useUser";
@@ -63,161 +64,161 @@ export default function WorkloadPage() {
         [removeToast]
     );
 
-        // ✅ 막대 클릭 시 사유 섹션 대상(이름) & 입력값
-        const [reasonTargetName, setReasonTargetName] = useState<string | null>(null);
-        const [reasonText, setReasonText] = useState("");
-        const [reasonGovText, setReasonGovText] = useState(""); // ✅ 공무팀 사유
-                // ✅ 사람별 사유 저장(임시: 페이지 내 상태)
-                const [reasonByName, setReasonByName] = useState<Record<string, string>>({});
-                const [reasonGovByName, setReasonGovByName] = useState<Record<string, string>>({}); // ✅ 공무팀 사유 저장
-        
-            // ✅ 차트에서 현재 호버(툴팁) 중인 이름
-            const [hoveredName, setHoveredName] = useState<string | null>(null);
+    // ✅ 막대 클릭 시 사유 섹션 대상(이름) & 입력값
+    const [reasonTargetName, setReasonTargetName] = useState<string | null>(null);
+    const [reasonText, setReasonText] = useState("");
+    const [reasonGovText, setReasonGovText] = useState(""); // ✅ 공무팀 사유
+    // ✅ 사람별 사유 저장(임시: 페이지 내 상태)
+    const [reasonByName, setReasonByName] = useState<Record<string, string>>({});
+    const [reasonGovByName, setReasonGovByName] = useState<Record<string, string>>({}); // ✅ 공무팀 사유 저장
 
-            // ✅ 막대(스택 어느 구간이든) 클릭하면 해당 인원 선택 + 저장된 사유 로딩
-            const handleBarClick = useCallback(
-                (barData: any) => {
-                    const name = barData?.payload?.name;
-                    if (!name) return;
+    // ✅ 차트에서 현재 호버(툴팁) 중인 이름
+    const [hoveredName, setHoveredName] = useState<string | null>(null);
 
-                    setReasonTargetName(name);
-                    setReasonText(reasonByName[name] ?? "");
-                    setReasonGovText(reasonGovByName[name] ?? "");
-                },
-                [reasonByName, reasonGovByName]
+    // ✅ 막대(스택 어느 구간이든) 클릭하면 해당 인원 선택 + 저장된 사유 로딩
+    const handleBarClick = useCallback(
+        (barData: any) => {
+            const name = barData?.payload?.name;
+            if (!name) return;
+
+            setReasonTargetName(name);
+            setReasonText(reasonByName[name] ?? "");
+            setReasonGovText(reasonGovByName[name] ?? "");
+        },
+        [reasonByName, reasonGovByName]
+    );
+    // ✅ 차트 호버(툴팁 활성) 시 activePayload에서 이름 추적
+    const handleChartMouseMove = useCallback((state: any) => {
+        // ✅ 막대 위 빈공간에서도 activeLabel이 들어오는 경우가 많음
+        const nameFromLabel = state?.activeLabel ?? null;
+        const nameFromPayload = state?.activePayload?.[0]?.payload?.name ?? null;
+
+        setHoveredName(nameFromLabel ?? nameFromPayload);
+    }, []);
+
+    // ✅ 막대/빈공간 포함(해당 X구간) 클릭 시 사유 열기
+    const handleChartClick = useCallback(
+        (state: any) => {
+            // ✅ 클릭 시점에도 activeLabel/activePayload에서 이름 확보
+            const name =
+                state?.activeLabel ??
+                state?.activePayload?.[0]?.payload?.name ??
+                hoveredName;
+
+            if (!name) return;
+
+            setReasonTargetName(name);
+            setReasonText(reasonByName[name] ?? "");
+            setReasonGovText(reasonGovByName[name] ?? "");
+        },
+        [hoveredName, reasonByName, reasonGovByName]
+    );
+
+    // ✅ 닫기
+    const handleReasonClose = useCallback(() => {
+        setReasonTargetName(null);
+        setReasonText("");
+        setReasonGovText("");
+    }, []);
+
+    // ✅ 저장(DB: 월별 upsert / 둘 다 empty면 delete)
+    const handleReasonSave = useCallback(async () => {
+        if (!reasonTargetName) return;
+
+        const yearNum = parseInt(selectedYear.replace("년", ""));
+        const monthNum = parseInt(selectedMonth.replace("월", ""));
+
+        const personal = reasonText.trim();
+        const gov = reasonGovText.trim();
+
+        // ✅ 둘 다 비어있으면 → DELETE
+        if (!personal && !gov) {
+            const { error } = await supabase
+                .from("workload_reasons")
+                .delete()
+                .eq("person_name", reasonTargetName)
+                .eq("year", yearNum)
+                .eq("month", monthNum);
+
+            if (error) {
+                pushToast({
+                    type: "error",
+                    message: "삭제에 실패했습니다.",
+                    duration: 3000,
+                });
+                return;
+            }
+
+            pushToast({
+                type: "success",
+                message: "사유가 없어 삭제되었습니다.",
+                duration: 2000,
+            });
+
+
+            // ✅ 프론트 상태에서도 제거
+            setReasonByName((prev) => {
+                const next = { ...prev };
+                delete next[reasonTargetName];
+                return next;
+            });
+
+            setReasonGovByName((prev) => {
+                const next = { ...prev };
+                delete next[reasonTargetName];
+                return next;
+            });
+
+            return;
+        }
+
+        // ✅ 하나라도 있으면 → UPSERT
+        const { error } = await supabase
+            .from("workload_reasons")
+            .upsert(
+                [
+                    {
+                        person_name: reasonTargetName,
+                        year: yearNum,
+                        month: monthNum,
+                        personal_reason: personal,
+                        gov_reason: gov,
+                        updated_at: new Date().toISOString(),
+                    },
+                ],
+                { onConflict: "person_name,year,month" }
             );
-                        // ✅ 차트 호버(툴팁 활성) 시 activePayload에서 이름 추적
-                        const handleChartMouseMove = useCallback((state: any) => {
-                            // ✅ 막대 위 빈공간에서도 activeLabel이 들어오는 경우가 많음
-                            const nameFromLabel = state?.activeLabel ?? null;
-                            const nameFromPayload = state?.activePayload?.[0]?.payload?.name ?? null;
 
-                            setHoveredName(nameFromLabel ?? nameFromPayload);
-                        }, []);
-            
-                        // ✅ 막대/빈공간 포함(해당 X구간) 클릭 시 사유 열기
-                        const handleChartClick = useCallback(
-                            (state: any) => {
-                                // ✅ 클릭 시점에도 activeLabel/activePayload에서 이름 확보
-                                const name =
-                                    state?.activeLabel ??
-                                    state?.activePayload?.[0]?.payload?.name ??
-                                    hoveredName;
+        if (error) {
+            pushToast({
+                type: "error",
+                message: "저장에 실패했습니다.",
+                duration: 3000,
+            });
+            return;
+        }
 
-                                if (!name) return;
+        pushToast({
+            type: "success",
+            message: "저장되었습니다.",
+            duration: 2000,
+        });
 
-                                setReasonTargetName(name);
-                                setReasonText(reasonByName[name] ?? "");
-                                setReasonGovText(reasonGovByName[name] ?? "");
-                            },
-                            [hoveredName, reasonByName, reasonGovByName]
-                        );
-            
-            // ✅ 닫기
-            const handleReasonClose = useCallback(() => {
-                setReasonTargetName(null);
-                setReasonText("");
-                setReasonGovText("");
-            }, []);
+        // ✅ 프론트 상태 반영
+        setReasonByName((prev) => ({
+            ...prev,
+            [reasonTargetName]: personal,
+        }));
 
-             // ✅ 저장(DB: 월별 upsert / 둘 다 empty면 delete)
-             const handleReasonSave = useCallback(async () => {
-                if (!reasonTargetName) return;
-
-                const yearNum = parseInt(selectedYear.replace("년", ""));
-                const monthNum = parseInt(selectedMonth.replace("월", ""));
-
-                const personal = reasonText.trim();
-                const gov = reasonGovText.trim();
-
-                // ✅ 둘 다 비어있으면 → DELETE
-                if (!personal && !gov) {
-                    const { error } = await supabase
-                        .from("workload_reasons")
-                        .delete()
-                        .eq("person_name", reasonTargetName)
-                        .eq("year", yearNum)
-                        .eq("month", monthNum);
-
-                    if (error) {
-                        pushToast({
-                            type: "error",
-                            message: "삭제에 실패했습니다.",
-                            duration: 3000,
-                        });
-                        return;
-                    }
-
-                    pushToast({
-                        type: "success",
-                        message: "사유가 없어 삭제되었습니다.",
-                        duration: 2000,
-                    });
-
-
-                    // ✅ 프론트 상태에서도 제거
-                    setReasonByName((prev) => {
-                        const next = { ...prev };
-                        delete next[reasonTargetName];
-                        return next;
-                    });
-
-                    setReasonGovByName((prev) => {
-                        const next = { ...prev };
-                        delete next[reasonTargetName];
-                        return next;
-                    });
-
-                    return;
-                }
-
-                // ✅ 하나라도 있으면 → UPSERT
-                const { error } = await supabase
-                    .from("workload_reasons")
-                    .upsert(
-                        [
-                            {
-                                person_name: reasonTargetName,
-                                year: yearNum,
-                                month: monthNum,
-                                personal_reason: personal,
-                                gov_reason: gov,
-                                updated_at: new Date().toISOString(),
-                            },
-                        ],
-                        { onConflict: "person_name,year,month" }
-                    );
-
-                    if (error) {
-                        pushToast({
-                            type: "error",
-                            message: "저장에 실패했습니다.",
-                            duration: 3000,
-                        });
-                        return;
-                    }
-    
-                    pushToast({
-                        type: "success",
-                        message: "저장되었습니다.",
-                        duration: 2000,
-                    });
-
-                // ✅ 프론트 상태 반영
-                setReasonByName((prev) => ({
-                    ...prev,
-                    [reasonTargetName]: personal,
-                }));
-
-                setReasonGovByName((prev) => ({
-                    ...prev,
-                    [reasonTargetName]: gov,
-                }));
-            }, [reasonTargetName, reasonText, reasonGovText, pushToast]);
+        setReasonGovByName((prev) => ({
+            ...prev,
+            [reasonTargetName]: gov,
+        }));
+    }, [reasonTargetName, reasonText, reasonGovText, pushToast]);
 
 
 
-    
+
 
     // 오늘 날짜 기준으로 기본값 설정
     const today = new Date();
@@ -244,38 +245,38 @@ export default function WorkloadPage() {
     );
 
 
-        // ✅ 사유가 작성된 사람(name) Set (개인/공무팀 둘 중 하나라도 있으면)
-        const namesWithReason = useMemo(() => {
-            const set = new Set<string>();
-    
-            Object.entries(reasonByName).forEach(([name, text]) => {
-                if ((text ?? "").trim()) set.add(name);
-            });
-    
-            Object.entries(reasonGovByName).forEach(([name, text]) => {
-                if ((text ?? "").trim()) set.add(name);
-            });
-    
-            return set;
-        }, [reasonByName, reasonGovByName]);
-    
-        const CustomXAxisTick = useCallback(
-            (props: any) => {
-                const name = props?.payload?.value ?? "";
-                return <WorkloadXAxisTick {...props} hasReason={namesWithReason.has(name)} />;
-            },
-            [namesWithReason]
-        );
-    
-    
+    // ✅ 사유가 작성된 사람(name) Set (개인/공무팀 둘 중 하나라도 있으면)
+    const namesWithReason = useMemo(() => {
+        const set = new Set<string>();
+
+        Object.entries(reasonByName).forEach(([name, text]) => {
+            if ((text ?? "").trim()) set.add(name);
+        });
+
+        Object.entries(reasonGovByName).forEach(([name, text]) => {
+            if ((text ?? "").trim()) set.add(name);
+        });
+
+        return set;
+    }, [reasonByName, reasonGovByName]);
+
+    const CustomXAxisTick = useCallback(
+        (props: any) => {
+            const name = props?.payload?.value ?? "";
+            return <WorkloadXAxisTick {...props} hasReason={namesWithReason.has(name)} />;
+        },
+        [namesWithReason]
+    );
+
+
     // 이번달 차트 데이터에 지난달 작업값(lastWork) 합치기 (라인용)
-const chartDataWithLastWork = useMemo(() => {
-    const lastMap = new Map(lastMonthChartData.map((d) => [d.name, d.작업 ?? null]));
-    return chartData.map((d) => ({
-        ...d,
-        lastWork: lastMap.get(d.name) ?? null,
-    }));
-}, [chartData, lastMonthChartData]);
+    const chartDataWithLastWork = useMemo(() => {
+        const lastMap = new Map(lastMonthChartData.map((d) => [d.name, d.작업 ?? null]));
+        return chartData.map((d) => ({
+            ...d,
+            lastWork: lastMap.get(d.name) ?? null,
+        }));
+    }, [chartData, lastMonthChartData]);
     const itemsPerPage = 10;
 
     // ✅ useUser 훅으로 사용자 정보 및 권한 가져오기
@@ -424,39 +425,39 @@ const chartDataWithLastWork = useMemo(() => {
                 }
 
 
-// ✅ 지난달 데이터 (처음부터 미리 로딩)
-let prevYear = yearNum;
-let prevMonth = monthNum - 1;
-if (prevMonth === 0) {
-    prevMonth = 12;
-    prevYear = yearNum - 1;
-}
+                // ✅ 지난달 데이터 (처음부터 미리 로딩)
+                let prevYear = yearNum;
+                let prevMonth = monthNum - 1;
+                if (prevMonth === 0) {
+                    prevMonth = 12;
+                    prevYear = yearNum - 1;
+                }
 
-const [prevEntries, prevProfilesResult] = await Promise.allSettled([
-    getWorkloadData({ year: prevYear, month: prevMonth }),
-    getWorkloadTargetProfiles(),
-]);
+                const [prevEntries, prevProfilesResult] = await Promise.allSettled([
+                    getWorkloadData({ year: prevYear, month: prevMonth }),
+                    getWorkloadTargetProfiles(),
+                ]);
 
-if (prevEntries.status === "fulfilled") {
-    let prevProfiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
-    if (prevProfilesResult.status === "fulfilled") {
-        prevProfiles = prevProfilesResult.value;
-    }
+                if (prevEntries.status === "fulfilled") {
+                    let prevProfiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                    if (prevProfilesResult.status === "fulfilled") {
+                        prevProfiles = prevProfilesResult.value;
+                    }
 
-    const prevSummaries = aggregatePersonWorkload(prevEntries.value, prevProfiles);
-    const prevChart = generateChartData(prevSummaries);
+                    const prevSummaries = aggregatePersonWorkload(prevEntries.value, prevProfiles);
+                    const prevChart = generateChartData(prevSummaries);
 
-    // ✅ X축(이름) 순서 맞추기: 이번달 차트 순서 기준으로 지난달을 정렬/누락은 0으로 채움
-    const prevMap = new Map(prevChart.map((d) => [d.name, d]));
-    const alignedPrev = newChartData.map((d) => {
-        const found = prevMap.get(d.name);
-        return found ?? { name: d.name, 작업: 0, 이동: 0, 대기: 0 };
-    });
+                    // ✅ X축(이름) 순서 맞추기: 이번달 차트 순서 기준으로 지난달을 정렬/누락은 0으로 채움
+                    const prevMap = new Map(prevChart.map((d) => [d.name, d]));
+                    const alignedPrev = newChartData.map((d) => {
+                        const found = prevMap.get(d.name);
+                        return found ?? { name: d.name, 작업: 0, 이동: 0, 대기: 0 };
+                    });
 
-    setLastMonthChartData(alignedPrev);
-} else {
-    setLastMonthChartData([]);
-}
+                    setLastMonthChartData(alignedPrev);
+                } else {
+                    setLastMonthChartData([]);
+                }
 
 
                 // 즉시 상태 업데이트 (setTimeout 제거로 로딩 속도 개선)
@@ -488,40 +489,40 @@ if (prevEntries.status === "fulfilled") {
     }, [tableData, currentPage, itemsPerPage]);
 
 
-// 순수 작업시간 평균 계산
-const averageWorkTime = useMemo(() => {
-    if (chartData.length === 0) return 0;
-    const total = chartData.reduce((sum, d) => sum + d.작업, 0);
-    return Math.round(total / chartData.length);
-}, [chartData]);
+    // 순수 작업시간 평균 계산
+    const averageWorkTime = useMemo(() => {
+        if (chartData.length === 0) return 0;
+        const total = chartData.reduce((sum, d) => sum + d.작업, 0);
+        return Math.round(total / chartData.length);
+    }, [chartData]);
 
-// Y축 최대값 및 ticks 계산 (차트용)
-const { maxYValue, yAxisTicks } = useMemo(() => {
-    if (chartData.length === 0) {
+    // Y축 최대값 및 ticks 계산 (차트용)
+    const { maxYValue, yAxisTicks } = useMemo(() => {
+        if (chartData.length === 0) {
+            return {
+                maxYValue: 140,
+                yAxisTicks: Array.from(
+                    { length: 140 / Y_AXIS_INTERVAL + 1 },
+                    (_, i) => i * Y_AXIS_INTERVAL
+                ),
+            };
+        }
+
+        const max = Math.max(
+            0,
+            ...chartData.map((d) => d.작업 + d.이동 + d.대기)
+        );
+
+        const maxY = Math.ceil(max / Y_AXIS_INTERVAL) * Y_AXIS_INTERVAL;
+
         return {
-            maxYValue: 140,
+            maxYValue: maxY,
             yAxisTicks: Array.from(
-                { length: 140 / Y_AXIS_INTERVAL + 1 },
+                { length: maxY / Y_AXIS_INTERVAL + 1 },
                 (_, i) => i * Y_AXIS_INTERVAL
             ),
         };
-    }
-
-    const max = Math.max(
-        0,
-        ...chartData.map((d) => d.작업 + d.이동 + d.대기)
-    );
-
-    const maxY = Math.ceil(max / Y_AXIS_INTERVAL) * Y_AXIS_INTERVAL;
-
-    return {
-        maxYValue: maxY,
-        yAxisTicks: Array.from(
-            { length: maxY / Y_AXIS_INTERVAL + 1 },
-            (_, i) => i * Y_AXIS_INTERVAL
-        ),
-    };
-}, [chartData]);
+    }, [chartData]);
 
 
     return (
@@ -563,12 +564,12 @@ const { maxYValue, yAxisTicks } = useMemo(() => {
                     onMenuClick={() => setSidebarOpen(true)}
                 />
 
-                {/* Content */}
-                <main className="flex-1 overflow-auto pt-9 pb-20 px-9">
+                {/* Content - 좌우 패딩은 PageContainer(모바일 16px) 적용 */}
+                <main className="flex-1 overflow-auto pt-9 pb-20">
                     {loading ? (
-                        <WorkloadSkeleton />
+                        <PageContainer><WorkloadSkeleton /></PageContainer>
                     ) : (
-                        <div className="flex flex-col gap-6 w-full">
+                        <PageContainer className="flex flex-col gap-6 w-full">
                             {/* 조회 기간 */}
                             <div className="flex flex-wrap items-center gap-4">
                                 <h2 className="text-[24px] font-semibold text-gray-900">
@@ -620,7 +621,7 @@ const { maxYValue, yAxisTicks } = useMemo(() => {
                                 onPageChange={setCurrentPage}
                                 onRowClick={handleRowClick}
                             />
-                        </div>
+                        </PageContainer>
                     )}
                 </main>
             </div>
