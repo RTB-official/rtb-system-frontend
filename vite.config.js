@@ -18,6 +18,11 @@ export default defineConfig({
     build: {
         // 최신 브라우저 타겟 (더 작은 번들)
         target: "esnext",
+        // CJS 모듈 변환 강화 (react/use-sync-external-store 호환)
+        commonjsOptions: {
+            include: [/node_modules/],
+            transformMixedEsModules: true,
+        },
         rollupOptions: {
             output: {
                 manualChunks: (id) => {
