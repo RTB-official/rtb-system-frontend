@@ -28,9 +28,15 @@ export default defineConfig({
                 manualChunks: (id) => {
                     // node_modules에서 큰 라이브러리들을 분리
                     if (id.includes("node_modules")) {
-                        // React 관련
-                        if (id.includes("react") || id.includes("react-dom") || id.includes("react-router")) {
+                        // react-router만 별도 청크, React/React-DOM은 메인에 유지 (프로덕션 undefined 오류 방지)
+                        if (id.includes("react-router")) {
                             return "vendor-react";
+                        }
+                        if (
+                            id.includes("/react/") ||
+                            id.includes("react-dom")
+                        ) {
+                            return undefined;
                         }
                         // Supabase 클라이언트
                         if (id.includes("@supabase")) {
