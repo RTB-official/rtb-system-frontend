@@ -11,7 +11,7 @@ import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
 import ReportListSkeleton from "../../components/common/skeletons/ReportListSkeleton";
-import { IconMore, IconPlus, IconReport } from "../../components/icons/Icons";
+import { IconMore, IconMoreVertical, IconPlus, IconReport } from "../../components/icons/Icons";
 import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
@@ -628,9 +628,6 @@ export default function ReportListPage() {
                                                             <span className="text-[16px] font-semibold text-gray-900 truncate">
                                                                 {row.title || "—"}
                                                             </span>
-                                                            <Chip color={color} variant="solid" size="sm">
-                                                                {label}
-                                                            </Chip>
                                                         </div>
                                                         <div className="flex items-center gap-2 mt-1.5 text-[13px] text-gray-500">
                                                             <span>{row.date}</span>
@@ -641,13 +638,16 @@ export default function ReportListPage() {
                                                                 </>
                                                             )}
                                                         </div>
-                                                        <div className="flex items-center gap-2 mt-2">
+                                                        <div className="flex items-center gap-2 mt-2 flex-wrap">
                                                             <Avatar
                                                                 email={row.ownerEmail ?? null}
                                                                 position={row.ownerPosition ?? null}
                                                                 size={20}
                                                             />
                                                             <span className="text-[13px] text-gray-600">{row.owner}</span>
+                                                            <Chip color={color} variant="solid" size="sm">
+                                                                {label}
+                                                            </Chip>
                                                         </div>
                                                     </div>
                                                     <button
@@ -660,7 +660,7 @@ export default function ReportListPage() {
                                                         }}
                                                         aria-label="메뉴"
                                                     >
-                                                        <IconMore className="w-6 h-6" />
+                                                        <IconMoreVertical className="w-6 h-6" />
                                                     </button>
                                                 </div>
                                                 <ActionMenu
@@ -988,6 +988,21 @@ export default function ReportListPage() {
                     )}
                 </div>
             </div>
+
+            {/* 모바일 전용 FAB: 새 보고서 작성 */}
+            {isMobile && (
+                <div className="fixed bottom-6 right-4 z-10">
+                    <Button
+                        variant="primary"
+                        size="lg"
+                        onClick={() => navigate("/reportcreate")}
+                        icon={<IconPlus />}
+                        className="shadow-lg rounded-full h-14 px-5"
+                    >
+                        새 보고서 작성
+                    </Button>
+                </div>
+            )}
 
             {/* 삭제 확인 다이얼로그 */}
             <ConfirmDialog

@@ -391,8 +391,8 @@ export default function ReportViewPage() {
             {/* Sidebar */}
             <div
                 className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen
-                        ? "translate-x-0"
-                        : "-translate-x-full lg:translate-x-0"
+                    ? "translate-x-0"
+                    : "-translate-x-full lg:translate-x-0"
                     }`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -415,26 +415,27 @@ export default function ReportViewPage() {
                         </div>
                     }
                     rightContent={
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 md:gap-3">
                             <Button
                                 variant="outline"
                                 size="lg"
                                 icon={<IconEdit />}
                                 onClick={() => navigate(`/report/${id}/edit`)}
+                                className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
                             >
                                 수정하기
                             </Button>
-
                             <Button
                                 variant="primary"
                                 size="lg"
                                 icon={<IconDownload />}
                                 onClick={() => {
-                                    // ✅ PDF 페이지로 이동 (ReportPdfPage.tsx는 ?id= 로 받음)
                                     window.open(`/report/pdf?id=${id}`, "_blank");
                                 }}
+                                className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
                             >
-                                PDF 저장
+                                <span className="hidden sm:inline">PDF 저장</span>
+                                <span className="sm:hidden">PDF</span>
                             </Button>
                         </div>
                     }

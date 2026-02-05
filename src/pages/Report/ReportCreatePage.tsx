@@ -10,6 +10,7 @@ import { useToast } from "../../components/ui/ToastProvider";
 import { createWorkLog, uploadReceiptFile } from "../../lib/workLogApi";
 import { supabase } from "../../lib/supabase";
 import { IconArrowBack, IconReport } from "../../components/icons/Icons";
+import useIsMobile from "../../hooks/useIsMobile";
 
 // Sections (Existing & New)
 import BasicInfoSection from "../../components/sections/BasicInfoSection";
@@ -39,7 +40,7 @@ export default function ReportCreatePage() {
         reportType,
         setReportType,
         resetForm,
-        
+
         // Form Data
         author,
         instructor,
@@ -117,9 +118,9 @@ export default function ReportCreatePage() {
         setActiveTab("work");
         setInitialAuthor();
         fetchAllStaff();
-        
+
         return () => resetForm();
-    }, [setReportType, resetForm]); 
+    }, [setReportType, resetForm]);
 
     // Update isDirty on change
     useEffect(() => {
@@ -134,7 +135,7 @@ export default function ReportCreatePage() {
 
     // Tab State
     const [activeTab, setActiveTab] = useState<"work" | "education">("work");
-    
+
     // Warning Modal State
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<"switch_tab" | "go_back" | null>(null);
@@ -175,7 +176,7 @@ export default function ReportCreatePage() {
         } else if (pendingAction === "go_back") {
             navigate("/report");
         }
-        
+
         setConfirmOpen(false);
         setPendingTab(null);
         setPendingAction(null);
@@ -194,16 +195,16 @@ export default function ReportCreatePage() {
     // 저장 로직 (임시저장/제출)
     const handleSave = async (isDraft: boolean) => {
         if (isSubmitting) return;
-        
+
         // 유효성 검사
         if (!subject.trim()) {
             showError("제목(목적/내용)을 입력해주세요.");
             return;
         }
         if (reportType === "work") {
-             if (!vessel.trim()) { showError("호선명을 입력해주세요."); return; }
+            if (!vessel.trim()) { showError("호선명을 입력해주세요."); return; }
         } else {
-             if (!instructor.trim()) { showError("강사명을 입력해주세요."); return; }
+            if (!instructor.trim()) { showError("강사명을 입력해주세요."); return; }
         }
 
         try {
@@ -212,8 +213,8 @@ export default function ReportCreatePage() {
             if (!user) throw new Error("로그인이 필요합니다.");
 
             // 데이터 매핑
-            const finalSubject = reportType === "education" 
-                ? (subject.includes("교육") ? subject : `[교육] ${subject}`) 
+            const finalSubject = reportType === "education"
+                ? (subject.includes("교육") ? subject : `[교육] ${subject}`)
                 : subject;
 
             const finalOrderPerson = reportType === "education" ? instructor : orderPerson;
@@ -253,17 +254,17 @@ export default function ReportCreatePage() {
 
             // 2. 파일 업로드
             const newFiles = uploadedFiles.filter(f => !f.isExisting && f.file);
-            
+
             if (newFiles.length > 0) {
                 await Promise.all(newFiles.map(async (f) => {
-                   if (!f.file) return;
-                   await uploadReceiptFile(f.file, newLog.id, f.category);
+                    if (!f.file) return;
+                    await uploadReceiptFile(f.file, newLog.id, f.category);
                 }));
             }
 
             setLastSavedAt(new Date());
             showSuccess(isDraft ? "임시저장 되었습니다." : "보고서가 제출되었습니다.");
-            
+
             if (!isDraft) {
                 navigate("/report");
             } else {
@@ -292,9 +293,8 @@ export default function ReportCreatePage() {
             <div
                 className={`
         fixed lg:static inset-y-0 left-0 z-50
-        transform ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0
+        transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+                    } lg:translate-x-0
         transition-transform duration-300 ease-in-out
       `}
             >
@@ -316,7 +316,7 @@ export default function ReportCreatePage() {
                         </div>
                     }
                     bottomContent={
-                         <div className="px-6">
+                        <div className="px-4 md:px-6">
                             <Tabs
                                 items={[
                                     { value: "work", label: "출장 보고서" },
@@ -328,39 +328,40 @@ export default function ReportCreatePage() {
                         </div>
                     }
                     rightContent={
-                        <div className="flex items-center gap-3">
-                             {lastSavedAt && (
+                        <div className="flex items-center gap-2 md:gap-3 flex-wrap justify-end">
+                            {lastSavedAt && !isMobile && (
                                 <span className="text-sm text-gray-400 whitespace-nowrap">
                                     {lastSavedAt.toLocaleTimeString("ko-KR", {
                                         hour: "2-digit",
                                         minute: "2-digit"
                                     })} 저장됨
                                 </span>
-                             )}
-                             <Button 
-                                variant="outline" 
-                                size="lg"
+                            )}
+                            <Button
+                                variant="outline"
+                                size="md"
                                 onClick={() => handleSave(true)}
                                 disabled={isSubmitting}
-                             >
+                                className="md:h-12 md:px-4 md:text-base"
+                            >
                                 임시 저장
-                             </Button>
-                             <Button 
-                                variant="primary" 
-                                size="lg"
+                            </Button>
+                            <Button
+                                variant="primary"
+                                size="md"
                                 onClick={() => handleSave(false)}
-                                icon={<IconReport />}
                                 disabled={isSubmitting}
-                             >
+                                className="md:h-12 md:px-4 md:text-base"
+                            >
                                 제출하기
-                             </Button>
+                            </Button>
                         </div>
                     }
                 />
 
-                <main className="flex-1 overflow-auto px-6 lg:px-12 pt-10 pb-28 bg-gray-50/50">
+                <main className="flex-1 overflow-auto px-4 md:px-6 lg:px-12 pt-6 md:pt-10 pb-28 bg-gray-50/50">
                     <div className="max-w-[800px] mx-auto flex flex-col gap-5">
-                        
+
                         {/* Sections based on Report Type */}
                         {activeTab === "work" ? (
                             <>
@@ -415,7 +416,7 @@ export default function ReportCreatePage() {
                 onConfirm={handleConfirmAction}
                 title={pendingAction === "go_back" ? "나가기" : "작성 중인 내용 취소"}
                 message={
-                    pendingAction === "go_back" 
+                    pendingAction === "go_back"
                         ? "작성/수정된 내용이 있습니다. 정말 뒤로 가시겠습니까?"
                         : "보고서 종류를 변경하면 작성 중인 내용이 모두 사라집니다.\n계속하시겠습니까?"
                 }

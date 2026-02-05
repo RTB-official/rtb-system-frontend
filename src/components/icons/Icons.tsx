@@ -537,6 +537,20 @@ export const IconMore = (props: { className?: string }) => (
     </svg>
 );
 
+/** 세로 점 3개 (케밥 메뉴, 모바일용) */
+export const IconMoreVertical = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <circle cx="12" cy="6" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="18" r="2" />
+    </svg>
+);
+
 export const IconAirplane = (props: { className?: string }) => (
     <svg
         className={props.className || "w-4 h-4"}

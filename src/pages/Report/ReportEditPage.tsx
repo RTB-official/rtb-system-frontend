@@ -26,6 +26,7 @@ import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import useIsMobile from "../../hooks/useIsMobile";
 
 type ReceiptCategoryEnum =
     | "숙박영수증"
@@ -82,6 +83,7 @@ export default function ReportEditPage() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
+    const isMobile = useIsMobile();
     const {
         vessel,
         engine,
@@ -693,36 +695,36 @@ export default function ReportEditPage() {
                         </div>
                     }
                     rightContent={
-                        <div className="flex items-center gap-3">
-                            <>
-                                {lastSavedAt && (
-                                    <span className="text-sm text-gray-400 whitespace-nowrap">
-                                        {lastSavedAt.toLocaleTimeString("ko-KR", {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                        })}{" "}
-                                        저장됨
-                                    </span>
-                                )}
-                                <Button
-                                    variant="outline"
-                                    size="lg"
-                                    onClick={handleManualDraftSave}
-                                    disabled={savingDraft}
-                                >
-                                    {savingDraft ? "저장 중..." : "임시 저장"}
-                                </Button>
-                            </>
+                        <div className="flex items-center gap-2 md:gap-3 flex-wrap justify-end">
+                            {lastSavedAt && !isMobile && (
+                                <span className="text-sm text-gray-400 whitespace-nowrap">
+                                    {lastSavedAt.toLocaleTimeString("ko-KR", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                    })}{" "}
+                                    저장됨
+                                </span>
+                            )}
+                            <Button
+                                variant="outline"
+                                size="md"
+                                onClick={handleManualDraftSave}
+                                disabled={savingDraft}
+                                className="md:h-12 md:px-4 md:text-base"
+                            >
+                                {savingDraft ? "저장 중..." : "임시 저장"}
+                            </Button>
                             <Button
                                 variant="primary"
-                                size="lg"
+                                size="md"
                                 onClick={handleSubmit}
-                                icon={<IconReport />}
                                 disabled={submitting}
+                                className="md:h-12 md:px-4 md:text-base"
                             >
                                 <span className="hidden sm:inline">
                                     {submitting ? "제출 중..." : "제출하기"}
                                 </span>
+                                <span className="sm:hidden">{submitting ? "제출 중" : "제출"}</span>
                             </Button>
                         </div>
                     }
