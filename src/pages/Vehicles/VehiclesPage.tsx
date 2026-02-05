@@ -3,14 +3,15 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import ActionMenu from "../../components/common/ActionMenu";
-import { IconMore, IconPlus } from "../../components/icons/Icons";
-import BaseModal from "../../components/ui/BaseModal";
 import Button from "../../components/common/Button";
-import VehiclesSkeleton from "../../components/common/VehiclesSkeleton";
 import Input from "../../components/common/Input";
+import VehiclesSkeleton from "../../components/common/VehiclesSkeleton";
+import { IconMore, IconMoreVertical, IconPlus } from "../../components/icons/Icons";
+import BaseModal from "../../components/ui/BaseModal";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import DatePicker from "../../components/ui/DatePicker";
 import { useToast } from "../../components/ui/ToastProvider";
-import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import useIsMobile from "../../hooks/useIsMobile";
 import { useUser } from "../../hooks/useUser";
 import {
     VehicleForm,
@@ -24,10 +25,11 @@ import {
     getVehicleRegistrationUrl,
 } from "../../lib/vehiclesApi";
 
-type VehicleRow = {
-    id: string;
-    form: VehicleForm;
-};
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
+
+type VehicleRow = { id: string; form: VehicleForm };
 
 type SortKey =
     | "type"
@@ -40,6 +42,12 @@ type SortKey =
     | "engineOil";
 
 type SortDir = "asc" | "desc";
+
+// -----------------------------------------------------------------------------
+// Constants & helpers
+// -----------------------------------------------------------------------------
+
+const PAGE_SIZE = 10;
 
 const emptyForm: VehicleForm = {
     type: "",
@@ -67,24 +75,38 @@ const formatWithCommas = (value?: string) => {
     return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
 
+function VehicleDetailRow({
+    label,
+    value,
+}: {
+    label: string;
+    value: React.ReactNode;
+}) {
+    return (
+        <p className="flex gap-3 text-sm">
+            <span className="shrink-0 text-gray-500">{label}</span>
+            <span className="font-medium text-gray-900">{value}</span>
+        </p>
+    );
+}
+
 export default function VehiclesPage() {
     const { showError, showSuccess } = useToast();
     const { userPermissions } = useUser();
+    const isMobile = useIsMobile();
     const canManage =
         userPermissions.isAdmin ||
         userPermissions.isStaff ||
         userPermissions.isCEO;
+
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [page, setPage] = useState(1);
     const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
     const [loading, setLoading] = useState(false);
-    const PAGE_SIZE = 10;
-
     const [actionOpen, setActionOpen] = useState(false);
     const [actionAnchor, setActionAnchor] = useState<HTMLElement | null>(null);
-    const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(
-        null
-    );
+    const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+    const [expandedVehicleId, setExpandedVehicleId] = useState<string | null>(null);
 
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [editForm, setEditForm] = useState<VehicleForm | null>(null);
@@ -337,12 +359,7 @@ export default function VehiclesPage() {
             )}
 
             <div
-                className={`
-          fixed lg:static inset-y-0 left-0 z-30
-          w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
-          transform transition-transform duration-300 ease-in-out
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-        `}
+                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
@@ -355,10 +372,10 @@ export default function VehiclesPage() {
                         canManage ? (
                             <Button
                                 variant="primary"
-                                size="lg"
+                                size={isMobile ? "md" : "lg"}
                                 onClick={() => openEditModal()}
                             >
-                                <IconPlus />
+                                {!isMobile && <IconPlus />}
                                 차량 추가
                             </Button>
                         ) : undefined
@@ -366,10 +383,10 @@ export default function VehiclesPage() {
                 />
 
                 <div
-                    className="flex-1 overflow-y-scroll px-10"
+                    className="flex-1 overflow-y-scroll px-4 md:px-10"
                     style={{ scrollbarGutter: "stable" }}
                 >
-                    <div className="py-9">
+                    <div className="py-6 md:py-9">
                         {!canManage && (
                             <div className="text-sm text-gray-500">
                                 접근 권한이 없습니다.
@@ -381,6 +398,97 @@ export default function VehiclesPage() {
                         <div className="overflow-x-auto w-full">
                             {loading ? (
                                 <VehiclesSkeleton />
+                            ) : isMobile && canManage ? (
+                                <>
+                                    <ul className="flex flex-col gap-2">
+                                        {pagedVehicles.length === 0 ? (
+                                            <p className="py-10 text-center text-gray-500 text-sm rounded-2xl border border-dashed border-gray-200 bg-gray-50">
+                                                등록된 차량이 없습니다.
+                                            </p>
+                                        ) : (
+                                            pagedVehicles.map((row) => {
+                                                const isExpanded = expandedVehicleId === row.id;
+                                                return (
+                                                    <li
+                                                        key={row.id}
+                                                        className="rounded-xl border border-gray-200 bg-white overflow-hidden"
+                                                    >
+                                                    <div
+                                                        className="flex items-center justify-between gap-2 p-4"
+                                                        onClick={() => setExpandedVehicleId((id) => (id === row.id ? null : row.id))}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" || e.key === " ") {
+                                                                e.preventDefault();
+                                                                setExpandedVehicleId((id) => (id === row.id ? null : row.id));
+                                                            }
+                                                        }}
+                                                        aria-expanded={isExpanded}
+                                                    >
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-[13px] text-gray-500">{row.form.type || "—"}</p>
+                                                            <p className="text-base font-semibold text-gray-900 mt-0.5">{row.form.plate || "—"}</p>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className="p-2 rounded hover:bg-gray-100 text-gray-500 shrink-0 -mr-1 disabled:opacity-50"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSelectedVehicleId(row.id);
+                                                                setActionAnchor(e.currentTarget);
+                                                                setActionOpen(true);
+                                                            }}
+                                                            aria-label="메뉴"
+                                                            disabled={!canManage}
+                                                        >
+                                                            <IconMoreVertical className="w-5 h-5" />
+                                                        </button>
+                                                    </div>
+                                                    {isExpanded && (
+                                                        <div className="space-y-2 border-t border-gray-100 px-4 py-4">
+                                                            {row.form.color && <VehicleDetailRow label="색상" value={row.form.color} />}
+                                                            {row.form.primaryUser && <VehicleDetailRow label="주 사용자" value={row.form.primaryUser} />}
+                                                            {(row.form.rentalStart || row.form.contractEnd) && (
+                                                                <VehicleDetailRow
+                                                                    label="대여"
+                                                                    value={`${row.form.rentalStart || "—"} ~ ${row.form.contractEnd || "—"}`}
+                                                                />
+                                                            )}
+                                                            {row.form.insurer && <VehicleDetailRow label="보험사" value={row.form.insurer} />}
+                                                            {row.form.inspection && <VehicleDetailRow label="검사 만료일" value={row.form.inspection} />}
+                                                            {row.form.engineOil && <VehicleDetailRow label="엔진오일 정비" value={row.form.engineOil} />}
+                                                            {row.form.engineOilKm && <VehicleDetailRow label="정비 km" value={formatWithCommas(row.form.engineOilKm)} />}
+                                                            {row.form.repair && <VehicleDetailRow label="기타수리" value={row.form.repair} />}
+                                                        </div>
+                                                    )}
+                                                </li>
+                                                );
+                                            })
+                                        )}
+                                    </ul>
+                                    {pageCount > 1 && (
+                                        <div className="flex items-center justify-center gap-2 py-4">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                                disabled={page === 1}
+                                            >
+                                                이전
+                                            </Button>
+                                            <span className="text-sm text-gray-600">{page} / {pageCount}</span>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                                                disabled={page === pageCount}
+                                            >
+                                                다음
+                                            </Button>
+                                        </div>
+                                    )}
+                                </>
                             ) : (
                                 <Table
                                     className="min-w-[1250px]"
@@ -565,6 +673,7 @@ export default function VehiclesPage() {
                             onChange={(v) =>
                                 setEditForm({ ...editForm, type: v })
                             }
+                            placeholder="예) 소나타, 그랜저"
                         />
                         <Input
                             label="차량번호"
@@ -572,6 +681,7 @@ export default function VehiclesPage() {
                             onChange={(v) =>
                                 setEditForm({ ...editForm, plate: v })
                             }
+                            placeholder="예) 12가 3456"
                         />
                         <Input
                             label="색상"
@@ -579,6 +689,7 @@ export default function VehiclesPage() {
                             onChange={(v) =>
                                 setEditForm({ ...editForm, color: v })
                             }
+                            placeholder="예) 흰색, 검정"
                         />
                         <Input
                             label="주 사용자"
@@ -586,6 +697,7 @@ export default function VehiclesPage() {
                             onChange={(v) =>
                                 setEditForm({ ...editForm, primaryUser: v })
                             }
+                            placeholder="예) 홍길동"
                         />
                         <DatePicker
                             label="대여 개시일"
@@ -613,6 +725,7 @@ export default function VehiclesPage() {
                             onChange={(v) =>
                                 setEditForm({ ...editForm, insurer: v })
                             }
+                            placeholder="예) 삼성화재, 현대해상"
                         />
                         <DatePicker
                             label="검사 만료일"
@@ -651,6 +764,7 @@ export default function VehiclesPage() {
                             onChange={(v) =>
                                 setEditForm({ ...editForm, repair: v })
                             }
+                            placeholder="예) 타이어 교체, 브레이크 패드"
                             className="md:col-span-2"
                         />
                         <div className="md:col-span-2">
@@ -668,15 +782,15 @@ export default function VehiclesPage() {
                                 className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
                             />
                             <div className="mt-1 text-[12px] text-gray-500">
-                                {registrationFile?.name
-                                    ? `현재 파일: ${registrationFile.name}`
-                                    : editForm.registrationName
-                                        ? `현재 파일: ${editForm.registrationName}`
-                                        : editForm.registrationPath
-                                            ? `현재 파일: ${editForm.registrationPath.split("/").pop() ||
-                                            editForm.registrationPath
-                                            }`
-                                            : "현재 파일 없음"}
+                                {(() => {
+                                    const name =
+                                        registrationFile?.name ||
+                                        editForm.registrationName ||
+                                        (editForm.registrationPath
+                                            ? editForm.registrationPath.split("/").pop() || editForm.registrationPath
+                                            : null);
+                                    return name ? `현재 파일: ${name}` : "현재 파일 없음";
+                                })()}
                             </div>
                         </div>
                     </div>
