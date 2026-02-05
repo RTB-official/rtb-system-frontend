@@ -220,7 +220,7 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
 
                 {/* 직접입력 필드 */}
                 {showDirectInput && (
-                    <div className="flex gap-2 items-end -mt-2">
+                    <div className="flex flex-col gap-2 items-stretch -mt-2 sm:flex-row sm:items-end">
                         <div className="flex-1 relative">
                             <TextInput
                                 placeholder="이름 입력 후 추가 또는 Enter"
@@ -233,8 +233,9 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                         <Button
                             type="button"
                             variant="primary"
-                            size="lg"
+                            size="md"
                             onClick={handleAddWorker}
+                            className="w-full sm:w-auto md:h-12 md:px-4 md:text-[16px] md:rounded-[10px]"
                         >
                             추가
                         </Button>

@@ -28,10 +28,12 @@ import {
     type PersonalMileage,
 } from "../../lib/personalExpenseApi";
 import { useToast } from "../../components/ui/ToastProvider";
+import useIsMobile from "../../hooks/useIsMobile";
 
 export default function PersonalExpensePage() {
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
+    const isMobile = useIsMobile();
     const location = useLocation();
     const params = new URLSearchParams(location.search);
     const preselectedDate = params.get("date") || null;
@@ -421,17 +423,25 @@ export default function PersonalExpensePage() {
                     onMenuClick={() => setSidebarOpen(true)}
                 />
 
-                <div className="flex-1 overflow-y-auto py-4 lg:py-9 px-9">
+                <div className="flex-1 overflow-y-auto py-4 md:py-6 lg:py-9 px-4 md:px-6 lg:px-9">
                     {loading ? (
-                        <PersonalExpenseSkeleton />
+                        isMobile ? (
+                            <div className="flex flex-col items-center justify-center py-20 gap-4">
+                                <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
+                                <p className="text-sm text-gray-500">로딩 중...</p>
+                            </div>
+                        ) : (
+                            <PersonalExpenseSkeleton />
+                        )
                     ) : (
                         <>
                             {/* 조회 기간 */}
-                            <div className="mb-4 flex flex-wrap items-center gap-4">
-                                <h2 className="text-[24px] font-semibold text-gray-900">
+                            <div className="mb-4 flex flex-wrap items-center gap-3 md:gap-4">
+                                <h2 className="text-lg md:text-[24px] font-semibold text-gray-900">
                                     조회 기간
                                 </h2>
                                 <YearMonthSelector
+                                    className="flex-1 min-w-0 max-w-full"
                                     year={year}
                                     month={month}
                                     onYearChange={setYear}
@@ -482,7 +492,7 @@ export default function PersonalExpensePage() {
                             </div>
 
                             {allItemsToSubmitCount > 0 && (
-                                <div className="fixed bottom-6 left-6 right-6 lg:left-[239px] mx-9">
+                                <div className="fixed bottom-6 left-4 right-4 md:left-6 md:right-6 lg:left-[calc(239px+2.25rem)] lg:right-9 z-10">
                                     <Button
                                         variant="primary"
                                         size="lg"

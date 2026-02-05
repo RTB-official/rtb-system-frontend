@@ -517,8 +517,14 @@ export default function TbmCreatePage() {
                     }
                     rightContent={
                         <div className="flex gap-2">
-                            <Button variant="primary" size="lg" onClick={handleSave} disabled={isSaving}>
-                                {isEdit ? "수정" : "저장"}
+                            <Button
+                                variant="primary"
+                                size="md"
+                                onClick={handleSave}
+                                disabled={isSaving}
+                                className="md:h-12 md:px-4 md:text-base"
+                            >
+                                {isEdit ? "수정" : "제출하기"}
                             </Button>
                         </div>
                     }

@@ -70,11 +70,11 @@ export default function MileageCard({
                     />
 
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
+                        <div className="min-w-0">
                             <label className="text-xs text-gray-500 mb-2 block">
                                 출발지
                             </label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="flex flex-wrap gap-1.5">
                                 {chips.map((c) => (
                                     <Button
                                         key={c}
@@ -82,8 +82,8 @@ export default function MileageCard({
                                         variant={
                                             from === c ? "primary" : "outline"
                                         }
-                                        size="lg"
-                                        fullWidth
+                                        size="sm"
+                                        className="h-8! px-2! text-xs! md:h-[30px]! md:px-2! md:text-[13px]!"
                                     >
                                         {c}
                                     </Button>
@@ -91,11 +91,11 @@ export default function MileageCard({
                             </div>
                         </div>
 
-                        <div>
+                        <div className="min-w-0">
                             <label className="text-xs text-gray-500 mb-2 block">
                                 도착지
                             </label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="flex flex-wrap gap-1.5">
                                 {chips.map((c) => (
                                     <Button
                                         key={c}
@@ -103,8 +103,8 @@ export default function MileageCard({
                                         variant={
                                             to === c ? "primary" : "outline"
                                         }
-                                        size="lg"
-                                        fullWidth
+                                        size="sm"
+                                        className="h-8! px-2! text-xs! md:h-[30px]! md:px-2! md:text-[13px]!"
                                     >
                                         {c}
                                     </Button>

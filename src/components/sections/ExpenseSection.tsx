@@ -260,25 +260,6 @@ export default function ExpenseSection() {
                         )}
                     </div>
 
-                    {/* 상세내용 */}
-                    <TextInput
-                        label="상세내용"
-                        required
-                        placeholder="상세내용 입력"
-                        value={detail}
-                        onChange={(val) => {
-                            setDetail(val);
-                            if (errors.detail) {
-                                setErrors((prev) => ({
-                                    ...prev,
-                                    detail: undefined,
-                                }));
-                            }
-                        }}
-                        onKeyDown={handleKeyDown}
-                        error={errors.detail}
-                    />
-
                     {/* 금액 */}
                     <TextInput
                         label="금액"
@@ -298,19 +279,39 @@ export default function ExpenseSection() {
                         icon={<span className="text-gray-500">원</span>}
                         error={errors.amount}
                     />
-                </div>
 
-                {/* 버튼들 */}
-                <div className="flex flex-col gap-5">
-                    <div className="flex justify-start">
+                    {/* 상세내용 */}
+                    <TextInput
+                        label="상세내용"
+                        required
+                        placeholder="상세내용 입력"
+                        value={detail}
+                        onChange={(val) => {
+                            setDetail(val);
+                            if (errors.detail) {
+                                setErrors((prev) => ({
+                                    ...prev,
+                                    detail: undefined,
+                                }));
+                            }
+                        }}
+                        onKeyDown={handleKeyDown}
+                        error={errors.detail}
+                    />
+
+                    <div className="flex justify-start md:col-start-2 -mt-2 mb-2">
                         <Button
                             onClick={handleAddAllPersons}
                             variant="outline"
-                            size="md"
+                            size="sm"
                         >
                             인원 모두추가
                         </Button>
                     </div>
+                </div>
+
+                {/* 버튼들 */}
+                <div className="flex flex-col gap-5">
                     <div className="flex gap-2 ㅡㅁㅁㅁ">
                         <Button
                             onClick={handleAddExpense}
