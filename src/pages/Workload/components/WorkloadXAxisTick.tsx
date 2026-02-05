@@ -5,6 +5,7 @@ interface WorkloadXAxisTickProps {
     y?: number;
     payload?: { value?: string };
     hasReason: boolean;
+    isMobile?: boolean;
 }
 
 export default function WorkloadXAxisTick({
@@ -12,8 +13,10 @@ export default function WorkloadXAxisTick({
     y = 0,
     payload,
     hasReason,
+    isMobile = false,
 }: WorkloadXAxisTickProps) {
     const name = payload?.value ?? "";
+    const fontSize = isMobile ? 10 : 12;
 
     return (
         <g transform={`translate(${x},${y})`}>
@@ -23,7 +26,7 @@ export default function WorkloadXAxisTick({
                 dy={14}
                 textAnchor="middle"
                 fill="#6a7282"
-                fontSize={12}
+                fontSize={fontSize}
             >
                 {name}
             </text>

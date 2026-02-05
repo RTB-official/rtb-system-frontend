@@ -6,6 +6,7 @@ import Header from "../../components/common/Header";
 import PageContainer from "../../components/common/PageContainer";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
+import useIsMobile from "../../hooks/useIsMobile";
 import { useUser } from "../../hooks/useUser";
 import Toast, { type ToastItem } from "../../components/ui/Toast";
 import { supabase } from "../../lib/supabase";
@@ -30,6 +31,7 @@ import {
 
 export default function WorkloadPage() {
     const navigate = useNavigate();
+    const isMobile = useIsMobile();
     // ✅ Toast
     const [toasts, setToasts] = useState<ToastItem[]>([]);
 
@@ -263,9 +265,15 @@ export default function WorkloadPage() {
     const CustomXAxisTick = useCallback(
         (props: any) => {
             const name = props?.payload?.value ?? "";
-            return <WorkloadXAxisTick {...props} hasReason={namesWithReason.has(name)} />;
+            return (
+                <WorkloadXAxisTick
+                    {...props}
+                    hasReason={namesWithReason.has(name)}
+                    isMobile={isMobile}
+                />
+            );
         },
-        [namesWithReason]
+        [namesWithReason, isMobile]
     );
 
 
@@ -547,12 +555,7 @@ export default function WorkloadPage() {
 
             {/* Sidebar */}
             <div
-                className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        transform ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
-                    } lg:translate-x-0
-        transition-transform duration-300 ease-in-out
-      `}
+                className={`fixed lg:static inset-y-0 left-0 z-50 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
@@ -569,10 +572,10 @@ export default function WorkloadPage() {
                     {loading ? (
                         <PageContainer><WorkloadSkeleton /></PageContainer>
                     ) : (
-                        <PageContainer className="flex flex-col gap-6 w-full">
+                        <PageContainer className="flex flex-col gap-4 md:gap-6 w-full">
                             {/* 조회 기간 */}
-                            <div className="flex flex-wrap items-center gap-4">
-                                <h2 className="text-[24px] font-semibold text-gray-900">
+                            <div className="flex flex-wrap items-center gap-4 md:gap-4">
+                                <h2 className="text-base md:text-[24px] font-semibold text-gray-900">
                                     조회 기간
                                 </h2>
                                 <YearMonthSelector
@@ -585,6 +588,7 @@ export default function WorkloadPage() {
 
                             {/* 인원별 작업시간 차트 */}
                             <WorkloadChartSection
+                                isMobile={isMobile}
                                 chartData={chartData}
                                 chartDataWithLastWork={chartDataWithLastWork}
                                 chartContainerRef={chartContainerRef}
@@ -602,6 +606,7 @@ export default function WorkloadPage() {
                             />
 
                             <WorkloadReasonSection
+                                isMobile={isMobile}
                                 reasonTargetName={reasonTargetName}
                                 selectedMonthNum={selectedMonthNum}
                                 reasonText={reasonText}
@@ -613,6 +618,7 @@ export default function WorkloadPage() {
                             />
 
                             <WorkloadTableSection
+                                isMobile={isMobile}
                                 columns={TABLE_COLUMNS}
                                 tableData={tableData}
                                 currentTableData={currentTableData}

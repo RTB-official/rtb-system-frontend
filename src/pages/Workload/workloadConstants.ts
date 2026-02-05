@@ -17,3 +17,8 @@ export const BAR_RADIUS = 4;
 export const Y_AXIS_INTERVAL = 35;
 export const X_AXIS_HEIGHT = 30;
 export const Y_AXIS_WIDTH = 40;
+/** 막대 최소 너비 + 이름 간 최소 간격(4px) */
+export const MIN_BAR_WIDTH = 16;
+export const MIN_BAR_GAP = 4;
+/** 한 칸(막대+이름) 최소 너비: 막대와 이름이 함께 들어가도록 */
+export const MIN_CATEGORY_WIDTH = 32;

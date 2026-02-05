@@ -15,6 +15,8 @@ import type { WorkloadChartData } from "../../../lib/workloadApi";
 import {
     BAR_RADIUS,
     CHART_MARGIN,
+    MIN_BAR_GAP,
+    MIN_CATEGORY_WIDTH,
     WORKLOAD_TYPES,
     X_AXIS_HEIGHT,
     Y_AXIS_WIDTH,
@@ -23,6 +25,7 @@ import {
 type ChartSize = { width: number; height: number };
 
 interface WorkloadChartSectionProps {
+    isMobile?: boolean;
     chartData: WorkloadChartData[];
     chartDataWithLastWork: WorkloadChartData[];
     chartContainerRef: RefObject<HTMLDivElement | null>;
@@ -104,6 +107,7 @@ const CustomBarShape = (props: any) => {
 };
 
 export default function WorkloadChartSection({
+    isMobile = false,
     chartData,
     chartDataWithLastWork,
     chartContainerRef,
@@ -120,11 +124,17 @@ export default function WorkloadChartSection({
     averageWorkTime,
 }: WorkloadChartSectionProps) {
     const hasData = chartData.length > 0;
+    const n = chartData.length;
+    const minChartWidth =
+        n > 0
+            ? n * MIN_CATEGORY_WIDTH + Y_AXIS_WIDTH + (CHART_MARGIN.right ?? 0) + (CHART_MARGIN.left ?? 0)
+            : 0;
+    const chartWidth = minChartWidth > 0 ? Math.max(chartSize.width, minChartWidth) : chartSize.width;
 
     return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-7">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight">
+        <div className={isMobile ? "py-0" : "rounded-2xl border border-gray-200 bg-white p-7"}>
+            <div className={`flex flex-wrap items-center justify-between gap-2 md:gap-4 ${isMobile ? "mb-3" : "mb-6"}`}>
+                <h2 className="text-base md:text-[22px] font-semibold text-gray-700 tracking-tight">
                     인원별 작업시간
                 </h2>
 
@@ -164,21 +174,24 @@ export default function WorkloadChartSection({
             ) : (
                 <div
                     ref={chartContainerRef}
-                    className="w-full"
+                    className={`overflow-x-auto ${isMobile ? "-mx-3 px-1" : ""}`}
                     style={{
                         height: "300px",
                         minHeight: "300px",
                         position: "relative",
-                        width: "100%",
                     }}
                 >
                     {chartSize.width > 0 ? (
-                        <div className="relative w-full h-[300px]">
+                        <div
+                            className="relative h-[300px]"
+                            style={{ width: chartWidth, minWidth: "100%" }}
+                        >
                             <div className="absolute inset-0">
-                                <ResponsiveContainer width="100%" height={300}>
+                                <ResponsiveContainer width={chartWidth} height={300}>
                                     <BarChart
                                         data={chartDataWithLastWork}
                                         margin={CHART_MARGIN}
+                                        barCategoryGap={MIN_BAR_GAP}
                                         onMouseMove={onChartMouseMove}
                                         onMouseLeave={onChartMouseLeave}
                                         onClick={onChartClick}
@@ -194,6 +207,7 @@ export default function WorkloadChartSection({
                                             tick={CustomXAxisTick}
                                             axisLine={false}
                                             tickLine={false}
+                                            interval={0}
                                         />
 
                                         <YAxis

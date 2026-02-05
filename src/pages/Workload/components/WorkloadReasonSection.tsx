@@ -1,6 +1,7 @@
 import Button from "../../../components/common/Button";
 
 interface WorkloadReasonSectionProps {
+    isMobile?: boolean;
     reasonTargetName: string | null;
     selectedMonthNum: number;
     reasonText: string;
@@ -12,6 +13,7 @@ interface WorkloadReasonSectionProps {
 }
 
 export default function WorkloadReasonSection({
+    isMobile = false,
     reasonTargetName,
     selectedMonthNum,
     reasonText,
@@ -21,15 +23,16 @@ export default function WorkloadReasonSection({
     onSave,
     onClose,
 }: WorkloadReasonSectionProps) {
+    const boxClass = isMobile ? "" : "rounded-2xl border border-gray-200 bg-white";
     return (
         <div
             className={[
-                "bg-white border border-gray-200 rounded-2xl px-7 overflow-hidden",
-                "transition-all duration-300 ease-out",
+                boxClass,
+                "overflow-hidden px-4 md:px-7 transition-all duration-300 ease-out",
                 reasonTargetName
-                    ? "max-h-[260px] opacity-100 translate-y-0 py-6"
+                    ? "max-h-[260px] opacity-100 translate-y-0 py-4 md:py-6"
                     : "max-h-0 opacity-0 -translate-y-2 py-0 border-transparent",
-            ].join(" ")}
+            ].filter(Boolean).join(" ")}
         >
             {reasonTargetName && (
                 <>
