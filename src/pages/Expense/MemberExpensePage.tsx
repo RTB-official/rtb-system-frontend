@@ -24,10 +24,12 @@ import Avatar from "../../components/common/Avatar";
 import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
+import useIsMobile from "../../hooks/useIsMobile";
 
 export default function MemberExpensePage() {
     const navigate = useNavigate();
     const { showError } = useToast();
+    const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const currentDate = new Date();
     const [year, setYear] = useState(`${currentDate.getFullYear()}년`);
@@ -53,6 +55,7 @@ export default function MemberExpensePage() {
     const [expandedRowActiveTab, setExpandedRowActiveTab] = useState<
         Map<string, "mileage" | "card">
     >(new Map());
+    const [mobileDetailEmployeeId, setMobileDetailEmployeeId] = useState<string | null>(null);
     const itemsPerPage = 10;
 
     const [loading, setLoading] = useState(false);
@@ -432,6 +435,14 @@ export default function MemberExpensePage() {
         });
     };
 
+    // 모바일: 카드 클릭 시 상세 모달 열기 및 데이터 로드
+    useEffect(() => {
+        if (!isMobile || !mobileDetailEmployeeId) return;
+        if (!expandedRowDetails.has(mobileDetailEmployeeId)) {
+            loadExpandedRowDetails(mobileDetailEmployeeId);
+        }
+    }, [isMobile, mobileDetailEmployeeId]);
+
     const columns: TableColumn<EmployeeExpenseSummary>[] = [
         {
             key: "name",
@@ -517,9 +528,12 @@ export default function MemberExpensePage() {
                     onMenuClick={() => setSidebarOpen(true)}
                 />
 
-                <div className="flex-1 overflow-y-auto px-9 py-6">
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-9 py-4 md:py-6">
                     <div className="flex flex-col gap-4">
                         <ExpenseFilterBar
+                            className={isMobile ? "flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1" : ""}
+                            titleClassName={isMobile ? "text-sm shrink-0" : ""}
+                            compactLabels={isMobile}
                             year={year}
                             month={month}
                             user={user}
@@ -562,8 +576,15 @@ export default function MemberExpensePage() {
                             loading &&
                                 mileageDetails.length === 0 &&
                                 cardDetails.length === 0 ? (
-                                <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
-                                    <DetailSkeleton />
+                                <div className={isMobile ? "bg-white p-0" : "bg-white border border-gray-200 rounded-2xl p-4 lg:p-6"}>
+                                    {isMobile ? (
+                                        <div className="flex flex-col items-center justify-center py-16 gap-4">
+                                            <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
+                                            <p className="text-sm text-gray-500">로딩 중...</p>
+                                        </div>
+                                    ) : (
+                                        <DetailSkeleton />
+                                    )}
                                 </div>
                             ) : (
                                 <EmployeeDetailView
@@ -582,15 +603,82 @@ export default function MemberExpensePage() {
                                 />
                             )
                         ) : loading && expenseSummary.length === 0 ? (
-                            <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
-                                <div className="animate-pulse space-y-6">
-                                    <div className="h-7 bg-gray-100 rounded w-40 mb-2"></div>
-                                    <div className="h-5 bg-gray-100 rounded w-80 mb-8"></div>
-                                    <TableSkeleton rows={5} />
-                                </div>
+                            <div className={isMobile ? "bg-white p-0" : "bg-white border border-gray-200 rounded-2xl p-4 lg:p-6"}>
+                                {isMobile ? (
+                                    <div className="flex flex-col items-center justify-center py-16 gap-4">
+                                        <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
+                                        <p className="text-sm text-gray-500">로딩 중...</p>
+                                    </div>
+                                ) : (
+                                    <div className="animate-pulse space-y-6">
+                                        <div className="h-7 bg-gray-100 rounded w-40 mb-2"></div>
+                                        <div className="h-5 bg-gray-100 rounded w-80 mb-8"></div>
+                                        <TableSkeleton rows={5} />
+                                    </div>
+                                )}
+                            </div>
+                        ) : isMobile ? (
+                            <div className="bg-white p-0">
+                                <h2 className="text-lg font-semibold text-gray-800 mb-1">
+                                    직원별 집계
+                                </h2>
+                                <p className="text-sm text-gray-500 mb-4">
+                                    클릭하여 상세 내역을 확인하세요
+                                </p>
+                                {filteredData.length === 0 ? (
+                                    <p className="py-8 text-center text-gray-500 text-sm">
+                                        해당 기간의 직원별 지출 내역이 없습니다.
+                                    </p>
+                                ) : (
+                                    <ul className="flex flex-col gap-2 pb-4">
+                                        {currentData.map((row) => {
+                                            const profile = employeeProfiles.get(row.name);
+                                            return (
+                                                <li key={row.id}>
+                                                    <button
+                                                        type="button"
+                                                        className="w-full rounded-xl border border-gray-200 p-4 flex items-center gap-3 text-left active:bg-gray-100 transition-colors"
+                                                        onClick={() => setMobileDetailEmployeeId(row.id)}
+                                                    >
+                                                        <Avatar
+                                                            email={profile?.email ?? null}
+                                                            size={40}
+                                                            position={profile?.position ?? null}
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-medium text-gray-900 truncate">{row.name.replace(/^[A-Z]{2,3} /, "")}</p>
+                                                            <p className="text-sm text-gray-500 mt-0.5">
+                                                                마일리지 {formatCurrency(row.mileage)} · 카드 {formatCurrency(row.cardExpense)} · 합계 {formatCurrency(row.total)}
+                                                            </p>
+                                                        </div>
+                                                        <span className="text-gray-400 shrink-0">›</span>
+                                                    </button>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                                {totalPages > 1 && (
+                                    <div className="flex items-center justify-between mt-4 pt-4 flex-wrap gap-2">
+                                        <span className="text-sm text-gray-500">
+                                            총 {filteredData.length}명
+                                        </span>
+                                        <div className="flex gap-2">
+                                            <Button variant="outline" size="sm" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                                                이전
+                                            </Button>
+                                            <span className="px-3 py-1 text-sm text-gray-700">
+                                                {currentPage} / {totalPages}
+                                            </span>
+                                            <Button variant="outline" size="sm" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                                                다음
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
-                            /* 전체 선택 시 직원별 집계 테이블 표시 */
+                            /* 데스크톱: 직원별 집계 테이블 */
                             <div className="bg-white border border-gray-200 rounded-2xl p-4 lg:p-6">
                                 <h2 className="text-lg font-semibold text-gray-800 mb-1">
                                     직원별 집계
@@ -599,7 +687,6 @@ export default function MemberExpensePage() {
                                     클릭하여 상세 내역을 확인하세요
                                 </p>
 
-                                {/* 테이블 */}
                                 <Table
                                     columns={columns}
                                     data={currentData}
@@ -747,6 +834,54 @@ export default function MemberExpensePage() {
                     </div>
                 </div>
             </div>
+
+            {/* 모바일: 직원 상세 모달 */}
+            {isMobile && mobileDetailEmployeeId && (
+                <div className="fixed inset-0 z-50 bg-white flex flex-col">
+                    <div className="shrink-0 flex items-center justify-end px-4 py-2 border-b border-gray-200 bg-white">
+                        <button
+                            type="button"
+                            onClick={() => setMobileDetailEmployeeId(null)}
+                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                            aria-label="닫기"
+                        >
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {!expandedRowDetails.get(mobileDetailEmployeeId) ? (
+                            <div className="flex flex-col items-center justify-center py-20 gap-4">
+                                <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
+                                <p className="text-sm text-gray-500">로딩 중...</p>
+                            </div>
+                        ) : (
+                            <EmployeeDetailView
+                                employeeName={
+                                    expenseSummary.find((e) => e.id === mobileDetailEmployeeId)?.name.replace(/^[A-Z]{2,3} /, "") ?? ""
+                                }
+                                year={year}
+                                month={month}
+                                mileageDetails={expandedRowDetails.get(mobileDetailEmployeeId)!.mileage}
+                                cardDetails={expandedRowDetails.get(mobileDetailEmployeeId)!.card}
+                                activeTab={expandedRowActiveTab.get(mobileDetailEmployeeId) || "mileage"}
+                                onTabChange={(tab) => {
+                                    setExpandedRowActiveTab((prev) => {
+                                        const next = new Map(prev);
+                                        next.set(mobileDetailEmployeeId, tab);
+                                        return next;
+                                    });
+                                }}
+                                mileageColumns={mileageColumns}
+                                cardColumns={cardColumns}
+                                onReceiptClick={(path) => setSelectedReceipt(getPersonalExpenseReceiptUrl(path))}
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* 영수증 모달 */}
             {selectedReceipt && (
