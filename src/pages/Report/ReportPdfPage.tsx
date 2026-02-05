@@ -119,6 +119,7 @@ export default function ReportPdfPage() {
     const [receipts, setReceipts] = useState<PdfReceipt[]>([]);
     const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
     const { setWorkLogEntries } = useWorkReportStore();
+    
 
 
 
@@ -690,6 +691,8 @@ export default function ReportPdfPage() {
       overflow-wrap:anywhere;
     }
 
+
+
     .detail-table thead th{
       background:#eef3ff;
       text-align:center;
@@ -703,11 +706,11 @@ export default function ReportPdfPage() {
     .dcol-m{ width:7mm; }
     .dcol-d{ width:7mm; }
     .dcol-w{ width:7mm; }
-    .dcol-type{ width:16mm; }
+    .dcol-type{ width:14mm; }   /* ✅ 구분 줄임 */
     .dcol-from{ width:14mm; }
     .dcol-to{ width:14mm; }
     .dcol-desc{ width:auto; }
-    .dcol-rmk{ width:30mm; }
+    .dcol-rmk{ width:32mm; }    /* ✅ 비고 늘림 */
 
     .detail-center{ text-align:center; }
     .detail-right{ text-align:right; }
@@ -788,6 +791,14 @@ export default function ReportPdfPage() {
       word-break:break-word;
       overflow-wrap:anywhere;
     }
+
+        /* ✅ 지출내역: 상세내용(3번째 컬럼) 이름이 글자 단위로 쪼개지지 않게 */
+    .table.expenses td:nth-child(3){
+      word-break: keep-all;     /* '이종훈' 같은 단어를 쪼개지 않음 */
+      overflow-wrap: normal;    /* anywhere로 강제 쪼개는 것 방지 */
+      white-space: normal;
+    }
+
     .table th{ background:#eef1f6; color:#364152; font-weight:700; }
     .table tbody tr:nth-child(odd){ background:#fbfcfe; }
     
@@ -1157,7 +1168,7 @@ export default function ReportPdfPage() {
                         {!expenses.length ? (
                             <p className="muted">없음</p>
                         ) : (
-                            <table className="table">
+                            <table className="table expenses">
                                 <thead>
                                     <tr>
                                         <th>날짜</th>
