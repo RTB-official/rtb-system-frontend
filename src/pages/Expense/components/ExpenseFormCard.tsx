@@ -33,6 +33,13 @@ export default function ExpenseFormCard({
         amount?: string;
     }>({});
 
+    const canAddExpense =
+        (date || "").trim() !== "" &&
+        (type || "").trim() !== "" &&
+        (amount || "").trim() !== "" &&
+        !isNaN(Number(amount)) &&
+        Number(amount) > 0;
+
     const handleAdd = () => {
         const newErrors: typeof errors = {};
 
@@ -88,19 +95,19 @@ export default function ExpenseFormCard({
             <div className="flex-1 flex flex-col justify-between gap-6">
                 <div className="space-y-6">
                     <div>
-                    <DatePicker
-                        label="날짜"
-                        value={date}
+                        <DatePicker
+                            label="날짜"
+                            value={date}
                             onChange={(value) => {
                                 setDate(value);
                                 if (errors.date) {
                                     setErrors((prev) => ({ ...prev, date: undefined }));
                                 }
                             }}
-                        placeholder="연도. 월. 일"
-                        icon={<IconCalendar className="w-6 h-6" />}
-                        iconPosition="right"
-                    />
+                            placeholder="연도. 월. 일"
+                            icon={<IconCalendar className="w-6 h-6" />}
+                            iconPosition="right"
+                        />
                         {errors.date && (
                             <p className="text-red-500 text-xs mt-1">{errors.date}</p>
                         )}
@@ -211,10 +218,11 @@ export default function ExpenseFormCard({
 
             <div>
                 <Button
-                    variant="secondary"
-                    size="md"
+                    variant={canAddExpense ? "primary" : "disabled"}
+                    size="lg"
                     fullWidth
                     onClick={handleAdd}
+                    disabled={!canAddExpense}
                 >
                     추가
                 </Button>

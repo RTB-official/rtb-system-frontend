@@ -4,6 +4,7 @@ import DatePicker from "../../../components/ui/DatePicker";
 import Input from "../../../components/common/Input";
 import Button from "../../../components/common/Button";
 import SectionCard from "../../../components/ui/SectionCard";
+import useIsMobile from "../../../hooks/useIsMobile";
 
 export default function MileageCard({
     onAdd,
@@ -16,6 +17,7 @@ export default function MileageCard({
     React.useEffect(() => {
         if (initialDate) setDate(initialDate);
     }, [initialDate]);
+    const isMobile = useIsMobile();
     const [from, setFrom] = React.useState("자택");
     const [to, setTo] = React.useState("공장/사무실");
     const [distance, setDistance] = React.useState("");
@@ -31,21 +33,25 @@ export default function MileageCard({
         </span>
     );
 
+    const canAddMileage =
+        (date || "").trim() !== "" &&
+        (distance || "").trim() !== "" &&
+        Number(distance) > 0;
+
     const handleAdd = () => {
-        if (onAdd) {
-            onAdd({
-                id: Date.now(),
-                date,
-                from,
-                to,
-                distance,
-                note,
-                cost,
-            });
-            // Reset form
-            setDistance("");
-            setNote("");
-        }
+        if (!canAddMileage || !onAdd) return;
+        onAdd({
+            id: Date.now(),
+            date,
+            from,
+            to,
+            distance,
+            note,
+            cost,
+        });
+        // Reset form
+        setDistance("");
+        setNote("");
     };
 
     return (
@@ -70,11 +76,11 @@ export default function MileageCard({
                     />
 
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="min-w-0">
+                        <div className="min-w-0 w-full">
                             <label className="text-xs text-gray-500 mb-2 block">
                                 출발지
                             </label>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className={`flex w-full gap-1.5 ${isMobile ? "flex-wrap" : ""}`}>
                                 {chips.map((c) => (
                                     <Button
                                         key={c}
@@ -82,8 +88,8 @@ export default function MileageCard({
                                         variant={
                                             from === c ? "primary" : "outline"
                                         }
-                                        size="sm"
-                                        className="h-8! px-2! text-xs! md:h-[30px]! md:px-2! md:text-[13px]!"
+                                        size={isMobile ? "md" : "lg"}
+                                        className={isMobile ? "" : "flex-1 min-w-0"}
                                     >
                                         {c}
                                     </Button>
@@ -91,11 +97,11 @@ export default function MileageCard({
                             </div>
                         </div>
 
-                        <div className="min-w-0">
+                        <div className="min-w-0 w-full">
                             <label className="text-xs text-gray-500 mb-2 block">
                                 도착지
                             </label>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className={`flex w-full gap-1.5 ${isMobile ? "flex-wrap" : ""}`}>
                                 {chips.map((c) => (
                                     <Button
                                         key={c}
@@ -103,8 +109,8 @@ export default function MileageCard({
                                         variant={
                                             to === c ? "primary" : "outline"
                                         }
-                                        size="sm"
-                                        className="h-8! px-2! text-xs! md:h-[30px]! md:px-2! md:text-[13px]!"
+                                        size={isMobile ? "md" : "lg"}
+                                        className={isMobile ? "" : "flex-1 min-w-0"}
                                     >
                                         {c}
                                     </Button>
@@ -178,10 +184,11 @@ export default function MileageCard({
                     </div>
                 </div>
                 <Button
-                    variant="secondary"
+                    variant={canAddMileage ? "primary" : "disabled"}
                     size="lg"
                     fullWidth
                     onClick={handleAdd}
+                    disabled={!canAddMileage}
                 >
                     추가
                 </Button>

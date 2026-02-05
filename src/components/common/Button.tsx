@@ -1,7 +1,7 @@
 import React from "react";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-    variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
+    variant?: "primary" | "secondary" | "outline" | "ghost" | "danger" | "disabled";
     size?: "xs" | "sm" | "md" | "lg";
     icon?: React.ReactNode;
     fullWidth?: boolean;
@@ -17,6 +17,7 @@ export default function Button({
     className = "",
     children,
     style,
+    disabled: disabledProp,
     ...props
 }: ButtonProps) {
     const baseStyles =
@@ -31,6 +32,8 @@ export default function Button({
             "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 focus:ring-gray-500",
         ghost: "bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-500",
         danger: "bg-red-600 text-white hover:bg-red-600 focus:ring-red-500",
+        disabled:
+            "bg-gray-200 text-gray-500 cursor-not-allowed hover:bg-gray-200 focus:ring-gray-400",
     };
 
     const sizeStyles = {
@@ -41,15 +44,15 @@ export default function Button({
     };
 
     const widthStyle = fullWidth ? "w-full" : "";
-    
+
     // width prop 처리
-    const widthValue = width 
-        ? typeof width === "number" 
-            ? `${width}%` 
+    const widthValue = width
+        ? typeof width === "number"
+            ? `${width}%`
             : width
         : undefined;
-    
-    const buttonStyle = widthValue 
+
+    const buttonStyle = widthValue
         ? { ...style, width: widthValue }
         : style;
 
@@ -57,6 +60,7 @@ export default function Button({
         <button
             className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyle} ${className}`}
             style={buttonStyle}
+            disabled={variant === "disabled" || disabledProp}
             {...props}
         >
             {icon && <span className={children ? "mr-1" : ""}>{icon}</span>}
