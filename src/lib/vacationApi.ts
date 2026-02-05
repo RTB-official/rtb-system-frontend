@@ -541,6 +541,16 @@ export function leaveTypeToKorean(leaveType: LeaveType): string {
 }
 
 /**
+ * 휴가 일수 표시: 정수(또는 n.0)면 "n일", 반차 등 소수면 "n.5일" (n.0일 표기 안 함)
+ */
+export function formatVacationDays(value: number | null | undefined): string {
+    if (value === null || value === undefined) return "";
+    const n = Number(value);
+    if (Math.abs(n - Math.round(n)) < 1e-9) return `${Math.round(n)}일`;
+    return `${Number(n).toFixed(1)}일`;
+}
+
+/**
  * 날짜 포맷팅 (YYYY-MM-DD -> YYYY. MM. DD.(요일))
  */
 export function formatVacationDate(dateString: string): string {

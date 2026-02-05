@@ -27,6 +27,7 @@ import {
 } from "../../lib/vacationApi";
 import type { VacationGrantHistory } from "../../lib/vacationCalculator";
 import { useToast } from "../../components/ui/ToastProvider";
+import useIsMobile from "../../hooks/useIsMobile";
 
 export type VacationStatus = "대기 중" | "승인 완료" | "반려";
 
@@ -65,6 +66,7 @@ export default function VacationPage() {
     const { user } = useAuth();
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
+    const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const [userPosition, setUserPosition] = useState<string | null>(null);
@@ -412,9 +414,9 @@ export default function VacationPage() {
                     rightContent={
                         <Button
                             variant="primary"
-                            size="lg"
+                            size={isMobile ? "md" : "lg"}
                             onClick={handleRegister}
-                            icon={<IconPlus />}
+                            icon={isMobile ? undefined : <IconPlus />}
                             disabled={loading || !user}
                         >
                             휴가 등록

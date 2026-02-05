@@ -4,7 +4,7 @@ import BaseModal from "./BaseModal";
 import Input from "../common/Input";
 import Button from "../common/Button";
 import DatePicker from "./DatePicker"; // DatePicker 임포트
-import type { Vacation } from "../../lib/vacationApi";
+import { formatVacationDays, type Vacation } from "../../lib/vacationApi";
 import { useToast } from "./ToastProvider";
 
 type LeaveType = "FULL" | "AM" | "PM";
@@ -85,7 +85,7 @@ export default function VacationRequestModal({
           <span>{editingVacation ? "휴가 수정" : "휴가 신청"}</span>
           {!editingVacation && (
             <span className="text-[13px] font-bold text-gray-400">
-              총 {availableDays}일 사용 가능
+              총 {formatVacationDays(availableDays)} 사용 가능
             </span>
           )}
         </div>

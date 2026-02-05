@@ -11,6 +11,7 @@ import {
     getVacations,
     updateVacationStatus,
     formatVacationDate,
+    formatVacationDays,
     leaveTypeToKorean,
     statusToKorean,
     calculateAllEmployeesVacation,
@@ -512,7 +513,7 @@ export default function AdminVacationPage() {
                                                     <span className="text-sm text-gray-500">{new Date(v.created_at).toLocaleDateString("ko-KR")}</span>
                                                     <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[12px] font-medium ${statusBg}`}>{label}</span>
                                                 </div>
-                                                <p className="font-medium text-gray-900">{formatVacationDate(v.date)} · {leaveTypeToKorean(v.leave_type)}</p>
+                                                <p className="font-medium text-gray-900">{formatVacationDate(v.date)} {leaveTypeToKorean(v.leave_type)}</p>
                                                 {v.reason && <p className="text-sm text-gray-700">{v.reason}</p>}
                                             </li>
                                         );
@@ -566,7 +567,7 @@ export default function AdminVacationPage() {
                                                                     {row.status}
                                                                 </span>
                                                             </div>
-                                                            <span className="text-sm text-gray-500">{row.period} · {row.item}</span>
+                                                            <span className="text-sm text-gray-500">{row.period} {row.item}</span>
                                                             {row.reason && <p className="text-sm text-gray-700 truncate">{row.reason}</p>}
                                                         </div>
                                                         <IconChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
@@ -652,7 +653,7 @@ export default function AdminVacationPage() {
                                                         <div className="flex-1 min-w-0">
                                                             <p className="font-medium text-gray-900 truncate">{row.userName}</p>
                                                             <p className="text-sm text-gray-500 mt-0.5">
-                                                                사용 {Number(row.usedDays).toFixed(1)}일 · 대기 {Number(row.pendingDays).toFixed(1)}일 · 잔여 {Number(row.remainingDays).toFixed(1)}일
+                                                                사용 {formatVacationDays(row.usedDays)} · 대기 {formatVacationDays(row.pendingDays)} · 잔여 {formatVacationDays(row.remainingDays)}
                                                             </p>
                                                         </div>
                                                     </button>
@@ -693,7 +694,7 @@ export default function AdminVacationPage() {
                                             cellClassName: "px-4 py-3 text-left",
                                             render: (value) => {
                                                 if (value === null || value === undefined) return null;
-                                                return `${Number(value).toFixed(1)}일`;
+                                                return formatVacationDays(value);
                                             },
                                         },
                                         {
@@ -704,7 +705,7 @@ export default function AdminVacationPage() {
                                             cellClassName: "px-4 py-3 text-left text-yellow-600",
                                             render: (value) => {
                                                 if (value === null || value === undefined) return null;
-                                                return `${Number(value).toFixed(1)}일`;
+                                                return formatVacationDays(value);
                                             },
                                         },
                                         {
@@ -715,7 +716,7 @@ export default function AdminVacationPage() {
                                             cellClassName: "px-4 py-3 text-left",
                                             render: (value) => {
                                                 if (value === null || value === undefined) return null;
-                                                return `${Number(value).toFixed(1)}일`;
+                                                return formatVacationDays(value);
                                             },
                                         },
                                     ]}
