@@ -416,6 +416,10 @@ export default function WorkLogSection() {
             }
             return map;
         }, [displayEntries]);
+
+                // ✅ [추가] 같은 날짜/시간/인원 중복 생성 방지용 (인원 순서 무관)
+                const normalizePersonsKey = (persons: string[]) =>
+                    [...(persons || [])].map((p) => String(p).trim()).filter(Boolean).sort().join("|");
         
 
     return (
@@ -1038,6 +1042,32 @@ export default function WorkLogSection() {
                                 }
                                 return;
                             }
+
+
+                               // ✅ [추가] 같은 날짜/시간/같은 인원(순서 무관) 중복 저장 방지
+                               const currentPersonsKey = normalizePersonsKey(currentEntryPersons);
+
+                               const isDuplicate = workLogEntries.some((e) => {
+                                   // 수정 저장 중이면 자기 자신은 제외
+                                   if (editingEntryId && e.id === editingEntryId) return false;
+   
+                                   const ePersonsKey = normalizePersonsKey((e as any).persons || []);
+   
+                                   return (
+                                    e.dateFrom === currentEntry.dateFrom &&
+                                    (e.timeFrom || "") === (currentEntry.timeFrom || "") &&
+                                    e.dateTo === currentEntry.dateTo &&
+                                       (e.timeTo || "") === (currentEntry.timeTo || "") &&
+                                       ePersonsKey === currentPersonsKey
+                                   );
+                               });
+   
+                               if (isDuplicate) {
+                                   showError("같은 날짜/시간/인원의 일지가 이미 존재합니다. (중복 저장 불가)");
+                                   return;
+                               }
+
+                            
 
                             setErrors({});
                             saveWorkLogEntry(showError);
