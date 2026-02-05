@@ -55,7 +55,6 @@ export default function MemberExpensePage() {
     const [expandedRowActiveTab, setExpandedRowActiveTab] = useState<
         Map<string, "mileage" | "card">
     >(new Map());
-    const [mobileDetailEmployeeId, setMobileDetailEmployeeId] = useState<string | null>(null);
     const itemsPerPage = 10;
 
     const [loading, setLoading] = useState(false);
@@ -436,13 +435,6 @@ export default function MemberExpensePage() {
     };
 
     // 모바일: 카드 클릭 시 상세 모달 열기 및 데이터 로드
-    useEffect(() => {
-        if (!isMobile || !mobileDetailEmployeeId) return;
-        if (!expandedRowDetails.has(mobileDetailEmployeeId)) {
-            loadExpandedRowDetails(mobileDetailEmployeeId);
-        }
-    }, [isMobile, mobileDetailEmployeeId]);
-
     const columns: TableColumn<EmployeeExpenseSummary>[] = [
         {
             key: "name",
@@ -633,12 +625,15 @@ export default function MemberExpensePage() {
                                     <ul className="flex flex-col gap-2 pb-4">
                                         {currentData.map((row) => {
                                             const profile = employeeProfiles.get(row.name);
+                                            const isExpanded = expandedRowKeys.includes(row.id);
+                                            const details = expandedRowDetails.get(row.id);
+                                            const rowTab = expandedRowActiveTab.get(row.id) || "mileage";
                                             return (
-                                                <li key={row.id}>
+                                                <li key={row.id} className="rounded-xl overflow-hidden">
                                                     <button
                                                         type="button"
-                                                        className="w-full rounded-xl border border-gray-200 p-4 flex items-center gap-3 text-left active:bg-gray-100 transition-colors"
-                                                        onClick={() => setMobileDetailEmployeeId(row.id)}
+                                                        className="w-full rounded-xl bg-gray-50 p-4 flex items-center gap-3 text-left active:bg-gray-100 transition-colors"
+                                                        onClick={() => toggleRowExpand(row.id)}
                                                     >
                                                         <Avatar
                                                             email={profile?.email ?? null}
@@ -651,8 +646,37 @@ export default function MemberExpensePage() {
                                                                 마일리지 {formatCurrency(row.mileage)} · 카드 {formatCurrency(row.cardExpense)} · 합계 {formatCurrency(row.total)}
                                                             </p>
                                                         </div>
-                                                        <span className="text-gray-400 shrink-0">›</span>
+                                                        <span className="text-gray-400 shrink-0">{isExpanded ? "▲" : "▼"}</span>
                                                     </button>
+                                                    {isExpanded && (
+                                                        <div className="border-t border-gray-200 bg-gray-50 p-4">
+                                                            {!details ? (
+                                                                <div className="py-4">
+                                                                    <div className="w-8 h-8 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin mx-auto" />
+                                                                </div>
+                                                            ) : (
+                                                                <EmployeeDetailView
+                                                                    employeeName={row.name.replace(/^[A-Z]{2,3} /, "")}
+                                                                    year={year}
+                                                                    month={month}
+                                                                    mileageDetails={details.mileage}
+                                                                    cardDetails={details.card}
+                                                                    activeTab={rowTab}
+                                                                    onTabChange={(tab) => {
+                                                                        setExpandedRowActiveTab((prev) => {
+                                                                            const next = new Map(prev);
+                                                                            next.set(row.id, tab);
+                                                                            return next;
+                                                                        });
+                                                                    }}
+                                                                    mileageColumns={mileageColumns}
+                                                                    cardColumns={cardColumns}
+                                                                    variant="dropdown"
+                                                                    onReceiptClick={(path) => setSelectedReceipt(getPersonalExpenseReceiptUrl(path))}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </li>
                                             );
                                         })}
@@ -834,54 +858,6 @@ export default function MemberExpensePage() {
                     </div>
                 </div>
             </div>
-
-            {/* 모바일: 직원 상세 모달 */}
-            {isMobile && mobileDetailEmployeeId && (
-                <div className="fixed inset-0 z-50 bg-white flex flex-col">
-                    <div className="shrink-0 flex items-center justify-end px-4 py-2 border-b border-gray-200 bg-white">
-                        <button
-                            type="button"
-                            onClick={() => setMobileDetailEmployeeId(null)}
-                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
-                            aria-label="닫기"
-                        >
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18" />
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                        </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4">
-                        {!expandedRowDetails.get(mobileDetailEmployeeId) ? (
-                            <div className="flex flex-col items-center justify-center py-20 gap-4">
-                                <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
-                                <p className="text-sm text-gray-500">로딩 중...</p>
-                            </div>
-                        ) : (
-                            <EmployeeDetailView
-                                employeeName={
-                                    expenseSummary.find((e) => e.id === mobileDetailEmployeeId)?.name.replace(/^[A-Z]{2,3} /, "") ?? ""
-                                }
-                                year={year}
-                                month={month}
-                                mileageDetails={expandedRowDetails.get(mobileDetailEmployeeId)!.mileage}
-                                cardDetails={expandedRowDetails.get(mobileDetailEmployeeId)!.card}
-                                activeTab={expandedRowActiveTab.get(mobileDetailEmployeeId) || "mileage"}
-                                onTabChange={(tab) => {
-                                    setExpandedRowActiveTab((prev) => {
-                                        const next = new Map(prev);
-                                        next.set(mobileDetailEmployeeId, tab);
-                                        return next;
-                                    });
-                                }}
-                                mileageColumns={mileageColumns}
-                                cardColumns={cardColumns}
-                                onReceiptClick={(path) => setSelectedReceipt(getPersonalExpenseReceiptUrl(path))}
-                            />
-                        )}
-                    </div>
-                </div>
-            )}
 
             {/* 영수증 모달 */}
             {selectedReceipt && (

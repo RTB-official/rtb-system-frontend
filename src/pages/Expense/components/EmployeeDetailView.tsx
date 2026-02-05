@@ -1,12 +1,9 @@
 // src/pages/Expense/components/EmployeeDetailView.tsx
 import Table, { TableColumn } from "../../../components/common/Table";
-import { IconDownload } from "../../../components/icons/Icons";
 import {
     type EmployeeMileageDetail,
     type EmployeeCardExpenseDetail,
 } from "../../../lib/personalExpenseApi";
-import { generateExpenseReportPDF } from "../../../lib/pdfUtils";
-import { useToast } from "../../../components/ui/ToastProvider";
 import useIsMobile from "../../../hooks/useIsMobile";
 
 interface EmployeeDetailViewProps {
@@ -41,7 +38,6 @@ export default function EmployeeDetailView({
     onHeaderClick,
     onReceiptClick,
 }: EmployeeDetailViewProps) {
-    const { showError } = useToast();
     const isMobile = useIsMobile();
     const containerClass =
         isMobile
@@ -53,43 +49,24 @@ export default function EmployeeDetailView({
     return (
         <div className={containerClass}>
             {/* 헤더 */}
-            <div className={`flex items-center justify-between mb-2`}>
-                <div>
-                    <p className={`text-sm text-gray-500`}>
-                        {year} {month}
-                    </p>
-                    <h2
-                        className={`text-xl font-semibold text-gray-800 ${onHeaderClick && variant === "dropdown"
-                                ? "cursor-pointer transition-colors hover:text-gray-500"
-                                : ""
-                            }`}
-                        onClick={(e) => {
-                            if (onHeaderClick && variant === "dropdown") {
-                                e.stopPropagation();
-                                onHeaderClick();
-                            }
-                        }}
-                    >
-                        {employeeName}님의 청구서
-                    </h2>
-                </div>
-                <button
-                    type="button"
-                    onClick={async () => {
-                        await generateExpenseReportPDF({
-                            onError: showError,
-                            employeeName,
-                            year,
-                            month,
-                            mileageDetails,
-                            cardDetails,
-                        });
+            <div className="mb-2">
+                <p className="text-sm text-gray-500">
+                    {year} {month}
+                </p>
+                <h2
+                    className={`text-xl font-semibold text-gray-800 ${onHeaderClick && variant === "dropdown"
+                            ? "cursor-pointer transition-colors hover:text-gray-500"
+                            : ""
+                        }`}
+                    onClick={(e) => {
+                        if (onHeaderClick && variant === "dropdown") {
+                            e.stopPropagation();
+                            onHeaderClick();
+                        }
                     }}
-                    className="flex items-center justify-center gap-1.5 h-[36px] px-3 text-[14px] rounded-[10px] bg-gray-800 hover:bg-gray-900 text-white font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-600 cursor-pointer"
                 >
-                    <IconDownload />
-                    PDF 다운로드
-                </button>
+                    {employeeName}님의 청구서
+                </h2>
             </div>
 
             {/* 탭 */}
