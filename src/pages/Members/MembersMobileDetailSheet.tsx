@@ -104,17 +104,29 @@ export default function MembersMobileDetailSheet({
                     {hasAnyPassportInfo && (
                         <div className="border border-gray-100 rounded-xl p-4">
                             <div className="text-[13px] font-semibold text-gray-700 mb-3">여권 정보</div>
-                            <dl>
-                                <div className="flex gap-3">
-                                    <dt className="text-gray-500 w-20 shrink-0">여권</dt>
+                            <dl className="space-y-2">
+                                {hasPassportNo && (
+                                    <div className="flex gap-3">
+                                        <dt className="text-gray-500 w-20 shrink-0">여권 번호</dt>
+                                        <dd className="text-gray-900 font-medium">{row.passportNo}</dd>
+                                    </div>
+                                )}
+                                {passportName && (
+                                    <div className="flex gap-3">
+                                        <dt className="text-gray-500 w-20 shrink-0">영문명</dt>
+                                        <dd className="text-gray-900 text-[12px] uppercase">{passportName}</dd>
+                                    </div>
+                                )}
+                                <div className="flex gap-3 items-center">
+                                    <dt className="text-gray-500 w-20 shrink-0">만료</dt>
                                     <dd className="text-gray-900 min-w-0 flex flex-wrap items-center gap-2">
-                                        {hasPassportNo && <span className="font-medium">{row.passportNo}</span>}
-                                        {formattedExpiry && (
+                                        {formattedExpiry ? (
                                             <Chip color={isWithinYear ? "red-600" : "gray-400"} variant="solid" size="sm">
                                                 {formattedExpiry}
                                             </Chip>
+                                        ) : (
+                                            <EmptyValueIndicator />
                                         )}
-                                        {passportName && <span className="text-gray-500 text-[12px] uppercase">{passportName}</span>}
                                         {canDownload && hasPassportPhoto && (
                                             <MiniIconButton
                                                 onClick={async (e) => {

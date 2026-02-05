@@ -21,6 +21,7 @@ import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
 import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
 import Avatar from "../../components/common/Avatar";
+import { IconChevronRight } from "../../components/icons/Icons";
 import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -622,17 +623,17 @@ export default function MemberExpensePage() {
                                         해당 기간의 직원별 지출 내역이 없습니다.
                                     </p>
                                 ) : (
-                                    <ul className="flex flex-col gap-2 pb-4">
+                                    <ul className="flex flex-col gap-3 pb-4">
                                         {currentData.map((row) => {
                                             const profile = employeeProfiles.get(row.name);
                                             const isExpanded = expandedRowKeys.includes(row.id);
                                             const details = expandedRowDetails.get(row.id);
                                             const rowTab = expandedRowActiveTab.get(row.id) || "mileage";
                                             return (
-                                                <li key={row.id} className="rounded-xl overflow-hidden">
+                                                <li key={row.id} className="rounded-xl overflow-hidden border border-gray-200">
                                                     <button
                                                         type="button"
-                                                        className="w-full rounded-xl bg-gray-50 p-4 flex items-center gap-3 text-left active:bg-gray-100 transition-colors"
+                                                        className="w-full rounded-xl bg-transparent p-4 flex items-center gap-3 text-left active:bg-gray-50 transition-colors"
                                                         onClick={() => toggleRowExpand(row.id)}
                                                     >
                                                         <Avatar
@@ -646,10 +647,12 @@ export default function MemberExpensePage() {
                                                                 마일리지 {formatCurrency(row.mileage)} · 카드 {formatCurrency(row.cardExpense)} · 합계 {formatCurrency(row.total)}
                                                             </p>
                                                         </div>
-                                                        <span className="text-gray-400 shrink-0">{isExpanded ? "▲" : "▼"}</span>
+                                                        <IconChevronRight
+                                                            className={`w-5 h-5 text-gray-400 shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                                                        />
                                                     </button>
                                                     {isExpanded && (
-                                                        <div className="border-t border-gray-200 bg-gray-50 p-4">
+                                                        <div className="border-t border-gray-200 p-4">
                                                             {!details ? (
                                                                 <div className="py-4">
                                                                     <div className="w-8 h-8 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin mx-auto" />

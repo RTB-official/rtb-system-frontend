@@ -234,6 +234,9 @@ export default function WorkloadPage() {
     const [loading, setLoading] = useState(true);
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
+    const [profileMap, setProfileMap] = useState<
+        Map<string, { email: string | null; position: string | null }>
+    >(new Map());
     const [lastMonthChartData, setLastMonthChartData] = useState<WorkloadChartData[]>([]);
     const [showLastMonth, setShowLastMonth] = useState(false);
     const { chartContainerRef, chartSize } = useChartSize(chartData.length);
@@ -473,6 +476,22 @@ export default function WorkloadPage() {
                 setTableData(newTableData);
                 setCurrentPage(1);
 
+                // 테이블 아바타용: 이름별 이메일·직급 조회
+                const names = newTableData.map((r) => r.name);
+                if (names.length > 0) {
+                    const { data: profileRows } = await supabase
+                        .from("profiles")
+                        .select("name, email, position")
+                        .in("name", names);
+                    const map = new Map<string, { email: string | null; position: string | null }>();
+                    (profileRows || []).forEach((p: { name?: string; email?: string | null; position?: string | null }) => {
+                        if (p.name) map.set(p.name, { email: p.email ?? null, position: p.position ?? null });
+                    });
+                    setProfileMap(map);
+                } else {
+                    setProfileMap(new Map());
+                }
+
             } catch (error) {
                 // 워크로드 데이터 로드 실패
             } finally {
@@ -626,6 +645,7 @@ export default function WorkloadPage() {
                                 currentPage={currentPage}
                                 onPageChange={setCurrentPage}
                                 onRowClick={handleRowClick}
+                                profileMap={profileMap}
                             />
                         </PageContainer>
                     )}

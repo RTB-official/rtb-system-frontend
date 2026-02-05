@@ -119,6 +119,17 @@ const renderBadge = (
     );
 };
 
+const renderPdfText = (value: string | null | undefined) => {
+    if (!value) {
+        return (
+            <span style={{ display: "inline-block" }}>
+                <EmptyValueIndicator />
+            </span>
+        );
+    }
+    return value;
+};
+
 export default function TbmDetailSheet({
     tbm,
     participants,
@@ -223,31 +234,35 @@ export default function TbmDetailSheet({
                         <tr>
                             <th style={{ ...pdfThStyle, width: "150px" }}>TBM 일시</th>
                             <td colSpan={3} style={pdfTdStyle}>
-                                {tbm.tbm_date ? String(tbm.tbm_date).replace(/-/g, ".") + "." : "-"}
+                                {tbm.tbm_date ? String(tbm.tbm_date).replace(/-/g, ".") + "." : renderPdfText("")}
                             </td>
                         </tr>
                         <tr>
                             <th style={pdfThStyle}>{"\uD638\uC120\uBA85"}</th>
-                            <td colSpan={3} style={pdfTdStyle}>{tbm.line_name || "-"}</td>
+                            <td colSpan={3} style={pdfTdStyle}>{renderPdfText(tbm.line_name)}</td>
                         </tr>
                         <tr>
                             <th style={pdfThStyle}>작업명</th>
-                            <td colSpan={3} style={pdfTdStyle}>{tbm.work_name || "-"}</td>
+                            <td colSpan={3} style={pdfTdStyle}>{renderPdfText(tbm.work_name)}</td>
                         </tr>
                         <tr>
                             <th style={pdfThStyle}>작업내용</th>
                             <td colSpan={3} style={{ ...pdfTdStyle, whiteSpace: "pre-line", lineHeight: 1.6 }}>
-                                {tbm.work_content || "-"}
+                                {renderPdfText(tbm.work_content)}
                             </td>
                         </tr>
                         <tr>
                             <th style={pdfThStyle}>TBM 장소</th>
-                            <td colSpan={3} style={pdfTdStyle}>{tbm.location || "-"}</td>
+                            <td colSpan={3} style={pdfTdStyle}>{renderPdfText(tbm.location)}</td>
                         </tr>
                         <tr>
-                            <th style={{ ...pdfThStyle, whiteSpace: "nowrap" }}>위험성평가 실시여부</th>
+                            <th style={{ ...pdfThStyle, width: "150px", whiteSpace: "normal", lineHeight: 1.4 }}>
+                                위험성평가
+                                <br />
+                                실시 여부
+                            </th>
                             <td colSpan={3} style={pdfTdStyle}>
-                                {tbm.risk_assessment === null ? "-" : tbm.risk_assessment ? "예" : "아니오"}
+                                {tbm.risk_assessment === null ? renderPdfText("") : tbm.risk_assessment ? "예" : "아니오"}
                             </td>
                         </tr>
 
@@ -307,7 +322,7 @@ export default function TbmDetailSheet({
                         </tr>
                         <tr>
                             <td colSpan={4} className="px-8 py-4 min-h-[60px]" style={{ ...pdfTdStyle, paddingTop: "8px", paddingRight: "32px", paddingBottom: "22px", paddingLeft: "32px" }}>
-                                {tbm.during_result || "-"}
+                                {renderPdfText(tbm.during_result)}
                             </td>
                         </tr>
 
@@ -322,7 +337,7 @@ export default function TbmDetailSheet({
                         </tr>
                         <tr>
                             <td colSpan={4} className="px-8 py-4 min-h-[60px]" style={{ ...pdfTdStyle, paddingTop: "8px", paddingRight: "32px", paddingBottom: "22px", paddingLeft: "32px" }}>
-                                {tbm.after_meeting || "-"}
+                                {renderPdfText(tbm.after_meeting)}
                             </td>
                         </tr>
 
@@ -347,13 +362,13 @@ export default function TbmDetailSheet({
                         {groupedParticipants.map(([left, right], idx) => (
                             <tr key={idx}>
                                 <td style={{ ...pdfTdStyle, paddingTop: "4px", paddingRight: "32px", paddingBottom: "18px", paddingLeft: "32px", fontWeight: 500 }}>
-                                    {left?.name || "-"}
+                                    {renderPdfText(left?.name)}
                                 </td>
                                 <td style={{ ...pdfBorderStyle, textAlign: "center", verticalAlign: "middle" }}>
                                     {renderSignatureCell(left)}
                                 </td>
                                 <td style={{ ...pdfTdStyle, paddingTop: "4px", paddingRight: "32px", paddingBottom: "18px", paddingLeft: "32px", fontWeight: 500 }}>
-                                    {right?.name || "-"}
+                                    {renderPdfText(right?.name)}
                                 </td>
                                 <td style={{ ...pdfBorderStyle, textAlign: "center", verticalAlign: "middle" }}>
                                     {renderSignatureCell(right)}
@@ -368,7 +383,7 @@ export default function TbmDetailSheet({
 
     return (
         <div
-            className="border rounded-xl overflow-hidden bg-white border-gray-200 overflow-x-auto"
+            className="border rounded-xl overflow-hidden bg-white border-gray-200"
             data-tbm-sheet
         >
             <div className="text-center font-semibold py-4 md:py-6 border-b border-gray-200 bg-gray-50/30 text-lg md:text-xl min-w-0">
@@ -376,47 +391,59 @@ export default function TbmDetailSheet({
             </div>
 
             <table className="w-full text-sm border-collapse table-fixed">
+                <colgroup>
+                    <col className="w-[100px] md:w-[140px]" />
+                    <col />
+                </colgroup>
                 <tbody>
                     <tr className="border-b border-gray-200">
-                        <th className="w-[150px] min-w-[120px] text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700">
+                        <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700">
                             TBM 일시
                         </th>
                         <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">
-                            {tbm.tbm_date ? String(tbm.tbm_date).replace(/-/g, ".") + "." : "-"}
+                            {tbm.tbm_date ? String(tbm.tbm_date).replace(/-/g, ".") + "." : <EmptyValueIndicator />}
                         </td>
                     </tr>
                     <tr className="border-b border-gray-200">
                         <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             {"\uD638\uC120\uBA85"}
                         </th>
-                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">{tbm.line_name || "-"}</td>
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">
+                            {tbm.line_name ? tbm.line_name : <EmptyValueIndicator />}
+                        </td>
                     </tr>
                     <tr className="border-b border-gray-200">
                         <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             작업명
                         </th>
-                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">{tbm.work_name || "-"}</td>
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">
+                            {tbm.work_name ? tbm.work_name : <EmptyValueIndicator />}
+                        </td>
                     </tr>
                     <tr className="border-b border-gray-200">
                         <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             작업내용
                         </th>
                         <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900 whitespace-pre-line leading-relaxed">
-                            {tbm.work_content || "-"}
+                            {tbm.work_content ? tbm.work_content : <EmptyValueIndicator />}
                         </td>
                     </tr>
                     <tr className="border-b border-gray-200">
                         <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 min-w-0">
                             TBM 장소
                         </th>
-                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">{tbm.location || "-"}</td>
+                        <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">
+                            {tbm.location ? tbm.location : <EmptyValueIndicator />}
+                        </td>
                     </tr>
                     <tr className="border-b border-gray-200">
-                        <th className="w-[150px] min-w-[120px] text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 whitespace-nowrap">
-                            위험성평가 실시여부
+                        <th className="text-left px-3 py-2 md:px-5 md:py-3 border-r border-gray-200 font-semibold bg-gray-50/80 text-gray-700 align-top leading-snug">
+                            위험성평가
+                            <br />
+                            실시 여부
                         </th>
                         <td className="px-3 py-2 md:px-5 md:py-3 text-gray-900">
-                            {tbm.risk_assessment === null ? "-" : tbm.risk_assessment ? "예" : "아니오"}
+                            {tbm.risk_assessment === null ? <EmptyValueIndicator /> : tbm.risk_assessment ? "예" : "아니오"}
                         </td>
                     </tr>
                     <tr>
@@ -469,7 +496,7 @@ export default function TbmDetailSheet({
                     작업 중 위험요인 안전점검 및 실시 결과
                 </div>
                 <div className="p-3 px-4 md:p-4 md:px-6 text-gray-900 whitespace-pre-line leading-relaxed min-h-[48px] md:min-h-[60px] text-sm md:text-base">
-                    {tbm.during_result || "-"}
+                    {tbm.during_result ? tbm.during_result : <EmptyValueIndicator />}
                 </div>
             </div>
 
@@ -478,7 +505,7 @@ export default function TbmDetailSheet({
                     작업 종료 후 미팅
                 </div>
                 <div className="p-3 px-4 md:p-4 md:px-6 text-gray-900 whitespace-pre-line leading-relaxed min-h-[48px] md:min-h-[60px] text-sm md:text-base">
-                    {tbm.after_meeting || "-"}
+                    {tbm.after_meeting ? tbm.after_meeting : <EmptyValueIndicator />}
                 </div>
             </div>
 
@@ -498,9 +525,13 @@ export default function TbmDetailSheet({
                     <tbody>
                         {groupedParticipants.map(([left, right], idx) => (
                             <tr key={idx} className="border-b border-gray-200 last:border-b-0">
-                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">{left?.name || "-"}</td>
+                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">
+                                    {left?.name ? left.name : <EmptyValueIndicator />}
+                                </td>
                                 <td className="px-2 py-2 md:px-4 md:py-3 border-r border-gray-200 align-middle">{renderSignatureCell(left)}</td>
-                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">{right?.name || "-"}</td>
+                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">
+                                    {right?.name ? right.name : <EmptyValueIndicator />}
+                                </td>
                                 <td className="px-2 py-2 md:px-4 md:py-3 align-middle">{renderSignatureCell(right)}</td>
                             </tr>
                         ))}

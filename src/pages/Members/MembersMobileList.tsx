@@ -29,7 +29,7 @@ export default function MembersMobileList({ sections, onMemberClick }: MembersMo
                                     className="w-full flex items-center gap-3 py-3 px-3 text-left"
                                     onClick={() => onMemberClick(row)}
                                 >
-                                    <Avatar email={row.avatarEmail} size={44} position={row.role} />
+                                    <Avatar email={row.avatarEmail} size={40} position={row.role} />
                                     <div className="flex-1 min-w-0">
                                         <div className="text-[15px] font-semibold text-gray-900">
                                             {row.name || <EmptyValueIndicator />}
