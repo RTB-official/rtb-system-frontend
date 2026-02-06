@@ -12,6 +12,7 @@ export interface TableColumn<T = any> {
     cellClassName?:
         | string
         | ((value: any, row: T, index: number) => string);
+    showEmptyIndicator?: boolean;
 }
 
 interface TableProps<T = any> {
@@ -138,6 +139,8 @@ export default function Table<T = any>({
                                                     typeof column.cellClassName === "function"
                                                         ? column.cellClassName(rawValue, row, index)
                                                         : column.cellClassName ?? "";
+                                                const shouldShowEmptyIndicator =
+                                                    column.showEmptyIndicator ?? true;
                                                 return (
                                                     <td
                                                         key={column.key}
@@ -151,7 +154,9 @@ export default function Table<T = any>({
                                                         } ${cellClass}`}
                                                     >
                                                         {isEmpty ? (
-                                                            <EmptyValueIndicator />
+                                                            shouldShowEmptyIndicator ? (
+                                                                <EmptyValueIndicator />
+                                                            ) : null
                                                         ) : (
                                                             renderedValue
                                                         )}

@@ -29,6 +29,7 @@ interface ReportItem {
     owner: string;
     ownerEmail?: string | null;
     ownerPosition?: string | null;
+    ownerId?: string | null;
     date: string;
     createdAt?: string;
     periodStart?: string;
@@ -45,6 +46,10 @@ export default function ReportListPage() {
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [reports, setReports] = useState<ReportItem[]>([]);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [isStaffRole, setIsStaffRole] = useState(false);
+    const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+    const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -67,6 +72,10 @@ export default function ReportListPage() {
         if (sessionStorage.getItem("rtb:safety_toast_pending") !== "1") return;
 
         const run = async () => {
+            let resolvedUserId: string | null = null;
+            let isStaffMember = false;
+            let staffName = "";
+
             try {
                 // ✅ 여기서 바로 소비
                 sessionStorage.setItem("rtb:safety_toast_pending", "0");
@@ -144,6 +153,29 @@ export default function ReportListPage() {
         return `${s.month}월${s.day}일~${e.month}월${e.day}일`;
     };
 
+    const isRowOwner = (row: ReportItem) => {
+        // 모든 가능한 조건을 확인하여 하나라도 일치하면 true 반환
+        if (currentUserId && row.ownerId) {
+            if (row.ownerId === currentUserId) return true;
+        }
+        if (currentUserEmail && row.ownerEmail) {
+            if (
+                row.ownerEmail.trim().toLowerCase() ===
+                currentUserEmail.trim().toLowerCase()
+            ) {
+                return true;
+            }
+        }
+        if (currentUserName && row.owner) {
+            if (
+                row.owner.trim().toLowerCase() === currentUserName.trim().toLowerCase()
+            ) {
+                return true;
+            }
+        }
+        return false;
+    };
+
 
 
 
@@ -156,6 +188,7 @@ export default function ReportListPage() {
             place: workLog.location || "",
             supervisor: workLog.order_person || "",
             owner: workLog.author || "(작성자 없음)",
+            ownerId: workLog.created_by || null,
             date: formatDate(workLog.created_at),
             createdAt: workLog.created_at || "",
             status: workLog.is_draft ? "pending" : "submitted",
@@ -165,6 +198,11 @@ export default function ReportListPage() {
     // 데이터 로드
     const loadReports = async () => {
         setLoading(true);
+        let resolvedUserId: string | null = null;
+        let resolvedUserName: string | null = null;
+        let resolvedUserEmail: string | null = null;
+        let isStaffMember = false;
+
         try {
             let workLogs = await getWorkLogs();
 
@@ -172,6 +210,8 @@ export default function ReportListPage() {
             try {
                 const { data: authData } = await supabase.auth.getUser();
                 const user = authData?.user;
+                resolvedUserId = user?.id ?? null;
+                resolvedUserEmail = user?.email ?? null;
 
                 if (user) {
                     const { data: myProfile, error: myProfileError } = await supabase
@@ -183,10 +223,11 @@ export default function ReportListPage() {
                     if (myProfileError) {
                         console.error("내 프로필 조회 실패:", myProfileError);
                     } else {
-                        const isStaff = myProfile?.role === "staff";
-                        const myName = myProfile?.name?.trim();
+                        isStaffMember = myProfile?.role === "staff";
+                        const profileName = myProfile?.name?.trim() || "";
+                        resolvedUserName = profileName || null;
 
-                        if (isStaff && myName) {
+                        if (isStaffMember && profileName) {
                             const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
 
                             if (workLogIds.length > 0) {
@@ -220,7 +261,7 @@ export default function ReportListPage() {
                                             await supabase
                                                 .from("work_log_entry_persons")
                                                 .select("entry_id, person_name")
-                                                .eq("person_name", myName)
+                                                .eq("person_name", profileName)
                                                 .in("entry_id", entryIds);
 
                                         if (personsError) {
@@ -249,6 +290,11 @@ export default function ReportListPage() {
             } catch (e) {
                 console.error("staff 필터 처리 중 오류:", e);
             }
+
+            setCurrentUserId(resolvedUserId);
+            setCurrentUserName(resolvedUserName);
+            setCurrentUserEmail(resolvedUserEmail);
+            setIsStaffRole(isStaffMember);
 
             const reportItems = workLogs.map(convertToReportItem);
 
@@ -609,6 +655,8 @@ export default function ReportListPage() {
                                             not_submitted: { color: "gray-400", label: "미제출" },
                                         };
                                         const { color, label } = statusConfig[row.status];
+                                        const isOwner = isRowOwner(row);
+                                        const canManageRow = !(isStaffRole && !isOwner);
                                         return (
                                             <li key={row.id}>
                                                 <div
@@ -650,6 +698,8 @@ export default function ReportListPage() {
                                                             </Chip>
                                                         </div>
                                                     </div>
+                                                    {canManageRow && (
+
                                                     <button
                                                         type="button"
                                                         className="rounded-lg hover:bg-gray-100 text-gray-500 -mr-1 shrink-0"
@@ -662,8 +712,12 @@ export default function ReportListPage() {
                                                     >
                                                         <IconMoreVertical className="w-6 h-6" />
                                                     </button>
+
+                                                    )}
                                                 </div>
-                                                <ActionMenu
+                                                {canManageRow && (
+
+                                            <ActionMenu
                                                     isOpen={openMenuId === row.id}
                                                     anchorEl={menuAnchor}
                                                     onClose={() => {
@@ -698,6 +752,8 @@ export default function ReportListPage() {
                                                         보고서 보기
                                                     </button>
                                                 </ActionMenu>
+
+                                            )}
                                             </li>
                                         );
                                     })}
@@ -896,7 +952,14 @@ export default function ReportListPage() {
                                         label: "",
                                         width: "12%",
                                         align: "right",
-                                        render: (_, row: ReportItem) => (
+                                        showEmptyIndicator: false,
+                                        render: (_, row: ReportItem) => {
+                                        const isOwner = isRowOwner(row);
+                                        const canManageRow = !(isStaffRole && !isOwner);
+                                        if (!canManageRow) {
+                                            return null;
+                                        }
+                                        return (
                                             <div className="relative inline-flex">
                                                 <button
                                                     onClick={(e) => {
@@ -969,7 +1032,8 @@ export default function ReportListPage() {
                                                     </ActionMenu>
                                                 </div>
                                             </div>
-                                        ),
+                                        );
+                                        },
 
                                     },
                                 ]}
