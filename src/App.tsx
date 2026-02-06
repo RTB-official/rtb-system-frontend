@@ -6,8 +6,8 @@ import RequireAuth from "./components/RequireAuth";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import PageSkeleton from "./components/common/PageSkeleton";
 
-import ReportPdfPage from "./pages/Report/ReportPdfPage";
-import SettingsPage from "./pages/Settings";
+const ReportPdfPage = lazy(() => import("./pages/Report/ReportPdfPage"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
 
 const LoginPage = lazy(() => import("./pages/Login/LoginPage"));
 const DashboardPage = lazy(() => import("./pages/Dashboard/DashboardPage"));

@@ -26,11 +26,10 @@ export default defineConfig({
         rollupOptions: {
             output: {
                 manualChunks: (id) => {
-                    // node_modules에서 큰 라이브러리들을 분리
+                    // node_modules에서 큰 라이브러리들을 분리 (초기 로드 감소, 병렬 다운로드)
                     if (id.includes("node_modules")) {
-                        // react-router만 별도 청크, React/React-DOM은 메인에 유지 (프로덕션 undefined 오류 방지)
                         if (id.includes("react-router")) {
-                            return "vendor-react";
+                            return "vendor-react-router";
                         }
                         if (
                             id.includes("/react/") ||
@@ -38,31 +37,30 @@ export default defineConfig({
                         ) {
                             return undefined;
                         }
-                        // Supabase 클라이언트
                         if (id.includes("@supabase")) {
                             return "vendor-supabase";
                         }
-                        // 차트 라이브러리
                         if (id.includes("recharts")) {
                             return "vendor-charts";
                         }
-                        // PDF 관련
                         if (id.includes("jspdf")) {
                             return "vendor-pdf";
                         }
-                        // Zustand
                         if (id.includes("zustand")) {
                             return "vendor-state";
                         }
-                        // 나머지 node_modules
                         return "vendor";
                     }
                 },
+                chunkFileNames: "assets/[name]-[hash].js",
+                entryFileNames: "assets/[name]-[hash].js",
             },
         },
+        // 브라우저가 청크를 미리 로드해 네비게이션 체감 속도 향상
+        modulePreload: { polyfill: false },
         // 빌드 최적화 옵션
         minify: "esbuild",
-        // 배포 런타임 에러 추적을 위해 소스맵 활성화
+        // 소스맵: 프로덕션에서는 false로 빌드 용량·속도 개선 가능
         sourcemap: true,
         // 청크 크기 경고 임계값 증가 (큰 페이지가 있을 수 있음)
         chunkSizeWarningLimit: 1500,
