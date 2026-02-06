@@ -23,6 +23,7 @@ import { supabase } from "../../lib/supabase";
 import { calculateAnnualLeave } from "../../lib/vacationCalculator";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import ExpandableDetailPanel from "../../components/common/ExpandableDetailPanel";
 import useIsMobile from "../../hooks/useIsMobile";
 import { IconChevronLeft, IconChevronRight } from "../../components/icons/Icons";
 import Avatar from "../../components/common/Avatar";
@@ -736,10 +737,10 @@ export default function AdminVacationPage() {
                                     expandableRowRender={(row) => {
                                         if (row.userId !== vacationDetailEmployeeId) return null;
                                         return (
-                                            <div className="p-6 bg-gray-50">
+                                            <ExpandableDetailPanel>
                                                 <div className="mb-2">
                                                     <p className="text-sm text-gray-500">{year}년</p>
-                                                    <h3 className="text-lg font-semibold text-gray-800 mt-0.5">
+                                                    <h3 className="text-xl font-semibold text-gray-800 mt-0.5 mb-4">
                                                         {employeeMap.get(row.userId) ?? ""}님의 휴가 신청 내역
                                                     </h3>
                                                 </div>
@@ -749,7 +750,7 @@ export default function AdminVacationPage() {
                                                         <p className="text-sm text-gray-500">로딩 중...</p>
                                                     </div>
                                                 ) : employeeVacationHistory.length === 0 ? (
-                                                    <p className="text-gray-500 text-sm py-6 text-center rounded-xl border border-dashed border-gray-200 bg-white">
+                                                    <p className="text-gray-500 text-sm py-16 text-center rounded-xl border border-gray-200 bg-white">
                                                         해당 기간 휴가 신청 내역이 없습니다.
                                                     </p>
                                                 ) : (
@@ -778,7 +779,7 @@ export default function AdminVacationPage() {
                                                         />
                                                     </div>
                                                 )}
-                                            </div>
+                                            </ExpandableDetailPanel>
                                         );
                                     }}
                                     emptyText="사용한 휴가가 없습니다."

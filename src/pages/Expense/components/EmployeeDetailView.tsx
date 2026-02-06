@@ -1,10 +1,14 @@
 // src/pages/Expense/components/EmployeeDetailView.tsx
 import Table, { TableColumn } from "../../../components/common/Table";
+import Tabs from "../../../components/common/Tabs";
 import {
     type EmployeeMileageDetail,
     type EmployeeCardExpenseDetail,
 } from "../../../lib/personalExpenseApi";
+import { generateExpenseReportPDF } from "../../../lib/pdfUtils";
 import useIsMobile from "../../../hooks/useIsMobile";
+import { useToast } from "../../../components/ui/ToastProvider";
+import { IconDownload } from "../../../components/icons/Icons";
 
 interface EmployeeDetailViewProps {
     employeeName: string;
@@ -39,66 +43,65 @@ export default function EmployeeDetailView({
     onReceiptClick,
 }: EmployeeDetailViewProps) {
     const isMobile = useIsMobile();
+    const { showError } = useToast();
     const containerClass =
         isMobile
             ? "p-0 bg-transparent"
             : variant === "dropdown"
-                ? "p-6 bg-gray-50"
+                ? "p-0 bg-transparent"
                 : "bg-white border border-gray-200 rounded-2xl p-4 lg:p-6";
 
     return (
         <div className={containerClass}>
-            {/* 헤더 */}
-            <div className="mb-2">
-                <p className="text-sm text-gray-500">
-                    {year} {month}
-                </p>
-                <h2
-                    className={`text-xl font-semibold text-gray-800 ${onHeaderClick && variant === "dropdown"
-                            ? "cursor-pointer transition-colors hover:text-gray-500"
-                            : ""
-                        }`}
-                    onClick={(e) => {
-                        if (onHeaderClick && variant === "dropdown") {
-                            e.stopPropagation();
-                            onHeaderClick();
-                        }
+            {/* 헤더: 일자·제목 왼쪽, PDF 버튼 오른쪽 */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <div>
+                    <p className="text-sm text-gray-500">
+                        {year} {month}
+                    </p>
+                    <h2
+                        className={`text-xl font-semibold text-gray-800 ${onHeaderClick && variant === "dropdown"
+                                ? "cursor-pointer transition-colors hover:text-gray-500"
+                                : ""
+                            }`}
+                        onClick={(e) => {
+                            if (onHeaderClick && variant === "dropdown") {
+                                e.stopPropagation();
+                                onHeaderClick();
+                            }
+                        }}
+                    >
+                        {employeeName}님의 청구서
+                    </h2>
+                </div>
+                <button
+                    type="button"
+                    onClick={async () => {
+                        await generateExpenseReportPDF({
+                            onError: showError,
+                            employeeName,
+                            year,
+                            month,
+                            mileageDetails,
+                            cardDetails,
+                        });
                     }}
+                    className="flex items-center justify-center gap-1.5 h-[36px] px-3 text-[14px] rounded-[10px] bg-gray-800 hover:bg-gray-900 text-white font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-600 cursor-pointer shrink-0"
                 >
-                    {employeeName}님의 청구서
-                </h2>
+                    <IconDownload />
+                    PDF 다운로드
+                </button>
             </div>
-
             {/* 탭 */}
-            <div className={`flex gap-1 mb-6 ${isMobile ? "" : "border-b border-gray-200"}`}>
-                <button
-                    onClick={(e) => {
-                        if (variant === "dropdown") {
-                            e.stopPropagation();
-                        }
-                        onTabChange("mileage");
-                    }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === "mileage"
-                            ? "text-gray-900 border-b-2 border-gray-900"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                >
-                    마일리지 내역 ({mileageDetails.length}건)
-                </button>
-                <button
-                    onClick={(e) => {
-                        if (variant === "dropdown") {
-                            e.stopPropagation();
-                        }
-                        onTabChange("card");
-                    }}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${activeTab === "card"
-                            ? "text-gray-900 border-b-2 border-gray-900"
-                            : "text-gray-500 hover:text-gray-700"
-                        }`}
-                >
-                    카드 지출 내역 ({cardDetails.length}건)
-                </button>
+            <div className="mb-6" onClick={(e) => variant === "dropdown" && e.stopPropagation()}>
+                <Tabs
+                    items={[
+                        { value: "mileage", label: `마일리지 내역 (${mileageDetails.length}건)` },
+                        { value: "card", label: `카드 지출 내역 (${cardDetails.length}건)` },
+                    ]}
+                    value={activeTab}
+                    onChange={(v) => onTabChange(v as "mileage" | "card")}
+                />
             </div>
 
             {/* 마일리지 내역 */}
