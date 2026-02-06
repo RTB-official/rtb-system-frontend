@@ -555,8 +555,8 @@ export default function ReportViewPage() {
                                 </div>
                             </SectionCard>
 
-                            {/* 출장 업무 일지 */}
-                            <SectionCard title="출장 업무 일지">
+                            {/* 출장/교육 업무 일지 */}
+                            <SectionCard title={isEducationReport ? "교육 일지" : "출장 업무 일지"}>
                                 {data?.entries?.length ? (
                                     <div className="flex flex-col gap-3">
                                         {(() => {
