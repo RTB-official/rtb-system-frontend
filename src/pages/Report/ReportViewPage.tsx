@@ -11,6 +11,7 @@ import { IconArrowBack, IconDownload, IconEdit } from "../../components/icons/Ic
 import { getWorkLogById } from "../../lib/workLogApi";
 import { getWorkLogReceipts } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
+import { useUser } from "../../hooks/useUser";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
@@ -255,6 +256,7 @@ export default function ReportViewPage() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { showError } = useToast();
+    const { currentUserId, userPermissions } = useUser();
     const { setWorkLogEntries } = useWorkReportStore();
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -378,6 +380,11 @@ export default function ReportViewPage() {
     const workLog = data?.workLog;
     const isEducationReport = reportType === "education";
 
+    // 스태프는 본인이 작성한 보고서만 수정 가능 (타인/작성자 없음은 숨김)
+    const canShowEditButton = !userPermissions.isStaff
+        ? true
+        : !!workLog?.created_by && workLog.created_by === currentUserId;
+
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
             {/* Mobile Overlay */}
@@ -416,15 +423,17 @@ export default function ReportViewPage() {
                     }
                     rightContent={
                         <div className="flex items-center gap-2 md:gap-3">
-                            <Button
-                                variant="outline"
-                                size="lg"
-                                icon={<IconEdit />}
-                                onClick={() => navigate(`/report/${id}/edit`)}
-                                className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
-                            >
-                                수정하기
-                            </Button>
+                            {canShowEditButton && (
+                                <Button
+                                    variant="outline"
+                                    size="lg"
+                                    icon={<IconEdit />}
+                                    onClick={() => navigate(`/report/${id}/edit`)}
+                                    className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
+                                >
+                                    수정하기
+                                </Button>
+                            )}
                             <Button
                                 variant="primary"
                                 size="lg"
