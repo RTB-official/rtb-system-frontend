@@ -1,5 +1,5 @@
 // MemberExpensePage.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -19,6 +19,7 @@ import {
 import { TableSkeleton } from "./components/TableSkeleton";
 import { DetailSkeleton } from "./components/DetailSkeleton";
 import EmployeeDetailView from "./components/EmployeeDetailView";
+import ExpandableDetailPanel from "../../components/common/ExpandableDetailPanel";
 import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
 import Avatar from "../../components/common/Avatar";
 import { IconChevronRight } from "../../components/icons/Icons";
@@ -94,6 +95,8 @@ export default function MemberExpensePage() {
         }
         return new Map();
     });
+    const summaryCacheRef = useRef<Map<string, EmployeeExpenseSummary[]>>(new Map());
+    const loadRequestIdRef = useRef(0);
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
     // 권한 체크: 공사팀(스태프)은 접근 불가
@@ -115,11 +118,20 @@ export default function MemberExpensePage() {
     // 데이터 로드
     useEffect(() => {
         const loadData = async () => {
-            setLoading(true);
-            try {
-                const yearNum = parseInt(year.replace("년", ""));
-                const monthNum = parseInt(month.replace("월", "")) - 1;
+            const yearNum = parseInt(year.replace("년", ""));
+            const monthNum = parseInt(month.replace("월", "")) - 1;
+            const cacheKey = `${yearNum}-${monthNum}`;
+            const cached = summaryCacheRef.current.get(cacheKey);
 
+            if (cached && cached.length > 0) {
+                setExpenseSummary(cached);
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
+
+            const requestId = ++loadRequestIdRef.current;
+            try {
                 const filter: { year: number; month: number; userId?: string } =
                 {
                     year: yearNum,
@@ -144,90 +156,91 @@ export default function MemberExpensePage() {
 
                 // ✅ 지출 요약 조회
                 const summary = await getAllUsersExpenseSummary(filter);
+                if (loadRequestIdRef.current !== requestId) return;
+                summaryCacheRef.current.set(cacheKey, summary);
                 setExpenseSummary(summary);
-
-                // 직원 프로필 정보 조회 (email, position)
-                const employeeNames = [...new Set(summary.map((emp) => emp.name))];
-
-                // ✅ 캐시된 프로필 정보 먼저 확인
-                let profileMap = new Map<
-                    string,
-                    { email: string | null; position: string | null }
-                >();
-
-                try {
-                    const cached = localStorage.getItem("employeeProfiles_cache");
-                    if (cached) {
-                        const parsed = JSON.parse(cached);
-                        employeeNames.forEach((name) => {
-                            if (parsed[name]) {
-                                profileMap.set(name, parsed[name]);
-                            }
-                        });
-                    }
-                } catch {
-                    // 캐시 파싱 실패 시 무시
-                }
-
-                // 캐시에 없는 프로필만 조회 (배치 처리로 성능 개선)
-                const uncachedNames = employeeNames.filter((name) => !profileMap.has(name));
-
-                if (uncachedNames.length > 0) {
-                    // ✅ Promise.allSettled로 에러 처리 개선
-                    const profilesResult = await Promise.allSettled([
-                        supabase
-                            .from("profiles")
-                            .select("name, email, position")
-                            .in("name", uncachedNames),
-                    ]);
-
-                    if (profilesResult[0].status === "fulfilled") {
-                        const { data: profiles, error: profilesError } = profilesResult[0].value;
-                        if (profilesError) {
-                            console.error("프로필 조회 실패:", profilesError);
-                        } else if (profiles) {
-                            // 새로 조회한 프로필 추가
-                            profiles.forEach((profile: any) => {
-                                profileMap.set(profile.name, {
-                                    email: profile.email || null,
-                                    position: profile.position || null,
-                                });
-                            });
-                        }
-                    } else {
-                        console.error("프로필 조회 실패:", profilesResult[0].reason);
-                    }
-                }
-
-
-                // ✅ 프로필 정보를 localStorage에 캐시 (다음 로딩 시 깜빡임 방지)
-                try {
-                    const cacheObject: Record<
-                        string,
-                        { email: string | null; position: string | null }
-                    > = {};
-                    profileMap.forEach((profile, name) => {
-                        cacheObject[name] = profile;
-                    });
-                    localStorage.setItem(
-                        "employeeProfiles_cache",
-                        JSON.stringify(cacheObject)
-                    );
-                } catch {
-                    // localStorage 저장 실패 시 무시
-                }
-
-                setEmployeeProfiles(profileMap);
             } catch (error) {
                 console.error("데이터 로드 실패:", error);
                 showError("데이터를 불러오는데 실패했습니다.");
             } finally {
-                setLoading(false);
+                if (loadRequestIdRef.current === requestId) {
+                    setLoading(false);
+                }
             }
         };
 
         loadData();
     }, [year, month]); // user 제외 - user 필터는 클라이언트에서 처리
+
+    // 프로필 정보는 요약 로딩 후 백그라운드로 갱신
+    useEffect(() => {
+        if (expenseSummary.length === 0) return;
+        const employeeNames = [...new Set(expenseSummary.map((emp) => emp.name))];
+        let cancelled = false;
+
+        const loadProfiles = async () => {
+            // ✅ 캐시된 프로필 정보 먼저 확인
+            const profileMap = new Map<
+                string,
+                { email: string | null; position: string | null }
+            >();
+
+            try {
+                const cached = localStorage.getItem("employeeProfiles_cache");
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    employeeNames.forEach((name) => {
+                        if (parsed[name]) {
+                            profileMap.set(name, parsed[name]);
+                        }
+                    });
+                }
+            } catch {
+                // 캐시 파싱 실패 시 무시
+            }
+
+            const uncachedNames = employeeNames.filter((name) => !profileMap.has(name));
+            if (uncachedNames.length > 0) {
+                const { data: profiles, error: profilesError } = await supabase
+                    .from("profiles")
+                    .select("name, email, position")
+                    .in("name", uncachedNames);
+
+                if (!profilesError && profiles) {
+                    profiles.forEach((profile: any) => {
+                        profileMap.set(profile.name, {
+                            email: profile.email || null,
+                            position: profile.position || null,
+                        });
+                    });
+                }
+            }
+
+            if (cancelled) return;
+            setEmployeeProfiles(profileMap);
+
+            try {
+                const cacheObject: Record<
+                    string,
+                    { email: string | null; position: string | null }
+                > = {};
+                profileMap.forEach((profile, name) => {
+                    cacheObject[name] = profile;
+                });
+                localStorage.setItem(
+                    "employeeProfiles_cache",
+                    JSON.stringify(cacheObject)
+                );
+            } catch {
+                // localStorage 저장 실패 시 무시
+            }
+        };
+
+        loadProfiles();
+        return () => {
+            cancelled = true;
+        };
+    }, [expenseSummary]);
 
     // 선택한 사용자의 상세 내역 로드
     useEffect(() => {
@@ -652,7 +665,7 @@ export default function MemberExpensePage() {
                                                         />
                                                     </button>
                                                     {isExpanded && (
-                                                        <div className="border-t border-gray-200 p-4">
+                                                        <ExpandableDetailPanel>
                                                             {!details ? (
                                                                 <div className="py-4">
                                                                     <div className="w-8 h-8 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin mx-auto" />
@@ -678,7 +691,7 @@ export default function MemberExpensePage() {
                                                                     onReceiptClick={(path) => setSelectedReceipt(getPersonalExpenseReceiptUrl(path))}
                                                                 />
                                                             )}
-                                                        </div>
+                                                        </ExpandableDetailPanel>
                                                     )}
                                                 </li>
                                             );
@@ -731,60 +744,64 @@ export default function MemberExpensePage() {
 
                                         if (!details) {
                                             return (
-                                                <div className="p-6">
-                                                    <TableSkeleton rows={3} />
-                                                </div>
+                                                <ExpandableDetailPanel>
+                                                    <div className="p-2">
+                                                        <TableSkeleton rows={3} />
+                                                    </div>
+                                                </ExpandableDetailPanel>
                                             );
                                         }
 
                                         return (
-                                            <EmployeeDetailView
-                                                employeeName={row.name.replace(
-                                                    /^[A-Z]{2,3} /,
-                                                    ""
-                                                )}
-                                                year={year}
-                                                month={month}
-                                                mileageDetails={details.mileage}
-                                                cardDetails={details.card}
-                                                activeTab={rowTab}
-                                                onTabChange={(tab) => {
-                                                    setExpandedRowActiveTab(
-                                                        (prev) => {
-                                                            const newMap =
-                                                                new Map(prev);
-                                                            newMap.set(
-                                                                row.id,
-                                                                tab
-                                                            );
-                                                            return newMap;
-                                                        }
-                                                    );
-                                                }}
-                                                mileageColumns={mileageColumns}
-                                                cardColumns={cardColumns}
-                                                variant="dropdown"
-                                                onHeaderClick={() => {
-                                                    const employeeNameWithoutInitials =
-                                                        row.name.replace(
-                                                            /^[A-Z]{2,3} /,
-                                                            ""
+                                            <ExpandableDetailPanel>
+                                                <EmployeeDetailView
+                                                    employeeName={row.name.replace(
+                                                        /^[A-Z]{2,3} /,
+                                                        ""
+                                                    )}
+                                                    year={year}
+                                                    month={month}
+                                                    mileageDetails={details.mileage}
+                                                    cardDetails={details.card}
+                                                    activeTab={rowTab}
+                                                    onTabChange={(tab) => {
+                                                        setExpandedRowActiveTab(
+                                                            (prev) => {
+                                                                const newMap =
+                                                                    new Map(prev);
+                                                                newMap.set(
+                                                                    row.id,
+                                                                    tab
+                                                                );
+                                                                return newMap;
+                                                            }
                                                         );
-                                                    setSelectedEmployeeId(
-                                                        row.id
-                                                    );
-                                                    setUser(
-                                                        employeeNameWithoutInitials
-                                                    );
-                                                    setActiveTab("mileage");
-                                                    setExpandedRowKeys((prev) =>
-                                                        prev.filter(
-                                                            (id) =>
-                                                                id !== row.id
-                                                        )
-                                                    );
-                                                }}
-                                            />
+                                                    }}
+                                                    mileageColumns={mileageColumns}
+                                                    cardColumns={cardColumns}
+                                                    variant="dropdown"
+                                                    onHeaderClick={() => {
+                                                        const employeeNameWithoutInitials =
+                                                            row.name.replace(
+                                                                /^[A-Z]{2,3} /,
+                                                                ""
+                                                            );
+                                                        setSelectedEmployeeId(
+                                                            row.id
+                                                        );
+                                                        setUser(
+                                                            employeeNameWithoutInitials
+                                                        );
+                                                        setActiveTab("mileage");
+                                                        setExpandedRowKeys((prev) =>
+                                                            prev.filter(
+                                                                (id) =>
+                                                                    id !== row.id
+                                                            )
+                                                        );
+                                                    }}
+                                                />
+                                            </ExpandableDetailPanel>
                                         );
                                     }}
                                     expandedRowKeys={expandedRowKeys}
