@@ -178,13 +178,20 @@ export default function TbmCreatePage() {
                 });
                 setParticipants(baseParticipants);
 
+                // 코드 접두사 제거 함수 (TbmDetailSheet와 동일하게)
+                const stripCodePrefix = (value: string) =>
+                    value.replace(/^[A-Z0-9]+(?:-[A-Z0-9]+)+\s+/, "");
+
                 const normalizeList = (items: string[] | null, fallback: string | null) => {
-                    if (items && items.length > 0) return items;
+                    if (items && items.length > 0) {
+                        return items.map(stripCodePrefix);
+                    }
                     if (fallback) {
                         return fallback
                             .split(",")
                             .map((v) => v.trim())
-                            .filter(Boolean);
+                            .filter(Boolean)
+                            .map(stripCodePrefix);
                     }
                     return [] as string[];
                 };
@@ -419,24 +426,17 @@ export default function TbmCreatePage() {
                 work_content: workContent.trim(),
                 location: location.trim(),
                 risk_assessment: riskAssessment,
-                process: Array.from(
-                    new Set(selectedCombos.map((c) => c.processLabel))
-                ).join(", "),
-                hazard: Array.from(
-                    new Set(selectedCombos.map((c) => c.hazardLabel))
-                ).join(", "),
-                measure: Array.from(
-                    new Set(selectedCombos.map((c) => c.measureLabel))
-                ).join(", "),
-                process_items: Array.from(
-                    new Set(selectedCombos.map((c) => c.processLabel))
-                ),
-                hazard_items: Array.from(
-                    new Set(selectedCombos.map((c) => c.hazardLabel))
-                ),
-                measure_items: Array.from(
-                    new Set(selectedCombos.map((c) => c.measureLabel))
-                ),
+                process: selectedCombos.map((c) => c.processLabel).join(", "),
+                hazard: selectedCombos.map((c) => c.hazardLabel).join(", "),
+                measure: selectedCombos.map((c) => c.measureLabel).join(", "),
+                process_items: selectedCombos.map((c) => c.processLabel),
+                hazard_items: selectedCombos.map((c) => c.hazardLabel),
+                measure_items: selectedCombos.map((c) => c.measureLabel),
+                combo_items: selectedCombos.map((c) => ({
+                    process: c.processLabel,
+                    hazard: c.hazardLabel,
+                    measure: c.measureLabel,
+                  })),                  
                 during_result: duringResult.trim(),
                 after_meeting: afterMeeting.trim(),
                 participants: selectedParticipants.map((p) => ({
@@ -450,24 +450,17 @@ export default function TbmCreatePage() {
                 work_content: workContent.trim(),
                 location: location.trim(),
                 risk_assessment: riskAssessment,
-                process: Array.from(
-                    new Set(selectedCombos.map((c) => c.processLabel))
-                ).join(", "),
-                hazard: Array.from(
-                    new Set(selectedCombos.map((c) => c.hazardLabel))
-                ).join(", "),
-                measure: Array.from(
-                    new Set(selectedCombos.map((c) => c.measureLabel))
-                ).join(", "),
-                process_items: Array.from(
-                    new Set(selectedCombos.map((c) => c.processLabel))
-                ),
-                hazard_items: Array.from(
-                    new Set(selectedCombos.map((c) => c.hazardLabel))
-                ),
-                measure_items: Array.from(
-                    new Set(selectedCombos.map((c) => c.measureLabel))
-                ),
+                process: selectedCombos.map((c) => c.processLabel).join(", "),
+                hazard: selectedCombos.map((c) => c.hazardLabel).join(", "),
+                measure: selectedCombos.map((c) => c.measureLabel).join(", "),
+                process_items: selectedCombos.map((c) => c.processLabel),
+                hazard_items: selectedCombos.map((c) => c.hazardLabel),
+                measure_items: selectedCombos.map((c) => c.measureLabel),
+                combo_items: selectedCombos.map((c) => ({
+                    process: c.processLabel,
+                    hazard: c.hazardLabel,
+                    measure: c.measureLabel,
+                  })),                  
                 during_result: duringResult.trim(),
                 after_meeting: afterMeeting.trim(),
                 participants: selectedParticipants.map((p) => ({

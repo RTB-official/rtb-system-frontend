@@ -17,6 +17,11 @@ export interface TbmRecord {
     process_items: string[] | null;
     hazard_items: string[] | null;
     measure_items: string[] | null;
+    combo_items?: Array<{
+        process: string;
+        hazard: string;
+        measure: string;
+    }>;
     during_result: string | null;
     after_meeting: string | null;
     created_by: string;
@@ -45,6 +50,11 @@ export interface CreateTbmInput {
     process_items: string[];
     hazard_items: string[];
     measure_items: string[];
+    combo_items?: Array<{
+        process: string;
+        hazard: string;
+        measure: string;
+    }>;
     during_result: string;
     after_meeting: string;
     participants: Array<{ user_id: string | null; name: string }>;
@@ -273,6 +283,7 @@ export async function updateTbm(input: UpdateTbmInput) {
             process_items: input.process_items || null,
             hazard_items: input.hazard_items || null,
             measure_items: input.measure_items || null,
+            combo_items: input.combo_items ?? [],
             during_result: input.during_result || null,
             after_meeting: input.after_meeting || null,
             created_by_name: profile?.name || null,

@@ -16,14 +16,28 @@ const stripCodePrefix = (value: string) =>
     value.replace(/^[A-Z0-9]+(?:-[A-Z0-9]+)+\s+/, "");
 
 const processColorMap: Record<string, string> = {
-    "\uBD84\uD574\uC870\uB9BD(\uAE30\uBCF8)": "orange-500",
-    "\uC720\uC555": "green-500",
-    "\uCC54\uBC84": "blue-500",
-    "\uC808\uB2E8/\uD654\uAE30": "red-600",
+    "분해조립(기본)": "orange-500",
+    "유압": "green-500",
+    "챔버": "blue-500",
+    "절단/화기": "red-600",
 };
 
-const getProcessBadgeClass = (name: string) =>
-    processColorMap[name] || "gray-500";
+const getProcessBadgeClass = (name: string) => {
+    if (!name) return "gray-500";
+    // 공정 이름을 정규화하여 매칭 (앞뒤 공백 제거, 코드 접두사 제거)
+    const normalized = stripCodePrefix(name.trim());
+    // 정확한 매칭 시도
+    if (processColorMap[normalized]) {
+        return processColorMap[normalized];
+    }
+    // 부분 매칭 시도 (공정 이름이 포함되어 있는지 확인)
+    for (const [key, color] of Object.entries(processColorMap)) {
+        if (normalized.includes(key) || key.includes(normalized)) {
+            return color;
+        }
+    }
+    return "gray-500";
+};
 
 const normalizeList = (items: string[] | null, fallback: string | null) => {
     if (items && items.length > 0) {
@@ -38,29 +52,51 @@ const normalizeList = (items: string[] | null, fallback: string | null) => {
     }
     return [] as string[];
 };
-
 const buildRows = (record: TbmRecord) => {
-    const processList = normalizeList(record.process_items, record.process);
-    const hazardList = normalizeList(record.hazard_items, record.hazard);
-    const measureList = normalizeList(record.measure_items, record.measure);
-    const rowCount = Math.max(
-        processList.length,
-        hazardList.length,
-        measureList.length
-    );
+    const p = Array.isArray(record.process_items) ? record.process_items.map(stripCodePrefix) : [];
+    const h = Array.isArray(record.hazard_items) ? record.hazard_items.map(stripCodePrefix) : [];
+    const m = Array.isArray(record.measure_items) ? record.measure_items.map(stripCodePrefix) : [];
+
+    const n = Math.max(p.length, h.length, m.length);
+
+    if (n > 0) {
+        return Array.from({ length: n }, (_, idx) => {
+            const processLabel = (p[idx] ?? "").trim();
+            const hazardLabel = (h[idx] ?? "").trim();
+            const measureLabel = (m[idx] ?? "").trim();
+
+            return {
+                key: `${processLabel}-${hazardLabel}-${measureLabel}-${idx}`,
+                process: processLabel,
+                hazard: hazardLabel,
+                measure: measureLabel,
+                badgeClass: getProcessBadgeClass(processLabel),
+            };
+        }).filter((r) => r.process || r.hazard || r.measure);
+    }
+
+    // items가 없을 때만 레거시 fallback
+    const processList = normalizeList(null, record.process);
+    const hazardList = normalizeList(null, record.hazard);
+    const measureList = normalizeList(null, record.measure);
+
+    const rowCount = Math.max(processList.length, hazardList.length, measureList.length);
 
     return Array.from({ length: rowCount }, (_, idx) => {
-        const processLabel = processList[idx] || "";
-        const badgeClass = getProcessBadgeClass(processLabel);
+        const processLabel = (processList[idx] ?? "").trim();
+        const hazardLabel = (hazardList[idx] ?? "").trim();
+        const measureLabel = (measureList[idx] ?? "").trim();
+
         return {
-            key: `${processLabel}-${hazardList[idx] || ""}-${measureList[idx] || ""}-${idx}`,
+            key: `${processLabel}-${hazardLabel}-${measureLabel}-${idx}`,
             process: processLabel,
-            hazard: hazardList[idx] || "",
-            measure: measureList[idx] || "",
-            badgeClass,
+            hazard: hazardLabel,
+            measure: measureLabel,
+            badgeClass: getProcessBadgeClass(processLabel),
         };
-    });
+    }).filter((r) => r.process || r.hazard || r.measure);
 };
+
 
 const badgeBgMap: Record<string, string> = {
     "orange-500": "#f97316",
