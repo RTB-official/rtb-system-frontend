@@ -2,10 +2,13 @@
 import SectionCard from "../ui/SectionCard";
 import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
+import Button from "../common/Button";
+import { IconClose } from "../icons/Icons";
 import {
     useWorkReportStore,
     LOCATIONS,
 } from "../../store/workReportStore";
+import { useState } from "react";
 
 const EDUCATION_LOCATION_BLACKLIST = [
     "PNC",
@@ -19,8 +22,9 @@ export default function EducationBasicInfoSection() {
     const {
         instructor,
         setInstructor,
-        location,
-        setLocation,
+        locations,
+        addLocation,
+        removeLocation,
         locationCustom,
         setLocationCustom,
         subject,
@@ -35,6 +39,31 @@ export default function EducationBasicInfoSection() {
         ...educationLocations.map((loc) => ({ value: loc, label: loc })),
         { value: "OTHER", label: "기타(직접입력)" },
     ];
+
+    const [selectedLocation, setSelectedLocation] = useState("");
+
+    const handleSelectLocation = (value: string) => {
+        setSelectedLocation(value);
+        if (value !== "OTHER") {
+            addLocation(value);
+            setSelectedLocation("");
+        }
+    };
+
+    const handleAddCustomLocation = () => {
+        const next = locationCustom.trim();
+        if (!next) return;
+        addLocation(next);
+        setLocationCustom("");
+        setSelectedLocation("");
+    };
+
+    const handleCustomKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handleAddCustomLocation();
+        }
+    };
 
     return (
         <SectionCard title="기본 정보">
@@ -56,16 +85,44 @@ export default function EducationBasicInfoSection() {
                         fullWidth
                         required
                         options={locationOptions}
-                        value={location}
-                        onChange={setLocation}
+                        value={selectedLocation}
+                        onChange={handleSelectLocation}
                     />
-                    {location === "OTHER" && (
-                        <TextInput
-                            placeholder="교육 장소를 직접 입력"
-                            value={locationCustom}
-                            onChange={setLocationCustom}
-                            required
-                        />
+                    {selectedLocation === "OTHER" && (
+                        <div className="flex items-center gap-2">
+                            <TextInput
+                                placeholder="교육 장소를 직접 입력"
+                                value={locationCustom}
+                                onChange={setLocationCustom}
+                                onKeyDown={handleCustomKeyDown}
+                                required
+                            />
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="md"
+                                onClick={handleAddCustomLocation}
+                            >
+                                추가
+                            </Button>
+                        </div>
+                    )}
+                    {locations.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {locations.map((loc) => (
+                                <Button
+                                    key={loc}
+                                    type="button"
+                                    variant="secondary"
+                                    size="md"
+                                    onClick={() => removeLocation(loc)}
+                                    className="text-blue-600"
+                                >
+                                    {loc}
+                                    <IconClose className="ml-1 w-4 h-4" />
+                                </Button>
+                            ))}
+                        </div>
                     )}
                 </div>
 

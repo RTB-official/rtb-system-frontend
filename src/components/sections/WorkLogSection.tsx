@@ -211,9 +211,8 @@ const descTypeOptionsEducation = [
     { value: "이동", label: "이동" },
 ];
 
-// 이동 장소 옵션
-const moveFromPlaces = ["자택", "강동동 공장", "출장지", "숙소"];
-const moveToPlaces = ["자택", "강동동 공장", "출장지", "숙소"];
+// 이동 장소 기본 옵션
+const baseMovePlaces = ["자택", "강동동 공장", "출장지", "숙소"];
 
 export default function WorkLogSection() {
     const {
@@ -232,16 +231,17 @@ export default function WorkLogSection() {
         editWorkLogEntry,
         cancelEditEntry,
 
-        location,
-        locationCustom,
+        locations,
         reportType, // ✅ Report Type 추가
     } = useWorkReportStore();
 
     // ✅ Toast 훅 추가
     const { showError } = useToast();
 
-    // 출장지 이름
-    const siteName = location === "OTHER" ? locationCustom : location;
+    const movePlaces = useMemo(() => {
+        const extras = (locations || []).filter(Boolean);
+        return Array.from(new Set([...baseMovePlaces, ...extras]));
+    }, [locations]);
 
     // 경유지 상태
     const [hasDetour, setHasDetour] = useState(false);
@@ -313,13 +313,12 @@ export default function WorkLogSection() {
 
     // 이동 상세내용 자동 생성
     const handleMovePlace = (type: "from" | "to", place: string) => {
-        const resolvedPlace = place === "출장지" ? siteName || "출장지" : place;
         if (type === "from") {
-            setCurrentEntry({ moveFrom: resolvedPlace });
-            updateMoveDetails(resolvedPlace, currentEntry.moveTo, hasDetour);
+            setCurrentEntry({ moveFrom: place });
+            updateMoveDetails(place, currentEntry.moveTo, hasDetour);
         } else {
-            setCurrentEntry({ moveTo: resolvedPlace });
-            updateMoveDetails(currentEntry.moveFrom, resolvedPlace, hasDetour);
+            setCurrentEntry({ moveTo: place });
+            updateMoveDetails(currentEntry.moveFrom, place, hasDetour);
         }
     };
 
@@ -644,34 +643,22 @@ export default function WorkLogSection() {
                                     From
                                 </label>
                                 <div className="flex flex-wrap gap-2 p-3 border border-dashed border-[#e5e7eb] rounded-lg bg-white">
-                                    {moveFromPlaces.map((place) => {
-                                        const resolvedPlace =
-                                            place === "출장지"
-                                                ? siteName || "출장지"
-                                                : place;
-                                        return (
-                                            <Button
-                                                key={place}
-                                                size="md"
-                                                variant={
-                                                    currentEntry.moveFrom ===
-                                                        resolvedPlace
-                                                        ? "primary"
-                                                        : "outline"
-                                                }
-                                                onClick={() =>
-                                                    handleMovePlace(
-                                                        "from",
-                                                        place
-                                                    )
-                                                }
-                                            >
-                                                {place === "출장지"
-                                                    ? siteName || "출장지"
-                                                    : place}
-                                            </Button>
-                                        );
-                                    })}
+                                    {movePlaces.map((place) => (
+                                        <Button
+                                            key={place}
+                                            size="md"
+                                            variant={
+                                                currentEntry.moveFrom === place
+                                                    ? "primary"
+                                                    : "outline"
+                                            }
+                                            onClick={() =>
+                                                handleMovePlace("from", place)
+                                            }
+                                        >
+                                            {place}
+                                        </Button>
+                                    ))}
                                 </div>
                             </div>
                             <div>
@@ -679,31 +666,22 @@ export default function WorkLogSection() {
                                     To
                                 </label>
                                 <div className="flex flex-wrap gap-2 p-3 border border-dashed border-[#e5e7eb] rounded-lg bg-white">
-                                    {moveToPlaces.map((place) => {
-                                        const resolvedPlace =
-                                            place === "출장지"
-                                                ? siteName || "출장지"
-                                                : place;
-                                        return (
-                                            <Button
-                                                key={place}
-                                                size="md"
-                                                variant={
-                                                    currentEntry.moveTo ===
-                                                        resolvedPlace
-                                                        ? "primary"
-                                                        : "outline"
-                                                }
-                                                onClick={() =>
-                                                    handleMovePlace("to", place)
-                                                }
-                                            >
-                                                {place === "출장지"
-                                                    ? siteName || "출장지"
-                                                    : place}
-                                            </Button>
-                                        );
-                                    })}
+                                    {movePlaces.map((place) => (
+                                        <Button
+                                            key={place}
+                                            size="md"
+                                            variant={
+                                                currentEntry.moveTo === place
+                                                    ? "primary"
+                                                    : "outline"
+                                            }
+                                            onClick={() =>
+                                                handleMovePlace("to", place)
+                                            }
+                                        >
+                                            {place}
+                                        </Button>
+                                    ))}
                                     <Button
                                         size="md"
                                         variant={

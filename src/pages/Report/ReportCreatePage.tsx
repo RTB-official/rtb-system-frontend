@@ -49,7 +49,7 @@ export default function ReportCreatePage() {
         engine,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         subject,
@@ -71,7 +71,7 @@ export default function ReportCreatePage() {
             engine,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             subject,
@@ -87,7 +87,7 @@ export default function ReportCreatePage() {
         });
     }, [
         reportType, author, instructor, vessel, engine, orderGroup, orderPerson,
-        location, locationCustom, vehicles, subject, workers,
+        locations, locationCustom, vehicles, subject, workers,
         workLogEntries, expenses, materials, uploadedFiles
     ]);
 
@@ -219,7 +219,7 @@ export default function ReportCreatePage() {
                 : subject;
 
             const finalOrderPerson = reportType === "education" ? instructor : orderPerson;
-            const finalLocation = location === "OTHER" ? locationCustom : location;
+            const finalLocation = locations.length > 0 ? locations.join(", ") : undefined;
 
             // 1. Log 생성
             const newLog = await createWorkLog({

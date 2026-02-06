@@ -12,7 +12,7 @@ import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import CreationSkeleton from "../../components/common/CreationSkeleton";
-import { useWorkReportStore, LOCATIONS } from "../../store/workReportStore";
+import { useWorkReportStore } from "../../store/workReportStore";
 import { IconArrowBack, IconReport } from "../../components/icons/Icons";
 import {
     createWorkLog,
@@ -90,7 +90,7 @@ export default function CreationPage() {
         subject,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         workers,
@@ -104,7 +104,7 @@ export default function CreationPage() {
         setSubject,
         setOrderGroup,
         setOrderPerson,
-        setLocation,
+        setLocations,
         setLocationCustom,
         toggleVehicle,
         setVehicles,
@@ -126,7 +126,7 @@ export default function CreationPage() {
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,
@@ -145,7 +145,7 @@ export default function CreationPage() {
         subject,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         workers,
@@ -217,16 +217,11 @@ export default function CreationPage() {
                 if (data.workLog.order_person)
                     setOrderPerson(data.workLog.order_person);
                 if (data.workLog.location) {
-                    if (
-                        data.workLog.location === "OTHER" ||
-                        !LOCATIONS.includes(data.workLog.location)
-                    ) {
-                        setLocation("OTHER");
-                        if (data.workLog.location)
-                            setLocationCustom(data.workLog.location);
-                    } else {
-                        setLocation(data.workLog.location);
-                    }
+                    const parsedLocations = String(data.workLog.location)
+                        .split(",")
+                        .map((loc) => loc.trim())
+                        .filter(Boolean);
+                    setLocations(parsedLocations);
                 }
                 if (data.workLog.vehicle) {
                     const vehicleList = data.workLog.vehicle
@@ -319,7 +314,7 @@ export default function CreationPage() {
 
             // 출장 보고서 생성 또는 업데이트
             const resolvedLocation =
-                location === "OTHER" ? locationCustom : location;
+                locations.length > 0 ? locations.join(", ") : undefined;
             const resolvedVehicle =
                 vehicles.length > 0 ? vehicles.join(", ") : null;
 
@@ -331,7 +326,7 @@ export default function CreationPage() {
                 engine,
                 order_group: orderGroup || undefined,
                 order_person: orderPerson || undefined,
-                location: resolvedLocation || undefined,
+                location: resolvedLocation,
                 vehicle: resolvedVehicle || undefined,
                 subject,
                 workers,
@@ -514,7 +509,7 @@ export default function CreationPage() {
                 }
 
                 const resolvedLocation =
-                    location === "OTHER" ? locationCustom : location;
+                    locations.length > 0 ? locations.join(", ") : undefined;
                 const resolvedVehicle =
                     vehicles.length > 0 ? vehicles.join(", ") : null;
 
@@ -528,7 +523,7 @@ export default function CreationPage() {
                     engine: engine || undefined,
                     order_group: orderGroup || undefined,
                     order_person: orderPerson || undefined,
-                    location: resolvedLocation || undefined,
+                    location: resolvedLocation,
                     vehicle: resolvedVehicle || undefined,
                     subject: subject || undefined,
                     workers: workers || [],
@@ -598,7 +593,7 @@ export default function CreationPage() {
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,

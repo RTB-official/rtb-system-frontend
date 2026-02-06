@@ -113,7 +113,7 @@ interface WorkReportState {
   engine: string;
   orderGroup: string;
   orderPerson: string;
-  location: string;
+  locations: string[];
   locationCustom: string;
   vehicles: string[];
   subject: string;
@@ -152,7 +152,9 @@ interface WorkReportState {
   setEngine: (engine: string) => void;
   setOrderGroup: (group: string) => void;
   setOrderPerson: (person: string) => void;
-  setLocation: (location: string) => void;
+  addLocation: (location: string) => void;
+  removeLocation: (location: string) => void;
+  setLocations: (locations: string[]) => void;
   setLocationCustom: (custom: string) => void;
   toggleVehicle: (vehicle: string) => void;
   setVehicles: (vehicles: string[]) => void;
@@ -232,7 +234,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   engine: '',
   orderGroup: '',
   orderPerson: '',
-  location: '',
+  locations: [],
   locationCustom: '',
   vehicles: [],
   subject: '',
@@ -272,7 +274,27 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   setEngine: (engine) => set({ engine: engine.toUpperCase() }),
   setOrderGroup: (orderGroup) => set({ orderGroup, orderPerson: '' }),
   setOrderPerson: (orderPerson) => set({ orderPerson }),
-  setLocation: (location) => set({ location, locationCustom: location === 'OTHER' ? get().locationCustom : '' }),
+  addLocation: (location) =>
+    set((state) => {
+      const normalized = String(location || '').trim();
+      if (!normalized) return state;
+      if (state.locations.includes(normalized)) return state;
+      return { locations: [...state.locations, normalized] };
+    }),
+  removeLocation: (location) =>
+    set((state) => ({
+      locations: state.locations.filter((item) => item !== location),
+    })),
+  setLocations: (locations) =>
+    set({
+      locations: Array.from(
+        new Set(
+          (locations || [])
+            .map((loc) => String(loc || '').trim())
+            .filter(Boolean)
+        )
+      ),
+    }),
   setLocationCustom: (locationCustom) => set({ locationCustom }),
   toggleVehicle: (vehicle) => set((state) => ({
     vehicles: state.vehicles.includes(vehicle)
@@ -494,7 +516,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     engine: '',
     orderGroup: '',
     orderPerson: '',
-    location: '',
+    locations: [],
     locationCustom: '',
     vehicles: [],
     subject: '',

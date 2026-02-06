@@ -15,7 +15,7 @@ import TimelineSummarySection from "../../components/sections/TimelineSummarySec
 import CreationSkeleton from "../../components/common/CreationSkeleton";
 import SectionCard from "../../components/ui/SectionCard";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
-import { useWorkReportStore, LOCATIONS } from "../../store/workReportStore";
+import { useWorkReportStore } from "../../store/workReportStore";
 import { IconArrowBack, IconReport } from "../../components/icons/Icons";
 import {
     uploadReceiptFile,
@@ -90,7 +90,7 @@ export default function ReportEditPage() {
         subject,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         workers,
@@ -105,7 +105,7 @@ export default function ReportEditPage() {
         setSubject,
         setOrderGroup,
         setOrderPerson,
-        setLocation,
+        setLocations,
         setLocationCustom,
         setVehicles,
         setWorkers,
@@ -124,7 +124,7 @@ export default function ReportEditPage() {
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,
@@ -143,7 +143,7 @@ export default function ReportEditPage() {
         subject,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         workers,
@@ -199,16 +199,11 @@ export default function ReportEditPage() {
                 if (data.workLog.order_person)
                     setOrderPerson(data.workLog.order_person);
                 if (data.workLog.location) {
-                    if (
-                        data.workLog.location === "OTHER" ||
-                        !LOCATIONS.includes(data.workLog.location)
-                    ) {
-                        setLocation("OTHER");
-                        if (data.workLog.location)
-                            setLocationCustom(data.workLog.location);
-                    } else {
-                        setLocation(data.workLog.location);
-                    }
+                    const parsedLocations = String(data.workLog.location)
+                        .split(",")
+                        .map((loc) => loc.trim())
+                        .filter(Boolean);
+                    setLocations(parsedLocations);
                 }
                 if (data.workLog.vehicle) {
                     const vehicleList = data.workLog.vehicle
@@ -310,7 +305,7 @@ export default function ReportEditPage() {
 
             // 출장 보고서 업데이트
             const resolvedLocation =
-                location === "OTHER" ? locationCustom : location;
+                locations.length > 0 ? locations.join(", ") : undefined;
             const resolvedVehicle =
                 vehicles.length > 0 ? vehicles.join(", ") : null;
 
@@ -321,7 +316,7 @@ export default function ReportEditPage() {
                 engine: reportType === "work" ? engine : undefined,
                 order_group: reportType === "work" ? orderGroup : undefined,
                 order_person: reportType === "education" ? useWorkReportStore.getState().instructor : orderPerson,
-                location: resolvedLocation || undefined,
+                location: resolvedLocation,
                 vehicle: reportType === "work" ? (resolvedVehicle || undefined) : undefined,
                 subject,
                 workers,
@@ -505,7 +500,7 @@ export default function ReportEditPage() {
                 }
 
                 const resolvedLocation =
-                    location === "OTHER" ? locationCustom : location;
+                    locations.length > 0 ? locations.join(", ") : undefined;
                 const resolvedVehicle =
                     vehicles.length > 0 ? vehicles.join(", ") : null;
 
@@ -516,7 +511,7 @@ export default function ReportEditPage() {
                     engine: engine || undefined,
                     order_group: orderGroup || undefined,
                     order_person: orderPerson || undefined,
-                    location: resolvedLocation || undefined,
+                    location: resolvedLocation,
                     vehicle: resolvedVehicle || undefined,
                     subject: subject || undefined,
                     workers: workers || [],
@@ -579,7 +574,7 @@ export default function ReportEditPage() {
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,

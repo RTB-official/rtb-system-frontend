@@ -36,8 +36,15 @@ export default function ConsumablesSection() {
             : MATERIAL_UNITS[selectedMaterial] || "";
 
     // 자재 옵션
+    const getMaterialLabel = (name: string) => {
+        if (name === "보루") return "보루/5kg";
+        const unitLabel = MATERIAL_UNITS[name];
+        if (unitLabel && unitLabel !== "EA") return `${name}/${unitLabel}`;
+        return name;
+    };
+
     const materialOptions = [
-        ...MATERIALS.map((m) => ({ value: m, label: m })),
+        ...MATERIALS.map((m) => ({ value: m, label: getMaterialLabel(m) })),
         { value: "OTHER", label: "기타(직접입력)" },
     ];
 
