@@ -265,18 +265,21 @@ function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps
                                 className="w-12 h-12 bg-[#1f2937] rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer hover:opacity-80 hover:ring-2 hover:ring-blue-400 transition-all"
                                 onClick={() => handleThumbnailClick(item)}
                             >
-                                {item.isExisting && item.fileUrl ? (
-                                    // 기존 영수증: Storage URL 사용
+                                {item.isExisting && item.fileUrl && (item.mimeType || "").startsWith("image/") ? (
+                                    // 기존 파일이 이미지일 때만 썸네일 표시
                                     <img
                                         src={item.fileUrl}
                                         alt={item.originalName || "영수증"}
                                         className="w-full h-full object-cover"
                                         onError={(e) => {
-                                            console.error("Image load error:", item.fileUrl);
-                                            // 이미지 로드 실패 시 대체 표시
-                                            e.currentTarget.style.display = 'none';
+                                            e.currentTarget.style.display = "none";
                                         }}
                                     />
+                                ) : item.isExisting && item.fileUrl ? (
+                                    // PDF 등 이미지가 아닌 기존 파일
+                                    <span className="text-white text-[10px] font-bold">
+                                        PDF
+                                    </span>
                                 ) : item.preview ? (
                                     // 새로 업로드한 이미지 파일
                                     <img

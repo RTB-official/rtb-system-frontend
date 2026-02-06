@@ -27,6 +27,7 @@ import WorkloadLegend from "../../components/common/WorkloadLegend";
 export default function ReportCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const navigate = useNavigate();
+    const isMobile = useIsMobile();
     const { showError, showSuccess } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
 

@@ -26,6 +26,9 @@ interface TableProps<T = any> {
     emptyText?: string;
     className?: string;
     footer?: React.ReactNode;
+    hideRowBorders?: boolean;
+    hideHeaderBorder?: boolean;
+    outerBorder?: boolean;
     pagination?: {
         currentPage: number;
         totalPages: number;
@@ -44,6 +47,9 @@ export default function Table<T = any>({
     emptyText = "데이터가 없습니다.",
     className = "",
     footer,
+    hideRowBorders = false,
+    hideHeaderBorder = false,
+    outerBorder = true,
     pagination,
 }: TableProps<T>) {
     const getRowKey = (row: T, index: number): string | number => {
@@ -61,12 +67,16 @@ export default function Table<T = any>({
     return (
         <div className="flex flex-col">
             <div
-                className={`overflow-auto border border-gray-200 rounded-2xl w-full`}
+                className={`overflow-auto w-full ${outerBorder ? "border border-gray-200 rounded-2xl" : ""}`}
             >
                 <table
                     className={`w-full text-[14px] text-gray-900 ${className}`}
                 >
-                    <thead className="bg-gray-100 border-b border-gray-200">
+                    <thead
+                        className={`bg-gray-100 ${
+                            hideHeaderBorder ? "" : "border-b border-gray-200"
+                        }`}
+                    >
                         <tr>
                             {columns.map((column) => (
                                 <th
@@ -111,7 +121,7 @@ export default function Table<T = any>({
                                     <React.Fragment key={key}>
                                         <tr
                                             className={`${
-                                                isLastRow
+                                                isLastRow || hideRowBorders
                                                     ? ""
                                                     : "border-b border-gray-200"
                                             } bg-white hover:bg-blue-50 transition-colors ${

@@ -710,15 +710,23 @@ const personChunks = useMemo(() => {
                         </h3>
                         </div>
 
-                    {/* ✅ 4명 단위로 표 여러 개 */}
-                    <div className="flex flex-col gap-6" style={{ width: "100%" }}>
-                        {personChunks.map((chunkPersons, chunkIdx) => (
+                    {/* ✅ 3명 단위로 표 여러 개. 1명=1/3폭, 2명=2/3폭, 3명=풀폭 */}
+                    <div className="flex flex-col gap-3 w-full">
+                        {personChunks.map((chunkPersons, chunkIdx) => {
+                            const DATE_COL_PX = 56;
+                            const widthStyle =
+                                chunkPersons.length === 1
+                                    ? { width: `calc(${DATE_COL_PX}px + (100% - ${DATE_COL_PX}px) * 0.333333)` }
+                                    : chunkPersons.length === 2
+                                      ? { width: `calc(${DATE_COL_PX}px + (100% - ${DATE_COL_PX}px) * 0.666667)` }
+                                      : { width: "100%" };
+                            return (
                             <div
-                            key={`person-chunk-${chunkIdx}`}
-                            className="overflow-x-auto rounded-xl border border-gray-300 w-fit max-w-full"
-                        >
-
-<table className="w-full text-[13px] border-collapse" style={{ width: "100%" }}>
+                                key={`person-chunk-${chunkIdx}`}
+                                className="rounded-xl border border-gray-300 overflow-hidden"
+                                style={widthStyle}
+                            >
+                                <table className="w-full text-[13px] border-collapse table-fixed">
                                     <thead>
                                         {/* 1줄: 날짜 + 사람(3칸 합치기) */}
                                         <tr className="bg-white">
@@ -736,7 +744,7 @@ const personChunks = useMemo(() => {
                                             <th
                                                 key={person}
                                                 colSpan={showWait ? (showWorkTimeRange ? 4 : 3) : (showWorkTimeRange ? 3 : 2)}
-                                                className={`px-3 py-2 text-center border-b border-gray-300 min-w-[280px] bg-white ${
+                                                className={`px-3 py-2 text-center border-b border-gray-300 bg-white ${
                                                     idx > 0 ? "border-l border-l-gray-300" : ""
                                                 }`}
                                             >
@@ -943,7 +951,8 @@ const personChunks = useMemo(() => {
                                     </tfoot>
                                 </table>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}

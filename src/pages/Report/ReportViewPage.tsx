@@ -757,6 +757,9 @@ export default function ReportViewPage() {
                                         rowKey={(row: any) => row.id ?? `${row.date || "date"}-${row.type || "type"}`}
                                         rowClassName={(row: any) => getExpenseTypeRowClass(row.type)}
                                         className="border-collapse"
+                                        hideRowBorders
+                                        hideHeaderBorder
+                                        outerBorder={false}
                                         emptyText="등록된 경비 내역이 없습니다."
                                         footer={
                                             <tr>
