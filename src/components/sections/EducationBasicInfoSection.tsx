@@ -8,7 +8,7 @@ import {
     useWorkReportStore,
     LOCATIONS,
 } from "../../store/workReportStore";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 const EDUCATION_LOCATION_BLACKLIST = [
     "PNC",
@@ -41,6 +41,8 @@ export default function EducationBasicInfoSection() {
     ];
 
     const [selectedLocation, setSelectedLocation] = useState("");
+    const [isAddingLocation, setIsAddingLocation] = useState(false);
+    const isAddingLocationRef = useRef(false);
 
     const handleSelectLocation = (value: string) => {
         setSelectedLocation(value);
@@ -51,11 +53,16 @@ export default function EducationBasicInfoSection() {
     };
 
     const handleAddCustomLocation = () => {
+        if (isAddingLocationRef.current) return;
         const next = locationCustom.trim();
         if (!next) return;
+        isAddingLocationRef.current = true;
+        setIsAddingLocation(true);
         addLocation(next);
         setLocationCustom("");
         setSelectedLocation("");
+        isAddingLocationRef.current = false;
+        setIsAddingLocation(false);
     };
 
     const handleCustomKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -102,6 +109,7 @@ export default function EducationBasicInfoSection() {
                                 variant="secondary"
                                 size="md"
                                 onClick={handleAddCustomLocation}
+                                loading={isAddingLocation}
                             >
                                 추가
                             </Button>

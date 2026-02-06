@@ -1,5 +1,5 @@
 //expenseSection.tsx
-import { useState, useMemo } from "react";
+import { useRef, useState, useMemo } from "react";
 import SectionCard from "../ui/SectionCard";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
@@ -35,6 +35,8 @@ export default function ExpenseSection() {
     const [typeCustom, setTypeCustom] = useState("");
     const [detail, setDetail] = useState("");
     const [amount, setAmount] = useState("");
+    const [isSaving, setIsSaving] = useState(false);
+    const isSavingRef = useRef(false);
 
     // 삭제 확인 상태
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -79,6 +81,7 @@ export default function ExpenseSection() {
     };
 
     const handleAddExpense = () => {
+        if (isSavingRef.current) return;
         const finalDate = date || entryDates[0] || "";
         const finalType = type === "기타" && typeCustom ? typeCustom : type;
 
@@ -103,6 +106,8 @@ export default function ExpenseSection() {
         }
 
         setErrors({});
+        isSavingRef.current = true;
+        setIsSaving(true);
 
         if (editingExpenseId) {
             updateExpense(editingExpenseId, {
@@ -125,6 +130,9 @@ export default function ExpenseSection() {
         setTypeCustom("");
         setDetail("");
         setAmount("");
+
+        isSavingRef.current = false;
+        setIsSaving(false);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -318,6 +326,7 @@ export default function ExpenseSection() {
                             variant="primary"
                             size="lg"
                             fullWidth
+                            loading={isSaving}
                         >
                             {editingExpenseId ? "수정 저장" : "추가"}
                         </Button>

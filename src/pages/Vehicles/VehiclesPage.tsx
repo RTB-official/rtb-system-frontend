@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
@@ -115,6 +115,8 @@ export default function VehiclesPage() {
     const [sortKey, setSortKey] = useState<SortKey>("type");
     const [sortDir, setSortDir] = useState<SortDir>("asc");
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const isSavingRef = useRef(false);
 
     const sortedVehicles = useMemo(() => {
         const next = [...vehicles];
@@ -244,11 +246,14 @@ export default function VehiclesPage() {
     }, [canManage]);
 
     const handleSaveEdit = async () => {
+        if (isSavingRef.current) return;
         if (!editForm) return;
         if (!editForm.type.trim() || !editForm.plate.trim()) {
             showError("차종과 차량번호는 필수입니다.");
             return;
         }
+        isSavingRef.current = true;
+        setIsSaving(true);
         try {
             let nextForm = { ...editForm };
             if (registrationFile) {
@@ -292,6 +297,9 @@ export default function VehiclesPage() {
         } catch (error: any) {
             console.error("차량 저장 실패:", error?.message || error);
             showError("차량 저장에 실패했습니다.");
+        } finally {
+            isSavingRef.current = false;
+            setIsSaving(false);
         }
     };
 
@@ -660,6 +668,7 @@ export default function VehiclesPage() {
                                 size="lg"
                                 fullWidth
                                 onClick={handleSaveEdit}
+                                loading={isSaving}
                             >
                                 {editMode === "create" ? "추가" : "저장"}
                             </Button>

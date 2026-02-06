@@ -76,6 +76,9 @@ export default function WorkloadPage() {
 
     // ✅ 차트에서 현재 호버(툴팁) 중인 이름
     const [hoveredName, setHoveredName] = useState<string | null>(null);
+    const hoverRafRef = useRef<number | null>(null);
+    const pendingHoverRef = useRef<string | null>(null);
+    const lastHoverRef = useRef<string | null>(null);
 
     // ✅ 막대(스택 어느 구간이든) 클릭하면 해당 인원 선택 + 저장된 사유 로딩
     const handleBarClick = useCallback(
@@ -94,8 +97,19 @@ export default function WorkloadPage() {
         // ✅ 막대 위 빈공간에서도 activeLabel이 들어오는 경우가 많음
         const nameFromLabel = state?.activeLabel ?? null;
         const nameFromPayload = state?.activePayload?.[0]?.payload?.name ?? null;
+        const nextName = nameFromLabel ?? nameFromPayload;
 
-        setHoveredName(nameFromLabel ?? nameFromPayload);
+        if (lastHoverRef.current === nextName) return;
+        pendingHoverRef.current = nextName;
+
+        if (hoverRafRef.current !== null) return;
+        hoverRafRef.current = requestAnimationFrame(() => {
+            hoverRafRef.current = null;
+            const pending = pendingHoverRef.current ?? null;
+            if (lastHoverRef.current === pending) return;
+            lastHoverRef.current = pending;
+            setHoveredName(pending);
+        });
     }, []);
 
     // ✅ 막대/빈공간 포함(해당 X구간) 클릭 시 사유 열기
@@ -239,6 +253,7 @@ export default function WorkloadPage() {
     >(new Map());
     const [lastMonthChartData, setLastMonthChartData] = useState<WorkloadChartData[]>([]);
     const [showLastMonth, setShowLastMonth] = useState(false);
+    const showLastMonthRef = useRef(showLastMonth);
     const { chartContainerRef, chartSize } = useChartSize(chartData.length);
     const selectedYearNum = useMemo(
         () => parseInt(selectedYear.replace("년", "")),
@@ -248,6 +263,9 @@ export default function WorkloadPage() {
         () => parseInt(selectedMonth.replace("월", "")),
         [selectedMonth]
     );
+    useEffect(() => {
+        showLastMonthRef.current = showLastMonth;
+    }, [showLastMonth]);
 
 
     // ✅ 사유가 작성된 사람(name) Set (개인/공무팀 둘 중 하나라도 있으면)
@@ -339,17 +357,109 @@ export default function WorkloadPage() {
         [isStaff, currentUserId, navigate]
     );
 
+    const loadRequestIdRef = useRef(0);
+    const lastMonthKeyRef = useRef<string | null>(null);
+
     // 데이터 로드
     useEffect(() => {
         if (isStaff) return; // ✅ staff는 목록 화면 로딩 자체를 하지 않음
 
+        let cancelled = false;
+        const requestId = ++loadRequestIdRef.current;
+
+        const yearNum = selectedYearNum;
+        const monthNum = selectedMonthNum;
+
+        const loadReasons = async () => {
+            try {
+                const { data: reasonRows, error: reasonErr } = await supabase
+                    .from("workload_reasons")
+                    .select("person_name, personal_reason, gov_reason")
+                    .eq("year", yearNum)
+                    .eq("month", monthNum);
+
+                if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+                if (!reasonErr && reasonRows) {
+                    const personalMap: Record<string, string> = {};
+                    const govMap: Record<string, string> = {};
+
+                    reasonRows.forEach((r: any) => {
+                        if (r?.person_name) {
+                            personalMap[r.person_name] = r.personal_reason ?? "";
+                            govMap[r.person_name] = r.gov_reason ?? "";
+                        }
+                    });
+
+                    setReasonByName(personalMap);
+                    setReasonGovByName(govMap);
+                }
+            } catch {
+                // 무시
+            }
+        };
+
+        const loadProfileMap = async (rows: WorkloadTableRow[]) => {
+            const names = rows.map((r) => r.name);
+            if (names.length === 0) {
+                if (!cancelled && loadRequestIdRef.current === requestId) {
+                    setProfileMap(new Map());
+                }
+                return;
+            }
+
+            const { data: profileRows } = await supabase
+                .from("profiles")
+                .select("name, email, position")
+                .in("name", names);
+
+            if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+            const map = new Map<string, { email: string | null; position: string | null }>();
+            (profileRows || []).forEach((p: { name?: string; email?: string | null; position?: string | null }) => {
+                if (p.name) map.set(p.name, { email: p.email ?? null, position: p.position ?? null });
+            });
+            setProfileMap(map);
+        };
+
+        const loadLastMonth = async (currentChart: WorkloadChartData[]) => {
+            let prevYear = yearNum;
+            let prevMonth = monthNum - 1;
+            if (prevMonth === 0) {
+                prevMonth = 12;
+                prevYear = yearNum - 1;
+            }
+
+            const [prevEntries, prevProfilesResult] = await Promise.allSettled([
+                getWorkloadData({ year: prevYear, month: prevMonth }),
+                getWorkloadTargetProfiles(),
+            ]);
+
+            if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+            if (prevEntries.status === "fulfilled") {
+                let prevProfiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                if (prevProfilesResult.status === "fulfilled") {
+                    prevProfiles = prevProfilesResult.value;
+                }
+
+                const prevSummaries = aggregatePersonWorkload(prevEntries.value, prevProfiles);
+                const prevChart = generateChartData(prevSummaries);
+                const prevMap = new Map(prevChart.map((d) => [d.name, d]));
+                const alignedPrev = currentChart.map((d) => {
+                    const found = prevMap.get(d.name);
+                    return found ?? { name: d.name, 작업: 0, 이동: 0, 대기: 0 };
+                });
+                setLastMonthChartData(alignedPrev);
+            } else {
+                setLastMonthChartData([]);
+            }
+        };
+
         const loadData = async () => {
             setLoading(true);
             try {
-                const yearNum = selectedYearNum;
-                const monthNum = selectedMonthNum;
-
-                // ✅ API 호출 병렬 처리로 성능 개선
+                // ✅ API 호출 병렬 처리
                 const [entries, profilesResult] = await Promise.allSettled([
                     getWorkloadData({
                         year: yearNum,
@@ -358,28 +468,17 @@ export default function WorkloadPage() {
                     getWorkloadTargetProfiles(),
                 ]);
 
-                // entries 처리
                 if (entries.status === "rejected") {
-                    // 워크로드 데이터 로드 실패
                     throw entries.reason;
                 }
 
-                // profiles 처리 (실패해도 워크로드는 계속 표시)
                 let profiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
                 if (profilesResult.status === "fulfilled") {
                     profiles = profilesResult.value;
-                } else {
-                    // 워크로드 대상자(profiles) 조회 실패 - fallback 처리
-                    profiles = []; // ✅ 대상자 필터 없이 전체 집계
                 }
 
-                // ✅ 인원별 집계(전체: 테이블용 그대로 유지)
-                const summaries = aggregatePersonWorkload(
-                    entries.value,
-                    profiles
-                );
+                const summaries = aggregatePersonWorkload(entries.value, profiles);
 
-                // ✅ 차트는 "공사팀"만 포함 (공무팀 전원 제외)
                 const getTeamText = (p: any) =>
                     String(
                         p?.team ??
@@ -398,109 +497,89 @@ export default function WorkloadPage() {
                     return isConstruction && !isCivil;
                 });
 
-                const chartSummaries = aggregatePersonWorkload(
-                    entries.value,
-                    chartProfiles
-                );
-
-                // ✅ 차트/테이블 데이터 생성
+                const chartSummaries = aggregatePersonWorkload(entries.value, chartProfiles);
                 const newChartData = generateChartData(chartSummaries);
                 const newTableData = generateTableData(summaries);
 
-                // ✅ 해당 월(year/month) 사유 로드
-                try {
-                    const { data: reasonRows, error: reasonErr } = await supabase
-                        .from("workload_reasons")
-                        .select("person_name, personal_reason, gov_reason")
-                        .eq("year", yearNum)
-                        .eq("month", monthNum);
+                if (cancelled || loadRequestIdRef.current !== requestId) return;
 
-                    if (!reasonErr && reasonRows) {
-                        const personalMap: Record<string, string> = {};
-                        const govMap: Record<string, string> = {};
-
-                        reasonRows.forEach((r: any) => {
-                            if (r?.person_name) {
-                                personalMap[r.person_name] = r.personal_reason ?? "";
-                                govMap[r.person_name] = r.gov_reason ?? "";
-                            }
-                        });
-
-                        setReasonByName(personalMap);
-                        setReasonGovByName(govMap);
-                    } else {
-                        // 로드 실패 시 기존값 유지/비움 처리 원하면 여기서 처리
-                    }
-                } catch {
-                    // 무시 (워크로드는 계속 표시)
-                }
-
-
-                // ✅ 지난달 데이터 (처음부터 미리 로딩)
-                let prevYear = yearNum;
-                let prevMonth = monthNum - 1;
-                if (prevMonth === 0) {
-                    prevMonth = 12;
-                    prevYear = yearNum - 1;
-                }
-
-                const [prevEntries, prevProfilesResult] = await Promise.allSettled([
-                    getWorkloadData({ year: prevYear, month: prevMonth }),
-                    getWorkloadTargetProfiles(),
-                ]);
-
-                if (prevEntries.status === "fulfilled") {
-                    let prevProfiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
-                    if (prevProfilesResult.status === "fulfilled") {
-                        prevProfiles = prevProfilesResult.value;
-                    }
-
-                    const prevSummaries = aggregatePersonWorkload(prevEntries.value, prevProfiles);
-                    const prevChart = generateChartData(prevSummaries);
-
-                    // ✅ X축(이름) 순서 맞추기: 이번달 차트 순서 기준으로 지난달을 정렬/누락은 0으로 채움
-                    const prevMap = new Map(prevChart.map((d) => [d.name, d]));
-                    const alignedPrev = newChartData.map((d) => {
-                        const found = prevMap.get(d.name);
-                        return found ?? { name: d.name, 작업: 0, 이동: 0, 대기: 0 };
-                    });
-
-                    setLastMonthChartData(alignedPrev);
-                } else {
-                    setLastMonthChartData([]);
-                }
-
-
-                // 즉시 상태 업데이트 (setTimeout 제거로 로딩 속도 개선)
                 setChartData(newChartData);
                 setTableData(newTableData);
                 setCurrentPage(1);
-
-                // 테이블 아바타용: 이름별 이메일·직급 조회
-                const names = newTableData.map((r) => r.name);
-                if (names.length > 0) {
-                    const { data: profileRows } = await supabase
-                        .from("profiles")
-                        .select("name, email, position")
-                        .in("name", names);
-                    const map = new Map<string, { email: string | null; position: string | null }>();
-                    (profileRows || []).forEach((p: { name?: string; email?: string | null; position?: string | null }) => {
-                        if (p.name) map.set(p.name, { email: p.email ?? null, position: p.position ?? null });
-                    });
-                    setProfileMap(map);
-                } else {
-                    setProfileMap(new Map());
-                }
-
-            } catch (error) {
-                // 워크로드 데이터 로드 실패
-            } finally {
                 setLoading(false);
+
+                loadReasons();
+                loadProfileMap(newTableData);
+
+                const key = `${yearNum}-${monthNum}`;
+                if (showLastMonthRef.current && lastMonthKeyRef.current !== key) {
+                    lastMonthKeyRef.current = key;
+                    loadLastMonth(newChartData);
+                }
+            } catch {
+                if (!cancelled && loadRequestIdRef.current === requestId) {
+                    setLoading(false);
+                }
             }
         };
 
         loadData();
-    }, [selectedYear, selectedMonth, isStaff]);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedYear, selectedMonth, selectedYearNum, selectedMonthNum, isStaff]);
+
+    useEffect(() => {
+        if (!showLastMonth) return;
+        if (loading) return;
+        const yearNum = selectedYearNum;
+        const monthNum = selectedMonthNum;
+        const key = `${yearNum}-${monthNum}`;
+        if (lastMonthKeyRef.current === key) return;
+        lastMonthKeyRef.current = key;
+        const requestId = ++loadRequestIdRef.current;
+        let cancelled = false;
+
+        const loadLastMonth = async () => {
+            let prevYear = yearNum;
+            let prevMonth = monthNum - 1;
+            if (prevMonth === 0) {
+                prevMonth = 12;
+                prevYear = yearNum - 1;
+            }
+
+            const [prevEntries, prevProfilesResult] = await Promise.allSettled([
+                getWorkloadData({ year: prevYear, month: prevMonth }),
+                getWorkloadTargetProfiles(),
+            ]);
+
+            if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+            if (prevEntries.status === "fulfilled") {
+                let prevProfiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                if (prevProfilesResult.status === "fulfilled") {
+                    prevProfiles = prevProfilesResult.value;
+                }
+                const prevSummaries = aggregatePersonWorkload(prevEntries.value, prevProfiles);
+                const prevChart = generateChartData(prevSummaries);
+                const prevMap = new Map(prevChart.map((d) => [d.name, d]));
+                const alignedPrev = chartData.map((d) => {
+                    const found = prevMap.get(d.name);
+                    return found ?? { name: d.name, 작업: 0, 이동: 0, 대기: 0 };
+                });
+                setLastMonthChartData(alignedPrev);
+            } else {
+                setLastMonthChartData([]);
+            }
+        };
+
+        loadLastMonth();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [showLastMonth, selectedYearNum, selectedMonthNum, chartData, loading]);
 
 
 
@@ -615,7 +694,15 @@ export default function WorkloadPage() {
                                 showLastMonth={showLastMonth}
                                 onToggleLastMonth={() => setShowLastMonth((v) => !v)}
                                 onChartMouseMove={handleChartMouseMove}
-                                onChartMouseLeave={() => setHoveredName(null)}
+                                onChartMouseLeave={() => {
+                                    if (hoverRafRef.current !== null) {
+                                        cancelAnimationFrame(hoverRafRef.current);
+                                        hoverRafRef.current = null;
+                                    }
+                                    pendingHoverRef.current = null;
+                                    lastHoverRef.current = null;
+                                    setHoveredName(null);
+                                }}
                                 onChartClick={handleChartClick}
                                 onBarClick={handleBarClick}
                                 CustomXAxisTick={CustomXAxisTick}

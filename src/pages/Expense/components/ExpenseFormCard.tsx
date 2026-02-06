@@ -32,6 +32,8 @@ export default function ExpenseFormCard({
         type?: string;
         amount?: string;
     }>({});
+    const [isAdding, setIsAdding] = React.useState(false);
+    const isAddingRef = React.useRef(false);
 
     const canAddExpense =
         (date || "").trim() !== "" &&
@@ -40,7 +42,8 @@ export default function ExpenseFormCard({
         !isNaN(Number(amount)) &&
         Number(amount) > 0;
 
-    const handleAdd = () => {
+    const handleAdd = async () => {
+        if (isAddingRef.current) return;
         const newErrors: typeof errors = {};
 
         if (!date || date.trim() === "") {
@@ -59,16 +62,22 @@ export default function ExpenseFormCard({
         }
 
         setErrors({});
-        if (onAdd) {
-            onAdd({
-                id: Date.now(),
-                date,
-                type,
-                amount,
-                detail,
-                img: preview,
-                file: selectedFile, // 파일 객체 전달
-            });
+        isAddingRef.current = true;
+        setIsAdding(true);
+        try {
+            if (onAdd) {
+                await Promise.resolve(
+                    onAdd({
+                        id: Date.now(),
+                        date,
+                        type,
+                        amount,
+                        detail,
+                        img: preview,
+                        file: selectedFile, // 파일 객체 전달
+                    })
+                );
+            }
             // Reset form
             setDate(initialDate || "");
             setType("");
@@ -79,6 +88,9 @@ export default function ExpenseFormCard({
             if (fileRef.current) {
                 fileRef.current.value = "";
             }
+        } finally {
+            isAddingRef.current = false;
+            setIsAdding(false);
         }
     };
 
@@ -223,6 +235,7 @@ export default function ExpenseFormCard({
                     fullWidth
                     onClick={handleAdd}
                     disabled={!canAddExpense}
+                    loading={isAdding}
                 >
                     추가
                 </Button>

@@ -545,7 +545,7 @@ export default function EmailNotificationPage() {
                   </div>
 
                   <div className="mt-5 flex justify-end">
-                    <Button variant="primary" size="lg" onClick={handleAdd} disabled={saving}>
+                    <Button variant="primary" size="lg" onClick={handleAdd} disabled={saving} loading={saving}>
                       추가
                     </Button>
                   </div>

@@ -6,6 +6,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     icon?: React.ReactNode;
     fullWidth?: boolean;
     width?: string | number; // 예: "50%", "200px", 50 (숫자면 %로 처리)
+    loading?: boolean;
 }
 
 export default function Button({
@@ -14,6 +15,7 @@ export default function Button({
     icon,
     fullWidth = false,
     width,
+    loading = false,
     className = "",
     children,
     style,
@@ -60,10 +62,16 @@ export default function Button({
         <button
             className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyle} ${className}`}
             style={buttonStyle}
-            disabled={variant === "disabled" || disabledProp}
+            disabled={variant === "disabled" || disabledProp || loading}
+            aria-busy={loading || undefined}
             {...props}
         >
-            {icon && <span className={children ? "mr-1" : ""}>{icon}</span>}
+            {loading && (
+                <span className="mr-1 inline-flex items-center">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                </span>
+            )}
+            {icon && !loading && <span className={children ? "mr-1" : ""}>{icon}</span>}
             {children}
         </button>
     );

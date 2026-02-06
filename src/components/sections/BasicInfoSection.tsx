@@ -4,7 +4,7 @@ import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
 import Button from "../common/Button";
 import RequiredIndicator from "../ui/RequiredIndicator";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IconClose } from "../icons/Icons";
 import {
     useWorkReportStore,
@@ -44,6 +44,8 @@ export default function BasicInfoSection() {
     const [customOrderPerson, setCustomOrderPerson] = useState("");
     const [selectedOrderPerson, setSelectedOrderPerson] = useState("");
     const customValue = "__CUSTOM__";
+    const [isAddingLocation, setIsAddingLocation] = useState(false);
+    const isAddingLocationRef = useRef(false);
 
     const orderPersonOptions = useMemo(() => {
         if (!orderGroup || orderGroup === "OTHER") return [];
@@ -93,11 +95,16 @@ export default function BasicInfoSection() {
     };
 
     const handleAddCustomLocation = () => {
+        if (isAddingLocationRef.current) return;
         const next = locationCustom.trim();
         if (!next) return;
+        isAddingLocationRef.current = true;
+        setIsAddingLocation(true);
         addLocation(next);
         setLocationCustom("");
         setSelectedLocation("");
+        isAddingLocationRef.current = false;
+        setIsAddingLocation(false);
     };
 
     const handleCustomKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -218,6 +225,7 @@ export default function BasicInfoSection() {
                                     variant="secondary"
                                     size="md"
                                     onClick={handleAddCustomLocation}
+                                    loading={isAddingLocation}
                                 >
                                     추가
                                 </Button>

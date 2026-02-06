@@ -22,6 +22,8 @@ export default function MileageCard({
     const [to, setTo] = React.useState("공장/사무실");
     const [distance, setDistance] = React.useState("");
     const [note, setNote] = React.useState("");
+    const [isAdding, setIsAdding] = React.useState(false);
+    const isAddingRef = React.useRef(false);
 
     const chips = ["자택", "공장/사무실", "출장지"];
     const costPerKm = 250;
@@ -38,20 +40,30 @@ export default function MileageCard({
         (distance || "").trim() !== "" &&
         Number(distance) > 0;
 
-    const handleAdd = () => {
+    const handleAdd = async () => {
         if (!canAddMileage || !onAdd) return;
-        onAdd({
-            id: Date.now(),
-            date,
-            from,
-            to,
-            distance,
-            note,
-            cost,
-        });
-        // Reset form
-        setDistance("");
-        setNote("");
+        if (isAddingRef.current) return;
+        isAddingRef.current = true;
+        setIsAdding(true);
+        try {
+            await Promise.resolve(
+                onAdd({
+                    id: Date.now(),
+                    date,
+                    from,
+                    to,
+                    distance,
+                    note,
+                    cost,
+                })
+            );
+            // Reset form
+            setDistance("");
+            setNote("");
+        } finally {
+            isAddingRef.current = false;
+            setIsAdding(false);
+        }
     };
 
     return (
@@ -189,6 +201,7 @@ export default function MileageCard({
                     fullWidth
                     onClick={handleAdd}
                     disabled={!canAddMileage}
+                    loading={isAdding}
                 >
                     추가
                 </Button>

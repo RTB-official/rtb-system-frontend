@@ -236,6 +236,7 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                             size="md"
                             onClick={handleAddWorker}
                             className="w-full sm:w-auto md:h-12 md:px-4 md:text-[16px] md:rounded-[10px]"
+                            loading={isAdding}
                         >
                             추가
                         </Button>

@@ -245,6 +245,8 @@ export default function WorkLogSection() {
 
     // 경유지 상태
     const [hasDetour, setHasDetour] = useState(false);
+    const [isSavingEntry, setIsSavingEntry] = useState(false);
+    const isSavingEntryRef = useRef(false);
 
     // 삭제 확인 모달
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -420,6 +422,98 @@ export default function WorkLogSection() {
                 const normalizePersonsKey = (persons: string[]) =>
                     [...(persons || [])].map((p) => String(p).trim()).filter(Boolean).sort().join("|");
         
+
+    const handleSaveEntry = () => {
+        if (isSavingEntryRef.current) return;
+
+        const newErrors: typeof errors = {};
+        if (!currentEntry.dateFrom) {
+            newErrors.dateFrom = "시작 날짜를 선택해주세요";
+        }
+        if (!currentEntry.dateTo) {
+            newErrors.dateTo = "종료 날짜를 선택해주세요";
+        }
+        if (!currentEntry.timeFrom) {
+            newErrors.timeFrom = "시작 시간을 선택해주세요";
+        }
+        if (!currentEntry.timeTo) {
+            newErrors.timeTo = "종료 시간을 선택해주세요";
+        }
+        if (!currentEntry.descType) {
+            newErrors.descType = "작업 분류를 선택해주세요";
+        }
+        if (!currentEntry.details) {
+            newErrors.details = "상세 내용을 입력해주세요";
+        }
+        if (currentEntry.descType === "작업") {
+            if (!currentEntry.persons || currentEntry.persons.length === 0) {
+                newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
+            }
+        } else if (currentEntry.descType === "이동") {
+            if (!currentEntry.moveFrom) {
+                newErrors.details = "From을 선택해주세요";
+            }
+            if (!currentEntry.moveTo) {
+                newErrors.details = "To를 선택해주세요";
+            }
+        }
+
+        if (currentEntry.dateFrom && currentEntry.dateTo) {
+            const start = new Date(`${currentEntry.dateFrom}T${currentEntry.timeFrom || "00:00"}:00`);
+            const end = new Date(`${currentEntry.dateTo}T${currentEntry.timeTo || "00:00"}:00`);
+
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end <= start) {
+                const msg = "종료 날짜 종료 시간을 확인해주세요";
+                newErrors.dateTo = msg;
+                newErrors.timeTo = msg;
+            }
+        }
+        if (currentEntryPersons.length === 0) {
+            newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            if (formRef.current) {
+                formRef.current.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                });
+            }
+            return;
+        }
+
+        const currentPersonsKey = normalizePersonsKey(currentEntryPersons);
+        const isDuplicate = workLogEntries.some((e) => {
+            if (editingEntryId && e.id === editingEntryId) return false;
+
+            const ePersonsKey = normalizePersonsKey((e as any).persons || []);
+
+            return (
+                e.dateFrom === currentEntry.dateFrom &&
+                (e.timeFrom || "") === (currentEntry.timeFrom || "") &&
+                e.dateTo === currentEntry.dateTo &&
+                (e.timeTo || "") === (currentEntry.timeTo || "") &&
+                ePersonsKey === currentPersonsKey
+            );
+        });
+
+        if (isDuplicate) {
+            showError("같은 날짜/시간/인원의 일지가 이미 존재합니다. (중복 저장 불가)");
+            return;
+        }
+
+        setErrors({});
+        isSavingEntryRef.current = true;
+        setIsSavingEntry(true);
+        try {
+            saveWorkLogEntry(showError);
+            setHasDetour(false);
+        } finally {
+            isSavingEntryRef.current = false;
+            setIsSavingEntry(false);
+        }
+    };
 
     return (
         <SectionCard title={reportType === "education" ? "교육 일지" : "출장 업무 일지"}>
@@ -966,94 +1060,11 @@ export default function WorkLogSection() {
                 {/* 저장 버튼 */}
                 <div className="flex gap-2">
                     <Button
-                        onClick={() => {
-                            // 유효성 검사
-                            const newErrors: typeof errors = {};
-                            if (!currentEntry.dateFrom) {
-                                newErrors.dateFrom = "시작 날짜를 선택해주세요";
-                            }
-                            if (!currentEntry.timeFrom || !timeFromHour) {
-                                newErrors.timeFrom = "시작 시간을 선택해주세요";
-                            }
-                            if (!currentEntry.dateTo) {
-                                newErrors.dateTo = "종료 날짜를 선택해주세요";
-                            }
-                            if (!currentEntry.timeTo || !timeToHour) {
-                                newErrors.timeTo = "종료 시간을 선택해주세요";
-                            }
-                            if (!currentEntry.descType) {
-                                newErrors.descType = "유형을 선택해주세요";
-                            }
-
-                            if (!currentEntry.details || !currentEntry.details.trim()) {
-                                newErrors.details = "상세 내용을 입력해주세요";
-                            }
-                            // ✅ 종료가 시작보다 과거(또는 동일)인 경우 막기
-                            // (종료 날짜/종료 시간/분 선택에 빨간 테두리 + 안내 문구)
-                            if (
-                                currentEntry.dateFrom &&
-                                currentEntry.timeFrom &&
-                                currentEntry.dateTo &&
-                                currentEntry.timeTo
-                            ) {
-                                const start = new Date(`${currentEntry.dateFrom}T${currentEntry.timeFrom}:00`);
-                                const end = new Date(`${currentEntry.dateTo}T${currentEntry.timeTo}:00`);
-
-                                if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end <= start) {
-                                    const msg = "종료 날짜 종료 시간을 확인해주세요";
-                                    newErrors.dateTo = msg;
-                                    newErrors.timeTo = msg;
-                                }
-                            }
-                            if (currentEntryPersons.length === 0) {
-                                newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
-                            }
-
-                            if (Object.keys(newErrors).length > 0) {
-                                setErrors(newErrors);
-                                // 에러가 있는 첫 번째 필드로 스크롤
-                                if (formRef.current) {
-                                    formRef.current.scrollIntoView({
-                                        behavior: "smooth",
-                                        block: "start",
-                                    });
-                                }
-                                return;
-                            }
-
-
-                               // ✅ [추가] 같은 날짜/시간/같은 인원(순서 무관) 중복 저장 방지
-                               const currentPersonsKey = normalizePersonsKey(currentEntryPersons);
-
-                               const isDuplicate = workLogEntries.some((e) => {
-                                   // 수정 저장 중이면 자기 자신은 제외
-                                   if (editingEntryId && e.id === editingEntryId) return false;
-   
-                                   const ePersonsKey = normalizePersonsKey((e as any).persons || []);
-   
-                                   return (
-                                    e.dateFrom === currentEntry.dateFrom &&
-                                    (e.timeFrom || "") === (currentEntry.timeFrom || "") &&
-                                    e.dateTo === currentEntry.dateTo &&
-                                       (e.timeTo || "") === (currentEntry.timeTo || "") &&
-                                       ePersonsKey === currentPersonsKey
-                                   );
-                               });
-   
-                               if (isDuplicate) {
-                                   showError("같은 날짜/시간/인원의 일지가 이미 존재합니다. (중복 저장 불가)");
-                                   return;
-                               }
-
-                            
-
-                            setErrors({});
-                            saveWorkLogEntry(showError);
-                            setHasDetour(false);
-                        }}
+                        onClick={handleSaveEntry}
                         variant="primary"
                         size="lg"
                         fullWidth
+                        loading={isSavingEntry}
                     >
                         {editingEntryId ? "수정 저장" : "저장"}
                     </Button>

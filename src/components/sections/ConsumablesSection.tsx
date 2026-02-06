@@ -1,5 +1,5 @@
 //consumablesSection.tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 import SectionCard from "../ui/SectionCard";
 import Select from "../common/Select";
 import Chip from "../ui/Chip";
@@ -18,6 +18,8 @@ export default function ConsumablesSection() {
     const [selectedMaterial, setSelectedMaterial] = useState("");
     const [customMaterial, setCustomMaterial] = useState("");
     const [quantity, setQuantity] = useState("1");
+    const [isAdding, setIsAdding] = useState(false);
+    const isAddingRef = useRef(false);
 
     // 에러 상태
     const [errors, setErrors] = useState<{
@@ -63,6 +65,7 @@ export default function ConsumablesSection() {
     };
 
     const handleAdd = () => {
+        if (isAddingRef.current) return;
         // 유효성 검사
         const newErrors: typeof errors = {};
         if (!materialName) {
@@ -79,6 +82,8 @@ export default function ConsumablesSection() {
         }
 
         setErrors({});
+        isAddingRef.current = true;
+        setIsAdding(true);
 
         addMaterial({
             name: materialName,
@@ -89,6 +94,9 @@ export default function ConsumablesSection() {
         setSelectedMaterial("");
         setCustomMaterial("");
         setQuantity("1");
+
+        isAddingRef.current = false;
+        setIsAdding(false);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -189,6 +197,7 @@ export default function ConsumablesSection() {
                     variant="primary"
                     size="lg"
                     fullWidth
+                    loading={isAdding}
                 >
                     추가
                 </Button>
