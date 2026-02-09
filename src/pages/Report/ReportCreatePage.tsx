@@ -257,11 +257,36 @@ export default function ReportCreatePage() {
             const newFiles = uploadedFiles.filter(f => !f.isExisting && f.file);
 
             if (newFiles.length > 0) {
-                await Promise.all(newFiles.map(async (f) => {
-                    if (!f.file) return;
-                    await uploadReceiptFile(f.file, newLog.id, f.category);
+                const uploaded = await Promise.all(newFiles.map(async (f) => {
+                    if (!f.file) return null;
+
+                    const filePath = await uploadReceiptFile(f.file, newLog.id, f.category);
+
+                    // DB insert용 메타
+                    return {
+                        work_log_id: newLog.id,
+                        category: f.category,
+                        storage_bucket: "work-log-recipts",
+                        storage_path: filePath,
+                        original_name: f.file.name,
+                        mime_type: f.file.type || null,
+                        file_size: f.file.size || null,
+                    };
                 }));
+
+                const rows = uploaded.filter(Boolean) as any[];
+
+                if (rows.length > 0) {
+                    const { error: receiptInsertError } = await supabase
+                        .from("work_log_receipt")
+                        .insert(rows);
+
+                    if (receiptInsertError) {
+                        throw new Error(`첨부파일 DB 저장 실패: ${receiptInsertError.message}`);
+                    }
+                }
             }
+
 
             setLastSavedAt(new Date());
             showSuccess(isDraft ? "임시저장 되었습니다." : "보고서가 제출되었습니다.");

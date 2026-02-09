@@ -333,7 +333,7 @@ export async function createWorkLog(
             }));
 
             const { error: receiptsError } = await supabase
-                .from("work_log_receipts")
+                .from("work_log_receipt")
                 .insert(receiptsData);
 
             if (receiptsError) {
@@ -968,7 +968,7 @@ export async function deleteWorkLog(workLogId: number): Promise<void> {
 
         // work_log_receipts
         await supabase
-            .from("work_log_receipts")
+            .from("work_log_receipt")
             .delete()
             .eq("work_log_id", workLogId);
 

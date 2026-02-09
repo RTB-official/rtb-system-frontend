@@ -214,6 +214,7 @@ const descTypeOptionsEducation = [
 // 이동 장소 기본 옵션
 const baseMovePlaces = ["자택", "강동동 공장", "출장지", "숙소"];
 
+
 export default function WorkLogSection() {
     const {
         workers,
@@ -315,10 +316,19 @@ export default function WorkLogSection() {
 
     // 이동 상세내용 자동 생성
     const handleMovePlace = (type: "from" | "to", place: string) => {
+        // ✅ From/To 동일 선택 방지 (예: 자택→자택)
         if (type === "from") {
+            if (currentEntry.moveTo && place === currentEntry.moveTo) {
+                showError("From과 To는 같은 장소로 선택할 수 없습니다.");
+                return;
+            }
             setCurrentEntry({ moveFrom: place });
             updateMoveDetails(place, currentEntry.moveTo, hasDetour);
         } else {
+            if (currentEntry.moveFrom && place === currentEntry.moveFrom) {
+                showError("From과 To는 같은 장소로 선택할 수 없습니다.");
+                return;
+            }
             setCurrentEntry({ moveTo: place });
             updateMoveDetails(currentEntry.moveFrom, place, hasDetour);
         }
@@ -446,7 +456,7 @@ export default function WorkLogSection() {
             newErrors.details = "상세 내용을 입력해주세요";
         }
         if (currentEntry.descType === "작업") {
-            if (!currentEntry.persons || currentEntry.persons.length === 0) {
+            if (currentEntryPersons.length === 0) {
                 newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
             }
         } else if (currentEntry.descType === "이동") {
@@ -468,7 +478,7 @@ export default function WorkLogSection() {
                 newErrors.timeTo = msg;
             }
         }
-        if (currentEntryPersons.length === 0) {
+        if (currentEntry.descType === "작업" && currentEntryPersons.length === 0) {
             newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
         }
 
@@ -504,6 +514,7 @@ export default function WorkLogSection() {
         }
 
         setErrors({});
+        setCurrentEntry({ persons: currentEntryPersons });
         isSavingEntryRef.current = true;
         setIsSavingEntry(true);
         try {
@@ -729,66 +740,143 @@ export default function WorkLogSection() {
                         )}
                     </div>
 
-                    {/* 이동일 때 From/To 선택 */}
-                    {currentEntry.descType === "이동" && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            <div>
-                                <label className="font-medium text-[14px] text-[#101828] mb-2 block">
-                                    From
-                                </label>
-                                <div className="flex flex-wrap gap-2 p-3 border border-dashed border-[#e5e7eb] rounded-lg bg-white">
-                                    {movePlaces.map((place) => (
-                                        <Button
-                                            key={place}
-                                            size="md"
-                                            variant={
-                                                currentEntry.moveFrom === place
-                                                    ? "primary"
-                                                    : "outline"
-                                            }
-                                            onClick={() =>
-                                                handleMovePlace("from", place)
-                                            }
-                                        >
-                                            {place}
-                                        </Button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="font-medium text-[14px] text-[#101828] mb-2 block">
-                                    To
-                                </label>
-                                <div className="flex flex-wrap gap-2 p-3 border border-dashed border-[#e5e7eb] rounded-lg bg-white">
-                                    {movePlaces.map((place) => (
-                                        <Button
-                                            key={place}
-                                            size="md"
-                                            variant={
-                                                currentEntry.moveTo === place
-                                                    ? "primary"
-                                                    : "outline"
-                                            }
-                                            onClick={() =>
-                                                handleMovePlace("to", place)
-                                            }
-                                        >
-                                            {place}
-                                        </Button>
-                                    ))}
-                                    <Button
-                                        size="md"
-                                        variant={
-                                            hasDetour ? "primary" : "outline"
-                                        }
-                                        onClick={handleDetourToggle}
-                                    >
-                                        강동동 공장 경유
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+{/* 이동일 때 From/To 선택 */}
+{currentEntry.descType === "이동" && (() => {
+    const corePlaces = ["자택", "강동동 공장", "숙소"];
+
+    // 선택한 출장지들 (기본 장소/출장지 라벨 제외)
+    const tripPlaces = movePlaces.filter(
+        (place) => place !== "출장지" && !corePlaces.includes(place)
+    );
+
+    const tripGridClass =
+    tripPlaces.length === 1
+        ? "grid grid-cols-1 gap-2"
+        : tripPlaces.length === 2
+        ? "grid grid-cols-2 gap-2"
+        : tripPlaces.length === 4
+        ? "grid grid-cols-4 gap-2"
+        : "grid grid-cols-3 gap-2"; // 3개 기본
+
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
+            {/* ===================== From ===================== */}
+            <div>
+                <label className="font-medium text-[14px] text-[#101828] mb-2 block">
+                    From
+                </label>
+
+                <div className="flex flex-col gap-2 p-3 border border-dashed border-[#e5e7eb] rounded-lg bg-white h-fit">
+                    {/* 1행: 기본 */}
+                    <div className="grid grid-cols-3 gap-2">
+                        {corePlaces.map((place) => (
+                            <Button
+                                key={`from-core-${place}`}
+                                size="md"
+                                className="w-full"
+                                variant={currentEntry.moveFrom === place ? "primary" : "outline"}
+                                disabled={
+                                    (!!currentEntry.moveTo && currentEntry.moveTo === place) ||
+                                    (hasDetour && place === "강동동 공장")
+                                }
+                                onClick={() => handleMovePlace("from", place)}
+                            >
+                                {place}
+                            </Button>
+                        ))}
+                    </div>
+
+                    {/* 2행: 출장지들 */}
+                    <div className={tripGridClass}>
+                        {tripPlaces.map((place) => (
+                            <Button
+                                key={`from-trip-${place}`}
+                                size="md"
+                                className="w-full"
+                                variant={currentEntry.moveFrom === place ? "primary" : "outline"}
+                                disabled={
+                                    (!!currentEntry.moveTo && currentEntry.moveTo === place) ||
+                                    (hasDetour && place === "강동동 공장")
+                                }
+                                onClick={() => handleMovePlace("from", place)}
+                            >
+                                {place}
+                            </Button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* ===================== To ===================== */}
+            <div>
+                <label className="font-medium text-[14px] text-[#101828] mb-2 block">
+                    To
+                </label>
+
+                <div className="flex flex-col gap-2 p-3 border border-dashed border-[#e5e7eb] rounded-lg bg-white h-fit">
+                    {/* 1행: 기본 */}
+                    <div className="grid grid-cols-3 gap-2">
+                        {corePlaces.map((place) => (
+                            <Button
+                                key={`to-core-${place}`}
+                                size="md"
+                                className="w-full"
+                                variant={currentEntry.moveTo === place ? "primary" : "outline"}
+                                disabled={
+                                    (!!currentEntry.moveFrom && currentEntry.moveFrom === place) ||
+                                    (hasDetour && place === "강동동 공장")
+                                }
+                                onClick={() => handleMovePlace("to", place)}
+                            >
+                                {place}
+                            </Button>
+                        ))}
+                    </div>
+
+                    {/* 2행: 강동동 공장 경유 (가로 전체) */}
+                    <div className="grid grid-cols-3 gap-2">
+                    <Button
+                        size="md"
+                        variant="outline"
+                        className={`w-full col-span-3
+                        !bg-sky-50 !text-sky-800 !border-sky-200
+                        hover:!bg-sky-100
+                        ${hasDetour ? "!bg-sky-200 !text-sky-900 !border-sky-300" : ""}
+                        `}
+                        onClick={handleDetourToggle}
+                    >
+                        강동동 공장 경유
+                    </Button>
+                    </div>
+
+                    {/* 3행: 출장지들 */}
+                    <div className={tripGridClass}>
+                        {tripPlaces.map((place) => (
+                            <Button
+                                key={`to-trip-${place}`}
+                                size="md"
+                                className="w-full"
+                                variant={currentEntry.moveTo === place ? "primary" : "outline"}
+                                disabled={
+                                    (!!currentEntry.moveFrom && currentEntry.moveFrom === place) ||
+                                    (hasDetour && place === "강동동 공장")
+                                }
+                                onClick={() => handleMovePlace("to", place)}
+                            >
+                                {place}
+                            </Button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+})()}
+
+
+
+
+
 
                     {/* 상세내용 */}
                     <div className="flex flex-col gap-2">
