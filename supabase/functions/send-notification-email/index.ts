@@ -21,6 +21,7 @@ import { buildNotificationContent } from "./lib/notifications.ts";
 const SKIP_200 = () => new Response("skip", { status: 200, headers: { "Content-Type": "text/plain" } });
 const RESEND_URL = "https://api.resend.com/emails";
 const EMAIL_TIMEOUT_MS = 8000;
+const WORKLOG_THROTTLE_SECONDS = 3;
 
 async function sendResendEmail(resendKey: string, body: Record<string, any>): Promise<boolean> {
   const controller = new AbortController();
@@ -50,6 +51,27 @@ async function sendResendEmail(resendKey: string, body: Record<string, any>): Pr
     return false;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function shouldSendWorkLogEmail(
+  admin: ReturnType<typeof createClient> | null,
+  workLogId?: number
+): Promise<boolean> {
+  if (!admin || !workLogId || !Number.isFinite(workLogId)) return true;
+  try {
+    const { data, error } = await admin.rpc("throttle_work_log_email", {
+      p_work_log_id: workLogId,
+      p_window_seconds: WORKLOG_THROTTLE_SECONDS,
+    });
+    if (error) {
+      console.error("throttle_error", error);
+      return true;
+    }
+    return data === true;
+  } catch (err) {
+    console.error("throttle_exception", err);
+    return true;
   }
 }
 
@@ -145,6 +167,10 @@ serve(async (req) => {
 
       if (batched === true && Array.isArray(events) && events.length > 0 && work_log_id != null) {
         const workLogId = Number(work_log_id);
+        if (!(await shouldSendWorkLogEmail(admin, workLogId))) {
+          console.log("skip_reason", "throttled");
+          return SKIP_200();
+        }
         if (await getWorkLogIsDraft(workLogId)) {
           console.log("skip_reason", "batched_worklog_draft");
           return new Response("skip");
@@ -199,6 +225,17 @@ serve(async (req) => {
       if (skip) {
         console.log("skip_reason", "content_skip");
         return new Response("skip");
+      }
+
+      const workLogId =
+        safeTable === "work_logs"
+          ? Number(recordForContent?.id)
+          : safeTable === "work_log_entries" || safeTable === "work_log_expenses" || safeTable === "work_log_materials"
+          ? Number(recordForContent?.work_log_id)
+          : undefined;
+      if (workLogId && !(await shouldSendWorkLogEmail(admin, workLogId))) {
+        console.log("skip_reason", "throttled");
+        return SKIP_200();
       }
 
       const toFinal = Array.isArray(toList) && toList.length > 0 ? toList : INVOICE_EMAILS;

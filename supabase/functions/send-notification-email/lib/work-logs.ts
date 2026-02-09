@@ -438,6 +438,9 @@ export async function buildWorkLogContent(
     const entryActor = info.author || (await fetchUserName(record.user_id)) || actorName;
     const isDelete = op === "DELETE";
     const isUpdate = op === "UPDATE" || (hasChanges && !isDelete) || updatedDifferent;
+    if (isDelete) {
+      return { subject: "", text: "", html: "", skip: true };
+    }
     let subject: string, summary: string;
     subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
     summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
@@ -490,6 +493,9 @@ export async function buildWorkLogContent(
     const entryActor = info.author || (await fetchUserName(record.user_id)) || actorName;
     const isDelete = op === "DELETE";
     const isUpdate = op === "UPDATE" && !isDelete && (hasChanges || updatedDifferent);
+    if (isDelete) {
+      return { subject: "", text: "", html: "", skip: true };
+    }
     let subject: string, summary: string;
     subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
     summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
@@ -527,6 +533,9 @@ export async function buildWorkLogContent(
     const entryActor = info.author || (await fetchUserName(record.user_id)) || actorName;
     const isDelete = op === "DELETE";
     const isUpdate = op === "UPDATE" && !isDelete && (hasChanges || updatedDifferent);
+    if (isDelete) {
+      return { subject: "", text: "", html: "", skip: true };
+    }
     let subject: string, summary: string;
     subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
     summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
