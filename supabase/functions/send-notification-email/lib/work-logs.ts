@@ -439,16 +439,8 @@ export async function buildWorkLogContent(
     const isDelete = op === "DELETE";
     const isUpdate = op === "UPDATE" || (hasChanges && !isDelete) || updatedDifferent;
     let subject: string, summary: string;
-    if (isDelete) {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 작업 일지를 삭제했습니다.`;
-      summary = `"${title}" 출장보고서에서 작업 일지 1건이 삭제되었습니다.`;
-    } else if (isUpdate) {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 작업 일지를 수정했습니다.`;
-      summary = `${entryActor}님이 "${title}" 작업 일지 내용을 수정했습니다.`;
-    } else {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 작업 일지를 추가했습니다.`;
-      summary = `${entryActor}님이 "${title}" 출장보고서에 작업 일지를 추가했습니다.`;
-    }
+    subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
+    summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
     const baseDetails = [
       `작성자: ${info.author || entryActor || "-"}`,
       `출장목적: ${title || "-"}`,
@@ -499,16 +491,8 @@ export async function buildWorkLogContent(
     const isDelete = op === "DELETE";
     const isUpdate = op === "UPDATE" && !isDelete && (hasChanges || updatedDifferent);
     let subject: string, summary: string;
-    if (isDelete) {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 지출 내역을 삭제했습니다.`;
-      summary = `"${title}" 출장보고서에서 지출 내역 1건이 삭제되었습니다.`;
-    } else if (isUpdate) {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 지출 내역을 수정했습니다.`;
-      summary = `${entryActor}님이 "${title}" 지출 내역을 수정했습니다.`;
-    } else {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 지출 내역을 추가했습니다.`;
-      summary = `${entryActor}님이 "${title}" 출장보고서에 지출 내역을 추가했습니다.`;
-    }
+    subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
+    summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
     const baseDetails = [`출장목적: ${title || "-"}`];
     if (isDelete) baseDetails.push("삭제된 지출 내역:");
     baseDetails.push(`날짜: ${formatKoreanDate(record.expense_date)}`);
@@ -544,16 +528,8 @@ export async function buildWorkLogContent(
     const isDelete = op === "DELETE";
     const isUpdate = op === "UPDATE" && !isDelete && (hasChanges || updatedDifferent);
     let subject: string, summary: string;
-    if (isDelete) {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 소모자재를 삭제했습니다.`;
-      summary = `"${title}" 출장보고서에서 소모자재 1건이 삭제되었습니다.`;
-    } else if (isUpdate) {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 소모자재를 수정했습니다.`;
-      summary = `${entryActor}님이 "${title}" 소모자재 내역을 수정했습니다.`;
-    } else {
-      subject = `${SUBJECT_PREFIX} ${entryActor}님이 소모자재를 추가했습니다.`;
-      summary = `${entryActor}님이 "${title}" 출장보고서에 소모자재를 추가했습니다.`;
-    }
+    subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
+    summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
     const baseDetails = [`출장목적: ${title || "-"}`];
     if (isDelete) baseDetails.push("삭제된 소모자재:");
     baseDetails.push(`자재명: ${normalize(record.material_name) || "-"}`);
