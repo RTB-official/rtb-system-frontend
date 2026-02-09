@@ -206,13 +206,12 @@ export default function ReportEditPage() {
                     setLocations(parsedLocations);
                 }
                 if (data.workLog.vehicle) {
-                    const vehicleList = data.workLog.vehicle
-                        .split(", ")
+                    const vehicleList = String(data.workLog.vehicle)
+                        .split(",")
                         .map((v) => v.trim())
-                        .filter((v) => v);
+                        .filter(Boolean);
                     setVehicles(vehicleList);
                 }
-
                 // 리포트 타입 판별
                 const isEducation = data.workLog.subject?.includes("[교육]");
                 setReportType(isEducation ? "education" : "work");
