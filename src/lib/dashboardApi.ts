@@ -86,8 +86,15 @@ export async function createCalendarEvent(
         .from("calendar_events")
         .insert([
             {
-                ...data,
+                user_id: data.user_id,
+                title: data.title,
+                color: data.color ?? "#60a5fa",
+                start_date: data.start_date,
+                end_date: data.end_date,
+                start_time: data.start_time ?? null,
+                end_time: data.end_time ?? null,
                 all_day: data.all_day ?? true,
+                description: data.description ?? null,
                 attendees: data.attendees || [],
             },
         ])
@@ -200,9 +207,18 @@ export async function updateCalendarEvent(
         existingEvent = fetchedEvent;
     }
 
+    const updatePayload: Record<string, unknown> = { ...data };
+    if (data.all_day === true) {
+        updatePayload.start_time = null;
+        updatePayload.end_time = null;
+    } else {
+        updatePayload.start_time = data.start_time ?? null;
+        updatePayload.end_time = data.end_time ?? null;
+    }
+
     const { data: event, error } = await supabase
         .from("calendar_events")
-        .update(data)
+        .update(updatePayload)
         .eq("id", eventId)
         .select()
         .single();
@@ -658,6 +674,9 @@ export function calendarEventRecordToCalendarEvent(
         color: "#fb923c", // 주황색 (일정)
         startDate: record.start_date,
         endDate: record.end_date,
+        allDay: record.all_day,
+        startTime: record.start_time ?? undefined,
+        endTime: record.end_time ?? undefined,
         userId: record.user_id, // 생성자 ID 포함
         attendees: record.attendees || [],
     };

@@ -120,6 +120,17 @@ export default function EventForm({
             setStartDate(formatDateForInput(editingEvent.startDate));
             setEndDate(formatDateForInput(editingEvent.endDate));
             setAttendees(editingEvent.attendees || []);
+            setAllDay(editingEvent.allDay ?? false);
+            if (editingEvent.startTime) {
+                const [h, m] = editingEvent.startTime.split(":");
+                setStartHour(h ?? "09");
+                setStartMinute(m ?? "00");
+            }
+            if (editingEvent.endTime) {
+                const [h, m] = editingEvent.endTime.split(":");
+                setEndHour(h ?? "18");
+                setEndMinute(m ?? "00");
+            }
         }
     }, [editingEvent]);
 

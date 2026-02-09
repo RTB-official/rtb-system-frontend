@@ -622,7 +622,7 @@ export default function AdminVacationPage() {
 
                             {/* 직원별 휴가 사용 현황: 모바일 카드 리스트 / 웹 테이블+드롭다운 */}
                             <div className="md:mt-0">
-                                <h2 className="text-[20px] font-semibold text-gray-900 my-3">
+                                <h2 className="text-[20px] font-semibold text-gray-900 mt-4 mb-1">
                                     직원별 휴가 사용 현황
                                 </h2>
                                 {!isMobile && (

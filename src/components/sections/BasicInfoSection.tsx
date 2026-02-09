@@ -212,20 +212,22 @@ export default function BasicInfoSection() {
                             onChange={handleSelectLocation}
                         />
                         {selectedLocation === "OTHER" && (
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 w-full">
                                 <TextInput
                                     placeholder="출장지를 직접 입력"
                                     value={locationCustom}
                                     onChange={setLocationCustom}
                                     onKeyDown={handleCustomKeyDown}
                                     required
+                                    className="flex-1 min-w-0"
                                 />
                                 <Button
                                     type="button"
-                                    variant="secondary"
-                                    size="md"
+                                    variant="primary"
+                                    size="lg"
                                     onClick={handleAddCustomLocation}
                                     loading={isAddingLocation}
+                                    className="shrink-0"
                                 >
                                     추가
                                 </Button>
@@ -240,7 +242,6 @@ export default function BasicInfoSection() {
                                         variant="secondary"
                                         size="md"
                                         onClick={() => removeLocation(loc)}
-                                        className="text-blue-600"
                                     >
                                         {loc}
                                         <IconClose className="ml-1 w-4 h-4" />

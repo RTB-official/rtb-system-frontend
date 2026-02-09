@@ -366,24 +366,27 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
 
     // 일정 UI
     const renderEventUI = () => {
-        const formatDateTimeRange = (
-            startDate: string,
-            endDate: string
-        ): string => {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-
-            const startTime = `${start.getHours()}시`;
-            const endTime = `${end.getHours()}시`;
-
-            const startDay = `${start.getMonth() + 1}월 ${start.getDate()}일`;
-            const endDay = `${end.getMonth() + 1}월 ${end.getDate()}일`;
-
-            if (startDate === endDate) {
-                return `${startDay} ${startTime} ~ ${endTime}`;
-            }
-            return `${startDay} ${startTime} ~ ${endDay} ${endTime}`;
+        const formatDay = (dateStr: string) => {
+            const d = new Date(dateStr + "T12:00:00");
+            return `${d.getMonth() + 1}월 ${d.getDate()}일`;
         };
+        const formatTimeLabel = (timeStr: string) => {
+            if (!timeStr) return "";
+            const [h, m] = timeStr.split(":").map(Number);
+            if (!m || m === 0) return `${h}시`;
+            return `${h}시 ${m}분`;
+        };
+
+        const dateRangeText =
+            event.allDay === true
+                ? event.startDate === event.endDate
+                    ? `${formatDay(event.startDate)} 하루종일`
+                    : `${formatDay(event.startDate)} ~ ${formatDay(event.endDate)}`
+                : event.startTime && event.endTime
+                    ? event.startDate === event.endDate
+                        ? `${formatDay(event.startDate)} ${formatTimeLabel(event.startTime)} ~ ${formatTimeLabel(event.endTime)}`
+                        : `${formatDay(event.startDate)} ${formatTimeLabel(event.startTime)} ~ ${formatDay(event.endDate)} ${formatTimeLabel(event.endTime)}`
+                    : `${formatDay(event.startDate)}${event.startTime ? ` ${formatTimeLabel(event.startTime)}` : ""} ~ ${formatDay(event.endDate)}${event.endTime ? ` ${formatTimeLabel(event.endTime)}` : ""}`;
 
         return (
             <div className="flex flex-col gap-4">
@@ -396,10 +399,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             {event.title}
                         </h3>
                         <div className="text-sm text-gray-500 font-medium">
-                            {formatDateTimeRange(
-                                event.startDate,
-                                event.endDate
-                            )}
+                            {dateRangeText}
                         </div>
                         {event.attendees && event.attendees.length > 0 && (
                             <div className="flex flex-col gap-2 mt-2">
