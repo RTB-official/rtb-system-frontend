@@ -15,6 +15,7 @@ import {
 } from "./shared.ts";
 
 const SUBJECT_PREFIX = "[RTB 통합 관리 시스템]";
+const REPORT_BASE_URL = Deno.env.get("REPORT_BASE_URL") || "https://rtb-kor.com";
 
 export type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -324,6 +325,10 @@ export async function buildBatchedReportEmail(
   const htmlDetails =
     `<ul style="margin:10px 0 0 18px;list-style:disc;padding-left:20px;font-size:16px;line-height:1.7;">${headerLines.map((item) => `<li style="margin:4px 0;color:#1f2937;">${escapeHtml(item)}</li>`).join("")}</ul>` +
     (changeLines.length > 0 ? htmlSections : `<ul style="margin:8px 0 0 18px;list-style:disc;padding-left:20px;"><li style="margin:4px 0;color:#6b7280;">(변경 사항 없음)</li></ul>`);
+  const action =
+    Number.isFinite(workLogId) && workLogId > 0
+      ? `<div style="margin-top:22px;"><a href="${escapeHtml(`${REPORT_BASE_URL}/report/${workLogId}`)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-size:14px;font-weight:700;letter-spacing:0.02em;">보고서 보기</a></div>`
+      : "";
   const sloganUrl = Deno.env.get("SLOGAN_IMAGE_URL") || "https://kojdzbhewqjxdqfplqzj.supabase.co/storage/v1/object/public/email-assets/slogan.jpeg";
   const sloganBlock = sloganUrl
     ? `<tr><td style="background:#7a1b1b;padding:0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;margin:0 auto;"><tr><td style="padding:0;"><img src="${sloganUrl}" alt="RTB Slogan" width="600" height="200" style="display:block;width:600px;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;" /></td></tr></table></td></tr>`
@@ -339,6 +344,7 @@ export async function buildBatchedReportEmail(
             <div style="margin-top:6px;font-size:22px;font-weight:700;color:#111827;">${escapeHtml(subject)}</div>
             <div style="font-size:18px;line-height:1.75;color:#1f2937;">${escapeHtml(summary)}</div>
             ${htmlDetails}
+            ${action}
             <div style="margin-top:30px;padding-top:20px;border-top:1px solid #ebe7e4;font-size:13px;color:#9ca3af;">본 메일은 RTB 통합 관리 시스템에서 자동 발송되었습니다.</div>
           </td></tr>
         </table>
@@ -397,8 +403,13 @@ export async function buildWorkLogContent(
       `참가자 : ${participants || "-"}`,
       `작업 기간 : ${period || "-"}`,
     ];
-    const text = buildEmailText(summary, baseDetails, changeDetails);
-    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml);
+    const workLogId = Number(record.id);
+    const action =
+      Number.isFinite(workLogId) && workLogId > 0
+        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        : undefined;
+    const text = buildEmailText(summary, baseDetails, changeDetails, action);
+    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
     return { subject, text, html, skip: false };
   }
 
@@ -448,8 +459,12 @@ export async function buildWorkLogContent(
     if (normalize(record.note)) baseDetails.push(`특이 사항: ${normalize(record.note)}`);
     const entryChangeLines = isUpdate && !isDelete ? buildChangeLines(changes, entryChangeLabels, defaultSkipChangeKeys) : [];
     const changeDetails: string[] = entryChangeLines.length > 0 ? ["작업 일지 변경 내용:", ...entryChangeLines] : [];
-    const text = buildEmailText(summary, baseDetails, changeDetails);
-    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml);
+    const action =
+      Number.isFinite(workLogId) && workLogId > 0
+        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        : undefined;
+    const text = buildEmailText(summary, baseDetails, changeDetails, action);
+    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
     return { subject, text, html, skip: false };
   }
 
@@ -480,8 +495,12 @@ export async function buildWorkLogContent(
     baseDetails.push(`금액: ${record.amount != null ? Number(record.amount).toLocaleString("ko-KR") + "원" : "-"}`);
     const expenseChangeLines = isUpdate ? buildChangeLines(changes, expenseChangeLabels, defaultSkipChangeKeys) : [];
     const changeDetails: string[] = expenseChangeLines.length > 0 ? ["지출 내역 변경 내용:", ...expenseChangeLines] : [];
-    const text = buildEmailText(summary, baseDetails, changeDetails);
-    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml);
+    const action =
+      Number.isFinite(workLogId) && workLogId > 0
+        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        : undefined;
+    const text = buildEmailText(summary, baseDetails, changeDetails, action);
+    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
     return { subject, text, html, skip: false };
   }
 
@@ -511,8 +530,12 @@ export async function buildWorkLogContent(
     baseDetails.push(`단위: ${normalize(record.unit) || "-"}`);
     const materialChangeLines = isUpdate ? buildChangeLines(changes, materialChangeLabels, defaultSkipChangeKeys) : [];
     const changeDetails: string[] = materialChangeLines.length > 0 ? ["소모자재 변경 내용:", ...materialChangeLines] : [];
-    const text = buildEmailText(summary, baseDetails, changeDetails);
-    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml);
+    const action =
+      Number.isFinite(workLogId) && workLogId > 0
+        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        : undefined;
+    const text = buildEmailText(summary, baseDetails, changeDetails, action);
+    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
     return { subject, text, html, skip: false };
   }
 
