@@ -380,12 +380,12 @@ export async function buildWorkLogContent(
       ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 제출했습니다.`
       : isUpdate
       ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 수정했습니다.`
-      : `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 등록했습니다.`;
+      : `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 제출했습니다.`;
     const summary = draftSubmit
       ? `${actorName}님이 출장보고서를 제출했습니다.`
       : isUpdate
       ? `${actorName}님이 출장보고서를 수정했습니다.`
-      : `${actorName}님이 출장보고서를 등록했습니다.`;
+      : `${actorName}님이 출장보고서를 제출했습니다.`;
     const title = normalize(record.subject) || "출장보고서";
     const vessel = normalize(record.vessel);
     const location = normalize(record.location);
@@ -416,8 +416,9 @@ export async function buildWorkLogContent(
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
-    const text = buildEmailText(summary, baseDetails, changeDetails, action);
-    const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
+    const effectiveChanges = draftSubmit ? [] : changeDetails;
+    const text = buildEmailText(summary, baseDetails, effectiveChanges, action);
+    const html = buildEmailHtml(subject, summary, baseDetails, effectiveChanges, escapeHtml, action);
     return { subject, text, html, skip: false };
   }
 
