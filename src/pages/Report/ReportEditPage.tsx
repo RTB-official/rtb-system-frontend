@@ -775,7 +775,7 @@ if (newFiles.length > 0) {
                     }
                     rightContent={
                         <div className="flex items-center gap-2 md:gap-3 flex-wrap justify-end">
-                            {lastSavedAt && !isMobile && (
+                            {lastSavedAt && !isMobile && !isSubmittedWorkLog && (
                                 <span className="text-sm text-gray-400 whitespace-nowrap">
                                     {lastSavedAt.toLocaleTimeString("ko-KR", {
                                         hour: "2-digit",
@@ -784,15 +784,17 @@ if (newFiles.length > 0) {
                                     저장됨
                                 </span>
                             )}
-                            <Button
-                                variant="outline"
-                                size="md"
-                                onClick={handleManualDraftSave}
-                                disabled={savingDraft}
-                                className="md:h-12 md:px-4 md:text-base"
-                            >
-                                {savingDraft ? "저장 중..." : "임시 저장"}
-                            </Button>
+                            {!isSubmittedWorkLog && (
+                                <Button
+                                    variant="outline"
+                                    size="md"
+                                    onClick={handleManualDraftSave}
+                                    disabled={savingDraft}
+                                    className="md:h-12 md:px-4 md:text-base"
+                                >
+                                    {savingDraft ? "저장 중..." : "임시 저장"}
+                                </Button>
+                            )}
                             <Button
                                 variant="primary"
                                 size="md"

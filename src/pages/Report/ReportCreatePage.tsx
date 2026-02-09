@@ -323,13 +323,8 @@ export default function ReportCreatePage() {
             setLastSavedAt(new Date());
             showSuccess(isDraft ? "임시저장 되었습니다." : "보고서가 제출되었습니다.");
 
-            if (!isDraft) {
-                navigate("/report");
-            } else {
-                // Update snapshot to current state to mark as not dirty after save
-                initialSnapshotRef.current = makeSnapshotRef.current();
-                setIsDirty(false);
-            }
+            // 임시저장/제출 모두 보고서 목록으로 이동
+            navigate("/report");
 
         } catch (e: any) {
             console.error(e);
