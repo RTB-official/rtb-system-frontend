@@ -403,7 +403,6 @@ export async function buildWorkLogContent(
       `참가자 : ${participants || "-"}`,
       `작업 기간 : ${period || "-"}`,
     ];
-    const workLogId = Number(record.id);
     const action =
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
