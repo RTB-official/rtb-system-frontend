@@ -73,7 +73,7 @@ async function buildFriendlyContent(
     case "calendar_events":
       return buildCalendarContent(record, actorName);
     case "vacations":
-      return buildVacationContent(record, operation, changes, actorName);
+      return await buildVacationContent(record, operation, changes, actorName);
     case "notifications":
       return buildNotificationContent(record);
     default:
