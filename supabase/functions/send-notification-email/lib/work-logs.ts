@@ -327,7 +327,7 @@ export async function buildBatchedReportEmail(
     (changeLines.length > 0 ? htmlSections : `<ul style="margin:8px 0 0 18px;list-style:disc;padding-left:20px;"><li style="margin:4px 0;color:#6b7280;">(변경 사항 없음)</li></ul>`);
   const action =
     Number.isFinite(workLogId) && workLogId > 0
-      ? `<div style="margin-top:22px;"><a href="${escapeHtml(`${REPORT_BASE_URL}/report/${workLogId}`)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-size:14px;font-weight:700;letter-spacing:0.02em;">보고서 보기</a></div>`
+      ? `<div style="margin-top:22px;"><a href="${escapeHtml(`${REPORT_BASE_URL}/report/${workLogId}`)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-size:14px;font-weight:700;letter-spacing:0.02em;">보고서 바로가기</a></div>`
       : "";
   const sloganUrl = Deno.env.get("SLOGAN_IMAGE_URL") || "https://kojdzbhewqjxdqfplqzj.supabase.co/storage/v1/object/public/email-assets/slogan.jpeg";
   const sloganBlock = sloganUrl
@@ -406,7 +406,7 @@ export async function buildWorkLogContent(
     const workLogId = Number(record.id);
     const action =
       Number.isFinite(workLogId) && workLogId > 0
-        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
     const text = buildEmailText(summary, baseDetails, changeDetails, action);
     const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
@@ -461,7 +461,7 @@ export async function buildWorkLogContent(
     const changeDetails: string[] = entryChangeLines.length > 0 ? ["작업 일지 변경 내용:", ...entryChangeLines] : [];
     const action =
       Number.isFinite(workLogId) && workLogId > 0
-        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
     const text = buildEmailText(summary, baseDetails, changeDetails, action);
     const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
@@ -497,7 +497,7 @@ export async function buildWorkLogContent(
     const changeDetails: string[] = expenseChangeLines.length > 0 ? ["지출 내역 변경 내용:", ...expenseChangeLines] : [];
     const action =
       Number.isFinite(workLogId) && workLogId > 0
-        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
     const text = buildEmailText(summary, baseDetails, changeDetails, action);
     const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
@@ -532,7 +532,7 @@ export async function buildWorkLogContent(
     const changeDetails: string[] = materialChangeLines.length > 0 ? ["소모자재 변경 내용:", ...materialChangeLines] : [];
     const action =
       Number.isFinite(workLogId) && workLogId > 0
-        ? { label: "보고서 보기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
+        ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
     const text = buildEmailText(summary, baseDetails, changeDetails, action);
     const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
