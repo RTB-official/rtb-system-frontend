@@ -5,6 +5,12 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
+const INVOICE_EMAIL = "invoice@rtb-kor.com";
+const CEO_EMAIL = "y.k@rtb-kor.com";
+
+const escapeHtml = (s: string) =>
+  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 const normalize = (value: unknown) => {
   if (value === null || value === undefined) return "";
   const text = String(value).trim();
@@ -72,6 +78,75 @@ const fetchUserName = async (userId?: string) => {
     .single();
   if (error) return "";
   return normalize(data?.name);
+};
+
+const fetchUserEmail = async (admin: ReturnType<typeof createClient>, userId?: string): Promise<string> => {
+  if (!userId) return "";
+  const { data, error } = await admin
+    .from("profiles")
+    .select("email")
+    .eq("id", userId)
+    .single();
+  if (error || !data?.email) return "";
+  const email = normalize(data.email);
+  return email.includes("@") ? email : "";
+};
+
+/** 알림 종류별 수신자: invoice, 대표(y.k), 공사팀 본인, 공무팀(승인 시 신청자) */
+const getRecipients = async (
+  admin: ReturnType<typeof createClient>,
+  table: string,
+  operation: string,
+  record: Record<string, any>,
+  changes?: Record<string, { before?: unknown; after?: unknown }>
+): Promise<string[]> => {
+  const op = (operation || "").toUpperCase();
+
+  if (table === "calendar_events" && op === "INSERT") {
+    return [INVOICE_EMAIL];
+  }
+  if (table === "work_logs") {
+    if (op === "INSERT") return [INVOICE_EMAIL];
+    return [INVOICE_EMAIL];
+  }
+  if (table === "work_log_entries" || table === "work_log_expenses" || table === "work_log_materials") {
+    return [INVOICE_EMAIL];
+  }
+  if (table === "vacations") {
+    if (op === "INSERT") return [CEO_EMAIL];
+    if (op === "UPDATE" && changes?.status?.after === "approved") {
+      const applicantId = record?.user_id;
+      const email = await fetchUserEmail(admin, applicantId);
+      if (email) return [email];
+    }
+    return [];
+  }
+  if (table === "notifications") {
+    let kind: string | null = null;
+    const metaRaw = record?.meta;
+    if (typeof metaRaw === "string") {
+      try {
+        const m = JSON.parse(metaRaw);
+        kind = m?.kind ?? null;
+      } catch {
+        kind = null;
+      }
+    } else if (metaRaw && typeof metaRaw === "object") {
+      kind = metaRaw?.kind ?? null;
+    }
+    if (kind === "passport_expiry_within_1y" || kind === "member_passport_expiry") {
+      const userId = record?.user_id;
+      const email = await fetchUserEmail(admin, userId);
+      const list: string[] = [INVOICE_EMAIL];
+      if (email && !list.includes(email)) list.push(email);
+      return list;
+    }
+    if (kind === "vehicle_inspection_due_2m" || kind === "vehicle_inspection_due_1m") {
+      return [INVOICE_EMAIL];
+    }
+    return [];
+  }
+  return [INVOICE_EMAIL];
 };
 
 const roleOrder: Record<string, number> = {
@@ -714,12 +789,53 @@ const buildFriendlyContent = async (
     }
   } else if (table === "vacations") {
     handled = true;
-    subject = `${subjectPrefix} ${actorName}님이 휴가를 등록했습니다.`;
-    const leaveType = formatLeaveType(record.leave_type);
-    const date = formatKoreanDate(record.date);
-    summary = `${actorName}님이 ${date || "해당 날짜"}에 ${leaveType} 휴가를 등록했습니다.`;
-    const reason = normalize(record.reason);
-    if (reason) baseDetails.push(`사유: ${reason}`);
+    const op = (typeof operation === "string" ? operation : "").toUpperCase();
+    const statusAfter = changes?.status?.after ?? record?.status;
+    if (op === "UPDATE" && statusAfter === "approved") {
+      const applicantName = await fetchUserName(record.user_id);
+      subject = `${subjectPrefix} 휴가 신청이 승인되었습니다.`;
+      summary = `${applicantName || "귀하"}님의 휴가 신청이 승인되었습니다.`;
+      const leaveType = formatLeaveType(record.leave_type);
+      const date = formatKoreanDate(record.date);
+      baseDetails.push(`날짜: ${date || "-"}`);
+      baseDetails.push(`항목: ${leaveType}`);
+      const reason = normalize(record.reason);
+      if (reason) baseDetails.push(`사유: ${reason}`);
+    } else {
+      subject = `${subjectPrefix} ${actorName}님이 휴가를 등록했습니다.`;
+      const leaveType = formatLeaveType(record.leave_type);
+      const date = formatKoreanDate(record.date);
+      summary = `${actorName}님이 ${date || "해당 날짜"}에 ${leaveType} 휴가를 등록했습니다.`;
+      const reason = normalize(record.reason);
+      if (reason) baseDetails.push(`사유: ${reason}`);
+    }
+  } else if (table === "notifications") {
+    const metaRaw = record.meta;
+    let meta: { kind?: string } = {};
+    if (typeof metaRaw === "string") {
+      try {
+        meta = JSON.parse(metaRaw) || {};
+      } catch {
+        meta = {};
+      }
+    } else if (metaRaw && typeof metaRaw === "object") {
+      meta = metaRaw;
+    }
+    const kind = meta?.kind || "";
+    if (kind === "passport_expiry_within_1y" || kind === "member_passport_expiry") {
+      handled = true;
+      subject = `${subjectPrefix} 여권 만료 1년 전 알림`;
+      const msg = normalize(record.message);
+      summary = msg || "구성원 여권이 1년 이내 만료됩니다.";
+      baseDetails.push(summary);
+    } else if (kind === "vehicle_inspection_due_2m" || kind === "vehicle_inspection_due_1m") {
+      handled = true;
+      const is2m = kind === "vehicle_inspection_due_2m";
+      subject = `${subjectPrefix} 차량 검사 만료 ${is2m ? "2달" : "1달"} 전 알림`;
+      const msg = normalize(record.message);
+      summary = msg || `차량 검사가 ${is2m ? "2개월" : "1개월"} 이내에 만료됩니다.`;
+      baseDetails.push(summary);
+    }
   }
 
   if (!handled) {
@@ -951,6 +1067,12 @@ serve(async (req) => {
       return new Response("Missing RESEND_API_KEY", { status: 500 });
     }
 
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const admin = supabaseUrl && serviceRoleKey
+      ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
+      : null;
+
     if (batched === true && Array.isArray(events) && events.length > 0 && work_log_id != null) {
       const workLogId = Number(work_log_id);
       const safeEvents = events.map((ev: any) => ({
@@ -960,6 +1082,7 @@ serve(async (req) => {
         changes: ev.changes && typeof ev.changes === "object" ? ev.changes : undefined,
       }));
       const { subject, text, html } = await buildBatchedReportEmail(workLogId, safeEvents);
+      const toList = [INVOICE_EMAIL];
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -968,7 +1091,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           from: "RTB 알림 <no-reply@rtb-kor.com>",
-          to: "mj.kang@rtb-kor.com",
+          to: toList,
           subject,
           text,
           html,
@@ -986,7 +1109,7 @@ serve(async (req) => {
     const safeRecord =
       record && typeof record === "object" ? (record as Record<string, any>) : {};
     const safeChanges =
-      changes && typeof changes === "object" ? (changes as Record<string, any>) : undefined;
+      changes && typeof changes === "object" ? (changes as Record<string, { before?: unknown; after?: unknown }>) : undefined;
 
     const { subject, text, html, skip } = await buildFriendlyContent(
       safeTable,
@@ -998,6 +1121,12 @@ serve(async (req) => {
     if (skip) {
       return new Response("skip");
     }
+
+    const toList = admin
+      ? await getRecipients(admin, safeTable, safeOperation, safeRecord, safeChanges)
+      : [INVOICE_EMAIL];
+    const toFinal = Array.isArray(toList) && toList.length > 0 ? toList : [INVOICE_EMAIL];
+
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -1006,7 +1135,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         from: "RTB 알림 <no-reply@rtb-kor.com>",
-        to: "mj.kang@rtb-kor.com",
+        to: toFinal,
         subject,
         text,
         html,
