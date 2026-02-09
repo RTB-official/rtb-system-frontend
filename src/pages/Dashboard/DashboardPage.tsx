@@ -636,6 +636,7 @@ export default function DashboardPage() {
                                                     event.startDate,
                                                     event.endDate
                                                 )}
+                                                {event.allDay && event.startDate === event.endDate ? " 하루종일" : ""}
                                             </p>
                                         </div>
                                     </div>
