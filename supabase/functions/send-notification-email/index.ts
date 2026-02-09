@@ -35,6 +35,15 @@ async function sendResendEmail(resendKey: string, body: Record<string, any>): Pr
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+    if (!res.ok) {
+      let errorText = "";
+      try {
+        errorText = await res.text();
+      } catch {
+        errorText = "";
+      }
+      console.log("resend_response", { ok: res.ok, status: res.status, statusText: res.statusText, body: errorText });
+    }
     return res.ok;
   } catch (err) {
     console.error("resend_fetch_error", err);
@@ -158,6 +167,7 @@ serve(async (req) => {
           console.log("skip_reason", "resend_failed_batched");
           return SKIP_200();
         }
+        console.log("send_result", "ok_batched");
         return new Response("ok");
       }
 
@@ -204,6 +214,7 @@ serve(async (req) => {
         console.log("skip_reason", "resend_failed");
         return SKIP_200();
       }
+      console.log("send_result", "ok");
       return new Response("ok");
     } catch (err) {
       console.error("send_notification_error", err);
