@@ -467,7 +467,20 @@ export async function buildWorkLogContent(
     if (normalize(record.details)) baseDetails.push(`상세 내용: ${normalize(record.details)}`);
     if (normalize(record.note)) baseDetails.push(`특이 사항: ${normalize(record.note)}`);
     const entryChangeLines = isUpdate && !isDelete ? buildChangeLines(changes, entryChangeLabels, defaultSkipChangeKeys) : [];
-    const changeDetails: string[] = entryChangeLines.length > 0 ? ["작업 일지 변경 내용:", ...entryChangeLines] : [];
+    let changeDetails: string[] = entryChangeLines.length > 0 ? ["작업 일지 변경 내용:", ...entryChangeLines] : [];
+    if (isUpdate && !isDelete && changeDetails.length === 0) {
+      const snapshot: string[] = [];
+      if (entryDate) snapshot.push(`작업 일자: ${entryDate}`);
+      if (entryTime) snapshot.push(`작업 시간: ${entryTime}`);
+      const entryType = normalize(record.desc_type) || "-";
+      snapshot.push(`작업 유형: ${entryType}`);
+      if (normalize(record.move_from) || normalize(record.move_to)) {
+        snapshot.push(`이동: ${normalize(record.move_from) || "-"} → ${normalize(record.move_to) || "-"}`);
+      }
+      if (normalize(record.details)) snapshot.push(`상세 내용: ${normalize(record.details)}`);
+      if (normalize(record.note)) snapshot.push(`특이 사항: ${normalize(record.note)}`);
+      changeDetails = snapshot.length > 0 ? ["작업 일지 현재 내용:", ...snapshot] : [];
+    }
     const action =
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
@@ -503,7 +516,16 @@ export async function buildWorkLogContent(
     baseDetails.push(`내용: ${normalize(record.detail) || "-"}`);
     baseDetails.push(`금액: ${record.amount != null ? Number(record.amount).toLocaleString("ko-KR") + "원" : "-"}`);
     const expenseChangeLines = isUpdate ? buildChangeLines(changes, expenseChangeLabels, defaultSkipChangeKeys) : [];
-    const changeDetails: string[] = expenseChangeLines.length > 0 ? ["지출 내역 변경 내용:", ...expenseChangeLines] : [];
+    let changeDetails: string[] = expenseChangeLines.length > 0 ? ["지출 내역 변경 내용:", ...expenseChangeLines] : [];
+    if (isUpdate && changeDetails.length === 0) {
+      const snapshot: string[] = [
+        `날짜: ${formatKoreanDate(record.expense_date) || "-"}`,
+        `유형: ${normalize(record.expense_type) || "-"}`,
+        `내용: ${normalize(record.detail) || "-"}`,
+        `금액: ${record.amount != null ? Number(record.amount).toLocaleString("ko-KR") + "원" : "-"}`,
+      ];
+      changeDetails = ["지출 내역 현재 내용:", ...snapshot];
+    }
     const action =
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
@@ -538,7 +560,15 @@ export async function buildWorkLogContent(
     baseDetails.push(`수량: ${record.qty != null ? String(record.qty) : "-"}`);
     baseDetails.push(`단위: ${normalize(record.unit) || "-"}`);
     const materialChangeLines = isUpdate ? buildChangeLines(changes, materialChangeLabels, defaultSkipChangeKeys) : [];
-    const changeDetails: string[] = materialChangeLines.length > 0 ? ["소모자재 변경 내용:", ...materialChangeLines] : [];
+    let changeDetails: string[] = materialChangeLines.length > 0 ? ["소모자재 변경 내용:", ...materialChangeLines] : [];
+    if (isUpdate && changeDetails.length === 0) {
+      const snapshot: string[] = [
+        `자재명: ${normalize(record.material_name) || "-"}`,
+        `수량: ${record.qty != null ? String(record.qty) : "-"}`,
+        `단위: ${normalize(record.unit) || "-"}`,
+      ];
+      changeDetails = ["소모자재 현재 내용:", ...snapshot];
+    }
     const action =
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
