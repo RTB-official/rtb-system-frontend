@@ -377,7 +377,7 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                         첨부파일 업로드
                     </h2>
                     <p className="text-[12px] text-[#9ca3af]">
-                        영수증, TBM사진 등
+
                     </p>
                 </div>
             </div>
