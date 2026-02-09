@@ -372,11 +372,20 @@ export async function buildWorkLogContent(
   if (table === "work_logs") {
     const isUpdate = op === "UPDATE" || hasChanges || updatedDifferent;
     const changeDetails: string[] = isUpdate ? buildChangeLines(changes, workLogChangeLabels, defaultSkipChangeKeys) : [];
-    if (isUpdate && changeDetails.length === 0) return { subject: "", text: "", html: "", skip: true };
-    const subject = isUpdate
+    const draftSubmit =
+      changes?.is_draft?.before === true &&
+      (changes?.is_draft?.after === false || changes?.is_draft?.after === 0 || changes?.is_draft?.after === "false");
+    if (isUpdate && changeDetails.length === 0 && !draftSubmit) return { subject: "", text: "", html: "", skip: true };
+    const subject = draftSubmit
+      ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 제출했습니다.`
+      : isUpdate
       ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 수정했습니다.`
       : `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 등록했습니다.`;
-    const summary = isUpdate ? `${actorName}님이 출장보고서를 수정했습니다.` : `${actorName}님이 출장보고서를 등록했습니다.`;
+    const summary = draftSubmit
+      ? `${actorName}님이 출장보고서를 제출했습니다.`
+      : isUpdate
+      ? `${actorName}님이 출장보고서를 수정했습니다.`
+      : `${actorName}님이 출장보고서를 등록했습니다.`;
     const title = normalize(record.subject) || "출장보고서";
     const vessel = normalize(record.vessel);
     const location = normalize(record.location);
