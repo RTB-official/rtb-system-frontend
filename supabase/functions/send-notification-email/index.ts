@@ -96,15 +96,36 @@ serve(async (req) => {
       const safeTable = typeof table === "string" ? table : "";
       const safeRecord = record && typeof record === "object" ? (record as Record<string, any>) : {};
       const safeOp = (typeof operation === "string" ? operation : "").toUpperCase();
+      const changeKeys = changes && typeof changes === "object" ? Object.keys(changes) : [];
+      const recordKeys = safeRecord ? Object.keys(safeRecord) : [];
+      const recordId = safeRecord?.id ?? safeRecord?.work_log_id ?? safeRecord?.user_id ?? null;
+      console.log("payload_summary", {
+        table: safeTable,
+        operation: safeOp,
+        recordId,
+        changeKeys,
+        recordKeys,
+        batched: batched === true,
+        eventsCount: Array.isArray(events) ? events.length : 0,
+      });
 
       if (safeTable === "work_logs") {
         const isDraft = safeRecord?.is_draft;
-        if (isDraft === true || isDraft === "true" || isDraft === 1) return SKIP_200();
-        if (safeOp === "DELETE") return SKIP_200();
+        if (isDraft === true || isDraft === "true" || isDraft === 1) {
+          console.log("skip_reason", "work_logs_draft");
+          return SKIP_200();
+        }
+        if (safeOp === "DELETE") {
+          console.log("skip_reason", "work_logs_delete");
+          return SKIP_200();
+        }
       }
 
       const resendKey = Deno.env.get("RESEND_API_KEY");
-      if (!resendKey) return SKIP_200();
+      if (!resendKey) {
+        console.log("skip_reason", "missing_resend_key");
+        return SKIP_200();
+      }
 
       const supabaseUrl = Deno.env.get("SUPABASE_URL");
       const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -115,7 +136,10 @@ serve(async (req) => {
 
       if (batched === true && Array.isArray(events) && events.length > 0 && work_log_id != null) {
         const workLogId = Number(work_log_id);
-        if (await getWorkLogIsDraft(workLogId)) return new Response("skip");
+        if (await getWorkLogIsDraft(workLogId)) {
+          console.log("skip_reason", "batched_worklog_draft");
+          return new Response("skip");
+        }
         const safeEvents = events.slice(0, 200).map((ev: any) => ({
           table: typeof ev.table === "string" ? ev.table : "",
           operation: typeof ev.operation === "string" ? ev.operation : "",
@@ -130,7 +154,10 @@ serve(async (req) => {
           text,
           html,
         });
-        if (!ok) return SKIP_200();
+        if (!ok) {
+          console.log("skip_reason", "resend_failed_batched");
+          return SKIP_200();
+        }
         return new Response("ok");
       }
 
@@ -159,7 +186,10 @@ serve(async (req) => {
       ]);
       const { subject, text, html, skip } = content;
 
-      if (skip) return new Response("skip");
+      if (skip) {
+        console.log("skip_reason", "content_skip");
+        return new Response("skip");
+      }
 
       const toFinal = Array.isArray(toList) && toList.length > 0 ? toList : INVOICE_EMAILS;
 
@@ -170,7 +200,10 @@ serve(async (req) => {
         text,
         html,
       });
-      if (!ok) return SKIP_200();
+      if (!ok) {
+        console.log("skip_reason", "resend_failed");
+        return SKIP_200();
+      }
       return new Response("ok");
     } catch (err) {
       console.error("send_notification_error", err);
