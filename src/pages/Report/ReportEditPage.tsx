@@ -353,10 +353,12 @@ export default function ReportEditPage() {
             // 기존 레코드 업데이트
             const workLog = await updateWorkLog(workLogId, workLogData);
 
-            // 파일 업로드 처리 (work_log 업데이트 후)
-            // 새로 업로드한 파일만 처리 (기존 영수증은 이미 DB에 있음)
-            const newFiles = uploadedFiles.filter((f) => !f.isExisting && f.file);
-            if (newFiles.length > 0) {
+// 파일 업로드 처리 (work_log 업데이트 후)
+// ✅ 수정 화면에서 isExisting 플래그가 꼬일 수 있으므로 "실제 File 객체 존재"로 판별
+const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
+
+if (newFiles.length > 0) {
+
                 const receipts: Array<{
                     category: ReceiptCategoryEnum;
                     storage_bucket: string;
@@ -384,7 +386,7 @@ export default function ReportEditPage() {
                             original_name: file.file.name,
                             mime_type: file.file.type || undefined,
                             file_size: file.file.size || undefined,
-                            created_by: user?.id || undefined, // RLS 정책을 위해 명시적으로 전달
+                            created_by: originalCreatedBy || user?.id || undefined, // ✅ 원 작성자 기준 유지
                         });
                     } catch (err: any) {
                         console.error("Error uploading file:", err);
@@ -406,24 +408,24 @@ export default function ReportEditPage() {
                             storage_path: r.storage_path,
                         };
 
-                        // 선택적 필드 추가
-                        if (r.original_name) insertData.original_name = r.original_name;
-                        if (r.mime_type) insertData.mime_type = r.mime_type;
-                        if (r.file_size) insertData.file_size = r.file_size;
-                        if (user?.id) insertData.created_by = user.id;
+                    // 선택적 필드 추가
+                    if (r.original_name) insertData.original_name = r.original_name;
+                    if (r.mime_type) insertData.mime_type = r.mime_type;
+                    if (r.file_size) insertData.file_size = r.file_size;
 
-                        return insertData;
+                    // ✅ RLS 통과용: work_logs.created_by와 동일 기준으로
+                    if (originalCreatedBy || user?.id) insertData.created_by = originalCreatedBy || user!.id;
+
+                    return insertData;
                     });
-
                     const { error: receiptsError } = await supabase
-                        .from("work_log_receipt")
-                        .insert(insertDataList)
-                        .select();
-
-                    if (receiptsError) {
-                        showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`);
-                        throw receiptsError; // ✅ DB 저장 실패면 제출도 실패 처리
-                    }
+                    .from("work_log_receipt")
+                    .insert(insertDataList);
+                
+                if (receiptsError) {
+                    showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`);
+                    throw receiptsError;
+                }
                 }
             }
 
@@ -548,6 +550,87 @@ export default function ReportEditPage() {
                 // 기존 레코드 업데이트
                 await updateWorkLog(workLogId, draftData);
 
+// ✅ [임시저장에서도] 파일 업로드 처리 (work_log 업데이트 후)
+// ✅ 수정 화면에서 isExisting 플래그가 꼬일 수 있으므로 "실제 File 객체 존재"로 판별
+const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
+
+if (newFiles.length > 0) {
+    const receipts: Array<{
+        category: ReceiptCategoryEnum;
+        storage_bucket: string;
+        storage_path: string;
+        original_name?: string;
+        mime_type?: string;
+        file_size?: number;
+        created_by?: string;
+    }> = [];
+
+    for (const file of newFiles) {
+        if (!file.file) continue;
+
+        try {
+            const filePath = await uploadReceiptFile(
+                file.file,
+                workLogId,
+                file.category
+            );
+
+            receipts.push({
+                category: mapReceiptCategory(file.category),
+                storage_bucket: "work-log-recipts",
+                storage_path: filePath,
+                original_name: file.file.name,
+                mime_type: file.file.type || undefined,
+                file_size: file.file.size || undefined,
+                created_by: originalCreatedBy || user?.id || undefined,
+            });
+        } catch (err: any) {
+            console.error("Error uploading file:", err);
+            if (!silent) {
+                showError(
+                    `영수증 파일 업로드 실패: ${err?.message || "알 수 없는 오류"}`
+                );
+            }
+            throw err; // ✅ 업로드 실패면 임시저장도 실패 처리
+        }
+    }
+
+    // receipts 저장
+    if (receipts.length > 0) {
+        const insertDataList = receipts.map((r) => {
+            const insertData: any = {
+                work_log_id: workLogId,
+                category: r.category,
+                storage_bucket: r.storage_bucket,
+                storage_path: r.storage_path,
+            };
+
+            if (r.original_name) insertData.original_name = r.original_name;
+            if (r.mime_type) insertData.mime_type = r.mime_type;
+            if (r.file_size) insertData.file_size = r.file_size;
+
+            // ✅ RLS 통과용
+            if (originalCreatedBy || user?.id) {
+                insertData.created_by = originalCreatedBy || user!.id;
+            }
+
+            return insertData;
+        });
+
+        const { error: receiptsError } = await supabase
+        .from("work_log_receipt")
+        .insert(insertDataList);
+    
+    if (receiptsError) {
+        console.error("[DraftSave] work_log_receipt insert error:", receiptsError);
+        showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`); // silent여도 표시
+        throw receiptsError;
+    }
+    }
+}
+
+
+
                 setLastSavedAt(new Date());
                 setIsSubmittedWorkLog(false); // ✅ 제출완료 → 임시저장 상태로 전환
 
@@ -581,11 +664,13 @@ export default function ReportEditPage() {
             workLogEntries,
             expenses,
             materials,
+            uploadedFiles, // ✅ 추가
             user?.id,
             savingDraft,
             isSubmittedWorkLog,
         ]
     );
+    
 
     // 수동 임시저장 핸들러
     const handleManualDraftSave = () => {

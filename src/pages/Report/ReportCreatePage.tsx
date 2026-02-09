@@ -24,6 +24,37 @@ import TimelineSummarySection from "../../components/sections/TimelineSummarySec
 import SectionCard from "../../components/ui/SectionCard";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
 
+type ReceiptCategoryEnum =
+  | "숙박영수증"
+  | "자재구매영수증"
+  | "식비및유대영수증"
+  | "기타";
+
+function mapReceiptCategory(input: string): ReceiptCategoryEnum {
+  const normalized = (input || "").replace(/\s+/g, "").trim();
+
+  if (normalized === "숙박" || normalized === "숙박영수증") return "숙박영수증";
+
+  if (
+    normalized === "자재" ||
+    normalized === "자재구매" ||
+    normalized === "자재구매영수증"
+  )
+    return "자재구매영수증";
+
+  if (
+    normalized === "식비및유대" ||
+    normalized === "식비유대" ||
+    normalized === "식비" ||
+    normalized === "유대" ||
+    normalized === "식비및유대영수증"
+  )
+    return "식비및유대영수증";
+
+  return "기타";
+}
+
+
 export default function ReportCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const navigate = useNavigate();
@@ -265,12 +296,13 @@ export default function ReportCreatePage() {
                     // DB insert용 메타
                     return {
                         work_log_id: newLog.id,
-                        category: f.category,
+                        category: mapReceiptCategory(f.category),   // ✅ enum 정규화
                         storage_bucket: "work-log-recipts",
                         storage_path: filePath,
                         original_name: f.file.name,
                         mime_type: f.file.type || null,
                         file_size: f.file.size || null,
+                        created_by: user.id,                        // ✅ RLS 통과용
                     };
                 }));
 
