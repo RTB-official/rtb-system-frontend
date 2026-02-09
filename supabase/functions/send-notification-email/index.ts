@@ -84,6 +84,10 @@ async function buildFriendlyContent(
 ): Promise<{ subject: string; text: string; html: string; skip: boolean }> {
   const op = (operation || "").toUpperCase();
 
+  if (table === "work_log_entries" || table === "work_log_expenses" || table === "work_log_materials") {
+    return { subject: "", text: "", html: "", skip: true };
+  }
+
   if (table === "work_logs" && op === "DELETE") {
     return { subject: "", text: "", html: "", skip: true };
   }
