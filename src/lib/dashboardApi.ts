@@ -573,22 +573,15 @@ export function vacationToCalendarEvent(
 ): CalendarEvent {
     const leaveTypeMap: Record<string, string> = {
         FULL: "연차",
-        AM: "오전반차",
-        PM: "오후반차",
-    };
-
-    const statusMap: Record<string, string> = {
-        approved: "승인",
-        pending: "대기중",
-        rejected: "거절",
+        AM: "오전 반차",
+        PM: "오후 반차",
     };
 
     const leaveTypeText = leaveTypeMap[vacation.leave_type] || vacation.leave_type;
-    const statusText = statusMap[vacation.status] || vacation.status;
 
     const title = userName
-        ? `휴가 - ${userName} ${leaveTypeText} (${statusText})`
-        : `휴가 ${leaveTypeText} (${statusText})`;
+        ? `휴가 - ${userName} ${leaveTypeText}`
+        : `휴가 ${leaveTypeText}`;
 
     // 상태에 따라 색상 변경
     let color = "#60a5fa"; // 승인

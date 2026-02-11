@@ -180,7 +180,7 @@ export default function EventForm({
                     htmlFor="allDay"
                     className="ml-2 text-sm text-gray-700 cursor-pointer select-none"
                 >
-                    하루종일
+                    하루 종일
                 </label>
             </div>
 

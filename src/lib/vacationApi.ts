@@ -521,9 +521,9 @@ export async function getCurrentTotalAnnualLeave(userId: string): Promise<number
  */
 export function statusToKorean(status: VacationStatus): string {
     const mapping = {
-        pending: "대기 중",
+        pending: "승인 대기",
         approved: "승인 완료",
-        rejected: "반려",
+        rejected: "반려됨",
     };
     return mapping[status];
 }

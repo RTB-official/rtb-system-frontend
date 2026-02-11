@@ -29,7 +29,7 @@ import type { VacationGrantHistory } from "../../lib/vacationCalculator";
 import { useToast } from "../../components/ui/ToastProvider";
 import useIsMobile from "../../hooks/useIsMobile";
 
-export type VacationStatus = "대기 중" | "승인 완료" | "반려";
+export type VacationStatus = "승인 대기" | "승인 완료" | "반려됨";
 
 // 날짜 포맷팅 함수 (2028년 1월 23일 (금) 형식)
 function formatDateWithWeekday(dateString: string): string {

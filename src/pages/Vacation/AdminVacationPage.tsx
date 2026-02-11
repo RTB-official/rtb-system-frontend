@@ -507,7 +507,7 @@ export default function AdminVacationPage() {
                                 <ul className="flex flex-col gap-2">
                                     {employeeVacationHistory.map((v) => {
                                         const label = statusToKorean(v.status);
-                                        const statusBg = v.status === "approved" ? "bg-green-50 text-green-700" : v.status === "rejected" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-600";
+                                        const statusBg = v.status === "approved" ? "bg-green-50 text-green-700" : v.status === "rejected" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700";
                                         return (
                                             <li key={v.id} className="rounded-xl border border-gray-200 p-4 flex flex-col gap-2">
                                                 <div className="flex items-center justify-between flex-wrap gap-2">
@@ -564,7 +564,7 @@ export default function AdminVacationPage() {
                                                         <div className="flex-1 min-w-0 flex flex-col gap-1">
                                                             <div className="flex items-center gap-2 flex-wrap">
                                                                 <span className="font-medium text-gray-900">{row.employeeName}</span>
-                                                                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-[12px] font-medium text-blue-600 bg-blue-50">
+                                                                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-[12px] font-medium text-gray-700 bg-gray-100">
                                                                     {row.status}
                                                                 </span>
                                                             </div>
@@ -598,7 +598,7 @@ export default function AdminVacationPage() {
                                                     label: "상태",
                                                     width: "10%",
                                                     render: (_value, row: VacationRequestRow) => (
-                                                        <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-blue-600 bg-blue-50">
+                                                        <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-gray-700 bg-gray-100">
                                                             {row.status}
                                                         </span>
                                                     ),
@@ -700,7 +700,7 @@ export default function AdminVacationPage() {
                                         },
                                         {
                                             key: "pendingDays",
-                                            label: "대기 중",
+                                            label: "승인 대기",
                                             align: "left",
                                             headerClassName: "px-4 py-3 text-left font-semibold text-gray-600",
                                             cellClassName: "px-4 py-3 text-left text-yellow-600",
@@ -767,7 +767,7 @@ export default function AdminVacationPage() {
                                                                     width: "14%",
                                                                     render: (_: unknown, v: Vacation) => {
                                                                         const label = statusToKorean(v.status);
-                                                                        const bg = v.status === "approved" ? "bg-green-50 text-green-700" : v.status === "rejected" ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-600";
+                                                                        const bg = v.status === "approved" ? "bg-green-50 text-green-700" : v.status === "rejected" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700";
                                                                         return <span className={`inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium ${bg}`}>{label}</span>;
                                                                     },
                                                                 },

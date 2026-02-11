@@ -7,7 +7,7 @@ export const PATHS = {
     workload: "/workload",
     expenseTeam: "/expense/member",
     expensePersonal: "/expense",
-    vacation: "/Vacation",
+    vacation: "/vacation",
     members: "/members",
     vehicles: "/vehicles",
 } as const;

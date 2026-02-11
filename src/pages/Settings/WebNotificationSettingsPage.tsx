@@ -112,8 +112,8 @@ export default function WebNotificationSettingsPage() {
           },
           {
             key: "vacation_decision" as const,
-            label: "휴가 승인/거절 알림",
-            desc: "휴가가 승인 또는 거절되면 웹 알림을 받습니다.",
+            label: "휴가 승인/반려 알림",
+            desc: "휴가가 승인 또는 반려되면 웹 알림을 받습니다.",
           },
         ],
       },

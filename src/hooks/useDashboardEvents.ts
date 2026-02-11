@@ -73,7 +73,7 @@ export function useDashboardEvents(year: number, month: number) {
                     }
 
                     // 휴가 이벤트 생성
-                    // 모든 사용자에게 모든 상태(대기 중/승인 완료/반려)의 모든 휴가 표시
+                    // 모든 사용자에게 모든 상태(승인 대기/승인 완료/반려됨)의 모든 휴가 표시
                     vacations.forEach((vacation) => {
                         const userName = vacation.user_id
                             ? profileMap.get(vacation.user_id)

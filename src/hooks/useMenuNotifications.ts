@@ -175,7 +175,7 @@ export function useMenuNotifications() {
                 const shouldShow = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
 
                 if (shouldShow) {
-                    showInfo(`대기 중인 휴가 신청이 ${pendingVacationCount}건 있습니다.`);
+                    showInfo(`승인 대기 휴가 신청이 ${pendingVacationCount}건 있습니다.`);
                     localStorage.setItem("noti_toast_vacation", now.getTime().toString());
                 }
             }

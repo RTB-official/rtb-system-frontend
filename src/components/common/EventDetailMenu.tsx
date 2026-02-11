@@ -207,9 +207,9 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
     // 상태 태그 텍스트
     const getStatusText = (status: string) => {
         const statusMap: Record<string, string> = {
-            pending: "대기 중",
-            approved: "승인됨",
-            rejected: "거부됨",
+            pending: "승인 대기",
+            approved: "승인 완료",
+            rejected: "반려됨",
         };
         return statusMap[status] || status;
     };
@@ -217,9 +217,9 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
     // 상태에 따른 Chip 색상 (휴가 관리 페이지와 동일)
     const getStatusColor = (status: string): string => {
         const colorMap: Record<string, string> = {
-            pending: "blue-600",
+            pending: "gray-500",
             approved: "green-700",
-            rejected: "red-700",
+            rejected: "red-600",
         };
         return colorMap[status] || "gray-500";
     };
@@ -237,7 +237,12 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         if (!vacationData) return null;
 
         const dateText = formatDate(vacationData.date);
-        const isAllDay = true; // 휴가는 항상 하루종일
+        const leaveTypeLabel =
+            vacationData.leave_type === "AM"
+                ? "오전 반차"
+                : vacationData.leave_type === "PM"
+                    ? "오후 반차"
+                    : "하루 종일";
 
         return (
             <div className="flex flex-col gap-4">
@@ -255,10 +260,10 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             </Chip>
                         </div>
                         <div className="text-sm text-gray-500">
-                            {dateText} {isAllDay ? "하루종일" : ""}
+                            {dateText} {leaveTypeLabel}
                         </div>
                         {userProfile && (
-                            <div className="flex items-center gap-2 mt-2">
+                            <div className="flex items-center gap-2 my-1">
                                 <Avatar
                                     email={userProfile.email || null}
                                     size={24}
@@ -380,7 +385,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         const dateRangeText =
             event.allDay === true
                 ? event.startDate === event.endDate
-                    ? `${formatDay(event.startDate)} 하루종일`
+                    ? `${formatDay(event.startDate)} 하루 종일`
                     : `${formatDay(event.startDate)} ~ ${formatDay(event.endDate)}`
                 : event.startTime && event.endTime
                     ? event.startDate === event.endDate

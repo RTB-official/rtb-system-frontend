@@ -58,16 +58,16 @@ function StatusPill({ status }: { status: VacationStatus }) {
             </Chip>
         );
     }
-    if (status === "대기 중") {
+    if (status === "승인 대기") {
         return (
-            <Chip color="blue-600" variant="solid" size="sm">
-                대기 중
+            <Chip color="gray-500" variant="solid" size="sm">
+                승인 대기
             </Chip>
         );
     }
     return (
         <Chip color="red-700" variant="solid" size="sm">
-            반려
+            반려됨
         </Chip>
     );
 }
@@ -186,8 +186,8 @@ export default function VacationManagementSection({
                                     const vacationDate = new Date(row.date);
                                     vacationDate.setHours(0, 0, 0, 0);
                                     const isPastApproved = row.status === "승인 완료" && vacationDate < today;
-                                    const canEdit = row.status === "대기 중";
-                                    const canDelete = row.status === "대기 중" || (row.status === "승인 완료" && vacationDate >= today);
+                                    const canEdit = row.status === "승인 대기";
+                                    const canDelete = row.status === "승인 대기" || (row.status === "승인 완료" && vacationDate >= today);
                                     const showActions = !isPastApproved && (canEdit || canDelete);
                                     return (
                                         <li key={row.id} className="rounded-xl border border-gray-200 p-4 flex flex-col gap-1 bg-white relative">
@@ -282,8 +282,8 @@ export default function VacationManagementSection({
                                         const vacationDate = new Date(row.date);
                                         vacationDate.setHours(0, 0, 0, 0);
                                         const isPastApproved = row.status === "승인 완료" && vacationDate < today;
-                                        const canEdit = row.status === "대기 중";
-                                        const canDelete = row.status === "대기 중" || (row.status === "승인 완료" && vacationDate >= today);
+                                        const canEdit = row.status === "승인 대기";
+                                        const canDelete = row.status === "승인 대기" || (row.status === "승인 완료" && vacationDate >= today);
                                         if (isPastApproved || (!canEdit && !canDelete)) return null;
                                         return (
                                             <div className="relative inline-flex">
