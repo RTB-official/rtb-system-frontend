@@ -31,12 +31,6 @@ export default function ConsumablesSection() {
     const materialName =
         selectedMaterial === "OTHER" ? customMaterial : selectedMaterial;
 
-    // 단위
-    const unit =
-        selectedMaterial === "OTHER"
-            ? ""
-            : MATERIAL_UNITS[selectedMaterial] || "";
-
     // 자재 옵션
     const getMaterialLabel = (name: string) => {
         if (name === "보루") return "보루/5kg";
@@ -64,15 +58,25 @@ export default function ConsumablesSection() {
         return null;
     };
 
-    const handleAdd = () => {
+    // 수량이 숫자(또는 분수)만 있으면 qty로 저장, 아니면 자유 입력(예: 50ml)으로 unit에 저장
+    const getQtyAndUnit = (qtyStr: string): { qty: string; unit: string } => {
+        const trimmed = qtyStr.trim();
+        const parsed = parseQuantity(trimmed);
+        if (parsed != null && parsed > 0) {
+            const unit = selectedMaterial === "OTHER" ? "" : MATERIAL_UNITS[selectedMaterial] || "";
+            return { qty: trimmed, unit };
+        }
+        return { qty: "1", unit: trimmed };
+    };
+
+    const handleAdd = (quantityFromEvent?: string) => {
         if (isAddingRef.current) return;
-        // 유효성 검사
+        const qtyToUse = quantityFromEvent !== undefined ? quantityFromEvent : quantity;
         const newErrors: typeof errors = {};
         if (!materialName) {
             newErrors.material = "자재명을 선택하거나 입력해주세요";
         }
-        const parsedQty = parseQuantity(quantity);
-        if (!parsedQty || parsedQty <= 0) {
+        if (!qtyToUse.trim()) {
             newErrors.quantity = "수량을 입력해주세요";
         }
 
@@ -85,28 +89,38 @@ export default function ConsumablesSection() {
         isAddingRef.current = true;
         setIsAdding(true);
 
+        const { qty, unit } = getQtyAndUnit(qtyToUse);
         addMaterial({
             name: materialName,
-            qty: quantity.trim(),
+            qty,
             unit,
         });
 
         setSelectedMaterial("");
         setCustomMaterial("");
-        setQuantity("1");
+        setQuantity("");
 
         isAddingRef.current = false;
         setIsAdding(false);
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleQuantityKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") {
             e.preventDefault();
+            e.stopPropagation();
+            handleAdd((e.target as HTMLInputElement).value);
+        }
+    };
+
+    const handleMaterialKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
             handleAdd();
         }
     };
 
-    // 표시용 라벨 생성
+    // 표시용 라벨 생성 (단위가 자유 입력(50ml 등)이면 name + unit, 아니면 name + qty + 단위)
     const formatLabel = (name: string, qty: string, unit: string) => {
         if (name === "보루") {
             const parsedQty = parseQuantity(qty) ?? 0;
@@ -117,7 +131,10 @@ export default function ConsumablesSection() {
                     : String(kgValue);
             return `${name} ${kgLabel}kg`;
         }
-        return unit ? `${name} ${qty}${unit}` : `${name} ${qty}`;
+        const isPresetUnit = unit && Object.values(MATERIAL_UNITS).includes(unit);
+        if (isPresetUnit) return `${name} ${qty}${unit}`;
+        if (unit) return `${name} ${unit}`;
+        return `${name} ${qty}`;
     };
 
     return (
@@ -157,19 +174,19 @@ export default function ConsumablesSection() {
                                     }));
                                 }
                             }}
-                            onKeyDown={handleKeyDown}
+                            onKeyDown={handleMaterialKeyDown}
                             error={errors.material}
                         />
                     )}
                 </div>
 
-                {/* 수량 */}
+                {/* 수량 (숫자만 또는 50ml 등 단위 포함 자유 입력) */}
                 <TextInput
                     label="수량"
                     required
                     type="text"
                     value={quantity}
-                    placeholder="예: 1, 0.5, 1/3"
+                    placeholder="예: 1, 0.5, 50ml, 1/3"
                     onChange={(val) => {
                         setQuantity(val);
                         if (errors.quantity) {
@@ -179,21 +196,13 @@ export default function ConsumablesSection() {
                             }));
                         }
                     }}
-                    onKeyDown={handleKeyDown}
-                    className="relative"
-                    icon={
-                        unit ? (
-                            <span className="text-[14px] text-[#6a7282] bg-[#f9fafb] px-2 py-1 rounded-lg border border-[#e5e7eb]">
-                                {unit}
-                            </span>
-                        ) : undefined
-                    }
+                    onKeyDown={handleQuantityKeyDown}
                     error={errors.quantity}
                 />
 
                 {/* 추가 버튼 */}
                 <Button
-                    onClick={handleAdd}
+                    onClick={() => handleAdd()}
                     variant="primary"
                     size="lg"
                     fullWidth

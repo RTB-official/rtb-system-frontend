@@ -302,7 +302,7 @@ export async function createWorkLog(
             const materialsData = data.materials.map((material) => ({
                 work_log_id: workLogId,
                 material_name: material.name,
-                qty: material.qty,
+                qty: Number(material.qty) || 0,
                 unit: material.unit || null,
             }));
 
@@ -764,7 +764,7 @@ export async function updateWorkLog(
             const materialsData = data.materials.map((material) => ({
                 work_log_id: workLogId,
                 material_name: material.name,
-                qty: material.qty,
+                qty: Number(material.qty) || 0,
                 unit: material.unit || null,
             }));
 
