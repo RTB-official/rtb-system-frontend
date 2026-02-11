@@ -547,7 +547,7 @@ export default function AdminVacationPage() {
                                         <h2 className="text-[20px] font-semibold text-gray-900 flex items-center gap-2">
                                             <span className="relative inline-block">
                                                 휴가 신청 내역
-                                                <span className="absolute left-full ml-[1px] w-1.5 h-1.5 bg-red-500 rounded-full" aria-hidden />
+                                                <span className="absolute left-full ml-px shrink-0 rounded-full bg-red-500" aria-hidden style={{ width: 5, height: 6 }} />
                                             </span>
                                         </h2>
                                     </div>
@@ -794,8 +794,21 @@ export default function AdminVacationPage() {
 
             {/* 상세보기/승인 모달 */}
             {detailModalOpen && selectedVacation && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+                <div
+                    className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+                    onClick={() => {
+                        if (!loading) {
+                            setDetailModalOpen(false);
+                            setSelectedVacation(null);
+                        }
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div
+                        className="bg-white rounded-2xl p-6 max-w-md w-full"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <h3 className="text-[20px] font-semibold text-gray-900 mb-4">
                             휴가 신청 상세
                         </h3>
