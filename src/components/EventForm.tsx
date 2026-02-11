@@ -31,6 +31,7 @@ export default function EventForm({
     editingEvent,
     onSave,
 }: EventFormProps) {
+    const { showError } = useToast();
     const [title, setTitle] = useState(editingEvent?.title || "");
     const [allDay, setAllDay] = useState(false);
     const [attendeeInput, setAttendeeInput] = useState("");
