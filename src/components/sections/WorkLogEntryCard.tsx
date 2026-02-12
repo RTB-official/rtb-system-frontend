@@ -60,7 +60,7 @@ export default function WorkLogEntryCard({
 
             <div className="relative p-4 cursor-pointer" onClick={onToggle}>
                 <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2.5 mb-2">
                             <Chip color={style.chipColor} variant="filled" size="lg">
                                 {descType || "—"}
@@ -76,8 +76,9 @@ export default function WorkLogEntryCard({
                             </div>
                         )}
 
+                        {/* 데스크톱: 우측 하단 절대 위치 */}
                         {showNoLunch && noLunchText && (
-                            <div className="absolute bottom-3 right-3 z-20">
+                            <div className="hidden md:block absolute bottom-3 right-3 z-20">
                                 <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm">
                                     {noLunchText}
                                 </span>
@@ -85,6 +86,15 @@ export default function WorkLogEntryCard({
                         )}
 
                         {meta}
+
+                        {/* 모바일: 맨 밑줄에 뱃지 표시 */}
+                        {showNoLunch && noLunchText && (
+                            <div className="md:hidden mt-2">
+                                <span className="inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm">
+                                    {noLunchText}
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     <button
