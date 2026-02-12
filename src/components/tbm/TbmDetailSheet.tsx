@@ -116,25 +116,17 @@ const renderBadge = (
         return <EmptyValueIndicator />;
     }
     if (variant === "pdf") {
-        const bgColor = badgeBgMap[color] ?? "#6b7280";
         return (
             <span
                 style={{
-                    backgroundColor: bgColor,
-                    color: "#ffffff",
-                    padding: "0px 12px 12px 12px",
-                    borderRadius: "6px",
+                    color: "#1f2937",
                     fontSize: "13px",
                     fontWeight: 500,
-                    lineHeight: 1.3,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    maxWidth: "100%",
+                    lineHeight: 1.4,
+                    display: "block",
                     whiteSpace: "normal",
                     wordBreak: "keep-all",
-                    textAlign: "center",
-                    verticalAlign: "middle",
+                    textAlign: "left",
                 }}
             >
                 {label}
@@ -333,13 +325,13 @@ export default function TbmDetailSheet({
                         ) : (
                             detailRows.map((row) => (
                                 <tr key={row.key}>
-                                    <td className="text-center align-middle" style={{ ...pdfBorderStyle, paddingTop: "6px", paddingBottom: "14px", paddingLeft: "8px", paddingRight: "8px" }}>
+                                    <td className="text-left align-top" style={{ ...pdfBorderStyle, paddingTop: "6px", paddingBottom: "14px", paddingLeft: "8px", paddingRight: "8px" }}>
                                         {renderBadge(row.process, row.badgeClass, "pdf")}
                                     </td>
-                                    <td className="text-center align-middle" style={{ ...pdfBorderStyle, paddingTop: "6px", paddingBottom: "14px", paddingLeft: "8px", paddingRight: "8px" }}>
+                                    <td className="text-left align-top" style={{ ...pdfBorderStyle, paddingTop: "6px", paddingBottom: "14px", paddingLeft: "8px", paddingRight: "8px" }}>
                                         {renderBadge(row.hazard, row.badgeClass, "pdf")}
                                     </td>
-                                    <td colSpan={2} className="text-center align-middle" style={{ ...pdfBorderStyle, paddingTop: "6px", paddingBottom: "14px", paddingLeft: "8px", paddingRight: "8px" }}>
+                                    <td colSpan={2} className="text-left align-top" style={{ ...pdfBorderStyle, paddingTop: "6px", paddingBottom: "14px", paddingLeft: "8px", paddingRight: "8px" }}>
                                         {renderBadge(row.measure, row.badgeClass, "pdf")}
                                     </td>
                                 </tr>

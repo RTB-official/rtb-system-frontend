@@ -583,8 +583,10 @@ export async function generateExpenseReportPDF({
             }
         }
 
-        const fileName = `${employeeName}_${year.replace("년", "")}_${month.replace("월", "")}_청구서.pdf`;
-        doc.save(fileName);
+        const blob = doc.output("blob");
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (error) {
         console.error("PDF 생성 오류:", error);
         const errorMessage = `PDF 생성 실패: ${error instanceof Error ? error.message : String(error)}`;

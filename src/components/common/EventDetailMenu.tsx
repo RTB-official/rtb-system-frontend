@@ -350,13 +350,9 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             onClick={(e) => {
                                 e.stopPropagation();
                                 const workLogId = event.id.replace("worklog-", "");
-                                // PDF 페이지를 새 창으로 열기
+                                // PDF 페이지를 새 창(탭)으로 열기
                                 const url = `/report/pdf?id=${workLogId}&autoPrint=1`;
-                                window.open(
-                                    url,
-                                    "report_pdf_window",
-                                    "width=800,height=600,scrollbars=yes"
-                                );
+                                window.open(url, "_blank");
                                 onClose();
                             }}
                             icon={<IconDownload className="w-4 h-4" />}

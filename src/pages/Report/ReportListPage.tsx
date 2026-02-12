@@ -731,11 +731,7 @@ export default function ReportListPage() {
                                                     }}
                                                     onDownload={() => {
                                                         const url = `/report/pdf?id=${row.id}&autoPrint=1`;
-                                                        window.open(url, "report_pdf_window", [
-                                                            "width=980", "height=820", "left=120", "top=60",
-                                                            "scrollbars=yes", "resizable=yes", "toolbar=yes", "menubar=yes",
-                                                            "location=yes", "status=no", "noopener=yes", "noreferrer=yes",
-                                                        ].join(","));
+                                                        window.open(url, "_blank");
                                                     }}
                                                     width="w-44"
                                                 >
@@ -994,25 +990,7 @@ export default function ReportListPage() {
                                                         }}
                                                         onDownload={() => {
                                                             const url = `/report/pdf?id=${row.id}&autoPrint=1`;
-
-                                                            window.open(
-                                                                url,
-                                                                "report_pdf_window",
-                                                                [
-                                                                    "width=980",
-                                                                    "height=820",
-                                                                    "left=120",
-                                                                    "top=60",
-                                                                    "scrollbars=yes",
-                                                                    "resizable=yes",
-                                                                    "toolbar=yes",
-                                                                    "menubar=yes",
-                                                                    "location=yes",
-                                                                    "status=no",
-                                                                    "noopener=yes",
-                                                                    "noreferrer=yes",
-                                                                ].join(",")
-                                                            );
+                                                            window.open(url, "_blank");
                                                         }}
                                                         width="w-44"
                                                     >

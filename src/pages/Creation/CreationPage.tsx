@@ -265,7 +265,7 @@ export default function CreationPage() {
                 const materialEntries = data.materials.map((mat) => ({
                     id: mat.id || Date.now() + Math.random(),
                     name: mat.name,
-                    qty: mat.qty,
+                    qty: String(mat.qty ?? ""),
                     unit: mat.unit || "",
                 }));
                 setMaterials(materialEntries);
@@ -352,7 +352,7 @@ export default function CreationPage() {
                 })),
                 materials: materials.map((mat) => ({
                     name: mat.name,
-                    qty: mat.qty,
+                    qty: Number(mat.qty) || 0,
                     unit: mat.unit || undefined,
                 })),
                 is_draft: false,
@@ -548,7 +548,7 @@ export default function CreationPage() {
                     })),
                     materials: materials.map((mat) => ({
                         name: mat.name,
-                        qty: mat.qty,
+                        qty: Number(mat.qty) || 0,
                         unit: mat.unit || undefined,
                     })),
                     is_draft: true,
