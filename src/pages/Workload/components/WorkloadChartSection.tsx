@@ -1,4 +1,8 @@
+import React, { useState, useRef } from "react";
 import type { RefObject } from "react";
+import ActionMenu, { ActionMenuCheckItem } from "../../../components/common/ActionMenu";
+import Button from "../../../components/common/Button";
+import { IconPlus } from "../../../components/icons/Icons";
 import {
     BarChart,
     Bar,
@@ -30,13 +34,18 @@ interface WorkloadChartSectionProps {
     chartDataWithLastWork: WorkloadChartData[];
     chartContainerRef: RefObject<HTMLDivElement | null>;
     chartSize: ChartSize;
+    showThisMonthAverage?: boolean;
+    onToggleThisMonthAverage?: () => void;
     showLastMonth: boolean;
     onToggleLastMonth: () => void;
+    showLastMonthAverage?: boolean;
+    onToggleLastMonthAverage?: () => void;
+    lastMonthAverageWorkTime?: number;
     onChartMouseMove: (state: any) => void;
     onChartMouseLeave: () => void;
     onChartClick: (state: any) => void;
     onBarClick: (barData: any) => void;
-    CustomXAxisTick: (props: any) => JSX.Element;
+    CustomXAxisTick: (props: any) => React.ReactElement;
     maxYValue: number;
     yAxisTicks: number[];
     averageWorkTime: number;
@@ -112,8 +121,13 @@ export default function WorkloadChartSection({
     chartDataWithLastWork,
     chartContainerRef,
     chartSize,
+    showThisMonthAverage = true,
+    onToggleThisMonthAverage,
     showLastMonth,
     onToggleLastMonth,
+    showLastMonthAverage = false,
+    onToggleLastMonthAverage,
+    lastMonthAverageWorkTime = 0,
     onChartMouseMove,
     onChartMouseLeave,
     onChartClick,
@@ -123,6 +137,19 @@ export default function WorkloadChartSection({
     yAxisTicks,
     averageWorkTime,
 }: WorkloadChartSectionProps) {
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+    const menuButtonRef = useRef<HTMLButtonElement>(null);
+
+    const openMenu = () => {
+        setMenuAnchor(menuButtonRef.current);
+        setMenuOpen(true);
+    };
+    const closeMenu = () => {
+        setMenuOpen(false);
+        setMenuAnchor(null);
+    };
+
     const hasData = chartData.length > 0;
     const n = chartData.length;
     const minChartWidth =
@@ -139,17 +166,54 @@ export default function WorkloadChartSection({
                 </h2>
 
                 <div className="flex items-center gap-4">
-                    <button
-                        type="button"
-                        onClick={onToggleLastMonth}
-                        className={`px-3 py-1.5 rounded-lg text-[13px] font-medium border transition
-                            ${showLastMonth
-                                ? "bg-red-50 border-red-200 text-red-600"
-                                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                            }`}
-                    >
-                        지난달 데이터 {showLastMonth ? "ON" : "OFF"}
-                    </button>
+                    <div>
+                        <Button
+                            ref={menuButtonRef}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={openMenu}
+                            icon={<IconPlus className="w-4 h-4 text-gray-400" />}
+                        >
+                            보조 지표
+                        </Button>
+                        <ActionMenu
+                            isOpen={menuOpen}
+                            anchorEl={menuAnchor}
+                            onClose={closeMenu}
+                            placement="bottom-left"
+                            width="w-44"
+                            showPdf={false}
+                            showDelete={false}
+                            showLogout={false}
+                            headerContent={<span className="text-[12px] font-medium text-gray-500">차트에 표시</span>}
+                        >
+                            <>
+                                {onToggleThisMonthAverage && (
+                                    <ActionMenuCheckItem
+                                        checked={showThisMonthAverage}
+                                        onToggle={onToggleThisMonthAverage}
+                                    >
+                                        이번달 평균
+                                    </ActionMenuCheckItem>
+                                )}
+                                <ActionMenuCheckItem
+                                    checked={showLastMonth}
+                                    onToggle={onToggleLastMonth}
+                                >
+                                    지난달 데이터
+                                </ActionMenuCheckItem>
+                                {onToggleLastMonthAverage && (
+                                    <ActionMenuCheckItem
+                                        checked={showLastMonthAverage}
+                                        onToggle={onToggleLastMonthAverage}
+                                    >
+                                        지난달 평균
+                                    </ActionMenuCheckItem>
+                                )}
+                            </>
+                        </ActionMenu>
+                    </div>
 
                     <div className="flex items-center gap-5">
                         {WORKLOAD_TYPES.map((type) => (
@@ -235,28 +299,53 @@ export default function WorkloadChartSection({
                                             />
                                         ))}
 
-                                        <Line
-                                            type="monotone"
-                                            dataKey={() => averageWorkTime}
-                                            stroke="#5c5c5c"
-                                            strokeWidth={1}
-                                            strokeDasharray="6 6"
-                                            dot={false}
-                                            activeDot={false}
-                                            isAnimationActive={false}
-                                        />
+                                        {showThisMonthAverage && (
+                                            <>
+                                                <Line
+                                                    type="monotone"
+                                                    dataKey={() => averageWorkTime}
+                                                    stroke="#5c5c5c"
+                                                    strokeWidth={1}
+                                                    strokeDasharray="6 6"
+                                                    dot={false}
+                                                    activeDot={false}
+                                                    isAnimationActive={false}
+                                                />
+                                                <ReferenceLine y={averageWorkTime} stroke="transparent">
+                                                    <Label
+                                                        value={`평균 ${averageWorkTime}`}
+                                                        position="insideRight"
+                                                        offset={10}
+                                                        dy={-8}
+                                                        fill="#5c5c5c"
+                                                        fontSize={12}
+                                                        fontWeight={600}
+                                                    />
+                                                </ReferenceLine>
+                                            </>
+                                        )}
 
-                                        <ReferenceLine y={averageWorkTime} stroke="transparent">
-                                            <Label
-                                                value={`평균 ${averageWorkTime}`}
-                                                position="insideRight"
-                                                offset={10}
-                                                dy={-8}
-                                                fill="#5c5c5c"
-                                                fontSize={12}
-                                                fontWeight={600}
-                                            />
-                                        </ReferenceLine>
+                                        {showLastMonthAverage && lastMonthAverageWorkTime > 0 && (
+                                            <>
+                                                <ReferenceLine
+                                                    y={lastMonthAverageWorkTime}
+                                                    stroke="#d97706"
+                                                    strokeDasharray="4 4"
+                                                    strokeWidth={1.5}
+                                                />
+                                                <ReferenceLine y={lastMonthAverageWorkTime} stroke="transparent">
+                                                    <Label
+                                                        value={`지난달 평균 ${lastMonthAverageWorkTime}`}
+                                                        position="insideRight"
+                                                        offset={10}
+                                                        dy={8}
+                                                        fill="#d97706"
+                                                        fontSize={12}
+                                                        fontWeight={600}
+                                                    />
+                                                </ReferenceLine>
+                                            </>
+                                        )}
 
                                         {showLastMonth && (
                                             <Line

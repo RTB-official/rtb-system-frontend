@@ -2,12 +2,73 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
+    IconCheck,
     IconEdit,
     IconTrash,
     IconDownload,
     IconLock,
     IconLogout,
 } from "../icons/Icons";
+
+/** 액션 메뉴 내부에서 쓰는 아이콘+텍스트 버튼 한 줄 */
+function ActionMenuButton({
+    icon,
+    children,
+    onClick,
+    variant = "default",
+    className,
+}: {
+    icon: React.ReactNode;
+    children: React.ReactNode;
+    onClick: () => void;
+    variant?: "default" | "danger";
+    className?: string;
+}) {
+    const base = "w-full px-3 py-2.5 text-left text-[15px] flex items-center gap-3 rounded-lg transition-colors cursor-pointer";
+    const styles =
+        variant === "danger"
+            ? "hover:bg-red-50 active:bg-red-100 text-red-600"
+            : "hover:bg-gray-50 active:bg-gray-100 text-gray-800";
+    const iconStyles = variant === "danger" ? "text-red-400" : "text-gray-500";
+    return (
+        <button
+            type="button"
+            className={[base, styles, className].filter(Boolean).join(" ")}
+            onClick={onClick}
+        >
+            <div className={iconStyles}>{icon}</div>
+            {children}
+        </button>
+    );
+}
+
+/** 액션 메뉴 내부 체크박스 한 줄 (체크 시 파란 박스 + 흰색 체크) */
+export function ActionMenuCheckItem({
+    checked,
+    onToggle,
+    children,
+}: {
+    checked: boolean;
+    onToggle: () => void;
+    children: React.ReactNode;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-[15px] text-gray-800 hover:bg-gray-50 rounded-lg"
+        >
+            {checked ? (
+                <span className="w-4 h-4 rounded flex items-center justify-center shrink-0 bg-[rgb(81,162,255)]">
+                    <IconCheck className="w-2.5 h-2.5 text-white" />
+                </span>
+            ) : (
+                <span className="w-4 h-4 border border-gray-300 rounded shrink-0" />
+            )}
+            {children}
+        </button>
+    );
+}
 
 interface ActionMenuProps {
     isOpen: boolean;
@@ -147,7 +208,13 @@ export default function ActionMenu({
         >
             {(userDisplayName || userEmail || headerContent) && (
                 <>
-                    <div className="px-2 py-2 mb-1">
+                    <div
+                        className={
+                            userDisplayName || userEmail
+                                ? "px-2 py-2 mb-1"
+                                : "px-2 mb-1"
+                        }
+                    >
                         {userDisplayName && (
                             <p className="text-[16px] font-semibold text-gray-900 ">
                                 {userDisplayName}
@@ -160,95 +227,81 @@ export default function ActionMenu({
                         )}
                         {!userDisplayName && !userEmail && headerContent}
                     </div>
-                    <div className="h-px bg-gray-200 mx-2 mb-2" />
+                    {(userDisplayName || userEmail) && (
+                        <div className="h-px bg-gray-200 mx-2 mb-2" />
+                    )}
                 </>
             )}
             {children}
             {showPdf && onPdf && (
-                <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                <ActionMenuButton
+                    icon={<IconDownload />}
                     onClick={() => {
                         onPdf();
                         onClose();
                     }}
                 >
-                    <div className="text-gray-500">
-                        <IconDownload />
-                    </div>
                     {pdfLabel}
-                </button>
+                </ActionMenuButton>
             )}
 
             {onEdit && (
-                <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                <ActionMenuButton
+                    icon={<IconEdit />}
                     onClick={() => {
                         onEdit();
                         onClose();
                     }}
                 >
-                    <div className="text-gray-500">
-                        <IconEdit />
-                    </div>
                     수정
-                </button>
+                </ActionMenuButton>
             )}
 
             {onResetPassword && (
-                <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                <ActionMenuButton
+                    icon={<IconLock />}
                     onClick={() => {
                         onResetPassword();
                         onClose();
                     }}
+                    className="whitespace-nowrap"
                 >
-                    <div className="text-gray-500">
-                        <IconLock />
-                    </div>
                     비밀번호 재설정
-                </button>
+                </ActionMenuButton>
             )}
             {onDownload && (
-                <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                <ActionMenuButton
+                    icon={<IconDownload />}
                     onClick={() => {
                         onDownload();
                         onClose();
                     }}
                 >
-                    <div className="text-gray-500">
-                        <IconDownload />
-                    </div>
                     {downloadLabel}
-                </button>
+                </ActionMenuButton>
             )}
             {showDelete && onDelete && (
-                <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-red-50 active:bg-red-100 text-red-600 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                <ActionMenuButton
+                    icon={<IconTrash />}
+                    variant="danger"
                     onClick={() => {
                         onDelete();
                         onClose();
                     }}
                 >
-                    <div className="text-red-400">
-                        <IconTrash />
-                    </div>
                     삭제
-                </button>
+                </ActionMenuButton>
             )}
             {showLogout && onLogout && (
-                <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg cursor-pointer"
+                <ActionMenuButton
+                    icon={<IconLogout />}
                     onClick={() => {
                         onLogout();
                         onClose();
                     }}
                 >
-                    <div className="text-gray-500">
-                        <IconLogout />
-                    </div>
                     로그아웃
-                </button>
+                </ActionMenuButton>
             )}
         </div>,
         document.body

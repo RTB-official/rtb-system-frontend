@@ -1,4 +1,4 @@
-import React from "react";
+import React, { forwardRef } from "react";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     variant?: "primary" | "secondary" | "outline" | "ghost" | "danger" | "disabled";
@@ -9,19 +9,22 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
     loading?: boolean;
 }
 
-export default function Button({
-    variant = "primary",
-    size = "md",
-    icon,
-    fullWidth = false,
-    width,
-    loading = false,
-    className = "",
-    children,
-    style,
-    disabled: disabledProp,
-    ...props
-}: ButtonProps) {
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+    {
+        variant = "primary",
+        size = "md",
+        icon,
+        fullWidth = false,
+        width,
+        loading = false,
+        className = "",
+        children,
+        style,
+        disabled: disabledProp,
+        ...props
+    },
+    ref
+) {
     const baseStyles =
         "flex whitespace-nowrap items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
@@ -39,10 +42,10 @@ export default function Button({
     };
 
     const sizeStyles = {
-        xs: "h-[28px] px-2 text-[12px] rounded-[6px] gap-0.5",
-        sm: "h-[30px] px-2 text-[13px] rounded-[6px] gap-0.5",
-        md: "h-[36px] px-3 text-[14px] rounded-[8px] gap-0.5",
-        lg: "h-12 px-4 text-[16px] rounded-[10px] gap-1",
+        xs: "h-[28px] px-2 text-[12px] rounded-[6px]",
+        sm: "h-[30px] px-2 text-[13px] rounded-[8px]",
+        md: "h-[36px] px-3 text-[14px] rounded-[10px] gap-0.5",
+        lg: "h-12 px-4 text-[16px] rounded-[12px] gap-1",
     };
 
     const widthStyle = fullWidth ? "w-full" : "";
@@ -60,6 +63,7 @@ export default function Button({
 
     return (
         <button
+            ref={ref}
             className={`${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${widthStyle} ${className}`}
             style={buttonStyle}
             disabled={variant === "disabled" || disabledProp || loading}
@@ -75,4 +79,6 @@ export default function Button({
             {children}
         </button>
     );
-}
+});
+
+export default Button;

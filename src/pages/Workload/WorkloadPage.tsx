@@ -253,7 +253,10 @@ export default function WorkloadPage() {
     >(new Map());
     const [lastMonthChartData, setLastMonthChartData] = useState<WorkloadChartData[]>([]);
     const [showLastMonth, setShowLastMonth] = useState(false);
+    const [showLastMonthAverage, setShowLastMonthAverage] = useState(false);
+    const [showThisMonthAverage, setShowThisMonthAverage] = useState(true);
     const showLastMonthRef = useRef(showLastMonth);
+    const showLastMonthAverageRef = useRef(showLastMonthAverage);
     const { chartContainerRef, chartSize } = useChartSize(chartData.length);
     const selectedYearNum = useMemo(
         () => parseInt(selectedYear.replace("년", "")),
@@ -266,6 +269,9 @@ export default function WorkloadPage() {
     useEffect(() => {
         showLastMonthRef.current = showLastMonth;
     }, [showLastMonth]);
+    useEffect(() => {
+        showLastMonthAverageRef.current = showLastMonthAverage;
+    }, [showLastMonthAverage]);
 
 
     // ✅ 사유가 작성된 사람(name) Set (개인/공무팀 둘 중 하나라도 있으면)
@@ -512,7 +518,7 @@ export default function WorkloadPage() {
                 loadProfileMap(newTableData);
 
                 const key = `${yearNum}-${monthNum}`;
-                if (showLastMonthRef.current && lastMonthKeyRef.current !== key) {
+                if ((showLastMonthRef.current || showLastMonthAverageRef.current) && lastMonthKeyRef.current !== key) {
                     lastMonthKeyRef.current = key;
                     loadLastMonth(newChartData);
                 }
@@ -531,7 +537,7 @@ export default function WorkloadPage() {
     }, [selectedYear, selectedMonth, selectedYearNum, selectedMonthNum, isStaff]);
 
     useEffect(() => {
-        if (!showLastMonth) return;
+        if (!showLastMonth && !showLastMonthAverage) return;
         if (loading) return;
         const yearNum = selectedYearNum;
         const monthNum = selectedMonthNum;
@@ -579,7 +585,7 @@ export default function WorkloadPage() {
         return () => {
             cancelled = true;
         };
-    }, [showLastMonth, selectedYearNum, selectedMonthNum, chartData, loading]);
+    }, [showLastMonth, showLastMonthAverage, selectedYearNum, selectedMonthNum, chartData, loading]);
 
 
 
@@ -595,31 +601,45 @@ export default function WorkloadPage() {
     }, [tableData, currentPage, itemsPerPage]);
 
 
-    // 순수 작업시간 평균 계산
+    // 순수 작업시간 평균 계산 (이번 달)
     const averageWorkTime = useMemo(() => {
         if (chartData.length === 0) return 0;
         const total = chartData.reduce((sum, d) => sum + d.작업, 0);
         return Math.round(total / chartData.length);
     }, [chartData]);
 
-    // Y축 최대값 및 ticks 계산 (차트용)
+    // 지난달 작업시간 평균
+    const lastMonthAverageWorkTime = useMemo(() => {
+        if (lastMonthChartData.length === 0) return 0;
+        const total = lastMonthChartData.reduce((sum, d) => sum + (d.작업 ?? 0), 0);
+        return Math.round(total / lastMonthChartData.length);
+    }, [lastMonthChartData]);
+
+    // Y축 최대값 및 ticks 계산 (차트용) — 보조 지표 켜져 있으면 해당 값까지 포함해 스케일 확대
     const { maxYValue, yAxisTicks } = useMemo(() => {
-        if (chartData.length === 0) {
-            return {
-                maxYValue: 140,
-                yAxisTicks: Array.from(
-                    { length: 140 / Y_AXIS_INTERVAL + 1 },
-                    (_, i) => i * Y_AXIS_INTERVAL
-                ),
-            };
+        const candidates: number[] = [0];
+
+        if (chartData.length > 0) {
+            candidates.push(
+                ...chartData.map((d) => d.작업 + d.이동 + d.대기)
+            );
+        }
+        if (showLastMonth && chartDataWithLastWork.length > 0) {
+            const lastMax = Math.max(
+                ...chartDataWithLastWork.map((d) => (d as { lastWork?: number }).lastWork ?? 0)
+            );
+            if (lastMax > 0) candidates.push(lastMax);
+        }
+        if (showLastMonthAverage && lastMonthAverageWorkTime > 0) {
+            candidates.push(lastMonthAverageWorkTime);
+        }
+        if (showThisMonthAverage && averageWorkTime > 0) {
+            candidates.push(averageWorkTime);
         }
 
-        const max = Math.max(
-            0,
-            ...chartData.map((d) => d.작업 + d.이동 + d.대기)
-        );
-
-        const maxY = Math.ceil(max / Y_AXIS_INTERVAL) * Y_AXIS_INTERVAL;
+        const max = Math.max(...candidates);
+        const effectiveMax = max === 0 && chartData.length === 0 ? 140 : max;
+        const maxY = Math.ceil(effectiveMax / Y_AXIS_INTERVAL) * Y_AXIS_INTERVAL;
 
         return {
             maxYValue: maxY,
@@ -628,7 +648,15 @@ export default function WorkloadPage() {
                 (_, i) => i * Y_AXIS_INTERVAL
             ),
         };
-    }, [chartData]);
+    }, [
+        chartData,
+        chartDataWithLastWork,
+        showLastMonth,
+        showLastMonthAverage,
+        showThisMonthAverage,
+        lastMonthAverageWorkTime,
+        averageWorkTime,
+    ]);
 
 
     return (
@@ -691,8 +719,13 @@ export default function WorkloadPage() {
                                 chartDataWithLastWork={chartDataWithLastWork}
                                 chartContainerRef={chartContainerRef}
                                 chartSize={chartSize}
+                                showThisMonthAverage={showThisMonthAverage}
+                                onToggleThisMonthAverage={() => setShowThisMonthAverage((v) => !v)}
                                 showLastMonth={showLastMonth}
                                 onToggleLastMonth={() => setShowLastMonth((v) => !v)}
+                                showLastMonthAverage={showLastMonthAverage}
+                                onToggleLastMonthAverage={() => setShowLastMonthAverage((v) => !v)}
+                                lastMonthAverageWorkTime={lastMonthAverageWorkTime}
                                 onChartMouseMove={handleChartMouseMove}
                                 onChartMouseLeave={() => {
                                     if (hoverRafRef.current !== null) {
