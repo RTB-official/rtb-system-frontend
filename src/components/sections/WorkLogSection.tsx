@@ -1179,6 +1179,7 @@ export default function WorkLogSection() {
                             const noLunchText = "점심 안 먹고 작업진행(12:00~13:00)";
                             const effectiveNoLunch =
                                 !!entry.noLunch || (entry.note || "").includes(noLunchText);
+                            const effectiveNoDinner = (entry.note || "").includes(NO_DINNER_TEXT);
 
                             const minutes = calcWorkMinutesWithLunchRule({
                                 dateFrom: entry.dateFrom,
@@ -1217,21 +1218,21 @@ export default function WorkLogSection() {
                                         title={entry.title}
                                         meta={
                                             <div className="space-y-2">
-                                                <div className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                <div className="flex items-center gap-2 text-[13px] text-gray-600 whitespace-nowrap">
                                                     <svg
                                                         width="16"
                                                         height="16"
                                                         viewBox="0 0 24 24"
                                                         fill="currentColor"
-                                                        className="text-gray-400"
+                                                        className="text-gray-400 shrink-0"
                                                     >
                                                         <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                     </svg>
-                                                    <span>
+                                                    <span className="shrink-0">
                                                         {entry.dateFrom} {toKoreanTime(entry.timeFrom)}
                                                     </span>
-                                                    <span className="text-gray-400">→</span>
-                                                    <span>
+                                                    <span className="text-gray-400 shrink-0">→</span>
+                                                    <span className="shrink-0">
                                                         {entry.dateTo} {toKoreanTime(entry.timeTo)}
                                                     </span>
                                                 </div>
@@ -1257,6 +1258,8 @@ export default function WorkLogSection() {
                                         }
                                         showNoLunch={entry.descType === "작업" && effectiveNoLunch}
                                         noLunchText={NO_LUNCH_TEXT}
+                                        showNoDinner={entry.descType === "작업" && effectiveNoDinner}
+                                        noDinnerText={NO_DINNER_TEXT}
                                         isExpanded={isExpanded}
                                         onToggle={() => toggleCard(entry.__segId)}
                                     >

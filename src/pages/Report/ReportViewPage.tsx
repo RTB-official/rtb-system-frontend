@@ -219,6 +219,7 @@ function splitEntryByDayForDisplay(entry: any, fallbackKey: string) {
 }
 
 const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
+const NO_DINNER_TEXT = "저녁 안 먹고 작업진행(18:00~19:00)";
 
 function getExpenseTypeRowClass(t?: string) {
     if (!t) return "bg-white";
@@ -594,12 +595,16 @@ export default function ReportViewPage() {
                                                 const key = e.__segKey;
                                                 const note = String(e.note ?? "");
 
-                                                // ✅ 점심 안먹음 플래그(작성 페이지와 최대한 동일하게 흡수)
+                                                // ✅ 점심/저녁 안먹음 플래그(작성 페이지와 최대한 동일하게 흡수)
                                                 const effectiveNoLunch =
                                                     !!e.noLunch ||
                                                     !!e.lunch_worked ||
                                                     note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
                                                     note.includes("점심 안먹고 작업진행(12:00~13:00)");
+                                                const effectiveNoDinner =
+                                                    !!e.noDinner ||
+                                                    note.includes("저녁 안 먹고 작업진행(18:00~19:00)") ||
+                                                    note.includes("저녁 안먹고 작업진행(18:00~19:00)");
 
                                                 const minutes = calcWorkMinutesWithLunchRule({
                                                     dateFrom: e.dateFrom,
@@ -636,21 +641,21 @@ export default function ReportViewPage() {
                                                             hoursLabel={hoursLabel}
                                                             meta={
                                                                 <div className="space-y-2">
-                                                                    <div className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                                    <div className="flex items-center gap-2 text-[13px] text-gray-600 whitespace-nowrap">
                                                                         <svg
                                                                             width="16"
                                                                             height="16"
                                                                             viewBox="0 0 24 24"
                                                                             fill="currentColor"
-                                                                            className="text-gray-400"
+                                                                            className="text-gray-400 shrink-0"
                                                                         >
                                                                             <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                                         </svg>
-                                                                        <span>
+                                                                        <span className="shrink-0">
                                                                             {e.dateFrom} {toKoreanTime(e.timeFrom)}
                                                                         </span>
-                                                                        <span className="text-gray-400">→</span>
-                                                                        <span>
+                                                                        <span className="text-gray-400 shrink-0">→</span>
+                                                                        <span className="shrink-0">
                                                                             {e.dateTo} {toKoreanTime(e.timeTo)}
                                                                         </span>
                                                                     </div>
@@ -669,7 +674,7 @@ export default function ReportViewPage() {
                                                                             <span className="font-medium">{e.persons.length}명</span>
                                                                             <span className="text-gray-400">|</span>
                                                                             <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
-                                                                                {Array.isArray(e.persons) && e.persons.length > 0
+                                                                                {e.persons.length > 0
                                                                                     ? e.persons.join(", ")
                                                                                     : "—"}
                                                                             </div>
@@ -679,6 +684,8 @@ export default function ReportViewPage() {
                                                             }
                                                             showNoLunch={effectiveNoLunch}
                                                             noLunchText={NO_LUNCH_TEXT}
+                                                            showNoDinner={effectiveNoDinner}
+                                                            noDinnerText={NO_DINNER_TEXT}
                                                             isExpanded={isExpanded}
                                                             onToggle={() => toggleCard(String(key))}
                                                         >
