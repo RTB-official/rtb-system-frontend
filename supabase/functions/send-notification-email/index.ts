@@ -84,9 +84,6 @@ async function buildFriendlyContent(
 ): Promise<{ subject: string; text: string; html: string; skip: boolean }> {
   const op = (operation || "").toUpperCase();
 
-  if (table === "work_log_entries" || table === "work_log_expenses" || table === "work_log_materials") {
-    return { subject: "", text: "", html: "", skip: true };
-  }
 
   if (table === "work_logs" && op === "DELETE") {
     return { subject: "", text: "", html: "", skip: true };
@@ -127,10 +124,36 @@ serve(async (req) => {
     if (!payload || typeof payload !== "object") payload = {};
 
     try {
-      const { table, record, operation, changes, batched, work_log_id, events } = payload;
+// email_events 전용 처리
+const eventRecord =
+  payload.record ??
+  payload.new_record ??
+  payload.new ??
+  payload.data?.record ??
+  payload.data?.new ??
+  {};
+
+if (!eventRecord || eventRecord.source_table == null) {
+  return SKIP_200();
+}
+
+const table = eventRecord.source_table;
+const operation = eventRecord.operation;
+const record = eventRecord.snapshot ?? {};
+const changes = eventRecord.changes ?? undefined;
+const safeOp = (operation || "").toUpperCase();
+
+
+
+
+
+
+const { batched, work_log_id, events } = payload;
+
       const safeTable = typeof table === "string" ? table : "";
       const safeRecord = record && typeof record === "object" ? (record as Record<string, any>) : {};
-      const safeOp = (typeof operation === "string" ? operation : "").toUpperCase();
+
+
       const changeKeys = changes && typeof changes === "object" ? Object.keys(changes) : [];
       const recordKeys = safeRecord ? Object.keys(safeRecord) : [];
       const recordId = safeRecord?.id ?? safeRecord?.work_log_id ?? safeRecord?.user_id ?? null;
@@ -143,6 +166,10 @@ serve(async (req) => {
         batched: batched === true,
         eventsCount: Array.isArray(events) ? events.length : 0,
       });
+
+
+
+
 
       if (safeTable === "work_logs") {
         const isDraft = safeRecord?.is_draft;
@@ -201,62 +228,165 @@ serve(async (req) => {
         return new Response("ok");
       }
 
-      let recordForContent: Record<string, any> = safeRecord;
-      if (admin) {
-        if (safeTable === "work_log_entries" && safeRecord?.id != null && safeRecord?.desc_type === undefined) {
-          const full = await fetchWorkLogEntryRow(admin, Number(safeRecord.id));
-          if (full) recordForContent = full;
-        } else if (safeTable === "work_log_expenses" && safeRecord?.id != null && safeRecord?.expense_date === undefined) {
-          const full = await fetchWorkLogExpenseRow(admin, Number(safeRecord.id));
-          if (full) recordForContent = full;
-        } else if (safeTable === "work_log_materials" && safeRecord?.id != null && safeRecord?.material_name === undefined) {
-          const full = await fetchWorkLogMaterialRow(admin, Number(safeRecord.id));
-          if (full) recordForContent = full;
-        }
-      }
+
 
       const safeChanges =
         changes && typeof changes === "object"
           ? (changes as Record<string, { before?: unknown; after?: unknown }>)
           : undefined;
 
-      const [content, toList] = await Promise.all([
-        buildFriendlyContent(safeTable, recordForContent, safeOp, safeChanges, admin),
-        admin ? getRecipients(admin, safeTable, safeOp, safeRecord, safeChanges) : Promise.resolve(INVOICE_EMAILS),
-      ]);
-      const { subject, text, html, skip } = content;
+// 🔥 email_events: work_log_id 기준으로 "미발송 이벤트"를 모아서 batched 메일 1통만 발송
+const workLogIdRaw = eventRecord?.work_log_id ?? recordForContent?.work_log_id ?? recordForContent?.id;
+const workLogId = Number(workLogIdRaw);
 
-      if (skip) {
-        console.log("skip_reason", "content_skip");
-        return new Response("skip");
-      }
+if (!workLogId || !Number.isFinite(workLogId)) {
+  return SKIP_200();
+}
 
-      const workLogId =
-        safeTable === "work_logs"
-          ? Number(recordForContent?.id)
-          : safeTable === "work_log_entries" || safeTable === "work_log_expenses" || safeTable === "work_log_materials"
-          ? Number(recordForContent?.work_log_id)
-          : undefined;
-      if (workLogId && !(await shouldSendWorkLogEmail(admin, workLogId))) {
-        console.log("skip_reason", "throttled");
-        return SKIP_200();
-      }
+if (await getWorkLogIsDraft(workLogId)) {
+  return SKIP_200();
+}
 
-      const toFinal = Array.isArray(toList) && toList.length > 0 ? toList : INVOICE_EMAILS;
+if (!admin) {
+  return SKIP_200();
+}
 
-      const ok = await sendResendEmail(resendKey, {
-        from: "RTB 알림 <no-reply@rtb-kor.com>",
-        to: toFinal,
-        subject,
-        text,
-        html,
-      });
-      if (!ok) {
-        console.log("skip_reason", "resend_failed");
-        return SKIP_200();
-      }
-      console.log("send_result", "ok");
-      return new Response("ok");
+// ✅ 같은 work_log_id의 "미발송 이벤트"를 모아서 1통만 발송
+const { data: pendingEvents, error: pendingErr } = await admin
+  .from("email_events")
+  .select("id, source_table, operation, snapshot, changes, created_at")
+  .eq("work_log_id", workLogId)
+  .is("sent_at", null)
+  .order("created_at", { ascending: true })
+  .limit(50);
+
+if (pendingErr) {
+  console.error("email_events_fetch_error", pendingErr);
+  return SKIP_200();
+}
+
+if (!pendingEvents || pendingEvents.length === 0) {
+  return SKIP_200();
+}
+
+// ✅ 0) work_logs DELETE 이벤트가 포함되어 있으면 => 전체 삭제로 간주하고 메일 발송 금지
+const hasWorkLogDeleteEvent = pendingEvents.some(
+  (ev: any) => ev?.source_table === "work_logs" && String(ev?.operation || "").toUpperCase() === "DELETE"
+);
+
+// ✅ 1) "전체 삭제(캐스케이드)" 패턴 감지: (전부 DELETE) + (테이블이 여러개/삭제량 큼)
+const ops = pendingEvents.map((ev: any) => String(ev?.operation || "").toUpperCase());
+const allDeleteOnly = ops.length > 0 && ops.every((op: string) => op === "DELETE");
+const tableSet = new Set(pendingEvents.map((ev: any) => String(ev?.source_table || "")));
+const distinctTables = tableSet.size;
+
+const deleteCountEntries = pendingEvents.filter(
+  (ev: any) => String(ev?.source_table || "") === "work_log_entries" && String(ev?.operation || "").toUpperCase() === "DELETE"
+).length;
+const deleteCountExpenses = pendingEvents.filter(
+  (ev: any) => String(ev?.source_table || "") === "work_log_expenses" && String(ev?.operation || "").toUpperCase() === "DELETE"
+).length;
+const deleteCountMaterials = pendingEvents.filter(
+  (ev: any) => String(ev?.source_table || "") === "work_log_materials" && String(ev?.operation || "").toUpperCase() === "DELETE"
+).length;
+
+const looksLikeCascadeDelete =
+  allDeleteOnly &&
+  (
+    // 여러 테이블에서 같이 삭제가 터지면 거의 "보고서 전체 삭제"
+    distinctTables >= 2 ||
+    // 작업일지 삭제가 여러 개 한꺼번에 오면 전체 삭제일 가능성 높음
+    deleteCountEntries >= 2 ||
+    // 삭제 이벤트가 좀 많이 모이면 전체 삭제로 판단
+    pendingEvents.length >= 6 ||
+    // 지출/자재도 같이 삭제면 더 확실
+    (deleteCountExpenses > 0 && deleteCountEntries > 0) ||
+    (deleteCountMaterials > 0 && deleteCountEntries > 0)
+  );
+
+// ✅ 2) work_logs 테이블에서 해당 id가 이미 없어도(커밋 후/캐스케이드 순서) => 전체 삭제로 간주
+let workLogExists = true;
+try {
+  const { data: wl, error: wlErr } = await admin.from("work_logs").select("id").eq("id", workLogId).maybeSingle();
+  if (wlErr) console.error("work_logs_exists_check_error", wlErr);
+  if (!wl) workLogExists = false;
+} catch (e) {
+  console.error("work_logs_exists_check_exception", e);
+  // 에러 시엔 삭제 패턴(looksLikeCascadeDelete/hasWorkLogDeleteEvent)으로만 판단
+}
+
+if (hasWorkLogDeleteEvent || !workLogExists || looksLikeCascadeDelete) {
+  // 🔥 중요: 전체 삭제면 메일을 보내지 않고, 쌓인 이벤트만 정리(sent 처리)
+  await admin
+    .from("email_events")
+    .update({ sent_at: new Date().toISOString() })
+    .eq("work_log_id", workLogId)
+    .is("sent_at", null);
+
+  console.log("skip_reason", "worklog_deleted_no_email", {
+    workLogId,
+    hasWorkLogDeleteEvent,
+    workLogExists,
+    looksLikeCascadeDelete,
+    distinctTables,
+    pendingCount: pendingEvents.length,
+  });
+
+  return SKIP_200();
+}
+
+const safeEvents = pendingEvents.slice(0, 50).map((ev: any) => ({
+  table: ev.source_table,
+  operation: ev.operation,
+  record: ev.snapshot ?? {},
+  changes: ev.changes ?? undefined,
+}));
+
+
+const { subject, text, html } = await buildBatchedReportEmail(workLogId, safeEvents);
+
+// 혹시 안전장치로 비어있으면 스킵
+if (!subject) {
+  await admin
+    .from("email_events")
+    .update({ sent_at: new Date().toISOString() })
+    .eq("work_log_id", workLogId)
+    .is("sent_at", null);
+
+  console.log("skip_reason", "empty_subject_after_build", { workLogId });
+  return SKIP_200();
+}
+
+const toList = await getRecipients(admin, safeTable, safeOp, safeRecord, safeChanges);
+const toFinal = Array.isArray(toList) && toList.length > 0 ? toList : INVOICE_EMAILS;
+
+const ok = await sendResendEmail(resendKey, {
+  from: "RTB 알림 <no-reply@rtb-kor.com>",
+  to: toFinal,
+  subject,
+  text,
+  html,
+});
+
+if (!ok) {
+  return SKIP_200();
+}
+
+// 🔥 중요: 같은 work_log_id의 미발송 전부 정리
+await admin
+  .from("email_events")
+  .update({ sent_at: new Date().toISOString() })
+  .eq("work_log_id", workLogId)
+  .is("sent_at", null);
+
+console.log("send_result", "ok_batched_email_events", { workLogId });
+
+return new Response("ok");
+
+
+
+
+
     } catch (err) {
       console.error("send_notification_error", err);
       return SKIP_200();
