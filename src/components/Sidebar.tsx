@@ -23,6 +23,7 @@ import {
     IconNotifications,
     IconClose,
     IconSettings,
+    IconBoard,
 } from "./icons/Icons";
 import { useUser } from "../hooks/useUser";
 import { useNotifications } from "../hooks/useNotifications";
@@ -420,6 +421,12 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0
                         [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                     >
+                        <MenuButton
+                            icon={<IconBoard />}
+                            label="게시판"
+                            isActive={routeLocation.pathname.startsWith("/board") && !menuFocus}
+                            onClick={() => go(PATHS.board, null)}
+                        />
                         {canShowHome && (
                             <MenuButton
                                 icon={<IconHome />}
