@@ -21,7 +21,7 @@ import { useToast } from "../../components/ui/ToastProvider";
 import { PATHS } from "../../utils/paths";
 import PageContainer from "../../components/common/PageContainer";
 
-/** "2026년 2월 14일 오후 2시 30분" 형식 */
+/** "2026년 2월 14일 오후 2:30" 형식 */
 function formatBoardDateTimeKo(iso: string) {
     const d = new Date(iso);
     const y = d.getFullYear();
@@ -31,8 +31,8 @@ function formatBoardDateTimeKo(iso: string) {
     const min = d.getMinutes();
     const ampm = h < 12 ? "오전" : "오후";
     const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    const minStr = min > 0 ? ` ${min}분` : "";
-    return `${y}년 ${month}월 ${day}일 ${ampm} ${hour12}시${minStr}`;
+    const time = `${ampm} ${hour12}:${String(min).padStart(2, "0")}`;
+    return `${y}년 ${month}월 ${day}일 ${time}`;
 }
 
 export default function BoardListPage() {
@@ -45,6 +45,7 @@ export default function BoardListPage() {
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+    const [votingPostId, setVotingPostId] = useState<string | null>(null);
     const { currentUserId } = useUser();
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
@@ -79,7 +80,7 @@ export default function BoardListPage() {
         allowMultiple: boolean,
         currentIndices: number[]
     ) => {
-        if (!currentUserId) return;
+        if (!currentUserId || votingPostId) return;
         let next: number[];
         if (allowMultiple) {
             if (currentIndices.includes(optionIndex)) {
@@ -90,6 +91,7 @@ export default function BoardListPage() {
         } else {
             next = [optionIndex];
         }
+        setVotingPostId(postId);
         try {
             await submitVote(postId, currentUserId, next);
             setMyVotes((prev) => ({ ...prev, [postId]: next }));
@@ -107,6 +109,8 @@ export default function BoardListPage() {
             showSuccess("투표가 반영되었습니다.");
         } catch (e: unknown) {
             showError((e as Error)?.message ?? "투표에 실패했습니다.");
+        } finally {
+            setVotingPostId(null);
         }
     };
 
@@ -190,6 +194,7 @@ export default function BoardListPage() {
                                             isOpen={openMenuId === row.id}
                                             anchorEl={openMenuId === row.id ? menuAnchorRef.current : null}
                                             onClose={() => setOpenMenuId(null)}
+                                            width="w-40"
                                             onEdit={() => {
                                                 setOpenMenuId(null);
                                                 navigate(PATHS.boardEdit(row.id));
@@ -231,6 +236,7 @@ export default function BoardListPage() {
                                                     allowMultiple,
                                                     selectedIndices,
                                                     counts,
+                                                    voteDisabled: votingPostId === row.id,
                                                     onVote: (optionIndex, allowMulti, current) =>
                                                         handleVote(row.id, optionIndex, allowMulti, current),
                                                 }}

@@ -24,9 +24,9 @@ function BoardAuthorMeta({
             ) : (
                 <span className="h-8 w-8 shrink-0 rounded-full bg-gray-300" aria-hidden />
             )}
-            <div className="text-left">
-                <p className={`text-sm text-gray-800 text-bold ${authorClassName}`}>{authorName}</p>
-                <p className="text-xs text-gray-500">{createdAtLabel}</p>
+            <div className="text-left flex flex-col">
+                <span className={`text-base text-gray-800 font-semibold ${authorClassName}`}>{authorName}</span>
+                <span className="text-sm text-gray-500">{createdAtLabel}</span>
             </div>
         </div>
     );
@@ -52,6 +52,7 @@ interface BoardPostCardProps {
         allowMultiple: boolean;
         selectedIndices: number[];
         counts: Record<number, number>;
+        voteDisabled?: boolean;
         onVote: (optionIndex: number, allowMultiple: boolean, currentIndices: number[]) => void;
     };
     className?: string;
@@ -115,11 +116,15 @@ export function BoardPostCard({
                             const pct = totalVotes > 0 ? (count / totalVotes) * 100 : 0;
                             const optionText = selected ? "text-blue-600" : "text-gray-800";
                             const imageUrl = vote.optionImages?.[i];
+                            const isVoting = vote.voteDisabled;
                             return (
                                 <button
                                     key={i}
                                     type="button"
-                                    onClick={() => vote.onVote(i, vote.allowMultiple, vote.selectedIndices)}
+                                    onClick={() => {
+                                        if (isVoting) return;
+                                        vote.onVote(i, vote.allowMultiple, vote.selectedIndices);
+                                    }}
                                     className={`relative flex cursor-pointer items-center gap-4 overflow-hidden rounded-2xl border px-5 py-4 text-left transition-colors ${
                                         selected
                                             ? "border-blue-200 bg-blue-50 hover:bg-blue-50"

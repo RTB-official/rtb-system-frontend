@@ -152,6 +152,7 @@ export default function ActionMenu({
         const match = w.match(/w-\[(\d+)px\]/);
         if (match) return parseInt(match[1]);
         const tailwindWidths: Record<string, number> = {
+            "w-40": 160,
             "w-44": 176,
             "w-48": 192,
             "w-56": 224,
