@@ -23,6 +23,7 @@ import {
     IconNotifications,
     IconClose,
     IconSettings,
+    IconBoard,
 } from "./icons/Icons";
 import { useUser } from "../hooks/useUser";
 import { useNotifications } from "../hooks/useNotifications";
@@ -413,6 +414,13 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         )}
 
                     </div>
+
+                    <MenuButton
+                        icon={<IconBoard />}
+                        label="게시판"
+                        isActive={routeLocation.pathname.startsWith("/board") && !menuFocus}
+                        onClick={() => go(PATHS.board, null)}
+                    />
 
                     <div className="h-px bg-gray-200 rounded-full" />
 
