@@ -415,18 +415,19 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                     </div>
 
+                    <MenuButton
+                        icon={<IconBoard />}
+                        label="게시판"
+                        isActive={routeLocation.pathname.startsWith("/board") && !menuFocus}
+                        onClick={() => go(PATHS.board, null)}
+                    />
+
                     <div className="h-px bg-gray-200 rounded-full" />
 
                     <nav
                         className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0
                         [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                     >
-                        <MenuButton
-                            icon={<IconBoard />}
-                            label="게시판"
-                            isActive={routeLocation.pathname.startsWith("/board") && !menuFocus}
-                            onClick={() => go(PATHS.board, null)}
-                        />
                         {canShowHome && (
                             <MenuButton
                                 icon={<IconHome />}

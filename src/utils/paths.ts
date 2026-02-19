@@ -2,7 +2,7 @@ export const PATHS = {
     dashboard: "/dashboard",
     board: "/board",
     boardCreate: "/board/create",
-    boardDetail: (id: string) => `/board/${id}`,
+    boardEdit: (id: string) => `/board/${id}/edit`,
     reportList: "/report",
     reportCreate: "/reportcreate",
     tbmList: "/tbm",

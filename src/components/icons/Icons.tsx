@@ -417,15 +417,17 @@ export const IconNotifications = (props: { className?: string }) => (
 
 export const IconClose = (props: { className?: string }) => (
     <svg
-        className={props.className || "w-6 h-6"}
+        className={`block shrink-0 ${props.className || "w-6 h-6"}`}
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
     >
-        <path
-            d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"
-            fill="currentColor"
-        />
+        <g transform="translate(0.5, 0)">
+            <path
+                d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"
+                fill="currentColor"
+            />
+        </g>
     </svg>
 );
 
@@ -592,13 +594,23 @@ export const IconSettings = (props: { className?: string }) => (
 export const IconBoard = (props: { className?: string }) => (
     <svg
         className={props.className || "w-6 h-6"}
-        viewBox="0 0 24 24"
-        fill="none"
+        viewBox="0 -960 960 960"
+        fill="currentColor"
         xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
     >
-        <path
-            d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM5 19V5H19V19H5ZM7 7H17V9H7V7ZM7 11H17V13H7V11ZM7 15H13V17H7V15Z"
-            fill="currentColor"
-        />
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h168q13-36 43.5-58t68.5-22q38 0 68.5 22t43.5 58h168q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm80-160h280v-80H280v80Zm0-160h400v-80H280v80Zm0-160h400v-80H280v80Zm221.5-198.5Q510-807 510-820t-8.5-21.5Q493-850 480-850t-21.5 8.5Q450-833 450-820t8.5 21.5Q467-790 480-790t21.5-8.5Z" />
+    </svg>
+);
+
+export const IconImage = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 -960 960 960"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+    >
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0 0v-560 560Zm80-80h400L578-440 446-280l-66-88-120 160Z" />
     </svg>
 );

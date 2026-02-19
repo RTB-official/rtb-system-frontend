@@ -37,7 +37,7 @@ const SafePhrasePage = lazy(() => import("./pages/Settings/SafePhrase"));
 const WebNotificationSettingsPage = lazy(() => import("./pages/Settings/WebNotificationSettingsPage"));
 const BoardListPage = lazy(() => import("./pages/Board/BoardListPage"));
 const BoardCreatePage = lazy(() => import("./pages/Board/BoardCreatePage"));
-const BoardDetailPage = lazy(() => import("./pages/Board/BoardDetailPage"));
+const BoardEditPage = lazy(() => import("./pages/Board/BoardEditPage"));
 
 
 function RoleLanding() {
@@ -86,7 +86,7 @@ function App() {
 
                 <Route path="/board" element={<BoardListPage />} />
                 <Route path="/board/create" element={<BoardCreatePage />} />
-                <Route path="/board/:id" element={<BoardDetailPage />} />
+                <Route path="/board/:id/edit" element={<BoardEditPage />} />
 
                 <Route path="/members" element={<MembersPage />} />
                 <Route path="/vehicles" element={<VehiclesPage />} />

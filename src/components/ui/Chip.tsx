@@ -8,6 +8,8 @@ interface ChipProps {
     variant?: "outline" | "solid" | "filled";
     /** 사이즈: sm(11px), md(12px), lg(13px) */
     size?: "sm" | "md" | "lg";
+    /** md 브레이크포인트 이상에서 적용할 사이즈 (지정 시 모바일은 size, md 이상은 이 값) */
+    sizeFromMd?: "sm" | "md" | "lg";
     icon?: React.ReactNode;
     onClick?: () => void;
     onRemove?: () => void;
@@ -21,6 +23,7 @@ export default function Chip({
     color = "gray-400",
     variant = "solid",
     size = "md",
+    sizeFromMd,
     icon,
     onClick,
     onRemove,
@@ -113,11 +116,11 @@ export default function Chip({
                 border: "border-gray-500",
                 borderOutline: "border-gray-500",
             },
-            "red-600": {
-                text: "text-red-600",
-                bg: "bg-red-600/10",
-                border: "border-red-600",
-                borderOutline: "border-red-600",
+            "red-500": {
+                text: "text-red-500",
+                bg: "bg-red-500/10",
+                border: "border-red-500",
+                borderOutline: "border-red-500",
             },
             "red-700": {
                 text: "text-red-700",
@@ -174,8 +177,9 @@ export default function Chip({
     const baseClasses =
         "inline-flex items-center justify-center font-medium transition-all whitespace-nowrap border";
 
-    const combinedClasses = `${baseClasses} ${sizeStyles[size]} ${colorClasses.text
-        } ${colorClasses.bg} ${colorClasses.border} ${onClick ? "cursor-pointer hover:opacity-80" : "cursor-default"
+    const combinedClasses = (s: "sm" | "md" | "lg") =>
+        `${baseClasses} ${sizeStyles[s]} ${colorClasses.text} ${colorClasses.bg} ${colorClasses.border} ${
+            onClick ? "cursor-pointer hover:opacity-80" : "cursor-default"
         } ${className}`;
 
     const content = (
@@ -203,23 +207,31 @@ export default function Chip({
         </>
     );
 
-    if (!onClick) {
+    const wrap = (classes: string) => {
+        if (!onClick) {
+            return <span className={classes}>{content}</span>;
+        }
         return (
-            <span className={combinedClasses}>
+            <button
+                type="button"
+                onClick={onClick}
+                draggable={draggable}
+                onDragStart={onDragStart}
+                className={classes}
+            >
                 {content}
-            </span>
+            </button>
+        );
+    };
+
+    if (sizeFromMd !== undefined) {
+        return (
+            <>
+                <span className="md:hidden">{wrap(combinedClasses(size))}</span>
+                <span className="hidden md:inline-flex">{wrap(combinedClasses(sizeFromMd))}</span>
+            </>
         );
     }
 
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            draggable={draggable}
-            onDragStart={onDragStart}
-            className={combinedClasses}
-        >
-            {content}
-        </button>
-    );
+    return wrap(combinedClasses(size));
 }
