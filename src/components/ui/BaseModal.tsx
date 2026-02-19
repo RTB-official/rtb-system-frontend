@@ -9,6 +9,7 @@ interface BaseModalProps {
     footer?: ReactNode;
     maxWidth?: string;
     className?: string;
+    showCloseButton?: boolean;
 }
 
 function IconClose() {
@@ -30,6 +31,7 @@ export default function BaseModal({
     footer,
     maxWidth = "max-w-[440px]",
     className = "",
+    showCloseButton = true,
 }: BaseModalProps) {
     // 모달 열릴 때 바디 스크롤 잠금
     useEffect(() => {
@@ -64,23 +66,25 @@ export default function BaseModal({
             {/* Overlay */}
             <div className="absolute inset-0 bg-black/35" onClick={onClose} />
 
-            {/* Modal */}
-            <div className="absolute inset-0 flex items-center justify-center">
+            {/* Modal - 모바일에서 좌우 16px 패딩 */}
+            <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-0">
                 <div
-                    className={`w-full ${maxWidth} bg-white p-6 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden ${className}`}
+                    className={`w-full ${maxWidth} bg-white p-5 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh] sm:max-h-none ${className}`}
                 >
                     {/* Header */}
-                    <div className=" flex items-center justify-between">
+                    <div className={`flex items-center ${showCloseButton ? 'justify-between' : 'justify-start'}`}>
                         <h2 className="text-[22px] font-semibold text-gray-900">
                             {title}
                         </h2>
-                        <button
-                            onClick={onClose}
-                            className="w-9 h-9 rounded-full hover:bg-gray-100 text-gray-700 flex items-center justify-center transition-colors"
-                            aria-label="close"
-                        >
-                            <IconClose />
-                        </button>
+                        {showCloseButton && (
+                            <button
+                                onClick={onClose}
+                                className="w-9 h-9 rounded-full hover:bg-gray-100 text-gray-700 flex items-center justify-center transition-colors"
+                                aria-label="close"
+                            >
+                                <IconClose />
+                            </button>
+                        )}
                     </div>
 
                     {/* Body */}

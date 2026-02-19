@@ -1,7 +1,10 @@
 //NotificationPopup.tsx
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { markNotificationAsRead } from "../../lib/notificationApi";
+import useIsMobile from "../../hooks/useIsMobile";
+import { IconClose } from "../icons/Icons";
 
 interface NotificationItem {
     id: string;
@@ -10,7 +13,7 @@ interface NotificationItem {
     type: "report" | "schedule" | "vacation" | "other";
     created_at?: string;
     read_at?: string | null;
-    meta?: string;
+    meta?: any;
 }
 
 interface NotificationPopupProps {
@@ -19,9 +22,12 @@ interface NotificationPopupProps {
     anchorEl?: HTMLElement | null;
     onMarkAllAsRead?: () => void;
     onNotificationRead?: (id: string) => void;
+    triggerMenuToast?: (type: "vehicles" | "members" | "vacation") => Promise<void> | void;
 }
 
-// 날짜 포맷팅 헬퍼
+
+
+// 날짜 표시 포맷터
 function formatNotificationDate(dateString: string): string {
     const date = new Date(dateString);
     const now = new Date();
@@ -49,28 +55,111 @@ export default function NotificationPopup({
     anchorEl,
     onMarkAllAsRead,
     onNotificationRead,
+    triggerMenuToast,
 }: NotificationPopupProps) {
     const popupRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
+    const isMobile = useIsMobile();
 
-    // 바깥 클릭 닫기
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            const target = e.target as Node;
-            if (
-                popupRef.current &&
-                !popupRef.current.contains(target) &&
-                (!anchorEl || !anchorEl.contains(target))
-            ) {
-                onClose();
+    const parseMeta = (meta?: any) => {
+        if (!meta) return null;
+
+        // 1) 이미 object(jsonb)로 들어오는 경우
+        if (typeof meta === "object") return meta;
+
+        // 2) string인 경우 JSON 파싱
+        if (typeof meta === "string") {
+            let v: any = meta;
+
+            // ✅ 혹시 이중으로 stringify 된 경우까지 2번 정도 풀어줌
+            for (let i = 0; i < 2; i++) {
+                try {
+                    v = JSON.parse(v);
+                    if (typeof v === "object") return v;
+                } catch {
+                    break;
+                }
             }
-        };
+        }
 
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
-        };
-    }, [onClose, anchorEl]);
+        return null;
+    };
+
+    const resolveNotificationRoute = (item: NotificationItem) => {
+        const meta = parseMeta(item.meta);
+        const metaRoute =
+            meta?.route ||
+            meta?.path ||
+            (meta?.tbm_id ? `/tbm/${meta.tbm_id}` : null) ||
+            (meta?.tbmId ? `/tbm/${meta.tbmId}` : null);
+
+        if (metaRoute) return metaRoute;
+
+        if (meta?.kind === "passport_expiry_within_1y") {
+            return "/members";
+        }
+
+        if (meta?.kind === "member_passport_expiry") {
+            return "/members";
+        }
+
+        // 🚗 차량 검사기간 임박 알림
+        if (
+            meta?.kind === "vehicle_inspection_due" ||
+            /차량|검사/i.test(`${item.title ?? ""} ${item.message ?? ""}`)
+        ) {
+            return "/vehicles";
+        }
+
+        const title = `${item.title ?? ""} ${item.message ?? ""}`;
+        if (/tbm/i.test(title)) return "/tbm";
+        if (/여권|passport/i.test(title)) return "/members";
+
+        switch (item.type) {
+            case "schedule":
+                return "/dashboard";
+            case "report":
+                return "/report";
+            case "vacation":
+                return "/vacation";
+            case "other":
+            default:
+                return null;
+        }
+    };
+
+    const resolveMenuType = (
+        item: NotificationItem
+    ): "vehicles" | "members" | "vacation" | null => {
+        const meta = parseMeta(item.meta);
+        const title = `${item.title ?? ""} ${item.message ?? ""}`;
+
+        // 🚗 차량
+        if (
+            meta?.kind === "vehicle_inspection_due" ||
+            /차량|검사/i.test(title)
+        ) {
+            return "vehicles";
+        }
+
+        // 🛂 구성원(여권)
+        if (
+            meta?.kind === "passport_expiry_within_1y" ||
+            meta?.kind === "member_passport_expiry" ||
+            /여권|passport/i.test(title)
+        ) {
+            return "members";
+        }
+
+        // 🏖️ 휴가
+        if (item.type === "vacation" || /휴가/i.test(title)) {
+            return "vacation";
+        }
+
+        return null;
+    };
+
+
 
     // 알림 클릭 핸들러
     const handleNotificationClick = async (item: NotificationItem) => {
@@ -84,47 +173,50 @@ export default function NotificationPopup({
             }
         }
 
-        // 타입에 따라 페이지 이동
-        switch (item.type) {
-            case "schedule":
-                navigate("/dashboard");
-                break;
-            case "report":
-                navigate("/report");
-                break;
-            case "vacation":
-                navigate("/Vacation");
-                break;
-            case "other":
-            default:
-                // other 타입은 이동하지 않음
-                break;
+        // ✅ meta가 있으면 meta 기준으로 우선 이동 (모든 알림 공통)
+        const route = resolveNotificationRoute(item);
+        if (route) {
+            navigate(route);
         }
 
-        // 알림 팝업 닫기
+        // ✅ 알림 팝업으로 들어가도 토스트 띄우고 점 제거
+        const menuType = resolveMenuType(item);
+        if (menuType) {
+            await triggerMenuToast?.(menuType);
+        }
+
         onClose();
     };
 
-    return (
-        <div
-            ref={popupRef}
-            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
-        >
+
+    const content = (
+        <>
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50 shrink-0">
                 <h4 className="text-[20px] font-bold text-[#1e293b]">알림</h4>
-                {items.length > 0 && onMarkAllAsRead && (
-                    <button
-                        onClick={onMarkAllAsRead}
-                        className="text-[14px] text-gray-400 hover:text-gray-600 font-medium transition-colors"
-                    >
-                        모두 읽음
-                    </button>
-                )}
+                <div className="flex items-center gap-2">
+                    {items.length > 0 && onMarkAllAsRead && (
+                        <button
+                            onClick={onMarkAllAsRead}
+                            className="text-[14px] text-gray-400 hover:text-gray-600 font-medium transition-colors"
+                        >
+                            모두 읽음
+                        </button>
+                    )}
+                    {isMobile && (
+                        <button
+                            onClick={onClose}
+                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                            aria-label="닫기"
+                        >
+                            <IconClose className="w-6 h-6" />
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Notification List */}
-            <div className="max-h-[380px] overflow-y-auto custom-scrollbar">
+            <div className={isMobile ? "flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar min-h-0" : "max-h-[380px] overflow-y-auto overflow-x-hidden custom-scrollbar"}>
                 {items.length === 0 ? (
                     <div className="px-5 pt-8 pb-16 text-center text-gray-400">
                         알림이 없습니다.
@@ -136,19 +228,17 @@ export default function NotificationPopup({
                             <div
                                 key={it.id}
                                 onClick={() => handleNotificationClick(it)}
-                                className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${
-                                    isRead
-                                        ? "bg-white hover:bg-gray-50"
-                                        : "bg-blue-50 hover:bg-gray-100"
-                                }`}
+                                className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${isRead
+                                    ? "bg-white hover:bg-gray-50"
+                                    : "bg-blue-50 hover:bg-gray-100"
+                                    }`}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <p
-                                        className={`text-[14px] leading-relaxed ${
-                                            isRead
-                                                ? "font-medium text-[#475569]"
-                                                : "font-semibold text-[#1e293b]"
-                                        }`}
+                                        className={`text-[14px] leading-relaxed ${isRead
+                                            ? "font-medium text-[#475569]"
+                                            : "font-semibold text-[#1e293b]"
+                                            }`}
                                     >
                                         {it.title}
                                     </p>
@@ -157,21 +247,16 @@ export default function NotificationPopup({
                                     )}
                                 </div>
                                 <p
-                                    className={`text-[14px] leading-relaxed ${
-                                        isRead
-                                            ? "text-[#64748b]"
-                                            : "text-[#475569]"
-                                    }`}
+                                    className={`text-[14px] leading-relaxed ${isRead
+                                        ? "text-[#64748b]"
+                                        : "text-[#475569]"
+                                        }`}
                                 >
                                     {it.message}
                                 </p>
-                                {(it.created_at || it.meta) && (
+                                {it.created_at && (
                                     <p className="text-[13px] text-gray-400 mt-0.5">
-                                        {it.meta ||
-                                            (it.created_at &&
-                                                formatNotificationDate(
-                                                    it.created_at
-                                                ))}
+                                        {formatNotificationDate(it.created_at)}
                                     </p>
                                 )}
                             </div>
@@ -179,6 +264,33 @@ export default function NotificationPopup({
                     })
                 )}
             </div>
+        </>
+    );
+
+    // 모바일: 전체 화면 레이어로 표시 (잘림 방지, 좌우 16px 패딩)
+    if (isMobile) {
+        return createPortal(
+            <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="absolute inset-0 bg-black/35" onClick={onClose} aria-hidden />
+                <div className="relative flex flex-col w-full max-h-[85vh] rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in duration-200">
+                    <div ref={popupRef} className="flex flex-col min-h-0 flex-1" onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                        {content}
+                    </div>
+                </div>
+            </div>,
+            document.body
+        );
+    }
+
+    // 데스크톱: 기존 위치(사이드바 오른쪽) 팝업
+    return (
+        <div
+            ref={popupRef}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-x-hidden overflow-y-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
+        >
+            {content}
         </div>
     );
 }

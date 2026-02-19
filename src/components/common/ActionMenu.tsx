@@ -15,6 +15,9 @@ interface ActionMenuProps {
     position?: { x: number; y: number };
     onClose: () => void;
     onEdit?: () => void;
+    onPdf?: () => void;
+    pdfLabel?: string;
+    showPdf?: boolean;
     onDelete?: () => void;
     onResetPassword?: () => void;
     onLogout?: () => void;
@@ -36,7 +39,10 @@ export default function ActionMenu({
     position,
     onClose,
     onEdit,
+    onPdf,
+    pdfLabel = "PDF",
     onDelete,
+    showPdf,
     onResetPassword,
     onLogout,
     onDownload,
@@ -143,12 +149,12 @@ export default function ActionMenu({
                 <>
                     <div className="px-2 py-2 mb-1">
                         {userDisplayName && (
-                            <p className="text-[16px] font-semibold text-gray-900 leading-normal">
+                            <p className="text-[16px] font-semibold text-gray-900 ">
                                 {userDisplayName}
                             </p>
                         )}
                         {userEmail && (
-                            <p className="text-sm text-gray-500 leading-normal">
+                            <p className="text-sm text-gray-500">
                                 {userEmail}
                             </p>
                         )}
@@ -158,6 +164,21 @@ export default function ActionMenu({
                 </>
             )}
             {children}
+            {showPdf && onPdf && (
+                <button
+                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                    onClick={() => {
+                        onPdf();
+                        onClose();
+                    }}
+                >
+                    <div className="text-gray-500">
+                        <IconDownload />
+                    </div>
+                    {pdfLabel}
+                </button>
+            )}
+
             {onEdit && (
                 <button
                     className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
@@ -172,9 +193,10 @@ export default function ActionMenu({
                     수정
                 </button>
             )}
+
             {onResetPassword && (
                 <button
-                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                    className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                     onClick={() => {
                         onResetPassword();
                         onClose();

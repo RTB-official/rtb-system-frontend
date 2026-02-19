@@ -1,14 +1,16 @@
+// EventDetailMenu.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { IconCalendar, IconVacation, IconReport, IconDownload } from "../icons/Icons";
+import { IconCalendar, IconVacation, IconReport, IconDownload, IconStar } from "../icons/Icons";
 import { CalendarEvent } from "../../types";
 import Button from "./Button";
 import Avatar from "./Avatar";
 import Chip from "../ui/Chip";
 import { supabase } from "../../lib/supabase";
 import { getVacationById } from "../../lib/vacationApi";
-import { getWorkLogById } from "../../lib/workLogApi";
+import { getWorkLogByIdCached } from "../../lib/workLogApi";
+import { formatDateRange } from "../../utils/calendarUtils";
 
 interface EventDetailMenuProps {
     isOpen: boolean;
@@ -19,6 +21,7 @@ interface EventDetailMenuProps {
     onEdit: (event: CalendarEvent) => void;
     onDelete: (eventId: string) => void;
     currentUserId?: string; // 현재 로그인한 사용자 ID
+    isAdmin?: boolean; // ✅ 관리자 여부
 }
 
 const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
@@ -30,9 +33,13 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
     onEdit,
     onDelete,
     currentUserId,
+    isAdmin,
 }) => {
     const navigate = useNavigate();
     const menuRef = useRef<HTMLDivElement>(null);
+    const vacationCacheRef = useRef<Map<string, any>>(new Map());
+    const profileCacheRef = useRef<Map<string, any>>(new Map());
+    const attendeeProfileCacheRef = useRef<Map<string, any>>(new Map()); // ✅ 참여자 캐시
     const [vacationData, setVacationData] = useState<any>(null);
     const [workLogData, setWorkLogData] = useState<any>(null);
     const [userProfile, setUserProfile] = useState<any>(null);
@@ -43,9 +50,11 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         ? "vacation"
         : event?.id.startsWith("worklog-")
             ? "worklog"
-            : event?.id.startsWith("event-")
-                ? "event"
-                : null;
+            : event?.id.startsWith("holiday-")
+                ? "holiday"
+                : event?.id.startsWith("event-")
+                    ? "event"
+                    : null;
 
     // 휴가 데이터 로드
     useEffect(() => {
@@ -55,13 +64,36 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
             setLoading(true);
             try {
                 const vacationId = event.id.replace("vacation-", "");
+                const cachedVacation = vacationCacheRef.current.get(vacationId);
+                if (cachedVacation) {
+                    setVacationData(cachedVacation);
+                    if (cachedVacation.user_id) {
+                        const cachedProfile = profileCacheRef.current.get(
+                            cachedVacation.user_id
+                        );
+                        if (cachedProfile) {
+                            setUserProfile(cachedProfile);
+                        }
+                    }
+                    setLoading(false);
+                    return;
+                }
                 const vacation = await getVacationById(vacationId);
 
                 if (vacation) {
+                    vacationCacheRef.current.set(vacationId, vacation);
                     setVacationData(vacation);
 
                     // 사용자 프로필 가져오기
                     if (vacation.user_id) {
+                        const cachedProfile = profileCacheRef.current.get(
+                            vacation.user_id
+                        );
+                        if (cachedProfile) {
+                            setUserProfile(cachedProfile);
+                            setLoading(false);
+                            return;
+                        }
                         const { data: profile } = await supabase
                             .from("profiles")
                             .select("name, email, position")
@@ -69,6 +101,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             .single();
 
                         if (profile) {
+                            profileCacheRef.current.set(vacation.user_id, profile);
                             setUserProfile(profile);
                         }
                     }
@@ -91,7 +124,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
             setLoading(true);
             try {
                 const workLogId = event.id.replace("worklog-", "");
-                const workLog = await getWorkLogById(parseInt(workLogId));
+                const workLog = await getWorkLogByIdCached(parseInt(workLogId));
 
                 if (workLog) {
                     setWorkLogData(workLog);
@@ -174,9 +207,9 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
     // 상태 태그 텍스트
     const getStatusText = (status: string) => {
         const statusMap: Record<string, string> = {
-            pending: "대기 중",
-            approved: "승인됨",
-            rejected: "거부됨",
+            pending: "승인 대기",
+            approved: "승인 완료",
+            rejected: "반려됨",
         };
         return statusMap[status] || status;
     };
@@ -184,9 +217,9 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
     // 상태에 따른 Chip 색상 (휴가 관리 페이지와 동일)
     const getStatusColor = (status: string): string => {
         const colorMap: Record<string, string> = {
-            pending: "blue-600",
+            pending: "gray-500",
             approved: "green-700",
-            rejected: "red-700",
+            rejected: "red-600",
         };
         return colorMap[status] || "gray-500";
     };
@@ -204,7 +237,12 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         if (!vacationData) return null;
 
         const dateText = formatDate(vacationData.date);
-        const isAllDay = true; // 휴가는 항상 하루종일
+        const leaveTypeLabel =
+            vacationData.leave_type === "AM"
+                ? "오전 반차"
+                : vacationData.leave_type === "PM"
+                    ? "오후 반차"
+                    : "하루 종일";
 
         return (
             <div className="flex flex-col gap-4">
@@ -222,10 +260,10 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             </Chip>
                         </div>
                         <div className="text-sm text-gray-500">
-                            {dateText} {isAllDay ? "하루종일" : ""}
+                            {dateText} {leaveTypeLabel}
                         </div>
                         {userProfile && (
-                            <div className="flex items-center gap-2 mt-2">
+                            <div className="flex items-center gap-2 my-1">
                                 <Avatar
                                     email={userProfile.email || null}
                                     size={24}
@@ -261,10 +299,14 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
             title = "출장 보고서";
         }
 
-        // 작성일 표시 (작업 기간이 아닌 작성일)
-        const createdDate = workLogData?.workLog?.created_at
-            ? formatDateTime(workLogData.workLog.created_at)
-            : null;
+        const entries = workLogData?.entries || [];
+        const dateCandidates = entries.flatMap((entry: any) => [
+            entry.dateFrom || null,
+            entry.dateTo || null,
+        ]).filter(Boolean) as string[];
+        const periodStart = dateCandidates.length > 0 ? dateCandidates.reduce((a, b) => (a < b ? a : b)) : null;
+        const periodEnd = dateCandidates.length > 0 ? dateCandidates.reduce((a, b) => (a > b ? a : b)) : null;
+        const workPeriod = periodStart ? formatDateRange(periodStart, periodEnd || periodStart) : null;
 
         return (
             <div className="flex flex-col gap-2.5">
@@ -276,13 +318,13 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                         <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words text-left">
                             {title}
                         </h3>
-                        {createdDate ? (
+                        {workPeriod ? (
                             <div className="text-sm text-gray-500 text-left">
-                                {createdDate} 작성
+                                {workPeriod}
                             </div>
                         ) : (
                             <div className="text-sm text-gray-500 text-left">
-                                작성일 정보 없음
+                                출장기간 정보 없음
                             </div>
                         )}
                     </div>
@@ -329,24 +371,27 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
 
     // 일정 UI
     const renderEventUI = () => {
-        const formatDateTimeRange = (
-            startDate: string,
-            endDate: string
-        ): string => {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-
-            const startTime = `${start.getHours()}시`;
-            const endTime = `${end.getHours()}시`;
-
-            const startDay = `${start.getMonth() + 1}월 ${start.getDate()}일`;
-            const endDay = `${end.getMonth() + 1}월 ${end.getDate()}일`;
-
-            if (startDate === endDate) {
-                return `${startDay} ${startTime} ~ ${endTime}`;
-            }
-            return `${startDay} ${startTime} ~ ${endDay} ${endTime}`;
+        const formatDay = (dateStr: string) => {
+            const d = new Date(dateStr + "T12:00:00");
+            return `${d.getMonth() + 1}월 ${d.getDate()}일`;
         };
+        const formatTimeLabel = (timeStr: string) => {
+            if (!timeStr) return "";
+            const [h, m] = timeStr.split(":").map(Number);
+            if (!m || m === 0) return `${h}시`;
+            return `${h}시 ${m}분`;
+        };
+
+        const dateRangeText =
+            event.allDay === true
+                ? event.startDate === event.endDate
+                    ? `${formatDay(event.startDate)} 하루 종일`
+                    : `${formatDay(event.startDate)} ~ ${formatDay(event.endDate)}`
+                : event.startTime && event.endTime
+                    ? event.startDate === event.endDate
+                        ? `${formatDay(event.startDate)} ${formatTimeLabel(event.startTime)} ~ ${formatTimeLabel(event.endTime)}`
+                        : `${formatDay(event.startDate)} ${formatTimeLabel(event.startTime)} ~ ${formatDay(event.endDate)} ${formatTimeLabel(event.endTime)}`
+                    : `${formatDay(event.startDate)}${event.startTime ? ` ${formatTimeLabel(event.startTime)}` : ""} ~ ${formatDay(event.endDate)}${event.endTime ? ` ${formatTimeLabel(event.endTime)}` : ""}`;
 
         return (
             <div className="flex flex-col gap-4">
@@ -359,10 +404,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             {event.title}
                         </h3>
                         <div className="text-sm text-gray-500 font-medium">
-                            {formatDateTimeRange(
-                                event.startDate,
-                                event.endDate
-                            )}
+                            {dateRangeText}
                         </div>
                         {event.attendees && event.attendees.length > 0 && (
                             <div className="flex flex-col gap-2 mt-2">
@@ -370,9 +412,9 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                                     참여자
                                 </span>
                                 <div className="flex flex-col gap-2">
-                                    {event.attendees.map((attendeeName, i) => (
+                                {event.attendees.map((attendeeName) => (
                                         <AttendeeProfile
-                                            key={i}
+                                            key={attendeeName} // ✅ 고정 key
                                             attendeeName={attendeeName}
                                         />
                                     ))}
@@ -381,8 +423,8 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                         )}
                     </div>
                 </div>
-                {/* 생성자만 수정/삭제 버튼 표시 */}
-                {event.userId === currentUserId && (
+                {/* 생성자 또는 관리자만 수정/삭제 버튼 표시 */}
+                {(event.userId === currentUserId || isAdmin) && (
                     <div className="flex gap-2 mt-2">
                         <Button
                             variant="outline"
@@ -414,13 +456,49 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         );
     };
 
+    // 공휴일 UI
+    const renderHolidayUI = () => {
+        const holidayRange = formatDateRange(event.startDate, event.endDate);
+        return (
+            <div className="flex flex-col gap-4">
+                <div className="flex gap-3 items-start">
+                    <div className="shrink-0">
+                        <IconStar className="w-6 h-6 text-red-500" />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-2 min-w-0">
+                        <h3 className="text-lg font-semibold text-gray-900 leading-tight break-words">
+                            {event.title}
+                        </h3>
+                        <div className="text-sm text-gray-500 font-medium">
+                            대한민국 공휴일
+                        </div>
+                        <div className="text-sm text-gray-500 font-medium">
+                            {holidayRange}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // 참여자 프로필 컴포넌트
     const AttendeeProfile: React.FC<{ attendeeName: string }> = ({ attendeeName }) => {
-        const [profile, setProfile] = useState<any>(null);
+        const [profile, setProfile] = useState<any>(() => {
+            return attendeeProfileCacheRef.current.get(attendeeName) || null;
+        });
 
         useEffect(() => {
+            let cancelled = false;
+
             const loadProfile = async () => {
                 try {
+                    // ✅ 캐시 먼저 확인
+                    const cached = attendeeProfileCacheRef.current.get(attendeeName);
+                    if (cached) {
+                        if (!cancelled) setProfile(cached);
+                        return;
+                    }
+
                     const { data } = await supabase
                         .from("profiles")
                         .select("name, email, position")
@@ -428,15 +506,23 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                         .single();
 
                     if (data) {
-                        setProfile(data);
+                        attendeeProfileCacheRef.current.set(attendeeName, data); // ✅ 캐시에 저장
+                        if (!cancelled) setProfile(data);
                     }
                 } catch (error) {
-                    console.error("프로필 로드 실패:", error);
+                    if (!cancelled) {
+                        console.error("프로필 로드 실패:", error);
+                    }
                 }
             };
 
             loadProfile();
+
+            return () => {
+                cancelled = true;
+            };
         }, [attendeeName]);
+
 
         if (!profile) {
             // 프로필을 찾지 못한 경우 이름만 표시
@@ -471,6 +557,7 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         >
             {eventType === "vacation" && renderVacationUI()}
             {eventType === "worklog" && renderWorkLogUI()}
+            {eventType === "holiday" && renderHolidayUI()}
             {eventType === "event" && renderEventUI()}
             {!eventType && (
                 <div className="text-sm text-gray-500">

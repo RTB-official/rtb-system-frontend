@@ -147,7 +147,6 @@ function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps
                     
                     // 카테고리가 일치하고, 아직 추가되지 않은 경우만 추가
                     if (!alreadyExists && !alreadyLoaded && receipt.category === category) {
-                        console.log("기존 영수증 추가:", receipt);
                         addExistingReceipt({
                             receiptId: receipt.id,
                             category: receipt.category as FileCategory,
@@ -266,18 +265,21 @@ function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps
                                 className="w-12 h-12 bg-[#1f2937] rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center cursor-pointer hover:opacity-80 hover:ring-2 hover:ring-blue-400 transition-all"
                                 onClick={() => handleThumbnailClick(item)}
                             >
-                                {item.isExisting && item.fileUrl ? (
-                                    // 기존 영수증: Storage URL 사용
+                                {item.isExisting && item.fileUrl && (item.mimeType || "").startsWith("image/") ? (
+                                    // 기존 파일이 이미지일 때만 썸네일 표시
                                     <img
                                         src={item.fileUrl}
                                         alt={item.originalName || "영수증"}
                                         className="w-full h-full object-cover"
                                         onError={(e) => {
-                                            console.error("Image load error:", item.fileUrl);
-                                            // 이미지 로드 실패 시 대체 표시
-                                            e.currentTarget.style.display = 'none';
+                                            e.currentTarget.style.display = "none";
                                         }}
                                     />
+                                ) : item.isExisting && item.fileUrl ? (
+                                    // PDF 등 이미지가 아닌 기존 파일
+                                    <span className="text-white text-[10px] font-bold">
+                                        PDF
+                                    </span>
                                 ) : item.preview ? (
                                     // 새로 업로드한 이미지 파일
                                     <img
@@ -350,6 +352,7 @@ interface FileUploadSectionProps {
 }
 
 export default function FileUploadSection({ workLogId }: FileUploadSectionProps) {
+    const { reportType } = useWorkReportStore();
     const [previewFile, setPreviewFile] = useState<{
         url: string;
         name: string;
@@ -373,28 +376,29 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                     <h2 className="text-[18px] md:text-[22px] font-semibold text-[#364153] leading-[1.364] tracking-[-0.43px]">
                         첨부파일 업로드
                     </h2>
-                    <p className="text-[12px] text-[#9ca3af]">
-                        영수증, TBM사진 등
-                    </p>
                 </div>
             </div>
 
             {/* 4개 카드 그리드 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <FileCard
-                    icon={<IconBed />}
-                    title="숙박 영수증"
-                    category="숙박영수증"
-                    onPreview={openPreview}
-                    workLogId={workLogId}
-                />
-                <FileCard
-                    icon={<IconTool />}
-                    title="자재 영수증"
-                    category="자재구매영수증"
-                    onPreview={openPreview}
-                    workLogId={workLogId}
-                />
+                {reportType !== "education" && (
+                    <>
+                        <FileCard
+                            icon={<IconBed />}
+                            title="숙박 영수증"
+                            category="숙박영수증"
+                            onPreview={openPreview}
+                            workLogId={workLogId}
+                        />
+                        <FileCard
+                            icon={<IconTool />}
+                            title="자재 영수증"
+                            category="자재구매영수증"
+                            onPreview={openPreview}
+                            workLogId={workLogId}
+                        />
+                    </>
+                )}
                 <FileCard
                     icon={<IconRestaurant />}
                     title="식비 및 유대 영수증"
@@ -404,7 +408,7 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                 />
                 <FileCard
                     icon={<IconFolder />}
-                    title="기타 (TBM사진 등)"
+                    title="기타"
                     category="기타"
                     onPreview={openPreview}
                     workLogId={workLogId}

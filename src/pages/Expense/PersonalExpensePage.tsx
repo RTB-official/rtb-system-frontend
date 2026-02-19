@@ -1,3 +1,4 @@
+// PersonalExpensePage.tsx
 import { useEffect, useState, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -9,8 +10,9 @@ import ExpenseHistorySection, {
 } from "./components/ExpenseHistorySection";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
-import PersonalExpenseSkeleton from "../../components/common/PersonalExpenseSkeleton";
+import PersonalExpenseSkeleton from "../../components/common/skeletons/PersonalExpenseSkeleton";
 import { useAuth } from "../../store/auth";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import {
     createPersonalExpense,
     createPersonalMileage,
@@ -26,10 +28,12 @@ import {
     type PersonalMileage,
 } from "../../lib/personalExpenseApi";
 import { useToast } from "../../components/ui/ToastProvider";
+import useIsMobile from "../../hooks/useIsMobile";
 
 export default function PersonalExpensePage() {
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
+    const isMobile = useIsMobile();
     const location = useLocation();
     const params = new URLSearchParams(location.search);
     const preselectedDate = params.get("date") || null;
@@ -43,6 +47,12 @@ export default function PersonalExpensePage() {
     const [loading, setLoading] = useState(false);
     const [expenses, setExpenses] = useState<PersonalExpense[]>([]);
     const [mileages, setMileages] = useState<PersonalMileage[]>([]);
+
+    const [confirmState, setConfirmState] = useState<{
+        open: boolean;
+        type: "mileage" | "expense" | "submit_all";
+        id?: number;
+    }>({ open: false, type: "mileage" });
 
     const allItemsToSubmitCount = useMemo(() => {
         // is_submitted가 false인 항목만 카운트
@@ -77,48 +87,47 @@ export default function PersonalExpensePage() {
     }, []);
 
     // 데이터 로드
-    useEffect(() => {
+    const loadData = async () => {
         if (!user?.id) return;
+        setLoading(true);
+        try {
+            const yearNum = parseInt(year.replace("년", ""));
+            const monthNum = parseInt(month.replace("월", "")) - 1;
 
-        const loadData = async () => {
-            setLoading(true);
-            try {
-                const yearNum = parseInt(year.replace("년", ""));
-                const monthNum = parseInt(month.replace("월", "")) - 1;
+            const [expensesData, mileagesData] = await Promise.all([
+                getPersonalExpenses(user.id, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+                getPersonalMileages(user.id, {
+                    year: yearNum,
+                    month: monthNum,
+                }),
+            ]);
 
-                const [expensesData, mileagesData] = await Promise.all([
-                    getPersonalExpenses(user.id, {
-                        year: yearNum,
-                        month: monthNum,
-                    }),
-                    getPersonalMileages(user.id, {
-                        year: yearNum,
-                        month: monthNum,
-                    }),
-                ]);
+            setExpenses(expensesData);
+            setMileages(mileagesData);
 
-                setExpenses(expensesData);
-                setMileages(mileagesData);
+            // 제출된 항목 ID 추출 (백엔드에서 가져온 is_submitted 필드 기반)
+            const submittedExpenseIds = expensesData
+                .filter((e) => e.is_submitted)
+                .map((e) => e.id);
+            const submittedMileageIds = mileagesData
+                .filter((m) => m.is_submitted)
+                .map((m) => m.id);
+            setSubmittedIds([
+                ...submittedExpenseIds,
+                ...submittedMileageIds,
+            ]);
+        } catch (error) {
+            console.error("데이터 로드 실패:", error);
+            showError("데이터를 불러오는데 실패했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
-                // 제출된 항목 ID 추출 (백엔드에서 가져온 is_submitted 필드 기반)
-                const submittedExpenseIds = expensesData
-                    .filter((e) => e.is_submitted)
-                    .map((e) => e.id);
-                const submittedMileageIds = mileagesData
-                    .filter((m) => m.is_submitted)
-                    .map((m) => m.id);
-                setSubmittedIds([
-                    ...submittedExpenseIds,
-                    ...submittedMileageIds,
-                ]);
-            } catch (error) {
-                console.error("데이터 로드 실패:", error);
-                showError("데이터를 불러오는데 실패했습니다.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
+    useEffect(() => {
         loadData();
     }, [user?.id, year, month]);
 
@@ -171,14 +180,7 @@ export default function PersonalExpensePage() {
                 amount_won: calculatedCost,
             });
 
-            // 목록 새로고침
-            const yearNum = parseInt(year.replace("년", ""));
-            const monthNum = parseInt(month.replace("월", "")) - 1;
-            const data = await getPersonalMileages(user.id, {
-                year: yearNum,
-                month: monthNum,
-            });
-            setMileages(data);
+            await loadData();
         } catch (error: any) {
             console.error("마일리지 등록 실패:", error);
             showError(error.message || "마일리지 등록에 실패했습니다.");
@@ -231,14 +233,7 @@ export default function PersonalExpensePage() {
                 receipt_path: receiptPath,
             });
 
-            // 목록 새로고침
-            const yearNum = parseInt(year.replace("년", ""));
-            const monthNum = parseInt(month.replace("월", "")) - 1;
-            const data = await getPersonalExpenses(user.id, {
-                year: yearNum,
-                month: monthNum,
-            });
-            setExpenses(data);
+            await loadData();
         } catch (error: any) {
             console.error("지출 등록 실패:", error);
             showError(error.message || "지출 등록에 실패했습니다.");
@@ -246,18 +241,20 @@ export default function PersonalExpensePage() {
     };
 
     // 마일리지 삭제 핸들러
-    const handleRemoveMileage = async (id: number) => {
+    const handleRemoveMileage = (id: number) => {
         if (!user?.id) {
             showError("로그인이 필요합니다.");
             return;
         }
+        setConfirmState({ open: true, type: "mileage", id });
+    };
 
-        if (!confirm("정말 삭제하시겠습니까?")) return;
-
+    const confirmRemoveMileage = async (id: number) => {
+        if (!user?.id) return;
         try {
             await deletePersonalMileage(id, user.id);
-            setMileages((prev) => prev.filter((item) => item.id !== id));
-            setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
+            showSuccess("삭제되었습니다.");
+            await loadData();
         } catch (error: any) {
             console.error("마일리지 삭제 실패:", error);
             showError(error.message || "마일리지 삭제에 실패했습니다.");
@@ -265,18 +262,20 @@ export default function PersonalExpensePage() {
     };
 
     // 지출 삭제 핸들러
-    const handleRemoveExpense = async (id: number) => {
+    const handleRemoveExpense = (id: number) => {
         if (!user?.id) {
             showError("로그인이 필요합니다.");
             return;
         }
+        setConfirmState({ open: true, type: "expense", id });
+    };
 
-        if (!confirm("정말 삭제하시겠습니까?")) return;
-
+    const confirmRemoveExpense = async (id: number) => {
+        if (!user?.id) return;
         try {
             await deletePersonalExpense(id, user.id);
-            setExpenses((prev) => prev.filter((item) => item.id !== id));
-            setSubmittedIds((prev) => prev.filter((itemId) => itemId !== id));
+            showSuccess("삭제되었습니다.");
+            await loadData();
         } catch (error: any) {
             console.error("지출 삭제 실패:", error);
             showError(error.message || "지출 삭제에 실패했습니다.");
@@ -306,9 +305,8 @@ export default function PersonalExpensePage() {
                 variant: "mileage" as const,
                 date: formatDate(it.m_date),
                 amount: `${(it.amount_won || 0).toLocaleString("ko-KR")}원`,
-                routeLabel: `${it.from_text || "출발지"} → ${
-                    it.to_text || "도착지"
-                }`,
+                routeLabel: `${it.from_text || "출발지"} → ${it.to_text || "도착지"
+                    }`,
                 distanceLabel: `${Number(it.distance_km || 0)}km`,
                 desc: it.detail || "",
                 isSubmitted: it.is_submitted,
@@ -348,37 +346,29 @@ export default function PersonalExpensePage() {
     }, [expenses, year, month]);
 
     // 모두 제출 핸들러
-    const handleSubmitAll = async () => {
+    const handleSubmitAll = () => {
         if (!user?.id) {
             showError("로그인이 필요합니다.");
             return;
         }
 
-        const unsubmittedExpenses = expenses.filter(
-            (item) => !item.is_submitted
-        );
-        const unsubmittedMileages = mileages.filter(
-            (item) => !item.is_submitted
-        );
-
-        const currentItemsToSubmitCount =
-            unsubmittedExpenses.length + unsubmittedMileages.length;
-
-        if (currentItemsToSubmitCount === 0) {
+        if (allItemsToSubmitCount === 0) {
             showError("제출할 항목이 없습니다.");
             return;
         }
 
-        const confirmSubmit = window.confirm(
-            `총 ${currentItemsToSubmitCount}개의 항목을 제출하시겠습니까?`
-        );
-        if (!confirmSubmit) return;
+        setConfirmState({ open: true, type: "submit_all" });
+    };
+
+    const confirmSubmitAll = async () => {
+        if (!user?.id) return;
+
+        const unsubmittedExpenses = expenses.filter((item) => !item.is_submitted);
+        const unsubmittedMileages = mileages.filter((item) => !item.is_submitted);
 
         try {
-            // 백엔드에 제출 상태 업데이트
             const updatePromises: Promise<any>[] = [];
 
-            // 지출 항목 제출 상태 업데이트
             for (const expense of unsubmittedExpenses) {
                 updatePromises.push(
                     updatePersonalExpense(expense.id, user.id, {
@@ -387,7 +377,6 @@ export default function PersonalExpensePage() {
                 );
             }
 
-            // 마일리지 항목 제출 상태 업데이트
             for (const mileage of unsubmittedMileages) {
                 updatePromises.push(
                     updatePersonalMileage(mileage.id, user.id, {
@@ -397,34 +386,8 @@ export default function PersonalExpensePage() {
             }
 
             await Promise.all(updatePromises);
-
-            // 데이터 새로고침
-            const yearNum = parseInt(year.replace("년", ""));
-            const monthNum = parseInt(month.replace("월", "")) - 1;
-            const [expensesData, mileagesData] = await Promise.all([
-                getPersonalExpenses(user.id, {
-                    year: yearNum,
-                    month: monthNum,
-                }),
-                getPersonalMileages(user.id, {
-                    year: yearNum,
-                    month: monthNum,
-                }),
-            ]);
-
-            setExpenses(expensesData);
-            setMileages(mileagesData);
-
-            // 제출된 항목 ID 업데이트
-            const submittedExpenseIds = expensesData
-                .filter((e) => e.is_submitted)
-                .map((e) => e.id);
-            const submittedMileageIds = mileagesData
-                .filter((m) => m.is_submitted)
-                .map((m) => m.id);
-            setSubmittedIds([...submittedExpenseIds, ...submittedMileageIds]);
-
-            showSuccess(`총 ${currentItemsToSubmitCount}개의 항목이 제출되었습니다.`);
+            showSuccess(`총 ${allItemsToSubmitCount}개의 항목이 제출되었습니다.`);
+            await loadData();
         } catch (error: any) {
             console.error("제출 실패:", error);
             showError(error.message || "제출에 실패했습니다.");
@@ -443,13 +406,12 @@ export default function PersonalExpensePage() {
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen shrink-0
+          w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
-          ${
-              sidebarOpen
-                  ? "translate-x-0"
-                  : "-translate-x-full lg:translate-x-0"
-          }
+          ${sidebarOpen
+                        ? "translate-x-0"
+                        : "-translate-x-full lg:translate-x-0"
+                    }
         `}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -461,17 +423,25 @@ export default function PersonalExpensePage() {
                     onMenuClick={() => setSidebarOpen(true)}
                 />
 
-                <div className="flex-1 overflow-y-auto py-4 lg:py-9 px-9">
+                <div className="flex-1 overflow-y-auto py-4 md:py-6 lg:py-9 px-4 md:px-6 lg:px-9">
                     {loading ? (
-                        <PersonalExpenseSkeleton />
+                        isMobile ? (
+                            <div className="flex flex-col items-center justify-center py-20 gap-4">
+                                <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
+                                <p className="text-sm text-gray-500">로딩 중...</p>
+                            </div>
+                        ) : (
+                            <PersonalExpenseSkeleton />
+                        )
                     ) : (
                         <>
                             {/* 조회 기간 */}
-                            <div className="mb-4 flex flex-wrap items-center gap-4">
-                                <h2 className="text-[24px] font-semibold text-gray-900">
+                            <div className="mb-4 flex flex-wrap items-center gap-3 md:gap-4">
+                                <h2 className="text-lg md:text-[24px] font-semibold text-gray-900">
                                     조회 기간
                                 </h2>
                                 <YearMonthSelector
+                                    className="flex-1 min-w-0 max-w-full"
                                     year={year}
                                     month={month}
                                     onYearChange={setYear}
@@ -482,35 +452,47 @@ export default function PersonalExpensePage() {
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3 items-stretch w-full">
-                                <MileageCard
-                                    initialDate={preselectedDate || undefined}
-                                    onAdd={handleMileageAdd}
-                                />
-                                <ExpenseFormCard
-                                    initialDate={preselectedDate || undefined}
-                                    onAdd={handleExpenseAdd}
-                                />
+                                <div className="min-w-0 w-full">
+                                    <MileageCard
+                                        initialDate={
+                                            preselectedDate || undefined
+                                        }
+                                        onAdd={handleMileageAdd}
+                                    />
+                                </div>
+                                <div className="min-w-0 w-full">
+                                    <ExpenseFormCard
+                                        initialDate={
+                                            preselectedDate || undefined
+                                        }
+                                        onAdd={handleExpenseAdd}
+                                    />
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start w-full">
-                                <ExpenseHistorySection
-                                    title="개인 차량 마일리지 내역"
-                                    items={mileageHistory}
-                                    emptyMessage="등록된 마일리지 내역이 없습니다."
-                                    submittedIds={submittedIds}
-                                    onRemove={handleRemoveMileage}
-                                />
-                                <ExpenseHistorySection
-                                    title="개인 카드/현금 지출 내역"
-                                    items={cardHistory}
-                                    emptyMessage="등록된 지출 내역이 없습니다."
-                                    submittedIds={submittedIds}
-                                    onRemove={handleRemoveExpense}
-                                />
+                                <div className="min-w-0 w-full">
+                                    <ExpenseHistorySection
+                                        title="개인 차량 마일리지 내역"
+                                        items={mileageHistory}
+                                        emptyMessage="등록된 마일리지 내역이 없습니다."
+                                        submittedIds={submittedIds}
+                                        onRemove={handleRemoveMileage}
+                                    />
+                                </div>
+                                <div className="min-w-0 w-full">
+                                    <ExpenseHistorySection
+                                        title="개인 카드/현금 지출 내역"
+                                        items={cardHistory}
+                                        emptyMessage="등록된 지출 내역이 없습니다."
+                                        submittedIds={submittedIds}
+                                        onRemove={handleRemoveExpense}
+                                    />
+                                </div>
                             </div>
 
                             {allItemsToSubmitCount > 0 && (
-                                <div className="fixed bottom-6 left-6 right-6 lg:left-[239px] mx-9">
+                                <div className="fixed bottom-6 left-4 right-4 md:left-6 md:right-6 lg:left-[calc(239px+2.25rem)] lg:right-9 z-10">
                                     <Button
                                         variant="primary"
                                         size="lg"
@@ -527,6 +509,33 @@ export default function PersonalExpensePage() {
                     )}
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={confirmState.open}
+                onClose={() => setConfirmState({ ...confirmState, open: false })}
+                onConfirm={() => {
+                    if (confirmState.type === "mileage" && confirmState.id) {
+                        confirmRemoveMileage(confirmState.id);
+                    } else if (confirmState.type === "expense" && confirmState.id) {
+                        confirmRemoveExpense(confirmState.id);
+                    } else if (confirmState.type === "submit_all") {
+                        confirmSubmitAll();
+                    }
+                    setConfirmState({ ...confirmState, open: false });
+                }}
+                title={
+                    confirmState.type === "submit_all" ? "청구 제출" : "항목 삭제"
+                }
+                message={
+                    confirmState.type === "submit_all"
+                        ? `총 ${allItemsToSubmitCount}개의 항목을 제출하시겠습니까?`
+                        : "정말 삭제하시겠습니까?"
+                }
+                confirmText={confirmState.type === "submit_all" ? "제출" : "삭제"}
+                confirmVariant={
+                    confirmState.type === "submit_all" ? "primary" : "danger"
+                }
+            />
         </div>
     );
 }

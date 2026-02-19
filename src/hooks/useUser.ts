@@ -15,6 +15,7 @@ export interface UserPermissions {
     isStaff: boolean;
     showHomeMenu: boolean;
     showVacationMenu: boolean;
+    initialized: boolean;
 }
 
 export function useUser() {
@@ -69,124 +70,122 @@ export function useUser() {
         initialized: false,
     });
 
-    const [userPermissions, setUserPermissions] = useState<UserPermissions>({
-        isCEO: false,
-        isAdmin: false,
-        isStaff: false,
-        showHomeMenu: false,
-        showVacationMenu: false,
+    const [userPermissions, setUserPermissions] = useState<UserPermissions>(() => {
+        const role = localStorage.getItem("sidebarRole");
+        const position = localStorage.getItem("sidebarPosition");
+        const id = localStorage.getItem("sidebarLoginId");
+
+        const isCEO = position === "대표";
+        const isAdmin = role === "admin";
+        const isStaff = role === "staff";
+        const showHomeMenu = isCEO || isAdmin;
+        const showVacationMenu = isCEO || !isStaff;
+
+        return {
+            isCEO,
+            isAdmin,
+            isStaff,
+            showHomeMenu,
+            showVacationMenu,
+            initialized: !!id, // If we have an ID, we at least have cached info
+        };
     });
 
     // 사용자 정보 로드
     useEffect(() => {
         const fetchUser = async () => {
-            const {
-                data: { user },
-                error: authError,
-            } = await supabase.auth.getUser();
+            try {
+                const {
+                    data: { user },
+                    error: authError,
+                } = await supabase.auth.getUser();
 
-            if (authError || !user) {
-                console.error("유저 세션 없음:", authError?.message);
-                setCurrentUser(null);
-                return;
-            }
+                if (authError || !user) {
+                    console.error("유저 세션 없음:", authError?.message);
+                    setCurrentUser(null);
+                    return;
+                }
 
-            const sessionEmail = (user.email ?? "").toString();
-            const sessionId = sessionEmail ? sessionEmail.split("@")[0] : "";
+                const sessionEmail = (user.email ?? "").toString();
+                const sessionId = sessionEmail ? sessionEmail.split("@")[0] : "";
 
-            // 새로고침 직후에도 즉시 동일하게 보이도록 캐시
-            if (sessionEmail) localStorage.setItem("sidebarEmail", sessionEmail);
-            if (sessionId) {
-                setSidebarLoginId(sessionId);
-                localStorage.setItem("sidebarLoginId", sessionId);
-            }
+                // 새로고침 직후에도 즉시 동일하게 보이도록 캐시
+                if (sessionEmail) localStorage.setItem("sidebarEmail", sessionEmail);
+                if (sessionId) {
+                    setSidebarLoginId(sessionId);
+                    localStorage.setItem("sidebarLoginId", sessionId);
+                }
 
-            // DB 조회 전에 먼저 렌더링 값 확보 (깜빡임 방지)
-            const cachedPosition = localStorage.getItem("sidebarPosition") || "";
-            const cachedRole = localStorage.getItem("sidebarRole");
-            const cachedDepartment = localStorage.getItem("sidebarDepartment");
+                // 프로필 조회를 먼저 수행 (가장 빠르게 직급 정보 확보)
+                const { data, error } = await supabase
+                    .from("profiles")
+                    .select("name, email, username, position, role, department")
+                    .eq("id", user.id)
+                    .single();
 
-            // 즉시 currentUser 업데이트하여 메뉴 깜빡임 방지
-            setCurrentUser({
-                displayName: sessionId || "사용자",
-                email: sessionEmail,
-                position: cachedPosition || null,
-                role: userRole || cachedRole || null,
-                department: userDepartment || cachedDepartment || null,
-            });
+                if (error) {
+                    console.error("유저 정보 조회 실패:", error.message);
+                    const email = (user.email ?? "").toString();
+                    const id = email ? email.split("@")[0] : "";
+                    const cachedPosition = localStorage.getItem("sidebarPosition") || "";
 
-            const { data, error } = await supabase
-                .from("profiles")
-                .select("name, email, username, position, role, department")
-                .eq("id", user.id)
-                .single();
+                    setCurrentUser({
+                        displayName: user.email ?? "사용자",
+                        email,
+                        position: cachedPosition || null,
+                        role: userRole,
+                        department: userDepartment,
+                    });
 
-            if (error) {
-                console.error("유저 정보 조회 실패:", error.message);
-                const email = (user.email ?? "").toString();
+                    if (id) {
+                        setSidebarLoginId(id);
+                        localStorage.setItem("sidebarLoginId", id);
+                    }
+                    return;
+                }
+
+                const email = (data.email ?? user.email ?? "").toString();
+                if (email) localStorage.setItem("sidebarEmail", email);
                 const id = email ? email.split("@")[0] : "";
-                const cachedPosition = localStorage.getItem("sidebarPosition") || "";
+
+                const pos = (data?.position ?? "").toString();
+                if (pos) localStorage.setItem("sidebarPosition", pos);
+                else localStorage.removeItem("sidebarPosition");
+
+                // role과 department를 별도 state에 저장 (한 번 설정되면 유지)
+                setUserRole(data?.role ?? null);
+                setUserDepartment(data?.department ?? null);
+
+                if (data?.role !== null && data?.role !== undefined) {
+                    localStorage.setItem("sidebarRole", data.role);
+                }
+                if (data?.department !== null && data?.department !== undefined) {
+                    localStorage.setItem("sidebarDepartment", data.department);
+                }
 
                 setCurrentUser({
-                    displayName: user.email ?? "사용자",
+                    displayName: data?.username ?? data?.name ?? (user.email ?? "사용자"),
                     email,
-                    position: cachedPosition || null,
-                    role: userRole,
-                    department: userDepartment,
+                    position: data?.position ?? null,
+                    role: data?.role ?? null,
+                    department: data?.department ?? null,
                 });
 
                 if (id) {
                     setSidebarLoginId(id);
                     localStorage.setItem("sidebarLoginId", id);
                 }
-                return;
+
+                // 사용자 ID 저장
+                setCurrentUserId(user.id);
+            } catch (error) {
+                console.error("사용자 정보 로드 중 오류:", error);
             }
-
-            const email = (data.email ?? user.email ?? "").toString();
-            if (email) localStorage.setItem("sidebarEmail", email);
-            const id = email ? email.split("@")[0] : "";
-
-            const pos = (data?.position ?? "").toString();
-            if (pos) localStorage.setItem("sidebarPosition", pos);
-            else localStorage.removeItem("sidebarPosition");
-
-            // role과 department를 별도 state에 저장 (한 번 설정되면 유지)
-            setUserRole(data?.role ?? null);
-            setUserDepartment(data?.department ?? null);
-
-            if (data?.role !== null && data?.role !== undefined) {
-                localStorage.setItem("sidebarRole", data.role);
-            }
-            if (data?.department !== null && data?.department !== undefined) {
-                localStorage.setItem("sidebarDepartment", data.department);
-            }
-
-            setCurrentUser({
-                displayName: data?.username ?? data?.name ?? (user.email ?? "사용자"),
-                email,
-                position: data?.position ?? null,
-                role: data?.role ?? null,
-                department: data?.department ?? null,
-            });
-
-            console.log("[useUser] 사용자 정보 로드:", {
-                "DB 데이터": data,
-                position: data?.position,
-                role: data?.role,
-                department: data?.department,
-            });
-
-            if (id) {
-                setSidebarLoginId(id);
-                localStorage.setItem("sidebarLoginId", id);
-            }
-
-            // 사용자 ID 저장
-            setCurrentUserId(user.id);
         };
 
         fetchUser();
-    }, [userRole, userDepartment]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // 초기 마운트 시에만 실행
 
     // 사용자 권한 계산
     useEffect(() => {
@@ -194,7 +193,7 @@ export function useUser() {
             return;
         }
 
-        if (!currentUser) {
+        if (!currentUserId || !currentUser) {
             return;
         }
 
@@ -203,10 +202,6 @@ export function useUser() {
             userRole !== null && userRole !== undefined
                 ? userRole
                 : currentUser.role || localStorage.getItem("sidebarRole");
-        const department =
-            userDepartment !== null && userDepartment !== undefined
-                ? userDepartment
-                : currentUser.department || localStorage.getItem("sidebarDepartment");
 
         // 권한 계산 (한 번만 계산하고 절대 변경되지 않음)
         // 대표는 예외로 모든 권한 가짐
@@ -216,21 +211,6 @@ export function useUser() {
         const isStaff = role === "staff";
         const showHomeMenu = isCEO || isAdmin;
         const showVacationMenu = isCEO || !isStaff;
-
-        console.log("[useUser] 권한 계산:", {
-            position,
-            role,
-            department,
-            userRole,
-            userDepartment,
-            currentUserRole: currentUser.role,
-            currentUserDepartment: currentUser.department,
-            isCEO,
-            isAdmin,
-            isStaff,
-            showHomeMenu,
-            showVacationMenu,
-        });
 
         // ref에 저장 (절대 변경되지 않음)
         userPermissionsRef.current = {
@@ -249,6 +229,7 @@ export function useUser() {
             isStaff,
             showHomeMenu,
             showVacationMenu,
+            initialized: true,
         });
     }, [currentUser, userRole, userDepartment]);
 

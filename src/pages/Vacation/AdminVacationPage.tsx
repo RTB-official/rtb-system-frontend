@@ -1,14 +1,17 @@
+// AdminVacationPage.tsx
 import { useMemo, useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
-import AdminVacationSkeleton from "../../components/common/AdminVacationSkeleton";
+import AdminVacationSkeleton from "../../components/common/skeletons/AdminVacationSkeleton";
 import Select from "../../components/common/Select";
 import {
     getVacations,
     updateVacationStatus,
     formatVacationDate,
+    formatVacationDays,
     leaveTypeToKorean,
     statusToKorean,
     calculateAllEmployeesVacation,
@@ -19,6 +22,12 @@ import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
 import { calculateAnnualLeave } from "../../lib/vacationCalculator";
 import { useToast } from "../../components/ui/ToastProvider";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import ExpandableDetailPanel from "../../components/common/ExpandableDetailPanel";
+import useIsMobile from "../../hooks/useIsMobile";
+import { IconChevronLeft, IconChevronRight } from "../../components/icons/Icons";
+import Avatar from "../../components/common/Avatar";
+import { ROLE_ORDER } from "../Members/constants";
 
 // 직원별 통계
 interface EmployeeStats {
@@ -44,16 +53,23 @@ interface VacationRequestRow {
 
 export default function AdminVacationPage() {
     const { user } = useAuth();
+    const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { showSuccess, showError } = useToast();
+    const isMobile = useIsMobile();
+    const employeeIdFromParams = searchParams.get("employee");
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [year, setYear] = useState(() => String(new Date().getFullYear()));
     const [loading, setLoading] = useState(false);
+    const [calculateConfirmOpen, setCalculateConfirmOpen] = useState(false);
 
     // 직원별 통계
     const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
 
     // 직원 이름 매핑
     const [employeeMap, setEmployeeMap] = useState<Map<string, string>>(new Map());
+    // 직원 프로필 (Avatar용: email, position)
+    const [employeeProfiles, setEmployeeProfiles] = useState<Map<string, { email: string | null; position: string | null }>>(new Map());
 
     // 선택된 직원 ID (필터링용)
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
@@ -65,46 +81,41 @@ export default function AdminVacationPage() {
     const [page, setPage] = useState(1);
     const itemsPerPage = 10;
 
-    // 직원 목록 가져오기 (vacations 테이블에서 user_id 추출 후 profiles에서 이름 조회)
-    const fetchEmployees = async (allVacations: Vacation[]): Promise<{ id: string; name: string; joinDate?: string }[]> => {
+    // 직원별 휴가 신청 내역 상세 모달 (구성원 지출관리 포맷)
+    const [vacationDetailEmployeeId, setVacationDetailEmployeeId] = useState<string | null>(null);
+    const [employeeVacationHistory, setEmployeeVacationHistory] = useState<Vacation[]>([]);
+    const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
+
+    // 어드민(공무팀) 프로필만 조회 (공사팀 제외)
+    const fetchAllProfiles = async (): Promise<{ id: string; name: string; joinDate?: string; email: string | null; position: string | null }[]> => {
         try {
-            // vacations 테이블에서 고유한 user_id 추출
-            const userIds = new Set(allVacations.map(v => v.user_id));
-            const employeeList: { id: string; name: string; joinDate?: string }[] = [];
+            const { data: profiles, error } = await supabase
+                .from("profiles")
+                .select("id, name, email, join_date, position")
+                .eq("role", "admin");
 
-            // 각 user_id에 대해 profiles 테이블에서 이름 가져오기
-            for (const userId of Array.from(userIds)) {
-                try {
-                    const { data: profile } = await supabase
-                        .from("profiles")
-                        .select("id, name, email, join_date")
-                        .eq("id", userId)
-                        .single();
-
-                    if (profile) {
-                        employeeList.push({
-                            id: profile.id,
-                            name: profile.name || profile.email || "알 수 없음",
-                            joinDate: profile.join_date,
-                        });
-                    } else {
-                        employeeList.push({
-                            id: userId,
-                            name: `User ${userId.substring(0, 8)}`,
-                        });
-                    }
-                } catch {
-                    // 프로필이 없으면 기본값 사용
-                    employeeList.push({
-                        id: userId,
-                        name: `User ${userId.substring(0, 8)}`,
-                    });
-                }
+            if (error) {
+                console.error("어드민 프로필 조회 실패:", error);
+                return [];
             }
 
-            return employeeList.sort((a, b) => a.name.localeCompare(b.name));
+            const list = (profiles || [])
+                .map((p: { id: string; name?: string; email?: string | null; join_date?: string | null; position?: string | null }) => ({
+                    id: p.id,
+                    name: p.name || (p.email as string) || "알 수 없음",
+                    joinDate: p.join_date || undefined,
+                    email: p.email ?? null,
+                    position: p.position ?? null,
+                }))
+                .filter((emp) => emp.name !== "김영");
+            return list.sort((a, b) => {
+                const orderA = ROLE_ORDER[a.position ?? ""] ?? 999;
+                const orderB = ROLE_ORDER[b.position ?? ""] ?? 999;
+                if (orderA !== orderB) return orderA - orderB;
+                return a.name.localeCompare(b.name);
+            });
         } catch (error) {
-            console.error("직원 목록 조회 실패:", error);
+            console.error("전체 프로필 조회 실패:", error);
             return [];
         }
     };
@@ -119,31 +130,43 @@ export default function AdminVacationPage() {
                 // 모든 직원의 휴가 조회
                 const allVacations = await getVacations(undefined, { year: yearNum });
 
-                // 직원 목록 가져오기 (vacations에서 user_id 추출)
-                const employees = await fetchEmployees(allVacations);
+                const employees = await fetchAllProfiles();
                 const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
-                const employeeJoinDateMap = new Map(employees.map(emp => [emp.id, emp.joinDate]));
+                const profileMap = new Map(employees.map(emp => [emp.id, { email: emp.email, position: emp.position }]));
                 setEmployeeMap(employeeNameMap);
+                setEmployeeProfiles(profileMap);
 
                 // 직원별 통계 계산
                 const statsMap = new Map<string, EmployeeStats>();
 
-                // 모든 직원의 현재 총 연차 계산 (모든 연도 합산)
-                for (const emp of employees) {
-                    const joinDate = emp.joinDate;
-                    let totalDays = 15; // 기본값
-
-                    if (joinDate) {
-                        // 현재 날짜 기준으로 모든 연도의 연차 합산
+                const annualLeavePromises = employees.map(async (emp) => {
+                    let totalDays = 15;
+                    if (emp.joinDate) {
                         try {
                             totalDays = await getCurrentTotalAnnualLeave(emp.id);
+                            const approvedVacations = allVacations.filter(
+                                v => v.user_id === emp.id && v.status === "approved"
+                            );
+                            const usedDays = approvedVacations.reduce(
+                                (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
+                                0
+                            );
+                            totalDays = totalDays + usedDays;
                         } catch (error) {
                             console.error(`직원 ${emp.id} 연차 계산 실패:`, error);
-                            // 실패 시 해당 연도만 계산
-                            totalDays = calculateAnnualLeave(joinDate, yearNum);
+                            totalDays = calculateAnnualLeave(emp.joinDate!, yearNum);
                         }
                     }
+                    return { empId: emp.id, totalDays };
+                });
 
+                // 모든 연차 계산 완료 대기
+                const annualLeaveResults = await Promise.all(annualLeavePromises);
+                const annualLeaveMap = new Map(annualLeaveResults.map(r => [r.empId, r.totalDays]));
+
+                // 통계 초기화
+                for (const emp of employees) {
+                    const totalDays = annualLeaveMap.get(emp.id) || 15;
                     statsMap.set(emp.id, {
                         userId: emp.id,
                         userName: emp.name,
@@ -152,33 +175,6 @@ export default function AdminVacationPage() {
                         remainingDays: totalDays,
                         totalDays: totalDays,
                     });
-                }
-
-                // 기존 통계에 없는 직원도 추가 (휴가 기록이 없는 직원)
-                for (const vacation of allVacations) {
-                    if (!statsMap.has(vacation.user_id)) {
-                        const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
-                        const joinDate = employeeJoinDateMap.get(vacation.user_id);
-                        let totalDays = 15;
-
-                        if (joinDate) {
-                            try {
-                                totalDays = await getCurrentTotalAnnualLeave(vacation.user_id);
-                            } catch (error) {
-                                console.error(`직원 ${vacation.user_id} 연차 계산 실패:`, error);
-                                totalDays = calculateAnnualLeave(joinDate, yearNum);
-                            }
-                        }
-
-                        statsMap.set(vacation.user_id, {
-                            userId: vacation.user_id,
-                            userName: name,
-                            usedDays: 0,
-                            pendingDays: 0,
-                            remainingDays: totalDays,
-                            totalDays: totalDays,
-                        });
-                    }
                 }
 
                 allVacations.forEach(vacation => {
@@ -191,9 +187,12 @@ export default function AdminVacationPage() {
                         } else if (vacation.status === "pending") {
                             stats.pendingDays += days;
                         }
-                        // remainingDays는 모든 연도의 총 연차에서 사용한 연차를 뺀 값
-                        stats.remainingDays = Math.max(0, stats.totalDays - stats.usedDays - stats.pendingDays);
                     }
+                });
+
+                // 모든 직원의 잔여일수 재계산 (사용한 것과 대기 중인 것을 모두 차감)
+                statsMap.forEach((stats) => {
+                    stats.remainingDays = Math.max(0, stats.totalDays - stats.usedDays - stats.pendingDays);
                 });
 
                 const employeeStatsList = Array.from(statsMap.values());
@@ -213,13 +212,34 @@ export default function AdminVacationPage() {
         loadData();
     }, [year]);
 
-    // 휴가 신청 목록을 테이블 행 형식으로 변환 (선택된 직원 필터링)
-    const requestRows: VacationRequestRow[] = useMemo(() => {
-        const filtered = selectedEmployeeId
-            ? pendingVacations.filter(v => v.user_id === selectedEmployeeId)
-            : pendingVacations;
+    // 모바일: URL 쿼리(employee)와 상세 직원 동기화
+    useEffect(() => {
+        if (!isMobile) return;
+        if (employeeIdFromParams) {
+            setVacationDetailEmployeeId(employeeIdFromParams);
+            setSelectedEmployeeId(employeeIdFromParams);
+        } else {
+            setVacationDetailEmployeeId(null);
+        }
+    }, [isMobile, employeeIdFromParams]);
 
-        return filtered.map(vacation => ({
+    // 직원별 휴가 신청 내역 로드 (상세 모달/드롭다운/모바일 페이지용)
+    useEffect(() => {
+        if (!vacationDetailEmployeeId || !year) return;
+        const yearNum = parseInt(year);
+        setEmployeeHistoryLoading(true);
+        getVacations(vacationDetailEmployeeId, { year: yearNum })
+            .then((list) => setEmployeeVacationHistory(list))
+            .catch(() => setEmployeeVacationHistory([]))
+            .finally(() => setEmployeeHistoryLoading(false));
+    }, [vacationDetailEmployeeId, year]);
+
+    // 휴가 신청 목록: 대기 중인 건만, 신청한 순(최신 먼저)
+    const requestRows: VacationRequestRow[] = useMemo(() => {
+        const sorted = [...pendingVacations].sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        return sorted.map(vacation => ({
             id: vacation.id,
             employeeName: employeeMap.get(vacation.user_id) || "알 수 없음",
             period: formatVacationDate(vacation.date),
@@ -229,7 +249,7 @@ export default function AdminVacationPage() {
             createdAt: new Date(vacation.created_at).toLocaleDateString("ko-KR"),
             vacation,
         }));
-    }, [pendingVacations, employeeMap, selectedEmployeeId]);
+    }, [pendingVacations, employeeMap]);
 
     // 페이징
     const totalPages = Math.ceil(requestRows.length / itemsPerPage);
@@ -250,34 +270,109 @@ export default function AdminVacationPage() {
 
         try {
             setLoading(true);
+
+            // 휴가 상태 업데이트
             await updateVacationStatus(
                 selectedVacation.id,
                 approved ? "approved" : "rejected",
                 user.id
             );
 
-            showSuccess(approved ? "휴가가 승인되었습니다." : "휴가가 반려되었습니다.");
+            // 즉시 목록에서 제거 (UI 즉시 반영)
+            const updatedPending = pendingVacations.filter(v => v.id !== selectedVacation.id);
+            setPendingVacations(updatedPending);
+
+            // 모달 닫기
             setDetailModalOpen(false);
             setSelectedVacation(null);
 
-            // 목록 새로고침
+            showSuccess(approved ? "휴가가 승인되었습니다." : "휴가가 반려되었습니다.");
+
+            // 백그라운드에서 전체 데이터 다시 로드 (통계 업데이트)
             const yearNum = parseInt(year);
+
+            // 잠시 대기 후 DB에서 최신 데이터 조회 (업데이트 반영 시간 확보)
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // 모든 직원의 휴가 조회
             const allVacations = await getVacations(undefined, { year: yearNum });
+
+            // 대기 중인 휴가만 필터링 (최신 데이터로 업데이트)
             const pending = allVacations.filter(v => v.status === "pending");
             setPendingVacations(pending);
+
+            const employees = await fetchAllProfiles();
+            const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
+            setEmployeeMap(employeeNameMap);
+            setEmployeeProfiles(new Map(employees.map(emp => [emp.id, { email: emp.email, position: emp.position }])));
+
+            // 직원별 통계 재계산
+            const statsMap = new Map<string, EmployeeStats>();
+
+            for (const emp of employees) {
+                const joinDate = emp.joinDate;
+                let totalDays = 15; // 기본값
+
+                if (joinDate) {
+                    try {
+                        totalDays = await getCurrentTotalAnnualLeave(emp.id);
+                        // 지급받은 총 연차 계산
+                        const approvedVacations = allVacations.filter(
+                            v => v.user_id === emp.id && v.status === "approved"
+                        );
+                        const usedDays = approvedVacations.reduce(
+                            (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
+                            0
+                        );
+                        totalDays = totalDays + usedDays;
+                    } catch (error) {
+                        console.error(`직원 ${emp.id} 연차 계산 실패:`, error);
+                        totalDays = calculateAnnualLeave(joinDate, yearNum);
+                    }
+                }
+
+                // 해당 직원의 휴가 통계 계산
+                const empVacations = allVacations.filter(v => v.user_id === emp.id);
+                const usedDays = empVacations
+                    .filter(v => v.status === "approved")
+                    .reduce((sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5), 0);
+                const pendingDays = empVacations
+                    .filter(v => v.status === "pending")
+                    .reduce((sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5), 0);
+
+                statsMap.set(emp.id, {
+                    userId: emp.id,
+                    userName: emp.name,
+                    usedDays,
+                    pendingDays,
+                    remainingDays: Math.max(0, totalDays - usedDays - pendingDays),
+                    totalDays,
+                });
+            }
+
+            setEmployeeStats(Array.from(statsMap.values()));
         } catch (error: any) {
             console.error("처리 실패:", error);
             showError(error.message || "처리에 실패했습니다.");
+
+            // 에러 발생 시 목록 다시 조회
+            if (user?.id) {
+                const yearNum = parseInt(year);
+                const allVacations = await getVacations(undefined, { year: yearNum });
+                const pending = allVacations.filter(v => v.status === "pending");
+                setPendingVacations(pending);
+            }
         } finally {
             setLoading(false);
         }
     };
 
-    // 모든 직원의 연차 계산 (2025년부터)
-    const handleCalculateAllVacations = async () => {
-        if (!confirm("모든 직원의 연차를 2025년부터 현재 연도까지 계산하시겠습니까?\n이 작업은 시간이 걸릴 수 있습니다.")) {
-            return;
-        }
+    const handleCalculateAllVacations = () => {
+        setCalculateConfirmOpen(true);
+    };
+
+    const confirmCalculateAllVacations = async () => {
+        setCalculateConfirmOpen(false);
 
         try {
             setLoading(true);
@@ -286,12 +381,11 @@ export default function AdminVacationPage() {
             // 데이터 새로고침
             const yearNum = parseInt(year);
             const allVacations = await getVacations(undefined, { year: yearNum });
-            const employees = await fetchEmployees(allVacations);
+            const employees = await fetchAllProfiles();
             const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
-            const employeeJoinDateMap = new Map(employees.map(emp => [emp.id, emp.joinDate]));
             setEmployeeMap(employeeNameMap);
+            setEmployeeProfiles(new Map(employees.map(emp => [emp.id, { email: emp.email, position: emp.position }])));
 
-            // 통계 재계산
             const statsMap = new Map<string, EmployeeStats>();
             employees.forEach(emp => {
                 const joinDate = emp.joinDate;
@@ -311,10 +405,7 @@ export default function AdminVacationPage() {
             allVacations.forEach(vacation => {
                 if (!statsMap.has(vacation.user_id)) {
                     const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
-                    const joinDate = employeeJoinDateMap.get(vacation.user_id);
-                    const totalDays = joinDate
-                        ? calculateAnnualLeave(joinDate, yearNum)
-                        : 15;
+                    const totalDays = 15;
                     statsMap.set(vacation.user_id, {
                         userId: vacation.user_id,
                         userName: name,
@@ -364,7 +455,7 @@ export default function AdminVacationPage() {
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen shrink-0
+          w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen
                         ? "translate-x-0"
@@ -380,29 +471,62 @@ export default function AdminVacationPage() {
                 <Header
                     title="휴가 관리 (대표)"
                     onMenuClick={() => setSidebarOpen(true)}
-                    rightContent={
-                        <Button
-                            variant="secondary"
-                            size="lg"
-                            onClick={handleCalculateAllVacations}
-                            disabled={loading}
-                        >
-                            연차 일괄 계산 (2025년~)
-                        </Button>
-                    }
                 />
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto px-9 py-6 md:py-9">
+                <div className="flex-1 overflow-y-auto px-4 md:px-9 py-6 md:py-9">
                     {loading ? (
                         <AdminVacationSkeleton />
-                    ) : (
-                        <div className="flex flex-col gap-6 w-full">
-                            {/* 연도 선택 */}
-                            <div className="flex items-center gap-4">
-                                <div className="text-[24px] font-semibold text-gray-900">
-                                    조회 기간
+                    ) : isMobile && employeeIdFromParams ? (
+                        /* 모바일: 직원 휴가 상세 새 페이지 */
+                        <div className="flex flex-col">
+                            <button
+                                type="button"
+                                onClick={() => navigate("/vacation/admin")}
+                                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 py-2 -ml-1"
+                            >
+                                <IconChevronLeft className="w-5 h-5" />
+                                <span className="text-sm font-medium">목록으로</span>
+                            </button>
+                            <div className="mb-3">
+                                <p className="text-sm text-gray-500">{year}년</p>
+                                <h2 className="text-xl font-semibold text-gray-800 mt-0.5">
+                                    {employeeMap.get(employeeIdFromParams) ?? ""}님의 휴가 신청 내역
+                                </h2>
+                            </div>
+                            {employeeHistoryLoading ? (
+                                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                                    <div className="w-10 h-10 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
+                                    <p className="text-sm text-gray-500">로딩 중...</p>
                                 </div>
+                            ) : employeeVacationHistory.length === 0 ? (
+                                <p className="text-gray-500 text-sm py-8 text-center rounded-2xl border border-dashed border-gray-200 bg-gray-50">
+                                    해당 기간 휴가 신청 내역이 없습니다.
+                                </p>
+                            ) : (
+                                <ul className="flex flex-col gap-2">
+                                    {employeeVacationHistory.map((v) => {
+                                        const label = statusToKorean(v.status);
+                                        const statusBg = v.status === "approved" ? "bg-green-50 text-green-700" : v.status === "rejected" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700";
+                                        return (
+                                            <li key={v.id} className="rounded-xl border border-gray-200 p-4 flex flex-col gap-2">
+                                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                                    <span className="text-sm text-gray-500">{new Date(v.created_at).toLocaleDateString("ko-KR")}</span>
+                                                    <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[12px] font-medium ${statusBg}`}>{label}</span>
+                                                </div>
+                                                <p className="font-medium text-gray-900">{formatVacationDate(v.date)} {leaveTypeToKorean(v.leave_type)}</p>
+                                                {v.reason && <p className="text-sm text-gray-700">{v.reason}</p>}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-2 w-full">
+                            {/* 조회 기간 (한 줄) */}
+                            <div className="flex flex-wrap items-center gap-4">
+                                <span className="text-[24px] font-semibold text-gray-900 shrink-0">조회 기간</span>
                                 <Select
                                     options={[
                                         { value: "2026", label: "2026년" },
@@ -412,144 +536,256 @@ export default function AdminVacationPage() {
                                     ]}
                                     value={year}
                                     onChange={setYear}
+                                    className="w-auto min-w-[100px]"
                                 />
                             </div>
 
-                            {/* 직원별 통계 테이블 */}
-                            <div>
-                                <h2 className="text-[20px] font-semibold text-gray-900 mb-4">
-                                    직원별 휴가 사용 현황
-                                </h2>
-                                <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
-                                    <table className="w-full text-[14px]">
-                                        <thead className="bg-gray-100 border-b border-gray-200">
-                                            <tr>
-                                                <th className="px-4 py-3 text-left font-semibold text-gray-600">
-                                                    직원명
-                                                </th>
-                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                    사용 일수
-                                                </th>
-                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                    대기 중
-                                                </th>
-                                                <th className="px-4 py-3 text-right font-semibold text-gray-600">
-                                                    잔여 일수
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {employeeStats.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={4} className="px-4 py-10 text-center text-gray-500">
-                                                        데이터가 없습니다.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                employeeStats.map((stat) => {
-                                                    const isSelected = selectedEmployeeId === stat.userId;
-                                                    return (
-                                                        <tr
-                                                            key={stat.userId}
-                                                            className={`border-b border-gray-100 transition-colors ${isSelected
-                                                                    ? "bg-blue-50 hover:bg-blue-100"
-                                                                    : "hover:bg-gray-50"
-                                                                }`}
-                                                        >
-                                                            <td
-                                                                className="px-4 py-3 cursor-pointer font-medium text-blue-600 hover:text-blue-700"
-                                                                onClick={() => {
-                                                                    setSelectedEmployeeId(isSelected ? null : stat.userId);
-                                                                    setPage(1); // 필터 변경 시 첫 페이지로
-                                                                }}
-                                                            >
-                                                                {stat.userName}
-                                                            </td>
-                                                            <td className="px-4 py-3 text-right">{stat.usedDays.toFixed(1)}일</td>
-                                                            <td className="px-4 py-3 text-right text-yellow-600">
-                                                                {stat.pendingDays > 0 ? `${stat.pendingDays.toFixed(1)}일` : "-"}
-                                                            </td>
-                                                            <td className="px-4 py-3 text-right">{stat.remainingDays.toFixed(1)}일</td>
-                                                        </tr>
-                                                    );
-                                                })
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* 휴가 신청 목록 */}
-                            <div>
-                                <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-[20px] font-semibold text-gray-900">
-                                        휴가 신청 내역
-                                        {selectedEmployeeId && (
-                                            <span className="ml-2 text-sm font-normal text-blue-600">
-                                                ({employeeMap.get(selectedEmployeeId) || "선택된 직원"})
+                            {/* 휴가 신청 내역 (들어온 신청이 있을 때만 표시) */}
+                            {pendingVacations.length > 0 && (
+                                <div>
+                                    <div className="my-3">
+                                        <h2 className="text-[20px] font-semibold text-gray-900 flex items-center gap-2">
+                                            <span className="relative inline-block">
+                                                휴가 신청 내역
+                                                <span className="absolute left-full ml-px shrink-0 rounded-full bg-red-500" aria-hidden style={{ width: 5, height: 6 }} />
                                             </span>
+                                        </h2>
+                                    </div>
+                                    {isMobile ? (
+                                        <>
+                                        <ul className="flex flex-col gap-2">
+                                            {paginatedRows.map((row) => (
+                                                <li key={row.id}>
+                                                    <button
+                                                        type="button"
+                                                        className="w-full rounded-xl border border-gray-200 p-4 flex items-center gap-3 text-left active:bg-gray-50 transition-colors"
+                                                        onClick={() => handleRowClick(row)}
+                                                    >
+                                                        <div className="flex-1 min-w-0 flex flex-col gap-1">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="font-medium text-gray-900">{row.employeeName}</span>
+                                                                <span className="inline-flex items-center justify-center px-2 py-0.5 rounded text-[12px] font-medium text-gray-700 bg-gray-100">
+                                                                    {row.status}
+                                                                </span>
+                                                            </div>
+                                                            <span className="text-sm text-gray-500">{row.period} {row.item}</span>
+                                                            {row.reason && <p className="text-sm text-gray-700 truncate">{row.reason}</p>}
+                                                        </div>
+                                                        <IconChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                        {totalPages > 1 && (
+                                            <div className="flex items-center justify-center gap-2 mt-4">
+                                                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>이전</Button>
+                                                <span className="text-sm text-gray-600">{page} / {totalPages}</span>
+                                                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>다음</Button>
+                                            </div>
                                         )}
-                                    </h2>
-                                    {selectedEmployeeId && (
-                                        <button
-                                            onClick={() => {
-                                                setSelectedEmployeeId(null);
-                                                setPage(1); // 필터 해제 시 첫 페이지로
-                                            }}
-                                            className="text-sm text-gray-500 hover:text-gray-700 underline"
-                                        >
-                                            필터 해제
-                                        </button>
+                                        </>
+                                    ) : (
+                                    <div className="overflow-x-auto">
+                                        <Table
+                                            columns={[
+                                                { key: "employeeName", label: "직원명", width: "15%" },
+                                                { key: "period", label: "기간", width: "20%" },
+                                                { key: "item", label: "항목", width: "12%" },
+                                                { key: "reason", label: "사유", width: "30%" },
+                                                { key: "createdAt", label: "신청일", width: "13%" },
+                                                {
+                                                    key: "status",
+                                                    label: "상태",
+                                                    width: "10%",
+                                                    render: (_value, row: VacationRequestRow) => (
+                                                        <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-gray-700 bg-gray-100">
+                                                            {row.status}
+                                                        </span>
+                                                    ),
+                                                },
+                                            ]}
+                                            data={paginatedRows}
+                                            rowKey="id"
+                                            onRowClick={(row: VacationRequestRow) => handleRowClick(row)}
+                                            className="cursor-pointer"
+                                            emptyText="휴가 신청 내역이 없습니다."
+                                            pagination={totalPages > 1 ? {
+                                                currentPage: page,
+                                                totalPages,
+                                                onPageChange: setPage,
+                                            } : undefined}
+                                        />
+                                    </div>
                                     )}
                                 </div>
-                                <Table
+                            )}
+
+                            {/* 직원별 휴가 사용 현황: 모바일 카드 리스트 / 웹 테이블+드롭다운 */}
+                            <div className="md:mt-0">
+                                <h2 className="text-[20px] font-semibold text-gray-900 mt-4 mb-1">
+                                    직원별 휴가 사용 현황
+                                </h2>
+                                {!isMobile && (
+                                    <p className="text-sm text-gray-500 mb-5">
+                                        클릭하여 상세 내역을 확인하세요
+                                    </p>
+                                )}
+                                {isMobile ? (
+                                    <ul className="flex flex-col gap-2 pb-4">
+                                        {employeeStats.length === 0 ? (
+                                            <p className="py-8 text-center text-gray-500 text-sm">
+                                                직원이 없습니다.
+                                            </p>
+                                        ) : (
+                                            employeeStats.map((row) => {
+                                                const profile = employeeProfiles.get(row.userId);
+                                                return (
+                                                <li key={row.userId}>
+                                                    <button
+                                                        type="button"
+                                                        className="w-full rounded-xl border border-gray-200 p-4 flex items-center gap-3 text-left active:bg-gray-50 transition-colors"
+                                                        onClick={() => navigate(`/vacation/admin?employee=${row.userId}`)}
+                                                    >
+                                                        <Avatar
+                                                            email={profile?.email ?? null}
+                                                            size={40}
+                                                            position={profile?.position ?? null}
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-medium text-gray-900 truncate">{row.userName}</p>
+                                                            <p className="text-sm text-gray-500 mt-0.5">
+                                                                사용 {formatVacationDays(row.usedDays)} · 대기 {formatVacationDays(row.pendingDays)} · 잔여 {formatVacationDays(row.remainingDays)}
+                                                            </p>
+                                                        </div>
+                                                    </button>
+                                                </li>
+                                                );
+                                            })
+                                        )}
+                                    </ul>
+                                ) : (
+                                <div className="overflow-x-auto">
+                                    <Table<EmployeeStats>
                                     columns={[
                                         {
-                                            key: "employeeName",
+                                            key: "userName",
                                             label: "직원명",
-                                            width: "15%",
+                                            align: "left",
+                                            headerClassName: "px-4 py-3 text-left font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3 text-left",
+                                            render: (_, row) => {
+                                                const profile = employeeProfiles.get(row.userId);
+                                                return (
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar
+                                                            email={profile?.email ?? null}
+                                                            size={24}
+                                                            position={profile?.position ?? null}
+                                                        />
+                                                        <span className="font-medium text-gray-900">{row.userName}</span>
+                                                    </div>
+                                                );
+                                            },
                                         },
                                         {
-                                            key: "period",
-                                            label: "기간",
-                                            width: "20%",
+                                            key: "usedDays",
+                                            label: "사용 일수",
+                                            align: "left",
+                                            headerClassName: "px-4 py-3 text-left font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3 text-left",
+                                            render: (value) => {
+                                                if (value === null || value === undefined) return null;
+                                                return formatVacationDays(value);
+                                            },
                                         },
                                         {
-                                            key: "item",
-                                            label: "항목",
-                                            width: "12%",
+                                            key: "pendingDays",
+                                            label: "승인 대기",
+                                            align: "left",
+                                            headerClassName: "px-4 py-3 text-left font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3 text-left text-yellow-600",
+                                            render: (value) => {
+                                                if (value === null || value === undefined) return null;
+                                                return formatVacationDays(value);
+                                            },
                                         },
                                         {
-                                            key: "reason",
-                                            label: "사유",
-                                            width: "30%",
-                                        },
-                                        {
-                                            key: "createdAt",
-                                            label: "신청일",
-                                            width: "13%",
-                                        },
-                                        {
-                                            key: "status",
-                                            label: "상태",
-                                            width: "10%",
-                                            render: (_value, row: VacationRequestRow) => (
-                                                <span className="inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium text-blue-600 bg-blue-50">
-                                                    {row.status}
-                                                </span>
-                                            ),
+                                            key: "remainingDays",
+                                            label: "잔여 일수",
+                                            align: "left",
+                                            headerClassName: "px-4 py-3 text-left font-semibold text-gray-600",
+                                            cellClassName: "px-4 py-3 text-left",
+                                            render: (value) => {
+                                                if (value === null || value === undefined) return null;
+                                                return formatVacationDays(value);
+                                            },
                                         },
                                     ]}
-                                    data={paginatedRows}
-                                    rowKey="id"
-                                    onRowClick={(row: VacationRequestRow) => handleRowClick(row)}
-                                    className="cursor-pointer"
-                                    pagination={{
-                                        currentPage: page,
-                                        totalPages,
-                                        onPageChange: setPage,
+                                    data={employeeStats}
+                                    rowKey={(row) => row.userId}
+                                    rowClassName={(row) =>
+                                        selectedEmployeeId === row.userId
+                                            ? "bg-blue-50 hover:bg-blue-50"
+                                            : "hover:bg-blue-50"
+                                    }
+                                    expandedRowKeys={vacationDetailEmployeeId ? [vacationDetailEmployeeId] : []}
+                                    onRowClick={(row) => {
+                                        setVacationDetailEmployeeId((prev) => (prev === row.userId ? null : row.userId));
+                                        setSelectedEmployeeId(row.userId);
+                                        setPage(1);
                                     }}
+                                    expandableRowRender={(row) => {
+                                        if (row.userId !== vacationDetailEmployeeId) return null;
+                                        return (
+                                            <ExpandableDetailPanel>
+                                                <div className="mb-2">
+                                                    <p className="text-sm text-gray-500">{year}년</p>
+                                                    <h3 className="text-xl font-semibold text-gray-800 mt-0.5 mb-4">
+                                                        {employeeMap.get(row.userId) ?? ""}님의 휴가 신청 내역
+                                                    </h3>
+                                                </div>
+                                                {employeeHistoryLoading ? (
+                                                    <div className="flex flex-col items-center justify-center py-12 gap-4">
+                                                        <div className="w-8 h-8 border-2 border-gray-200 border-t-gray-800 rounded-full animate-spin" />
+                                                        <p className="text-sm text-gray-500">로딩 중...</p>
+                                                    </div>
+                                                ) : employeeVacationHistory.length === 0 ? (
+                                                    <p className="text-gray-500 text-sm py-16 text-center rounded-xl border border-gray-200 bg-white">
+                                                        해당 기간 휴가 신청 내역이 없습니다.
+                                                    </p>
+                                                ) : (
+                                                    <div className="overflow-x-auto rounded-xl bg-white -mt-px">
+                                                        <Table
+                                                            columns={[
+                                                                { key: "created_at", label: "신청일", width: "18%", render: (_: unknown, v: Vacation) => new Date(v.created_at).toLocaleDateString("ko-KR") },
+                                                                { key: "date", label: "기간", width: "22%", render: (_: unknown, v: Vacation) => formatVacationDate(v.date) },
+                                                                { key: "leave_type", label: "항목", width: "14%", render: (_: unknown, v: Vacation) => leaveTypeToKorean(v.leave_type) },
+                                                                { key: "reason", label: "사유", width: "32%" },
+                                                                {
+                                                                    key: "status",
+                                                                    label: "상태",
+                                                                    width: "14%",
+                                                                    render: (_: unknown, v: Vacation) => {
+                                                                        const label = statusToKorean(v.status);
+                                                                        const bg = v.status === "approved" ? "bg-green-50 text-green-700" : v.status === "rejected" ? "bg-red-50 text-red-700" : "bg-gray-100 text-gray-700";
+                                                                        return <span className={`inline-flex items-center justify-center px-2 py-1 rounded text-[12px] font-medium ${bg}`}>{label}</span>;
+                                                                    },
+                                                                },
+                                                            ]}
+                                                            data={employeeVacationHistory}
+                                                            rowKey="id"
+                                                            className="border-0"
+                                                            emptyText="해당 기간 휴가 신청 내역이 없습니다."
+                                                        />
+                                                    </div>
+                                                )}
+                                            </ExpandableDetailPanel>
+                                        );
+                                    }}
+                                    emptyText="사용한 휴가가 없습니다."
                                 />
+                                </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -558,8 +794,21 @@ export default function AdminVacationPage() {
 
             {/* 상세보기/승인 모달 */}
             {detailModalOpen && selectedVacation && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+                <div
+                    className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+                    onClick={() => {
+                        if (!loading) {
+                            setDetailModalOpen(false);
+                            setSelectedVacation(null);
+                        }
+                    }}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div
+                        className="bg-white rounded-2xl p-6 max-w-md w-full"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <h3 className="text-[20px] font-semibold text-gray-900 mb-4">
                             휴가 신청 상세
                         </h3>
@@ -591,20 +840,9 @@ export default function AdminVacationPage() {
                             </div>
                         </div>
 
-                        <div className="flex gap-3">
+                        <div className="flex gap-2">
                             <Button
-                                variant="secondary"
-                                size="md"
-                                fullWidth
-                                onClick={() => {
-                                    setDetailModalOpen(false);
-                                    setSelectedVacation(null);
-                                }}
-                            >
-                                닫기
-                            </Button>
-                            <Button
-                                variant="secondary"
+                                variant="danger"
                                 size="md"
                                 fullWidth
                                 onClick={() => handleApproveReject(false)}
@@ -625,7 +863,16 @@ export default function AdminVacationPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={calculateConfirmOpen}
+                onClose={() => setCalculateConfirmOpen(false)}
+                onConfirm={confirmCalculateAllVacations}
+                title="연차 일괄 계산"
+                message={"모든 직원의 연차를 2025년부터 현재 연도까지 계산하시겠습니까?\n이 작업은 시간이 걸릴 수 있습니다."}
+                confirmText="계산 시작"
+                cancelText="취소"
+            />
         </div>
     );
 }
-

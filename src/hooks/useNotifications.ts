@@ -17,6 +17,30 @@ export function useNotifications(userId: string | null) {
     });
     const notificationRef = useRef<HTMLDivElement>(null);
 
+    // ✅ 바깥 클릭 시 알림 닫기 (capture 제거 + composedPath로 안정화)
+    useEffect(() => {
+        if (!showNotifications) return;
+
+        const handlePointerDown = (e: PointerEvent) => {
+            const root = notificationRef.current;
+            if (!root) return;
+
+            const path = (e.composedPath?.() ?? []) as EventTarget[];
+            const clickedInside = path.includes(root);
+
+            if (!clickedInside) {
+                setShowNotifications(false);
+            }
+        };
+
+        // ✅ capture=false (기본) : 버튼/팝업 이벤트 처리 후 판단 → 즉시 닫힘 방지에 유리
+        document.addEventListener("pointerdown", handlePointerDown);
+        return () => {
+            document.removeEventListener("pointerdown", handlePointerDown);
+        };
+    }, [showNotifications]);
+
+
     // 알림 데이터 로드 및 업데이트
     useEffect(() => {
         if (!userId) return;

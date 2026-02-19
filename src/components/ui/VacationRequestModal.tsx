@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+// VacationRequestModal.tsx
+import { useEffect, useMemo, useRef, useState } from "react";
 import BaseModal from "./BaseModal";
 import Input from "../common/Input";
 import Button from "../common/Button";
 import DatePicker from "./DatePicker"; // DatePicker 임포트
-import type { Vacation } from "../../lib/vacationApi";
+import { formatVacationDays, type Vacation } from "../../lib/vacationApi";
 import { useToast } from "./ToastProvider";
 
 type LeaveType = "FULL" | "AM" | "PM";
@@ -16,7 +17,7 @@ interface Props {
     date: string;
     leaveType: LeaveType;
     reason: string;
-  }) => void;
+  }) => void | Promise<void>;
   editingVacation?: Vacation | null;
   initialDate?: string | null; // 초기 날짜 (캘린더에서 선택한 날짜)
 }
@@ -40,6 +41,8 @@ export default function VacationRequestModal({
   const [dateISO, setDateISO] = useState(todayISO);
   const [leaveType, setLeaveType] = useState<LeaveType>("FULL");
   const [reason, setReason] = useState("개인 사유");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -57,7 +60,8 @@ export default function VacationRequestModal({
     }
   }, [isOpen, todayISO, editingVacation, initialDate]);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
+    if (isSubmittingRef.current) return;
     if (!dateISO) {
       showError("날짜를 선택해주세요.");
       return;
@@ -66,13 +70,21 @@ export default function VacationRequestModal({
       showError("상세내용을 입력해주세요.");
       return;
     }
-
-    onSubmit({
-      date: dateISO,
-      leaveType,
-      reason: reason.trim(),
-    });
-    onClose();
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      await Promise.resolve(
+        onSubmit({
+          date: dateISO,
+          leaveType,
+          reason: reason.trim(),
+        })
+      );
+      onClose();
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -84,7 +96,7 @@ export default function VacationRequestModal({
           <span>{editingVacation ? "휴가 수정" : "휴가 신청"}</span>
           {!editingVacation && (
             <span className="text-[13px] font-bold text-gray-400">
-              총 {availableDays}일 사용 가능
+              총 {formatVacationDays(availableDays)} 사용 가능
             </span>
           )}
         </div>
@@ -144,7 +156,13 @@ export default function VacationRequestModal({
 
         {/* 제출 버튼 */}
         <div className="pt-2">
-          <Button variant="primary" size="lg" fullWidth onClick={handleAdd}>
+          <Button
+            variant="primary"
+            size="lg"
+            fullWidth
+            onClick={handleAdd}
+            loading={isSubmitting}
+          >
             {editingVacation ? "수정" : "추가"}
           </Button>
         </div>

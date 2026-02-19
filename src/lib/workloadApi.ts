@@ -6,25 +6,44 @@ type ProfileDeptRow = {
     department: string | null;
 };
 
-// ✅ 워크로드 대상 인원(공사팀/공무팀) 조회
+// ✅ 워크로드 대상 인원(공사팀/공무팀) 조회 (캐싱으로 성능 개선)
+let profilesCache: { name: string; department: "공사팀" | "공무팀" }[] | null = null;
+let profilesCacheTime: number = 0;
+const PROFILES_CACHE_DURATION = 5 * 60 * 1000; // 5분
+
 export async function getWorkloadTargetProfiles(): Promise<
     { name: string; department: "공사팀" | "공무팀" }[]
 > {
+    // 캐시가 있고 유효하면 캐시 반환
+    const now = Date.now();
+    if (profilesCache && (now - profilesCacheTime) < PROFILES_CACHE_DURATION) {
+        return profilesCache;
+    }
+
     const { data, error } = await supabase
         .from("profiles")
         .select("name, department")
         .in("department", ["공사팀", "공무팀"]);
 
     if (error) {
-        console.error("profiles 조회 실패:", error);
+        // 에러 발생 시 캐시가 있으면 캐시 반환
+        if (profilesCache) {
+            return profilesCache;
+        }
         throw new Error(`profiles 조회 실패: ${error.message}`);
     }
 
-    return (data as ProfileDeptRow[] | null | undefined)
+    const result = (data as ProfileDeptRow[] | null | undefined)
         ? (data as ProfileDeptRow[])
               .filter((x) => !!x.name && (x.department === "공사팀" || x.department === "공무팀"))
               .map((x) => ({ name: x.name!.trim(), department: x.department as "공사팀" | "공무팀" }))
         : [];
+
+    // 캐시 업데이트
+    profilesCache = result;
+    profilesCacheTime = now;
+
+    return result;
 }
 
 
@@ -153,14 +172,19 @@ function formatHoursOnly(hours: number): string {
 export async function getWorkloadData(filters?: {
     year?: number;
     month?: number;
+    includeDrafts?: boolean;
 }): Promise<WorkloadEntry[]> {
     try {
         // 1. 출장보고서 조회 (제출된 것만, is_draft = false)
         // 필터링은 작업 일정(date_from, date_to) 기준으로 하므로 모든 제출된 보고서 조회
-        const { data: workLogs, error: workLogsError } = await supabase
+        let workLogsQuery = supabase
             .from("work_logs")
-            .select("id, vessel, subject")
-            .eq("is_draft", false);
+            .select("id, vessel, subject");
+        if (!filters?.includeDrafts) {
+            workLogsQuery = workLogsQuery.eq("is_draft", false);
+        }
+
+        const { data: workLogs, error: workLogsError } = await workLogsQuery;
 
         if (workLogsError) {
             console.error("Error fetching work logs:", workLogsError);
@@ -330,15 +354,24 @@ export function aggregatePersonWorkload(
         }
     }
 
-    // 작업 일수 계산 (work_log_id별로 날짜 범위 계산)
+    // 작업 일수 계산 (work_log_id별로 날짜 범위 계산) - 최적화
+    // entries를 person_name과 work_log_id로 그룹화하여 필터링 최소화
+    const entriesByPersonAndLog = new Map<string, WorkloadEntry[]>();
+    for (const entry of entries) {
+        const key = `${entry.person_name}_${entry.work_log_id}`;
+        if (!entriesByPersonAndLog.has(key)) {
+            entriesByPersonAndLog.set(key, []);
+        }
+        entriesByPersonAndLog.get(key)!.push(entry);
+    }
+
     for (const summary of personMap.values()) {
         const workLogIds = Array.from(summary.workLogIds);
         const dateSet = new Set<string>();
 
         for (const workLogId of workLogIds) {
-            const workLogEntries = entries.filter(
-                (e) => e.work_log_id === workLogId && e.person_name === summary.personName
-            );
+            const key = `${summary.personName}_${workLogId}`;
+            const workLogEntries = entriesByPersonAndLog.get(key) || [];
 
             for (const entry of workLogEntries) {
                 if (entry.date_from) {
@@ -379,11 +412,8 @@ export function aggregatePersonWorkload(
                 continue;
             }
 
-            // ✅ 공무팀: 작업/이동 시간이 있을 때만 표시
+            // ✅ 공무팀: 워크로드에서 제외
             if (dept === "공무팀") {
-                if (existing.workHours > 0 || existing.travelHours > 0) {
-                    resultMap.set(name, existing);
-                }
                 continue;
             }
         }
@@ -404,11 +434,26 @@ export function aggregatePersonWorkload(
 
 /**
  * 차트 데이터 생성
+ * 정렬: 작업시간순 → 작업시간 같으면 이동시간순 → 이동시간도 같으면 대기시간순
  */
 export function generateChartData(
     summaries: PersonWorkloadSummary[]
 ): WorkloadChartData[] {
-    return summaries.map((summary) => ({
+    // 정렬: 작업시간순 → 이동시간순 → 대기시간순 (모두 내림차순)
+    const sorted = [...summaries].sort((a, b) => {
+        // 1. 작업시간 비교
+        if (b.workHours !== a.workHours) {
+            return b.workHours - a.workHours;
+        }
+        // 2. 작업시간이 같으면 이동시간 비교
+        if (b.travelHours !== a.travelHours) {
+            return b.travelHours - a.travelHours;
+        }
+        // 3. 이동시간도 같으면 대기시간 비교
+        return b.waitHours - a.waitHours;
+    });
+
+    return sorted.map((summary) => ({
         name: summary.personName,
         작업: Math.round(summary.workHours * 10) / 10, // 소수점 첫째자리까지
         이동: Math.round(summary.travelHours * 10) / 10,
@@ -431,4 +476,3 @@ export function generateTableData(
         days: `${summary.totalDays}일`,
     }));
 }
-

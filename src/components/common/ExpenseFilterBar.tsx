@@ -1,3 +1,4 @@
+// ExpenseFilterBar.tsx
 import Select from "./Select";
 
 interface ExpenseFilterBarProps {
@@ -10,6 +11,9 @@ interface ExpenseFilterBarProps {
     yearOptions?: Array<{ value: string; label: string }>;
     monthOptions?: Array<{ value: string; label: string }>;
     userOptions?: Array<{ value: string; label: string }>;
+    className?: string;
+    titleClassName?: string;
+    compactLabels?: boolean;
 }
 
 export default function ExpenseFilterBar({
@@ -22,14 +26,16 @@ export default function ExpenseFilterBar({
     yearOptions,
     monthOptions,
     userOptions,
+    className = "",
+    titleClassName = "",
+    compactLabels = false,
 }: ExpenseFilterBarProps) {
     const yearOpts = yearOptions ?? [
-        { value: "2025년", label: "2025년" },
         { value: "2024년", label: "2024년" },
+        { value: "2025년", label: "2025년" },
         { value: "2026년", label: "2026년" },
     ];
     const monthOpts = monthOptions ?? [
-        { value: "12월", label: "12월" },
         { value: "1월", label: "1월" },
         { value: "2월", label: "2월" },
         { value: "3월", label: "3월" },
@@ -41,31 +47,39 @@ export default function ExpenseFilterBar({
         { value: "9월", label: "9월" },
         { value: "10월", label: "10월" },
         { value: "11월", label: "11월" },
+        { value: "12월", label: "12월" },
     ];
     const userOpts = userOptions ?? [{ value: "전체", label: "전체" }];
 
     return (
-        <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[24px] font-semibold text-gray-900 mr-2">
-                조회 기간
-            </span>
+        <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+            {!compactLabels && (
+                <span className={`font-semibold text-gray-900 shrink-0 ${titleClassName || "text-[24px]"} mr-2`}>
+                    조회 기간
+                </span>
+            )}
             <Select
                 value={year}
                 onChange={onYearChange}
                 options={yearOpts}
+                className="flex-1 md:flex-initial max-w-full w-auto min-w-[70px]"
             />
             <Select
                 value={month}
                 onChange={onMonthChange}
                 options={monthOpts}
+                className="flex-1 md:flex-initial max-w-full w-auto min-w-[60px]"
             />
-            <span className="text-[20px] font-semibold text-gray-700 ml-5 mr-2">
-                사용자
-            </span>
+            {!compactLabels && (
+                <span className="font-semibold text-gray-700 text-base md:text-[20px] ml-0 md:ml-5 mr-2 shrink-0">
+                    사용자
+                </span>
+            )}
             <Select
                 value={user}
                 onChange={onUserChange}
                 options={userOpts}
+                className="flex-1 md:flex-initial max-w-full w-auto min-w-[80px]"
             />
         </div>
     );

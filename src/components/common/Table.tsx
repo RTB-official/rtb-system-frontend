@@ -1,12 +1,18 @@
 import React from "react";
+import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 import Pagination from "./Pagination";
 
 export interface TableColumn<T = any> {
     key: string;
-    label: string;
+    label: React.ReactNode;
     width?: string;
     align?: "left" | "right" | "center";
     render?: (value: any, row: T, index: number) => React.ReactNode;
+    headerClassName?: string;
+    cellClassName?:
+        | string
+        | ((value: any, row: T, index: number) => string);
+    showEmptyIndicator?: boolean;
 }
 
 interface TableProps<T = any> {
@@ -14,10 +20,15 @@ interface TableProps<T = any> {
     data: T[];
     rowKey?: string | ((row: T) => string | number);
     onRowClick?: (row: T, index: number) => void;
+    rowClassName?: (row: T, index: number) => string;
     expandableRowRender?: (row: T) => React.ReactNode;
     expandedRowKeys?: (string | number)[];
     emptyText?: string;
     className?: string;
+    footer?: React.ReactNode;
+    hideRowBorders?: boolean;
+    hideHeaderBorder?: boolean;
+    outerBorder?: boolean;
     pagination?: {
         currentPage: number;
         totalPages: number;
@@ -30,10 +41,15 @@ export default function Table<T = any>({
     data,
     rowKey = "id",
     onRowClick,
+    rowClassName,
     expandableRowRender,
     expandedRowKeys = [],
     emptyText = "데이터가 없습니다.",
     className = "",
+    footer,
+    hideRowBorders = false,
+    hideHeaderBorder = false,
+    outerBorder = true,
     pagination,
 }: TableProps<T>) {
     const getRowKey = (row: T, index: number): string | number => {
@@ -51,12 +67,16 @@ export default function Table<T = any>({
     return (
         <div className="flex flex-col">
             <div
-                className={`overflow-auto border border-gray-200 rounded-2xl w-full`}
+                className={`overflow-auto w-full ${outerBorder ? "border border-gray-200 rounded-2xl" : ""}`}
             >
                 <table
                     className={`w-full text-[14px] text-gray-900 ${className}`}
                 >
-                    <thead className="bg-gray-100 border-b border-gray-200">
+                    <thead
+                        className={`bg-gray-100 ${
+                            hideHeaderBorder ? "" : "border-b border-gray-200"
+                        }`}
+                    >
                         <tr>
                             {columns.map((column) => (
                                 <th
@@ -67,7 +87,7 @@ export default function Table<T = any>({
                                             : column.align === "center"
                                             ? "text-center"
                                             : "text-left"
-                                    }`}
+                                    } ${column.headerClassName ?? ""}`}
                                     style={
                                         column.width
                                             ? { width: column.width }
@@ -86,7 +106,9 @@ export default function Table<T = any>({
                                     colSpan={columns.length}
                                     className="px-4 py-10 text-center text-gray-500 bg-white"
                                 >
-                                    {emptyText}
+                                    <span className="text-sm text-gray-500">
+                                        {emptyText || "데이터가 없습니다."}
+                                    </span>
                                 </td>
                             </tr>
                         ) : (
@@ -94,47 +116,63 @@ export default function Table<T = any>({
                                 const key = getRowKey(row, index);
                                 const isExpanded = isRowExpanded(row);
                                 const isLastRow = index === data.length - 1;
+                                const rowClass = rowClassName?.(row, index) ?? "";
                                 return (
                                     <React.Fragment key={key}>
                                         <tr
                                             className={`${
-                                                isLastRow
+                                                isLastRow || hideRowBorders
                                                     ? ""
                                                     : "border-b border-gray-200"
                                             } bg-white hover:bg-blue-50 transition-colors ${
                                                 onRowClick
                                                     ? "cursor-pointer"
                                                     : ""
-                                            }`}
+                                            } ${rowClass}`}
                                             onClick={() =>
                                                 onRowClick?.(row, index)
                                             }
                                         >
-                                            {columns.map((column) => (
-                                                <td
-                                                    key={column.key}
-                                                    className={`px-4 py-3 text-gray-900 ${
-                                                        column.align === "right"
-                                                            ? "text-right"
-                                                            : column.align ===
-                                                              "center"
-                                                            ? "text-center"
-                                                            : "text-left"
-                                                    }`}
-                                                >
-                                                    {column.render
-                                                        ? column.render(
-                                                              (row as any)[
-                                                                  column.key
-                                                              ],
-                                                              row,
-                                                              index
-                                                          )
-                                                        : (row as any)[
-                                                              column.key
-                                                          ]}
-                                                </td>
-                                            ))}
+                                            {columns.map((column) => {
+                                                const rawValue = (row as any)[column.key];
+                                                const renderedValue = column.render
+                                                    ? column.render(rawValue, row, index)
+                                                    : rawValue;
+                                                const isEmpty =
+                                                    renderedValue === null ||
+                                                    renderedValue === undefined ||
+                                                    (typeof renderedValue === "string" &&
+                                                        (renderedValue.trim() === "" ||
+                                                            renderedValue.trim() === "-" ||
+                                                            renderedValue.trim() === "—"));
+                                                const cellClass =
+                                                    typeof column.cellClassName === "function"
+                                                        ? column.cellClassName(rawValue, row, index)
+                                                        : column.cellClassName ?? "";
+                                                const shouldShowEmptyIndicator =
+                                                    column.showEmptyIndicator ?? true;
+                                                return (
+                                                    <td
+                                                        key={column.key}
+                                                        className={`px-4 py-3 text-gray-900 ${
+                                                            column.align === "right"
+                                                                ? "text-right"
+                                                                : column.align ===
+                                                                  "center"
+                                                                ? "text-center"
+                                                                : "text-left"
+                                                        } ${cellClass}`}
+                                                    >
+                                                        {isEmpty ? (
+                                                            shouldShowEmptyIndicator ? (
+                                                                <EmptyValueIndicator />
+                                                            ) : null
+                                                        ) : (
+                                                            renderedValue
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
                                         </tr>
                                         {isExpanded && expandableRowRender && (
                                             <tr>
@@ -151,6 +189,7 @@ export default function Table<T = any>({
                             })
                         )}
                     </tbody>
+                    {footer && <tfoot>{footer}</tfoot>}
                 </table>
             </div>
             {pagination && (

@@ -28,11 +28,17 @@ export default function ConfirmDialog({
         onConfirm();
     };
 
+    // 취소 버튼이면 자동으로 danger variant 사용 (삭제/취소 액션인 경우)
+    const finalVariant = (confirmText === "삭제" || (confirmText === "취소" && title?.includes("취소")))
+        ? "danger"
+        : confirmVariant;
+
     return (
         <BaseModal
             isOpen={isOpen}
             onClose={onClose}
             title={title}
+            showCloseButton={false}
             footer={
                 <div className="flex gap-2 w-full">
                     <Button
@@ -45,7 +51,7 @@ export default function ConfirmDialog({
                         {cancelText}
                     </Button>
                     <Button
-                        variant={confirmVariant}
+                        variant={finalVariant}
                         size="lg"
                         onClick={handleConfirm}
                         disabled={isLoading}

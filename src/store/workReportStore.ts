@@ -1,4 +1,6 @@
+// workReportStore.ts
 import { create } from 'zustand';
+import { supabase } from '../lib/supabase';
 
 // 타입 정의
 export interface WorkLogEntry {
@@ -7,7 +9,7 @@ export interface WorkLogEntry {
   timeFrom: string;
   dateTo: string;
   timeTo: string;
-  descType: '작업' | '이동' | '대기' | '';
+  descType: '작업' | '이동' | '대기' | '교육' | ''; // ✅ '교육' 추가
   details: string;
   persons: string[];
   note: string;
@@ -27,7 +29,7 @@ export interface ExpenseEntry {
 export interface MaterialEntry {
   id: number;
   name: string;
-  qty: number;
+  qty: string;
   unit: string;
 }
 
@@ -47,27 +49,18 @@ export interface UploadedFile {
   isExisting?: boolean; // 기존 영수증인지 여부
 }
 
-// 직급별 직원 데이터
-export const STAFF_DATA: Record<string, string[]> = {
-  '부장': ['김춘근', '안재훈', '온권태', '정영철', '김희규'],
-  '차장': ['이효익', '정상민', '김동민', '손재진', '우상윤', '성기형', '류성관'],
-  '과장': [],
-  '대리': ['이종훈', '조용남', '고두형'],
-  '주임': ['박영성', '문채훈', '김민규', '김상민', '박민욱'],
-  '인턴': ['강민지'],
-};
+export interface StaffProfile {
+  id: string;
+  name: string;
+  position: string;
+  region: string;
+  department: string;
+}
 
-// 지역별 인원 매핑
-export const REGION_GROUPS: Record<string, string[]> = {
-  BC: ['김희규', '이효익', '정상민', '손재진', '류성관', '이종훈', '조용남', '박영성', '문채훈', '김민규', '박민욱', '김상민', '고두형'],
-  UL: ['온권태', '김동민', '성기형'],
-  JY: ['김춘근', '안재훈', '정영철'],
-  GJ: ['우상윤'],
-};
 
 // 참관 감독 그룹별 인원
 export const ORDER_PERSONS: Record<string, string[]> = {
-  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형', '이영철', '장덕훈'],
+  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형'],
   PRIME: ['이유수', '김효민', '안희재'],
 };
 
@@ -83,6 +76,8 @@ export const VEHICLES = ['5423', '4272', '0892', '5739', '0598', '7203', '6297',
 export const MATERIAL_UNITS: Record<string, string> = {
   '장갑': '타',
   '보루': 'EA',
+  '청테이프': 'EA',
+  '지퍼백': 'EA',
   '실리콘그리스': 'EA',
   '그리스': 'EA',
   '방청윤활유(WD40)': 'EA',
@@ -94,16 +89,31 @@ export const MATERIAL_UNITS: Record<string, string> = {
 export const MATERIALS = Object.keys(MATERIAL_UNITS);
 
 // 지출 분류
-export const EXPENSE_TYPES = ['조식', '중식', '석식', '숙박', '유류비'];
+export const EXPENSE_TYPES = [
+  '조식',
+  '중식',
+  '석식',
+  '간식',
+  '숙박',
+  '유대',
+  '자재 구입',
+  '공구 구입',
+  '소모품 구입',
+  '기타',
+];
 
 interface WorkReportState {
+  // 모드
+  reportType: 'work' | 'education';
+  
   // 기본정보
   author: string;
+  instructor: string; // 교육 보고서용 강사
   vessel: string;
   engine: string;
   orderGroup: string;
   orderPerson: string;
-  location: string;
+  locations: string[];
   locationCustom: string;
   vehicles: string[];
   subject: string;
@@ -129,17 +139,30 @@ interface WorkReportState {
   // 첨부파일
   uploadedFiles: UploadedFile[];
   
+  // 전체 직원 데이터 (DB에서 로드됨)
+  allStaff: StaffProfile[];
+  staffLoading: boolean;
+  
+  // Actions - 데이터 패칭
+  fetchAllStaff: () => Promise<void>;
+  
   // Actions - 기본정보
   setAuthor: (author: string) => void;
   setVessel: (vessel: string) => void;
   setEngine: (engine: string) => void;
   setOrderGroup: (group: string) => void;
   setOrderPerson: (person: string) => void;
-  setLocation: (location: string) => void;
+  addLocation: (location: string) => void;
+  removeLocation: (location: string) => void;
+  setLocations: (locations: string[]) => void;
   setLocationCustom: (custom: string) => void;
   toggleVehicle: (vehicle: string) => void;
   setVehicles: (vehicles: string[]) => void;
   setSubject: (subject: string) => void;
+  
+  // Actions - 모드/추가필드 (삭제했던 중복 제거 확인됨)
+  setReportType: (type: 'work' | 'education') => void;
+  setInstructor: (name: string) => void;
   
   // Actions - 작업자
   addWorker: (name: string) => void;
@@ -204,12 +227,14 @@ const initialCurrentEntry: Partial<WorkLogEntry> = {
 
 export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   // 초기 상태
+  reportType: 'work',
   author: '',
+  instructor: '', // 초기화
   vessel: '',
   engine: '',
   orderGroup: '',
   orderPerson: '',
-  location: '',
+  locations: [],
   locationCustom: '',
   vehicles: [],
   subject: '',
@@ -222,6 +247,26 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   editingExpenseId: null,
   materials: [],
   uploadedFiles: [],
+  allStaff: [],
+  staffLoading: false,
+  
+  // 데이터 패칭 Actions
+  fetchAllStaff: async () => {
+    set({ staffLoading: true });
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, position, region, department')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      set({ allStaff: data || [] });
+    } catch (err) {
+      console.error('Failed to fetch staff data:', err);
+    } finally {
+      set({ staffLoading: false });
+    }
+  },
   
   // 기본정보 Actions
   setAuthor: (author) => set({ author }),
@@ -229,7 +274,27 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   setEngine: (engine) => set({ engine: engine.toUpperCase() }),
   setOrderGroup: (orderGroup) => set({ orderGroup, orderPerson: '' }),
   setOrderPerson: (orderPerson) => set({ orderPerson }),
-  setLocation: (location) => set({ location, locationCustom: location === 'OTHER' ? get().locationCustom : '' }),
+  addLocation: (location) =>
+    set((state) => {
+      const normalized = String(location || '').trim();
+      if (!normalized) return state;
+      if (state.locations.includes(normalized)) return state;
+      return { locations: [...state.locations, normalized] };
+    }),
+  removeLocation: (location) =>
+    set((state) => ({
+      locations: state.locations.filter((item) => item !== location),
+    })),
+  setLocations: (locations) =>
+    set({
+      locations: Array.from(
+        new Set(
+          (locations || [])
+            .map((loc) => String(loc || '').trim())
+            .filter(Boolean)
+        )
+      ),
+    }),
   setLocationCustom: (locationCustom) => set({ locationCustom }),
   toggleVehicle: (vehicle) => set((state) => ({
     vehicles: state.vehicles.includes(vehicle)
@@ -238,6 +303,9 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   })),
   setVehicles: (vehicles) => set({ vehicles }),
   setSubject: (subject) => set({ subject }),
+  
+  setReportType: (reportType) => set({ reportType }),
+  setInstructor: (instructor) => set({ instructor }),
   
   // 작업자 Actions
   addWorker: (name) => set((state) => {
@@ -252,7 +320,10 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     workers: state.workers.filter((w) => w !== name),
   })),
   addWorkersByRegion: (region) => set((state) => {
-    const regionWorkers = REGION_GROUPS[region] || [];
+    const regionWorkers = state.allStaff
+      .filter((s) => s.region === region)
+      .map((s) => s.name);
+    
     const newWorkers = regionWorkers.filter(
       (w) => !state.workers.some((existing) => existing.toLowerCase() === w.toLowerCase())
     );
@@ -274,7 +345,10 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     currentEntryPersons: [...state.workers],
   })),
   addRegionPersonsToEntry: (region) => set((state) => {
-    const regionWorkers = REGION_GROUPS[region] || [];
+    const regionWorkers = state.allStaff
+      .filter((s) => s.region === region)
+      .map((s) => s.name);
+      
     const validWorkers = regionWorkers.filter((w) =>
       state.workers.includes(w) && !state.currentEntryPersons.includes(w)
     );
@@ -308,10 +382,18 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     };
     
     // 다음 엔트리의 시작 시간을 현재 종료 시간으로 자동 설정
+    const toHourOnly = (time?: string) => {
+      const raw = (time || '').trim();
+      if (!raw) return '';
+      const parts = raw.split(':');
+      const hh = parts[0] || '';
+      return hh ? `${hh}:00` : '';
+    };
+
     const nextEntry = {
       ...initialCurrentEntry,
       dateFrom: currentEntry.dateTo || '',
-      timeFrom: currentEntry.timeTo || '',
+      timeFrom: toHourOnly(currentEntry.timeTo),
       dateTo: currentEntry.dateTo || '',
     };
     
@@ -403,7 +485,6 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     );
     
     if (alreadyExists) {
-      console.log("이미 존재하는 영수증, 추가하지 않음:", receipt.receiptId);
       return state; // 이미 있으면 추가하지 않음
     }
     
@@ -418,7 +499,6 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       preview: receipt.fileUrl && (receipt.mimeType?.startsWith('image/') || !receipt.mimeType) ? receipt.fileUrl : undefined,
       isExisting: true,
     };
-    console.log("새 영수증 추가:", newReceipt);
     return { uploadedFiles: [...state.uploadedFiles, newReceipt] };
   }),
   removeFile: (id) => set((state) => {
@@ -429,12 +509,14 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   
   // 전체 Actions
   resetForm: () => set({
+    reportType: 'work',
     author: '',
+    instructor: '',
     vessel: '',
     engine: '',
     orderGroup: '',
     orderPerson: '',
-    location: '',
+    locations: [],
     locationCustom: '',
     vehicles: [],
     subject: '',
@@ -474,4 +556,3 @@ export const calcDurationHours = (dateFrom: string, timeFrom: string, dateTo: st
   if (noLunch) hours = Math.max(0, hours - 1);
   return Math.round(hours * 10) / 10;
 };
-

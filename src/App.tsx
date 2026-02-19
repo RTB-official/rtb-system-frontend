@@ -1,34 +1,58 @@
 // src/App.tsx
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./store/auth";
+import { AuthProvider, useAuth } from "./store/auth";
 import RequireAuth from "./components/RequireAuth";
 import { ToastProvider } from "./components/ui/ToastProvider";
-import ReportPdfPage from "./pages/Report/ReportPdfPage";
+import PageSkeleton from "./components/common/PageSkeleton";
+
+const ReportPdfPage = lazy(() => import("./pages/Report/ReportPdfPage"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
 
 const LoginPage = lazy(() => import("./pages/Login/LoginPage"));
 const DashboardPage = lazy(() => import("./pages/Dashboard/DashboardPage"));
+
 const WorkloadPage = lazy(() => import("./pages/Workload/WorkloadPage"));
 const WorkloadDetailPage = lazy(() => import("./pages/Workload/WorkloadDetailPage"));
-const CreationPage = lazy(() => import("./pages/Creation/CreationPage"));
+
+const CreationPage = lazy(() => import("./pages/Report/ReportCreatePage"));
 const ReportListPage = lazy(() => import("./pages/Report/ReportListPage"));
 const ReportEditPage = lazy(() => import("./pages/Report/ReportEditPage"));
 const ReportViewPage = lazy(() => import("./pages/Report/ReportViewPage"));
+const TbmListPage = lazy(() => import("./pages/TBM/TbmListPage"));
+const TbmCreatePage = lazy(() => import("./pages/TBM/TbmCreatePage"));
+const TbmDetailPage = lazy(() => import("./pages/TBM/TbmDetailPage"));
+const TbmPdfPage = lazy(() => import("./pages/TBM/TbmPdfPage"));
+
 const VacationPage = lazy(() => import("./pages/Vacation/VacationPage"));
 const AdminVacationPage = lazy(() => import("./pages/Vacation/AdminVacationPage"));
+
 const PersonalExpensePage = lazy(() => import("./pages/Expense/PersonalExpensePage"));
 const MemberExpensePage = lazy(() => import("./pages/Expense/MemberExpensePage"));
+
 const MembersPage = lazy(() => import("./pages/Members/MembersPage"));
-const EmailNotificationSettingsPage = lazy(
-  () => import("./pages/Settings/EmailNotificationSettingsPage")
-);
+const VehiclesPage = lazy(() => import("./pages/Vehicles/VehiclesPage"));
+const EmailSettingsPage = lazy(() => import("./pages/Settings/Email"));
+const SafePhrasePage = lazy(() => import("./pages/Settings/SafePhrase"));
+const WebNotificationSettingsPage = lazy(() => import("./pages/Settings/WebNotificationSettingsPage"));
+
+
+function RoleLanding() {
+  const { loading, loadingProfile, user, profile } = useAuth();
+
+  if (loading || loadingProfile) return <PageSkeleton />;
+  if (!user) return <Navigate to="/login" replace />;
+
+  if (profile?.role === "admin") return <Navigate to="/dashboard" replace />;
+  return <Navigate to="/report" replace />;
+}
 
 function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
+    <ToastProvider>
+      <AuthProvider>
         <BrowserRouter>
-          <Suspense fallback={null}>
+          <Suspense fallback={<PageSkeleton />}>
             <Routes>
               {/* public */}
               <Route path="/login" element={<LoginPage />} />
@@ -46,6 +70,11 @@ function App() {
                 <Route path="/report/:id/edit" element={<ReportEditPage />} />
                 <Route path="/report/pdf" element={<ReportPdfPage />} />
 
+                <Route path="/tbm" element={<TbmListPage />} />
+                <Route path="/tbm/create" element={<TbmCreatePage />} />
+                <Route path="/tbm/:id/pdf" element={<TbmPdfPage />} />
+                <Route path="/tbm/:id" element={<TbmDetailPage />} />
+
                 <Route path="/vacation" element={<VacationPage />} />
                 <Route path="/vacation/admin" element={<AdminVacationPage />} />
 
@@ -53,21 +82,29 @@ function App() {
                 <Route path="/expense/member" element={<MemberExpensePage />} />
 
                 <Route path="/members" element={<MembersPage />} />
+                <Route path="/vehicles" element={<VehiclesPage />} />
 
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/settings/email" element={<EmailSettingsPage />} />
+                <Route path="/settings/web-notification" element={<WebNotificationSettingsPage />} />
+                <Route path="/settings/safe-phrase" element={<SafePhrasePage />} />
+
+
+                {/* backward compatible */}
                 <Route
                   path="/settings/email-notifications"
-                  element={<EmailNotificationSettingsPage />}
+                  element={<Navigate to="/settings/email" replace />}
                 />
               </Route>
 
               {/* default */}
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/" element={<RoleLanding />} />
+              <Route path="*" element={<RoleLanding />} />
             </Routes>
           </Suspense>
         </BrowserRouter>
-      </ToastProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

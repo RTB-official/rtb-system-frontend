@@ -1,20 +1,14 @@
 //workloadPage.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-} from "recharts";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
-import Table from "../../components/common/Table";
+import PageContainer from "../../components/common/PageContainer";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
+import useIsMobile from "../../hooks/useIsMobile";
+import { useUser } from "../../hooks/useUser";
+import Toast, { type ToastItem } from "../../components/ui/Toast";
 import { supabase } from "../../lib/supabase";
 import {
     getWorkloadData,
@@ -25,46 +19,222 @@ import {
     type WorkloadChartData,
     type WorkloadTableRow,
 } from "../../lib/workloadApi";
-
-
-// 커스텀 툴팁
-const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-        const byKey = (key: string) =>
-            payload.find((p: any) => p?.dataKey === key)?.value ?? 0;
-
-        return (
-            <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-lg">
-                <p className="font-semibold text-sm text-gray-900 mb-2">{label}</p>
-                <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3.5 h-3.5 rounded bg-[#51a2ff]" />
-                        <span className="text-sm text-gray-600">
-                            작업 {byKey("작업")}시간
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3.5 h-3.5 rounded bg-[#fd9a00]" />
-                        <span className="text-sm text-gray-600">
-                            이동 {byKey("이동")}시간
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3.5 h-3.5 rounded bg-gray-300" />
-                        <span className="text-sm text-gray-600">
-                            대기 {byKey("대기")}시간
-                        </span>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-    return null;
-};
-
+import WorkloadChartSection from "./components/WorkloadChartSection";
+import WorkloadReasonSection from "./components/WorkloadReasonSection";
+import WorkloadTableSection from "./components/WorkloadTableSection";
+import WorkloadXAxisTick from "./components/WorkloadXAxisTick";
+import { useChartSize } from "./hooks/useChartSize";
+import {
+    TABLE_COLUMNS,
+    Y_AXIS_INTERVAL,
+} from "./workloadConstants";
 
 export default function WorkloadPage() {
     const navigate = useNavigate();
+    const isMobile = useIsMobile();
+    // ✅ Toast
+    const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+    const pushToast = useCallback((partial: Omit<ToastItem, "id">) => {
+        const id =
+            (typeof crypto !== "undefined" && "randomUUID" in crypto && (crypto as any).randomUUID?.()) ||
+            `${Date.now()}-${Math.random()}`;
+
+        setToasts((prev) => [...prev, { id, ...partial }]);
+    }, []);
+
+    const removeToast = useCallback((id: string) => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, []);
+
+    // ✅ Toast onClose 함수 참조 고정(리렌더/호버에도 타이머 초기화 방지)
+    const toastCloseHandlersRef = useRef<Map<string, () => void>>(new Map());
+
+    const getToastOnClose = useCallback(
+        (id: string) => {
+            const existing = toastCloseHandlersRef.current.get(id);
+            if (existing) return existing;
+
+            const fn = () => {
+                removeToast(id);
+                toastCloseHandlersRef.current.delete(id);
+            };
+
+            toastCloseHandlersRef.current.set(id, fn);
+            return fn;
+        },
+        [removeToast]
+    );
+
+    // ✅ 막대 클릭 시 사유 섹션 대상(이름) & 입력값
+    const [reasonTargetName, setReasonTargetName] = useState<string | null>(null);
+    const [reasonText, setReasonText] = useState("");
+    const [reasonGovText, setReasonGovText] = useState(""); // ✅ 공무팀 사유
+    // ✅ 사람별 사유 저장(임시: 페이지 내 상태)
+    const [reasonByName, setReasonByName] = useState<Record<string, string>>({});
+    const [reasonGovByName, setReasonGovByName] = useState<Record<string, string>>({}); // ✅ 공무팀 사유 저장
+
+    // ✅ 차트에서 현재 호버(툴팁) 중인 이름
+    const [hoveredName, setHoveredName] = useState<string | null>(null);
+    const hoverRafRef = useRef<number | null>(null);
+    const pendingHoverRef = useRef<string | null>(null);
+    const lastHoverRef = useRef<string | null>(null);
+
+    // ✅ 막대(스택 어느 구간이든) 클릭하면 해당 인원 선택 + 저장된 사유 로딩
+    const handleBarClick = useCallback(
+        (barData: any) => {
+            const name = barData?.payload?.name;
+            if (!name) return;
+
+            setReasonTargetName(name);
+            setReasonText(reasonByName[name] ?? "");
+            setReasonGovText(reasonGovByName[name] ?? "");
+        },
+        [reasonByName, reasonGovByName]
+    );
+    // ✅ 차트 호버(툴팁 활성) 시 activePayload에서 이름 추적
+    const handleChartMouseMove = useCallback((state: any) => {
+        // ✅ 막대 위 빈공간에서도 activeLabel이 들어오는 경우가 많음
+        const nameFromLabel = state?.activeLabel ?? null;
+        const nameFromPayload = state?.activePayload?.[0]?.payload?.name ?? null;
+        const nextName = nameFromLabel ?? nameFromPayload;
+
+        if (lastHoverRef.current === nextName) return;
+        pendingHoverRef.current = nextName;
+
+        if (hoverRafRef.current !== null) return;
+        hoverRafRef.current = requestAnimationFrame(() => {
+            hoverRafRef.current = null;
+            const pending = pendingHoverRef.current ?? null;
+            if (lastHoverRef.current === pending) return;
+            lastHoverRef.current = pending;
+            setHoveredName(pending);
+        });
+    }, []);
+
+    // ✅ 막대/빈공간 포함(해당 X구간) 클릭 시 사유 열기
+    const handleChartClick = useCallback(
+        (state: any) => {
+            // ✅ 클릭 시점에도 activeLabel/activePayload에서 이름 확보
+            const name =
+                state?.activeLabel ??
+                state?.activePayload?.[0]?.payload?.name ??
+                hoveredName;
+
+            if (!name) return;
+
+            setReasonTargetName(name);
+            setReasonText(reasonByName[name] ?? "");
+            setReasonGovText(reasonGovByName[name] ?? "");
+        },
+        [hoveredName, reasonByName, reasonGovByName]
+    );
+
+    // ✅ 닫기
+    const handleReasonClose = useCallback(() => {
+        setReasonTargetName(null);
+        setReasonText("");
+        setReasonGovText("");
+    }, []);
+
+    // ✅ 저장(DB: 월별 upsert / 둘 다 empty면 delete)
+    const handleReasonSave = useCallback(async () => {
+        if (!reasonTargetName) return;
+
+        const yearNum = parseInt(selectedYear.replace("년", ""));
+        const monthNum = parseInt(selectedMonth.replace("월", ""));
+
+        const personal = reasonText.trim();
+        const gov = reasonGovText.trim();
+
+        // ✅ 둘 다 비어있으면 → DELETE
+        if (!personal && !gov) {
+            const { error } = await supabase
+                .from("workload_reasons")
+                .delete()
+                .eq("person_name", reasonTargetName)
+                .eq("year", yearNum)
+                .eq("month", monthNum);
+
+            if (error) {
+                pushToast({
+                    type: "error",
+                    message: "삭제에 실패했습니다.",
+                    duration: 3000,
+                });
+                return;
+            }
+
+            pushToast({
+                type: "success",
+                message: "사유가 없어 삭제되었습니다.",
+                duration: 2000,
+            });
+
+
+            // ✅ 프론트 상태에서도 제거
+            setReasonByName((prev) => {
+                const next = { ...prev };
+                delete next[reasonTargetName];
+                return next;
+            });
+
+            setReasonGovByName((prev) => {
+                const next = { ...prev };
+                delete next[reasonTargetName];
+                return next;
+            });
+
+            return;
+        }
+
+        // ✅ 하나라도 있으면 → UPSERT
+        const { error } = await supabase
+            .from("workload_reasons")
+            .upsert(
+                [
+                    {
+                        person_name: reasonTargetName,
+                        year: yearNum,
+                        month: monthNum,
+                        personal_reason: personal,
+                        gov_reason: gov,
+                        updated_at: new Date().toISOString(),
+                    },
+                ],
+                { onConflict: "person_name,year,month" }
+            );
+
+        if (error) {
+            pushToast({
+                type: "error",
+                message: "저장에 실패했습니다.",
+                duration: 3000,
+            });
+            return;
+        }
+
+        pushToast({
+            type: "success",
+            message: "저장되었습니다.",
+            duration: 2000,
+        });
+
+        // ✅ 프론트 상태 반영
+        setReasonByName((prev) => ({
+            ...prev,
+            [reasonTargetName]: personal,
+        }));
+
+        setReasonGovByName((prev) => ({
+            ...prev,
+            [reasonTargetName]: gov,
+        }));
+    }, [reasonTargetName, reasonText, reasonGovText, pushToast]);
+
+
+
+
 
     // 오늘 날짜 기준으로 기본값 설정
     const today = new Date();
@@ -78,105 +248,338 @@ export default function WorkloadPage() {
     const [loading, setLoading] = useState(true);
     const [chartData, setChartData] = useState<WorkloadChartData[]>([]);
     const [tableData, setTableData] = useState<WorkloadTableRow[]>([]);
-    const [userRole, setUserRole] = useState<string | null>(null);
-    const [userDepartment, setUserDepartment] = useState<string | null>(null);
-    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-    const [userName, setUserName] = useState<string | null>(null);
-    const [redirecting, setRedirecting] = useState(false);
+    const [profileMap, setProfileMap] = useState<
+        Map<string, { email: string | null; position: string | null }>
+    >(new Map());
+    const [lastMonthChartData, setLastMonthChartData] = useState<WorkloadChartData[]>([]);
+    const [showLastMonth, setShowLastMonth] = useState(false);
+    const showLastMonthRef = useRef(showLastMonth);
+    const { chartContainerRef, chartSize } = useChartSize(chartData.length);
+    const selectedYearNum = useMemo(
+        () => parseInt(selectedYear.replace("년", "")),
+        [selectedYear]
+    );
+    const selectedMonthNum = useMemo(
+        () => parseInt(selectedMonth.replace("월", "")),
+        [selectedMonth]
+    );
+    useEffect(() => {
+        showLastMonthRef.current = showLastMonth;
+    }, [showLastMonth]);
 
+
+    // ✅ 사유가 작성된 사람(name) Set (개인/공무팀 둘 중 하나라도 있으면)
+    const namesWithReason = useMemo(() => {
+        const set = new Set<string>();
+
+        Object.entries(reasonByName).forEach(([name, text]) => {
+            if ((text ?? "").trim()) set.add(name);
+        });
+
+        Object.entries(reasonGovByName).forEach(([name, text]) => {
+            if ((text ?? "").trim()) set.add(name);
+        });
+
+        return set;
+    }, [reasonByName, reasonGovByName]);
+
+    const CustomXAxisTick = useCallback(
+        (props: any) => {
+            const name = props?.payload?.value ?? "";
+            return (
+                <WorkloadXAxisTick
+                    {...props}
+                    hasReason={namesWithReason.has(name)}
+                    isMobile={isMobile}
+                />
+            );
+        },
+        [namesWithReason, isMobile]
+    );
+
+
+    // 이번달 차트 데이터에 지난달 작업값(lastWork) 합치기 (라인용)
+    const chartDataWithLastWork = useMemo(() => {
+        const lastMap = new Map(lastMonthChartData.map((d) => [d.name, d.작업 ?? null]));
+        return chartData.map((d) => ({
+            ...d,
+            lastWork: lastMap.get(d.name) ?? null,
+        }));
+    }, [chartData, lastMonthChartData]);
     const itemsPerPage = 10;
 
-    // 사용자 정보 로드
+    // ✅ useUser 훅으로 사용자 정보 및 권한 가져오기
+    const { currentUser, currentUserId, userPermissions } = useUser();
+    const userName = currentUser?.displayName || null;
+    const isStaff = userPermissions.isStaff;
+    const [staffPersonName, setStaffPersonName] = useState<string | null>(null);
+
+    // ✅ staff/공사팀이면 WorkloadPage 로딩 없이 즉시 본인 Detail로 이동
     useEffect(() => {
-        const fetchUserInfo = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                setCurrentUserId(user.id);
-                const { data: profile } = await supabase
+        if (!isStaff || !currentUserId) return;
+
+        const loadProfileName = async () => {
+            try {
+                const { data, error } = await supabase
                     .from("profiles")
-                    .select("role, department, name")
-                    .eq("id", user.id)
+                    .select("name")
+                    .eq("id", currentUserId)
                     .single();
-                    if (profile) {
-                        setUserRole(profile.role);
-                        setUserDepartment(profile.department);
-                        setUserName(profile.name);
-    
-                        // ✅ staff/공사팀이면 WorkloadPage 로딩 없이 즉시 본인 Detail로 이동
-                        const isStaff = profile.role === "staff" || profile.department === "공사팀";
-                        if (isStaff && profile.name) {
-                            setRedirecting(true);
-                            navigate(`/workload/detail/${encodeURIComponent(profile.name)}`, {
-                                replace: true,
-                            });
-                            return;
-                        }
-                    }
+                if (!error && data?.name) {
+                    setStaffPersonName(data.name);
+                } else {
+                    setStaffPersonName(userName);
+                }
+            } catch {
+                setStaffPersonName(userName);
             }
         };
-        fetchUserInfo();
-    }, []);
 
-    // 행 클릭 핸들러
-    const handleRowClick = (row: WorkloadTableRow) => {
-        const isStaff = userRole === "staff" || userDepartment === "공사팀";
-        // 공사팀(스태프)인 경우 본인 ID와 일치하는 경우만 상세 페이지로 이동
-        // (이미 자동 리다이렉트되므로 이 핸들러는 사실상 사용되지 않지만, 안전장치로 유지)
-        if (isStaff && row.id !== currentUserId) {
-            return;
+        loadProfileName();
+    }, [isStaff, currentUserId, userName]);
+
+    useEffect(() => {
+        if (isStaff && staffPersonName) {
+            navigate(`/workload/detail/${encodeURIComponent(staffPersonName)}`, {
+                replace: true,
+            });
         }
-        navigate(`/workload/detail/${encodeURIComponent(row.name)}`);
-    };
+    }, [isStaff, staffPersonName, navigate]);
+
+    // 행 클릭 핸들러 (메모이제이션)
+    const handleRowClick = useCallback(
+        (row: WorkloadTableRow) => {
+            if (isStaff && row.id !== currentUserId) {
+                return;
+            }
+            navigate(`/workload/detail/${encodeURIComponent(row.name)}`);
+        },
+        [isStaff, currentUserId, navigate]
+    );
+
+    const loadRequestIdRef = useRef(0);
+    const lastMonthKeyRef = useRef<string | null>(null);
 
     // 데이터 로드
     useEffect(() => {
-        const isStaff = userRole === "staff" || userDepartment === "공사팀";
         if (isStaff) return; // ✅ staff는 목록 화면 로딩 자체를 하지 않음
+
+        let cancelled = false;
+        const requestId = ++loadRequestIdRef.current;
+
+        const yearNum = selectedYearNum;
+        const monthNum = selectedMonthNum;
+
+        const loadReasons = async () => {
+            try {
+                const { data: reasonRows, error: reasonErr } = await supabase
+                    .from("workload_reasons")
+                    .select("person_name, personal_reason, gov_reason")
+                    .eq("year", yearNum)
+                    .eq("month", monthNum);
+
+                if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+                if (!reasonErr && reasonRows) {
+                    const personalMap: Record<string, string> = {};
+                    const govMap: Record<string, string> = {};
+
+                    reasonRows.forEach((r: any) => {
+                        if (r?.person_name) {
+                            personalMap[r.person_name] = r.personal_reason ?? "";
+                            govMap[r.person_name] = r.gov_reason ?? "";
+                        }
+                    });
+
+                    setReasonByName(personalMap);
+                    setReasonGovByName(govMap);
+                }
+            } catch {
+                // 무시
+            }
+        };
+
+        const loadProfileMap = async (rows: WorkloadTableRow[]) => {
+            const names = rows.map((r) => r.name);
+            if (names.length === 0) {
+                if (!cancelled && loadRequestIdRef.current === requestId) {
+                    setProfileMap(new Map());
+                }
+                return;
+            }
+
+            const { data: profileRows } = await supabase
+                .from("profiles")
+                .select("name, email, position")
+                .in("name", names);
+
+            if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+            const map = new Map<string, { email: string | null; position: string | null }>();
+            (profileRows || []).forEach((p: { name?: string; email?: string | null; position?: string | null }) => {
+                if (p.name) map.set(p.name, { email: p.email ?? null, position: p.position ?? null });
+            });
+            setProfileMap(map);
+        };
+
+        const loadLastMonth = async (currentChart: WorkloadChartData[]) => {
+            let prevYear = yearNum;
+            let prevMonth = monthNum - 1;
+            if (prevMonth === 0) {
+                prevMonth = 12;
+                prevYear = yearNum - 1;
+            }
+
+            const [prevEntries, prevProfilesResult] = await Promise.allSettled([
+                getWorkloadData({ year: prevYear, month: prevMonth }),
+                getWorkloadTargetProfiles(),
+            ]);
+
+            if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+            if (prevEntries.status === "fulfilled") {
+                let prevProfiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                if (prevProfilesResult.status === "fulfilled") {
+                    prevProfiles = prevProfilesResult.value;
+                }
+
+                const prevSummaries = aggregatePersonWorkload(prevEntries.value, prevProfiles);
+                const prevChart = generateChartData(prevSummaries);
+                const prevMap = new Map(prevChart.map((d) => [d.name, d]));
+                const alignedPrev = currentChart.map((d) => {
+                    const found = prevMap.get(d.name);
+                    return found ?? { name: d.name, 작업: 0, 이동: 0, 대기: 0 };
+                });
+                setLastMonthChartData(alignedPrev);
+            } else {
+                setLastMonthChartData([]);
+            }
+        };
 
         const loadData = async () => {
             setLoading(true);
             try {
-                const yearNum = parseInt(selectedYear.replace("년", ""));
-                const monthNum = parseInt(selectedMonth.replace("월", ""));
+                // ✅ API 호출 병렬 처리
+                const [entries, profilesResult] = await Promise.allSettled([
+                    getWorkloadData({
+                        year: yearNum,
+                        month: monthNum,
+                    }),
+                    getWorkloadTargetProfiles(),
+                ]);
 
-                const entries = await getWorkloadData({
-                    year: yearNum,
-                    month: monthNum,
-                });
-
-                // ✅ 공사팀/공무팀 대상자 조회 (실패해도 워크로드는 계속 표시)
-                let profiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
-                try {
-                    profiles = await getWorkloadTargetProfiles();
-                } catch (e) {
-                    console.error("워크로드 대상자(profiles) 조회 실패 - fallback 처리:", e);
-                    profiles = []; // ✅ 대상자 필터 없이 전체 집계
+                if (entries.status === "rejected") {
+                    throw entries.reason;
                 }
 
-                // ✅ 인원별 집계
-                const summaries = aggregatePersonWorkload(entries, profiles);
+                let profiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                if (profilesResult.status === "fulfilled") {
+                    profiles = profilesResult.value;
+                }
 
+                const summaries = aggregatePersonWorkload(entries.value, profiles);
 
+                const getTeamText = (p: any) =>
+                    String(
+                        p?.team ??
+                        p?.team_name ??
+                        p?.department ??
+                        p?.dept ??
+                        p?.group ??
+                        p?.group_name ??
+                        ""
+                    );
 
-                // 차트 데이터 생성
-                const chart = generateChartData(summaries);
-                setChartData(chart);
+                const chartProfiles = profiles.filter((p: any) => {
+                    const team = getTeamText(p);
+                    const isCivil = team.includes("공무");
+                    const isConstruction = team.includes("공사");
+                    return isConstruction && !isCivil;
+                });
 
-                // 테이블 데이터 생성
-                const table = generateTableData(summaries);
-                setTableData(table);
+                const chartSummaries = aggregatePersonWorkload(entries.value, chartProfiles);
+                const newChartData = generateChartData(chartSummaries);
+                const newTableData = generateTableData(summaries);
 
-                // 페이지 초기화
+                if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+                setChartData(newChartData);
+                setTableData(newTableData);
                 setCurrentPage(1);
-            } catch (error) {
-                console.error("워크로드 데이터 로드 실패:", error);
-            } finally {
                 setLoading(false);
+
+                loadReasons();
+                loadProfileMap(newTableData);
+
+                const key = `${yearNum}-${monthNum}`;
+                if (showLastMonthRef.current && lastMonthKeyRef.current !== key) {
+                    lastMonthKeyRef.current = key;
+                    loadLastMonth(newChartData);
+                }
+            } catch {
+                if (!cancelled && loadRequestIdRef.current === requestId) {
+                    setLoading(false);
+                }
             }
         };
 
         loadData();
-    }, [selectedYear, selectedMonth, userRole, userDepartment]);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedYear, selectedMonth, selectedYearNum, selectedMonthNum, isStaff]);
+
+    useEffect(() => {
+        if (!showLastMonth) return;
+        if (loading) return;
+        const yearNum = selectedYearNum;
+        const monthNum = selectedMonthNum;
+        const key = `${yearNum}-${monthNum}`;
+        if (lastMonthKeyRef.current === key) return;
+        lastMonthKeyRef.current = key;
+        const requestId = ++loadRequestIdRef.current;
+        let cancelled = false;
+
+        const loadLastMonth = async () => {
+            let prevYear = yearNum;
+            let prevMonth = monthNum - 1;
+            if (prevMonth === 0) {
+                prevMonth = 12;
+                prevYear = yearNum - 1;
+            }
+
+            const [prevEntries, prevProfilesResult] = await Promise.allSettled([
+                getWorkloadData({ year: prevYear, month: prevMonth }),
+                getWorkloadTargetProfiles(),
+            ]);
+
+            if (cancelled || loadRequestIdRef.current !== requestId) return;
+
+            if (prevEntries.status === "fulfilled") {
+                let prevProfiles: Awaited<ReturnType<typeof getWorkloadTargetProfiles>> = [];
+                if (prevProfilesResult.status === "fulfilled") {
+                    prevProfiles = prevProfilesResult.value;
+                }
+                const prevSummaries = aggregatePersonWorkload(prevEntries.value, prevProfiles);
+                const prevChart = generateChartData(prevSummaries);
+                const prevMap = new Map(prevChart.map((d) => [d.name, d]));
+                const alignedPrev = chartData.map((d) => {
+                    const found = prevMap.get(d.name);
+                    return found ?? { name: d.name, 작업: 0, 이동: 0, 대기: 0 };
+                });
+                setLastMonthChartData(alignedPrev);
+            } else {
+                setLastMonthChartData([]);
+            }
+        };
+
+        loadLastMonth();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [showLastMonth, selectedYearNum, selectedMonthNum, chartData, loading]);
 
 
 
@@ -191,12 +594,42 @@ export default function WorkloadPage() {
         return tableData.slice(startIndex, endIndex);
     }, [tableData, currentPage, itemsPerPage]);
 
-    // Y축 최대값 계산 (차트용)
-    const maxYValue = useMemo(() => {
-        if (chartData.length === 0) return 140;
-        const max = Math.max(...chartData.map((d) => d.작업 + d.이동 + d.대기));
-        return Math.ceil(max / 35) * 35; // 35의 배수로 올림
+
+    // 순수 작업시간 평균 계산
+    const averageWorkTime = useMemo(() => {
+        if (chartData.length === 0) return 0;
+        const total = chartData.reduce((sum, d) => sum + d.작업, 0);
+        return Math.round(total / chartData.length);
     }, [chartData]);
+
+    // Y축 최대값 및 ticks 계산 (차트용)
+    const { maxYValue, yAxisTicks } = useMemo(() => {
+        if (chartData.length === 0) {
+            return {
+                maxYValue: 140,
+                yAxisTicks: Array.from(
+                    { length: 140 / Y_AXIS_INTERVAL + 1 },
+                    (_, i) => i * Y_AXIS_INTERVAL
+                ),
+            };
+        }
+
+        const max = Math.max(
+            0,
+            ...chartData.map((d) => d.작업 + d.이동 + d.대기)
+        );
+
+        const maxY = Math.ceil(max / Y_AXIS_INTERVAL) * Y_AXIS_INTERVAL;
+
+        return {
+            maxYValue: maxY,
+            yAxisTicks: Array.from(
+                { length: maxY / Y_AXIS_INTERVAL + 1 },
+                (_, i) => i * Y_AXIS_INTERVAL
+            ),
+        };
+    }, [chartData]);
+
 
     return (
         <div className="flex h-screen bg-white font-pretendard">
@@ -208,15 +641,19 @@ export default function WorkloadPage() {
                 />
             )}
 
+            {/* ✅ Toasts */}
+            {toasts.map((t, idx) => (
+                <Toast
+                    key={t.id}
+                    toast={t}
+                    offset={idx * 90}
+                    onClose={getToastOnClose(t.id)}
+                />
+            ))}
+
             {/* Sidebar */}
             <div
-                className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        transform ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0
-        transition-transform duration-300 ease-in-out
-      `}
+                className={`fixed lg:static inset-y-0 left-0 z-50 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
@@ -228,15 +665,15 @@ export default function WorkloadPage() {
                     onMenuClick={() => setSidebarOpen(true)}
                 />
 
-                {/* Content */}
-                <main className="flex-1 overflow-auto pt-9 pb-20 px-9">
+                {/* Content - 좌우 패딩은 PageContainer(모바일 16px) 적용 */}
+                <main className="flex-1 overflow-auto pt-9 pb-20">
                     {loading ? (
-                        <WorkloadSkeleton />
+                        <PageContainer><WorkloadSkeleton /></PageContainer>
                     ) : (
-                        <div className="flex flex-col gap-6 w-full">
+                        <PageContainer className="flex flex-col gap-4 md:gap-6 w-full">
                             {/* 조회 기간 */}
-                            <div className="flex flex-wrap items-center gap-4">
-                                <h2 className="text-[24px] font-semibold text-gray-900">
+                            <div className="flex flex-wrap items-center gap-4 md:gap-4">
+                                <h2 className="text-base md:text-[24px] font-semibold text-gray-900">
                                     조회 기간
                                 </h2>
                                 <YearMonthSelector
@@ -248,182 +685,59 @@ export default function WorkloadPage() {
                             </div>
 
                             {/* 인원별 작업시간 차트 */}
-                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
-                                <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                                    <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight">
-                                        인원별 작업시간
-                                    </h2>
-                                    <div className="flex items-center gap-5">
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="w-4 h-4 rounded bg-[#51a2ff]" />
-                                            <span className="text-[13px] text-gray-500">
-                                                작업
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="w-4 h-4 rounded bg-[#fd9a00]" />
-                                            <span className="text-[13px] text-gray-500">
-                                                이동
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="w-4 h-4 rounded bg-gray-300" />
-                                            <span className="text-[13px] text-gray-500">
-                                                대기
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
+                            <WorkloadChartSection
+                                isMobile={isMobile}
+                                chartData={chartData}
+                                chartDataWithLastWork={chartDataWithLastWork}
+                                chartContainerRef={chartContainerRef}
+                                chartSize={chartSize}
+                                showLastMonth={showLastMonth}
+                                onToggleLastMonth={() => setShowLastMonth((v) => !v)}
+                                onChartMouseMove={handleChartMouseMove}
+                                onChartMouseLeave={() => {
+                                    if (hoverRafRef.current !== null) {
+                                        cancelAnimationFrame(hoverRafRef.current);
+                                        hoverRafRef.current = null;
+                                    }
+                                    pendingHoverRef.current = null;
+                                    lastHoverRef.current = null;
+                                    setHoveredName(null);
+                                }}
+                                onChartClick={handleChartClick}
+                                onBarClick={handleBarClick}
+                                CustomXAxisTick={CustomXAxisTick}
+                                maxYValue={maxYValue}
+                                yAxisTicks={yAxisTicks}
+                                averageWorkTime={averageWorkTime}
+                            />
 
-                                {loading ? (
-                                    <div className="h-[300px] flex items-center justify-center">
-                                        <div className="text-gray-500">
-                                            데이터 로딩 중...
-                                        </div>
-                                    </div>
-                                ) : chartData.length === 0 ? (
-                                    <div className="h-[300px] flex items-center justify-center">
-                                        <div className="text-gray-500">
-                                            데이터가 없습니다.
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="h-[300px] w-full">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <BarChart
-                                                data={chartData}
-                                                margin={{
-                                                    top: 20,
-                                                    right: 20,
-                                                    left: 0,
-                                                    bottom: 5,
-                                                }}
-                                            >
-                                                <CartesianGrid
-                                                    strokeDasharray="3 3"
-                                                    vertical={false}
-                                                    stroke="#e5e7eb"
-                                                />
-                                                <XAxis
-                                                    dataKey="name"
-                                                    tick={{
-                                                        fontSize: 12,
-                                                        fill: "#6a7282",
-                                                    }}
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                />
-                                                <YAxis
-                                                    tick={{
-                                                        fontSize: 14,
-                                                        fill: "#99a1af",
-                                                    }}
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                    domain={[0, maxYValue]}
-                                                    ticks={Array.from(
-                                                        {
-                                                            length:
-                                                                maxYValue / 35 +
-                                                                1,
-                                                        },
-                                                        (_, i) => i * 35
-                                                    )}
-                                                />
-                                                <Tooltip
-                                                    content={<CustomTooltip />}
-                                                    cursor={{
-                                                        fill: "rgba(0,0,0,0.05)",
-                                                    }}
-                                                />
-                                                <Bar
-                                                    dataKey="작업"
-                                                    stackId="a"
-                                                    fill="#51a2ff"
-                                                    radius={[4, 4, 0, 0]}
-                                                />
-                                                <Bar
-                                                    dataKey="이동"
-                                                    stackId="a"
-                                                    fill="#fd9a00"
-                                                    radius={[0, 0, 0, 0]}
-                                                />
-                                                <Bar
-                                                    dataKey="대기"
-                                                    stackId="a"
-                                                    fill="#d1d5dc"
-                                                    radius={[0, 0, 4, 4]}
-                                                />
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-                            </div>
+                            <WorkloadReasonSection
+                                isMobile={isMobile}
+                                reasonTargetName={reasonTargetName}
+                                selectedMonthNum={selectedMonthNum}
+                                reasonText={reasonText}
+                                reasonGovText={reasonGovText}
+                                onReasonTextChange={setReasonText}
+                                onReasonGovTextChange={setReasonGovText}
+                                onSave={handleReasonSave}
+                                onClose={handleReasonClose}
+                            />
 
-                            {/* 상세 데이터 테이블 */}
-                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
-                                <h2 className="text-lg font-semibold text-gray-800 mb-1">
-                                    상세 데이터
-                                </h2>
-                                <p className="text-sm text-gray-500 mb-4">
-                                    클릭하여 상세 내역을 확인하세요
-                                </p>
-
-                                {loading ? (
-                                    <div className="py-8 text-center text-gray-500">
-                                        데이터 로딩 중...
-                                    </div>
-                                ) : tableData.length === 0 ? (
-                                    <div className="py-8 text-center text-gray-500">
-                                        데이터가 없습니다.
-                                    </div>
-                                ) : (
-                                    <Table
-                                        columns={[
-                                            {
-                                                key: "name",
-                                                label: "이름",
-                                            },
-                                            {
-                                                key: "work",
-                                                label: "작업",
-                                            },
-                                            {
-                                                key: "travel",
-                                                label: "이동",
-                                            },
-                                            {
-                                                key: "wait",
-                                                label: "대기",
-                                            },
-                                            {
-                                                key: "days",
-                                                label: "일수",
-                                            },
-                                        ]}
-                                        data={currentTableData}
-                                        rowKey="id"
-                                        onRowClick={handleRowClick}
-                                        pagination={
-                                            totalPages > 1
-                                                ? {
-                                                      currentPage,
-                                                      totalPages,
-                                                      onPageChange:
-                                                          setCurrentPage,
-                                                  }
-                                                : undefined
-                                        }
-                                    />
-                                )}
-                            </div>
-                        </div>
+                            <WorkloadTableSection
+                                isMobile={isMobile}
+                                columns={TABLE_COLUMNS}
+                                tableData={tableData}
+                                currentTableData={currentTableData}
+                                totalPages={totalPages}
+                                currentPage={currentPage}
+                                onPageChange={setCurrentPage}
+                                onRowClick={handleRowClick}
+                                profileMap={profileMap}
+                            />
+                        </PageContainer>
                     )}
                 </main>
             </div>
         </div>
     );
-}
+}  

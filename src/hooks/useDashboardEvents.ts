@@ -1,3 +1,4 @@
+// useDashboardEvents.ts
 import { useState, useEffect, useMemo } from "react";
 import { CalendarEvent } from "../types";
 import { useAuth } from "../store/auth";
@@ -18,31 +19,6 @@ export function useDashboardEvents(year: number, month: number) {
     const { user } = useAuth();
     const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
     const [loading, setLoading] = useState(true);
-    const [userDepartment, setUserDepartment] = useState<string | null>(null);
-
-    // 사용자 department 정보 로드
-    useEffect(() => {
-        if (!user?.id) return;
-
-        const fetchUserDepartment = async () => {
-            const { data, error } = await supabase
-                .from("profiles")
-                .select("department")
-                .eq("id", user.id)
-                .single();
-
-            if (error) {
-                console.error("유저 department 조회 실패:", error.message);
-                return;
-            }
-
-            if (data?.department) {
-                setUserDepartment(data.department);
-            }
-        };
-
-        fetchUserDepartment();
-    }, [user]);
 
     // 실제 데이터 가져오기
     useEffect(() => {
@@ -97,7 +73,7 @@ export function useDashboardEvents(year: number, month: number) {
                     }
 
                     // 휴가 이벤트 생성
-                    // 모든 사용자에게 모든 상태(대기 중/승인 완료/반려)의 모든 휴가 표시
+                    // 모든 사용자에게 모든 상태(승인 대기/승인 완료/반려됨)의 모든 휴가 표시
                     vacations.forEach((vacation) => {
                         const userName = vacation.user_id
                             ? profileMap.get(vacation.user_id)
@@ -149,13 +125,12 @@ export function useDashboardEvents(year: number, month: number) {
         };
 
         loadEvents();
-    }, [user?.id, year, month, userDepartment]);
+    }, [user?.id, year, month]);
 
     return {
         allEvents,
         setAllEvents,
         loading,
-        userDepartment,
     };
 }
 
@@ -167,6 +142,19 @@ export function useMergedHolidays(
 ): CalendarEvent[] {
     return useMemo(() => {
         const merged: CalendarEvent[] = [];
+        const formatDateLabel = (dateKey: string) => {
+            const [, m, d] = dateKey.split("-");
+            const month = String(parseInt(m, 10));
+            const day = String(parseInt(d, 10));
+            return `${month}월 ${day}일`;
+        };
+        const normalizeHolidayName = (rawName: string, dateKey: string) => {
+            const name = rawName.trim();
+            if (name === "1월1일") return "신정";
+            if (name === "설날") return "설날 연휴";
+            if (name === "기독탄신일") return "크리스마스";
+            return name || formatDateLabel(dateKey);
+        };
         const sortedKeys = Object.keys(holidays).sort();
 
         let currentHoliday: {
@@ -176,7 +164,8 @@ export function useMergedHolidays(
         } | null = null;
 
         for (const key of sortedKeys) {
-            const title = holidays[key];
+            const rawTitle = holidays[key] ?? "";
+            const title = normalizeHolidayName(rawTitle, key);
             if (!currentHoliday) {
                 currentHoliday = { title, start: key, end: key };
             } else if (currentHoliday.title === title) {
@@ -257,4 +246,3 @@ export function useSortedEvents(
         });
     }, [allEvents, mergedHolidays]);
 }
-

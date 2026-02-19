@@ -5,6 +5,7 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
 import BasicInfoSection from "../../components/sections/BasicInfoSection";
+import EducationBasicInfoSection from "../../components/sections/EducationBasicInfoSection";
 import WorkerSection from "../../components/sections/WorkerSection";
 import WorkLogSection from "../../components/sections/WorkLogSection";
 import ExpenseSection from "../../components/sections/ExpenseSection";
@@ -12,18 +13,20 @@ import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import CreationSkeleton from "../../components/common/CreationSkeleton";
-import { useWorkReportStore, LOCATIONS } from "../../store/workReportStore";
+import SectionCard from "../../components/ui/SectionCard";
+import WorkloadLegend from "../../components/common/WorkloadLegend";
+import { useWorkReportStore } from "../../store/workReportStore";
 import { IconArrowBack, IconReport } from "../../components/icons/Icons";
 import {
     uploadReceiptFile,
     updateWorkLog,
     getWorkLogById,
-    type WorkLog,
 } from "../../lib/workLogApi";
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import useIsMobile from "../../hooks/useIsMobile";
 
 type ReceiptCategoryEnum =
     | "숙박영수증"
@@ -67,9 +70,10 @@ export default function ReportEditPage() {
     const [submitting, setSubmitting] = useState(false);
     const [savingDraft, setSavingDraft] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
-    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [isSubmittedWorkLog, setIsSubmittedWorkLog] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+    const [navigateConfirmOpen, setNavigateConfirmOpen] = useState(false);
+    const [reportType, setReportType] = useState<"work" | "education">("work");
 
 
     // ✅ 최초 작성자 유지용
@@ -79,13 +83,14 @@ export default function ReportEditPage() {
     const navigate = useNavigate();
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
+    const isMobile = useIsMobile();
     const {
         vessel,
         engine,
         subject,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         workers,
@@ -94,65 +99,67 @@ export default function ReportEditPage() {
         materials,
         uploadedFiles,
         resetForm,
+        setReportType: setReportTypeInStore,
         setVessel,
         setEngine,
         setSubject,
         setOrderGroup,
         setOrderPerson,
-        setLocation,
+        setLocations,
         setLocationCustom,
         setVehicles,
         setWorkers,
         setExpenses,
         setMaterials,
         setWorkLogEntries,
+        setInstructor,
     } = useWorkReportStore();
 
-        // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
-        const initialSnapshotRef = useRef<string>("");
-        const makeSnapshot = useCallback(() => {
-            return JSON.stringify({
-                vessel,
-                engine,
-                subject,
-                orderGroup,
-                orderPerson,
-                location,
-                locationCustom,
-                vehicles,
-                workers,
-                workLogEntries,
-                expenses,
-                materials,
-                uploadedFiles: uploadedFiles?.map((f: any) => ({
-                    name: f?.file?.name,
-                    category: f?.category,
-                    isExisting: f?.isExisting,
-                })),
-            });
-        }, [
+    // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
+    const initialSnapshotRef = useRef<string>("");
+    const makeSnapshot = useCallback(() => {
+        return JSON.stringify({
             vessel,
             engine,
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,
             workLogEntries,
             expenses,
             materials,
-            uploadedFiles,
-        ]);
-    
-        const [isDirty, setIsDirty] = useState(false);
-    
-// ✅ 최신 makeSnapshot 참조용 (비동기/timeout에서도 최신값 사용)
-const makeSnapshotRef = useRef(makeSnapshot);
-useEffect(() => {
-    makeSnapshotRef.current = makeSnapshot;
-}, [makeSnapshot]);
+            uploadedFiles: uploadedFiles?.map((f: any) => ({
+                name: f?.file?.name,
+                category: f?.category,
+                isExisting: f?.isExisting,
+            })),
+        });
+    }, [
+        vessel,
+        engine,
+        subject,
+        orderGroup,
+        orderPerson,
+        locations,
+        locationCustom,
+        vehicles,
+        workers,
+        workLogEntries,
+        expenses,
+        materials,
+        uploadedFiles,
+    ]);
+
+    const [isDirty, setIsDirty] = useState(false);
+
+    // ✅ 최신 makeSnapshot 참조용 (비동기/timeout에서도 최신값 사용)
+    const makeSnapshotRef = useRef(makeSnapshot);
+    useEffect(() => {
+        makeSnapshotRef.current = makeSnapshot;
+    }, [makeSnapshot]);
 
     // 기존 데이터 로드
     useEffect(() => {
@@ -192,23 +199,26 @@ useEffect(() => {
                 if (data.workLog.order_person)
                     setOrderPerson(data.workLog.order_person);
                 if (data.workLog.location) {
-                    if (
-                        data.workLog.location === "OTHER" ||
-                        !LOCATIONS.includes(data.workLog.location)
-                    ) {
-                        setLocation("OTHER");
-                        if (data.workLog.location)
-                            setLocationCustom(data.workLog.location);
-                    } else {
-                        setLocation(data.workLog.location);
-                    }
+                    const parsedLocations = String(data.workLog.location)
+                        .split(",")
+                        .map((loc) => loc.trim())
+                        .filter(Boolean);
+                    setLocations(parsedLocations);
                 }
                 if (data.workLog.vehicle) {
-                    const vehicleList = data.workLog.vehicle
-                        .split(", ")
+                    const vehicleList = String(data.workLog.vehicle)
+                        .split(",")
                         .map((v) => v.trim())
-                        .filter((v) => v);
+                        .filter(Boolean);
                     setVehicles(vehicleList);
+                }
+                // 리포트 타입 판별
+                const isEducation = data.workLog.subject?.includes("[교육]");
+                setReportType(isEducation ? "education" : "work");
+                setReportTypeInStore(isEducation ? "education" : "work");
+
+                if (isEducation && data.workLog.order_person) {
+                    setInstructor(data.workLog.order_person);
                 }
 
                 // 작업자 설정
@@ -245,24 +255,23 @@ useEffect(() => {
                 const materialEntries = data.materials.map((mat) => ({
                     id: mat.id || Date.now() + Math.random(),
                     name: mat.name,
-                    qty: mat.qty,
+                    qty: String(mat.qty ?? ""),
                     unit: mat.unit || "",
                 }));
                 setMaterials(materialEntries);
             } catch (error: any) {
                 console.error("Error loading work log:", error);
                 showError(
-                    `보고서 로드 실패: ${
-                        error.message || "알 수 없는 오류가 발생했습니다."
+                    `보고서 로드 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                     }`
                 );
                 navigate("/report");
             } finally {
-                                // ✅ 로드 완료 시점을 초기 스냅샷으로 고정
-                                setTimeout(() => {
-                                    initialSnapshotRef.current = makeSnapshotRef.current();
-                                    setIsDirty(false);
-                                }, 0);
+                // ✅ 로드 완료 시점을 초기 스냅샷으로 고정
+                setTimeout(() => {
+                    initialSnapshotRef.current = makeSnapshotRef.current();
+                    setIsDirty(false);
+                }, 0);
                 setLoading(false);
             }
         };
@@ -295,70 +304,73 @@ useEffect(() => {
 
             // 출장 보고서 업데이트
             const resolvedLocation =
-                location === "OTHER" ? locationCustom : location;
+                locations.length > 0 ? locations.join(", ") : undefined;
             const resolvedVehicle =
                 vehicles.length > 0 ? vehicles.join(", ") : null;
 
-                const workLogData = {
-                    author: originalAuthor || authorName,
-                
-                    vessel,
-                    engine,
-                    order_group: orderGroup || undefined,
-                    order_person: orderPerson || undefined,
-                    location: resolvedLocation || undefined,
-                    vehicle: resolvedVehicle || undefined,
-                    subject,
-                    workers,
-                    entries: workLogEntries.map((entry) => ({
-                        dateFrom: entry.dateFrom,
-                        timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
-                        dateTo: entry.dateTo,
-                        timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,                        
-                        descType: entry.descType,
-                        details: entry.details,
-                        persons: entry.persons,
-                        note: entry.note || undefined,
-                        moveFrom: entry.moveFrom || undefined,
-                        moveTo: entry.moveTo || undefined,
-                        lunch_worked: !!entry.noLunch,
-                    })),
-                    expenses: expenses.map((exp) => ({
-                        date: exp.date,
-                        type: exp.type,
-                        detail: exp.detail,
-                        amount: exp.amount,
-                    })),
-                    materials: materials.map((mat) => ({
-                        name: mat.name,
-                        qty: mat.qty,
-                        unit: mat.unit || undefined,
-                    })),
-                    is_draft: false,
-                    created_by: originalCreatedBy || user?.id || undefined,
-                };
-                
-                
+            const workLogData = {
+                author: originalAuthor || authorName,
+
+                vessel: reportType === "work" ? vessel : undefined,
+                engine: reportType === "work" ? engine : undefined,
+                order_group: reportType === "work" ? orderGroup : undefined,
+                order_person: reportType === "education" ? useWorkReportStore.getState().instructor : orderPerson,
+                location: resolvedLocation,
+                vehicle: reportType === "work" ? (resolvedVehicle || undefined) : undefined,
+                subject,
+                workers,
+                entries: workLogEntries.map((entry) => ({
+                    id: entry.id,
+                    dateFrom: entry.dateFrom,
+                    timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
+                    dateTo: entry.dateTo,
+                    timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,
+                    descType: entry.descType,
+                    details: entry.details,
+                    persons: entry.persons,
+                    note: entry.note || undefined,
+                    moveFrom: entry.moveFrom || undefined,
+                    moveTo: entry.moveTo || undefined,
+                    lunch_worked: !!entry.noLunch,
+                })),
+                expenses: expenses.map((exp) => ({
+                    date: exp.date,
+                    type: exp.type,
+                    detail: exp.detail,
+                    amount: exp.amount,
+                })),
+                materials: materials.map((mat) => ({
+                    name: mat.name,
+                    qty: String(mat.qty ?? ""),
+                    unit: mat.unit || undefined,
+                })),
+                is_draft: false,
+                created_by: originalCreatedBy || user?.id || undefined,
+            };
+
+
             // 기존 레코드 업데이트
             const workLog = await updateWorkLog(workLogId, workLogData);
 
-            // 파일 업로드 처리 (work_log 업데이트 후)
-            // 새로 업로드한 파일만 처리 (기존 영수증은 이미 DB에 있음)
-            const newFiles = uploadedFiles.filter((f) => !f.isExisting && f.file);
-            if (newFiles.length > 0) {
-    const receipts: Array<{
-        category: ReceiptCategoryEnum;
-        storage_bucket: string;
-        storage_path: string;
-        original_name?: string;
-        mime_type?: string;
-        file_size?: number;
-        created_by?: string;
-    }> = [];
+// 파일 업로드 처리 (work_log 업데이트 후)
+// ✅ 수정 화면에서 isExisting 플래그가 꼬일 수 있으므로 "실제 File 객체 존재"로 판별
+const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
+
+if (newFiles.length > 0) {
+
+                const receipts: Array<{
+                    category: ReceiptCategoryEnum;
+                    storage_bucket: string;
+                    storage_path: string;
+                    original_name?: string;
+                    mime_type?: string;
+                    file_size?: number;
+                    created_by?: string;
+                }> = [];
 
                 for (const file of newFiles) {
                     if (!file.file) continue;
-                    
+
                     try {
                         const filePath = await uploadReceiptFile(
                             file.file,
@@ -373,7 +385,7 @@ useEffect(() => {
                             original_name: file.file.name,
                             mime_type: file.file.type || undefined,
                             file_size: file.file.size || undefined,
-                            created_by: user?.id || undefined, // RLS 정책을 위해 명시적으로 전달
+                            created_by: originalCreatedBy || user?.id || undefined, // ✅ 원 작성자 기준 유지
                         });
                     } catch (err: any) {
                         console.error("Error uploading file:", err);
@@ -386,17 +398,6 @@ useEffect(() => {
 
                 // receipts 저장
                 if (receipts.length > 0) {
-                    // 디버깅: 사용자 정보 확인
-                    console.log("=== 영수증 저장 디버깅 (수정 페이지) ===");
-                    console.log("User ID:", user?.id);
-                    console.log("Work Log ID:", workLog.id);
-                    console.log("Receipts to insert:", receipts);
-                    
-                    // 인증 상태 확인
-                    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-                    console.log("Auth User:", authUser);
-                    console.log("Auth Error:", authError);
-                    
                     const insertDataList = receipts.map((r) => {
                         // 명시적으로 필드 지정 (스프레드 연산자 대신)
                         const insertData: any = {
@@ -405,35 +406,25 @@ useEffect(() => {
                             storage_bucket: r.storage_bucket,
                             storage_path: r.storage_path,
                         };
-                        
-                        // 선택적 필드 추가
-                        if (r.original_name) insertData.original_name = r.original_name;
-                        if (r.mime_type) insertData.mime_type = r.mime_type;
-                        if (r.file_size) insertData.file_size = r.file_size;
-                        if (user?.id) insertData.created_by = user.id;
-                        
-                        return insertData;
-                    });
-                    
-                    console.log("Insert Data List:", JSON.stringify(insertDataList, null, 2));
-                    
-                    const { data: insertData, error: receiptsError } = await supabase
-                        .from("work_log_receipt")
-                        .insert(insertDataList)
-                        .select();
 
-                    if (receiptsError) {
-                        console.error("=== 영수증 저장 에러 상세 (수정 페이지) ===");
-                        console.error("Error Code:", receiptsError.code);
-                        console.error("Error Message:", receiptsError.message);
-                        console.error("Error Details:", receiptsError.details);
-                        console.error("Error Hint:", receiptsError.hint);
-                        console.error("Full Error:", JSON.stringify(receiptsError, null, 2));
-                        showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`);
-                        throw receiptsError; // ✅ DB 저장 실패면 제출도 실패 처리
-                    }
-                    
-                    console.log("영수증 저장 성공:", insertData);
+                    // 선택적 필드 추가
+                    if (r.original_name) insertData.original_name = r.original_name;
+                    if (r.mime_type) insertData.mime_type = r.mime_type;
+                    if (r.file_size) insertData.file_size = r.file_size;
+
+                    // ✅ RLS 통과용: work_logs.created_by와 동일 기준으로
+                    if (originalCreatedBy || user?.id) insertData.created_by = originalCreatedBy || user!.id;
+
+                    return insertData;
+                    });
+                    const { error: receiptsError } = await supabase
+                    .from("work_log_receipt")
+                    .insert(insertDataList);
+                
+                if (receiptsError) {
+                    showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`);
+                    throw receiptsError;
+                }
                 }
             }
 
@@ -441,13 +432,11 @@ useEffect(() => {
             showSuccess("수정이 완료되었습니다!");
             resetForm();
             setLastSavedAt(null);
-            setHasUnsavedChanges(false);
             navigate("/report");
         } catch (error: any) {
             console.error("Error updating work log:", error);
             showError(
-                `수정 실패: ${
-                    error.message || "알 수 없는 오류가 발생했습니다."
+                `수정 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                 }`
             );
         } finally {
@@ -458,12 +447,20 @@ useEffect(() => {
     // 제출 핸들러 (확인 다이얼로그 열기)
     const handleSubmit = () => {
         // 필수 항목 체크
-        if (!vessel || !engine || !subject) {
-            showError("기본정보(호선/엔진/목적)는 필수입니다.");
-            return;
+        if (reportType === "work") {
+            if (!vessel || !engine || !subject) {
+                showError("기본정보(호선/엔진/목적)는 필수입니다.");
+                return;
+            }
+        } else {
+            const currentInstructor = useWorkReportStore.getState().instructor;
+            if (!currentInstructor || !subject) {
+                showError("기본정보(강사/내용)는 필수입니다.");
+                return;
+            }
         }
         if (workers.length === 0) {
-            showError("작업자를 선택해주세요.");
+            showError("인원을 선택해주세요.");
             return;
         }
         if (workLogEntries.length === 0) {
@@ -504,58 +501,138 @@ useEffect(() => {
                 }
 
                 const resolvedLocation =
-                    location === "OTHER" ? locationCustom : location;
+                    locations.length > 0 ? locations.join(", ") : undefined;
                 const resolvedVehicle =
                     vehicles.length > 0 ? vehicles.join(", ") : null;
 
-                    const draftData = {
-                        author: originalAuthor || authorName,
-                    
-                        vessel: vessel || undefined,
-                        engine: engine || undefined,
-                        order_group: orderGroup || undefined,
-                        order_person: orderPerson || undefined,
-                        location: resolvedLocation || undefined,
-                        vehicle: resolvedVehicle || undefined,
-                        subject: subject || undefined,
-                        workers: workers || [],
-                        entries: workLogEntries.map((entry) => ({
-                            dateFrom: entry.dateFrom,
-                            timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
-                            dateTo: entry.dateTo,
-                            timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,
-                            descType: entry.descType,
-                            details: entry.details,
-                            persons: entry.persons,
-                            note: entry.note || undefined,
-                            moveFrom: entry.moveFrom || undefined,
-                            moveTo: entry.moveTo || undefined,
-                            lunch_worked: !!entry.noLunch,
-                        })),
-                        expenses: expenses.map((exp) => ({
-                            date: exp.date,
-                            type: exp.type,
-                            detail: exp.detail,
-                            amount: exp.amount,
-                        })),
-                        materials: materials.map((mat) => ({
-                            name: mat.name,
-                            qty: mat.qty,
-                            unit: mat.unit || undefined,
-                        })),
-                        is_draft: true,
-                        created_by: originalCreatedBy || user?.id || undefined,
-                    };
-                    
-                    
+                const draftData = {
+                    author: originalAuthor || authorName,
+
+                    vessel: vessel || undefined,
+                    engine: engine || undefined,
+                    order_group: orderGroup || undefined,
+                    order_person: orderPerson || undefined,
+                    location: resolvedLocation,
+                    vehicle: resolvedVehicle || undefined,
+                    subject: subject || undefined,
+                    workers: workers || [],
+                    entries: workLogEntries.map((entry) => ({
+                        dateFrom: entry.dateFrom,
+                        timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
+                        dateTo: entry.dateTo,
+                        timeTo: entry.timeTo ? entry.timeTo.slice(0, 5) : undefined,
+                        descType: entry.descType,
+                        details: entry.details,
+                        persons: entry.persons,
+                        note: entry.note || undefined,
+                        moveFrom: entry.moveFrom || undefined,
+                        moveTo: entry.moveTo || undefined,
+                        lunch_worked: !!entry.noLunch,
+                    })),
+                    expenses: expenses.map((exp) => ({
+                        date: exp.date,
+                        type: exp.type,
+                        detail: exp.detail,
+                        amount: exp.amount,
+                    })),
+                    materials: materials.map((mat) => ({
+                        name: mat.name,
+                        qty: mat.qty,
+                        unit: mat.unit || undefined,
+                    })),
+                    is_draft: true,
+                    created_by: originalCreatedBy || user?.id || undefined,
+                };
+
+
 
                 // 기존 레코드 업데이트
                 await updateWorkLog(workLogId, draftData);
 
+// ✅ [임시저장에서도] 파일 업로드 처리 (work_log 업데이트 후)
+// ✅ 수정 화면에서 isExisting 플래그가 꼬일 수 있으므로 "실제 File 객체 존재"로 판별
+const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
+
+if (newFiles.length > 0) {
+    const receipts: Array<{
+        category: ReceiptCategoryEnum;
+        storage_bucket: string;
+        storage_path: string;
+        original_name?: string;
+        mime_type?: string;
+        file_size?: number;
+        created_by?: string;
+    }> = [];
+
+    for (const file of newFiles) {
+        if (!file.file) continue;
+
+        try {
+            const filePath = await uploadReceiptFile(
+                file.file,
+                workLogId,
+                file.category
+            );
+
+            receipts.push({
+                category: mapReceiptCategory(file.category),
+                storage_bucket: "work-log-recipts",
+                storage_path: filePath,
+                original_name: file.file.name,
+                mime_type: file.file.type || undefined,
+                file_size: file.file.size || undefined,
+                created_by: originalCreatedBy || user?.id || undefined,
+            });
+        } catch (err: any) {
+            console.error("Error uploading file:", err);
+            if (!silent) {
+                showError(
+                    `영수증 파일 업로드 실패: ${err?.message || "알 수 없는 오류"}`
+                );
+            }
+            throw err; // ✅ 업로드 실패면 임시저장도 실패 처리
+        }
+    }
+
+    // receipts 저장
+    if (receipts.length > 0) {
+        const insertDataList = receipts.map((r) => {
+            const insertData: any = {
+                work_log_id: workLogId,
+                category: r.category,
+                storage_bucket: r.storage_bucket,
+                storage_path: r.storage_path,
+            };
+
+            if (r.original_name) insertData.original_name = r.original_name;
+            if (r.mime_type) insertData.mime_type = r.mime_type;
+            if (r.file_size) insertData.file_size = r.file_size;
+
+            // ✅ RLS 통과용
+            if (originalCreatedBy || user?.id) {
+                insertData.created_by = originalCreatedBy || user!.id;
+            }
+
+            return insertData;
+        });
+
+        const { error: receiptsError } = await supabase
+        .from("work_log_receipt")
+        .insert(insertDataList);
+    
+    if (receiptsError) {
+        console.error("[DraftSave] work_log_receipt insert error:", receiptsError);
+        showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`); // silent여도 표시
+        throw receiptsError;
+    }
+    }
+}
+
+
+
                 setLastSavedAt(new Date());
-                setHasUnsavedChanges(false);
                 setIsSubmittedWorkLog(false); // ✅ 제출완료 → 임시저장 상태로 전환
-                
+
                 if (!silent) {
                     showSuccess("임시저장이 완료되었습니다!");
                     navigate("/report"); // ✅ 임시저장 후 목록으로 이동
@@ -564,8 +641,7 @@ useEffect(() => {
                 console.error("Error saving draft:", error);
                 if (!silent) {
                     showError(
-                        `임시저장 실패: ${
-                            error.message || "알 수 없는 오류가 발생했습니다."
+                        `임시저장 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                         }`
                     );
                 }
@@ -580,18 +656,20 @@ useEffect(() => {
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,
             workLogEntries,
             expenses,
             materials,
+            uploadedFiles, // ✅ 추가
             user?.id,
             savingDraft,
             isSubmittedWorkLog,
         ]
     );
+    
 
     // 수동 임시저장 핸들러
     const handleManualDraftSave = () => {
@@ -633,14 +711,7 @@ useEffect(() => {
         };
 
         function handlePopState() {
-            const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-            if (!ok) {
-                pushState();
-                return;
-            }
-        
-            cleanup();
-            navigate(-1);
+            setNavigateConfirmOpen(true);
         }
 
         window.addEventListener("beforeunload", handleBeforeUnload);
@@ -659,8 +730,8 @@ useEffect(() => {
     // 뒤로가기 버튼 클릭 (dirty일 때만 확인)
     const handleBackClick = () => {
         if (isDirty) {
-            const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-            if (!ok) return;
+            setNavigateConfirmOpen(true);
+            return;
         }
         navigate("/report");
     };
@@ -678,7 +749,7 @@ useEffect(() => {
             <div
                 className={`
         fixed lg:static inset-y-0 left-0 z-30
-        w-[239px] h-screen shrink-0
+        w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}
@@ -703,41 +774,43 @@ useEffect(() => {
                         </div>
                     }
                     rightContent={
-                        <div className="flex items-center gap-3">
-                            <>
-                                {lastSavedAt && (
-                                    <span className="text-sm text-gray-400 whitespace-nowrap">
-                                        {lastSavedAt.toLocaleTimeString("ko-KR", {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                        })}{" "}
-                                        저장됨
-                                    </span>
-                                )}
+                        <div className="flex items-center gap-2 md:gap-3 flex-wrap justify-end">
+                            {lastSavedAt && !isMobile && !isSubmittedWorkLog && (
+                                <span className="text-sm text-gray-400 whitespace-nowrap">
+                                    {lastSavedAt.toLocaleTimeString("ko-KR", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                    })}{" "}
+                                    저장됨
+                                </span>
+                            )}
+                            {!isSubmittedWorkLog && (
                                 <Button
                                     variant="outline"
-                                    size="lg"
+                                    size="md"
                                     onClick={handleManualDraftSave}
                                     disabled={savingDraft}
+                                    className="md:h-12 md:px-4 md:text-base"
                                 >
                                     {savingDraft ? "저장 중..." : "임시 저장"}
                                 </Button>
-                            </>
+                            )}
                             <Button
                                 variant="primary"
-                                size="lg"
+                                size="md"
                                 onClick={handleSubmit}
-                                icon={<IconReport />}
                                 disabled={submitting}
+                                className="md:h-12 md:px-4 md:text-base"
                             >
                                 <span className="hidden sm:inline">
                                     {submitting ? "제출 중..." : "제출하기"}
                                 </span>
+                                <span className="sm:hidden">{submitting ? "제출 중" : "제출"}</span>
                             </Button>
                         </div>
                     }
-                    
-                    
+
+
                 />
 
                 {/* Content Area - 스크롤 가능 */}
@@ -747,10 +820,14 @@ useEffect(() => {
                     <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-12 lg:px-24 xl:px-48 py-6 md:py-9">
                         <div className="max-w-[960px] mx-auto flex flex-col gap-4 md:gap-6">
                             {/* 기본 정보 */}
-                            <BasicInfoSection />
+                            {reportType === "work" ? (
+                                <BasicInfoSection />
+                            ) : (
+                                <EducationBasicInfoSection />
+                            )}
 
                             {/* 작업자 */}
-                            <WorkerSection />
+                            <WorkerSection title={reportType === "work" ? "투입 인원" : "교육 참석자"} />
 
                             {/* 출장 업무 일지 */}
                             <WorkLogSection />
@@ -765,7 +842,26 @@ useEffect(() => {
                             <FileUploadSection workLogId={workLogId} />
 
                             {/* 타임라인 요약 */}
-                            <TimelineSummarySection />
+                            {reportType === "work" && (
+                                <SectionCard
+                                    title="타임라인"
+                                    headerContent={
+                                        <WorkloadLegend
+                                            items={[
+                                                { key: "work", label: "작업", color: "#3b82f6" },
+                                                { key: "move", label: "이동", color: "#10b981" },
+                                                { key: "wait", label: "대기", color: "#f59e0b" },
+                                            ]}
+                                            className="flex items-center gap-4"
+                                            itemClassName="flex items-center gap-1.5"
+                                            labelClassName="text-[12px] text-[#6a7282]"
+                                            swatchClassName="w-[14px] h-[14px] rounded-md"
+                                        />
+                                    }
+                                >
+                                    <TimelineSummarySection />
+                                </SectionCard>
+                            )}
                         </div>
                     </div>
                 )}
@@ -785,6 +881,25 @@ useEffect(() => {
                 cancelText="취소"
                 confirmVariant="primary"
                 isLoading={submitting}
+            />
+
+            {/* 나감 확인 다이얼로그 */}
+            <ConfirmDialog
+                isOpen={navigateConfirmOpen}
+                onClose={() => {
+                    setNavigateConfirmOpen(false);
+                    // popstate 가드인 경우 history stack을 복구해야 할 수 있음. 
+                    // 하지만 pushState로 이미 쌓여있다면 뒤로가기 시도가 막힌 상태임.
+                }}
+                onConfirm={() => {
+                    setNavigateConfirmOpen(false);
+                    navigate("/report");
+                }}
+                title="나가기"
+                message="작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?"
+                confirmText="나가기"
+                cancelText="취소"
+                confirmVariant="danger"
             />
         </div>
     );

@@ -6,7 +6,10 @@ import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkeleton";
-import { IconArrowBack } from "../../components/icons/Icons";
+import Pagination from "../../components/common/Pagination";
+import { IconArrowBack, IconChevronRight } from "../../components/icons/Icons";
+import useIsMobile from "../../hooks/useIsMobile";
+import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
 import {
     getWorkerWorkloadDetail,
@@ -61,7 +64,8 @@ const IconSchedule = () => (
 export default function WorkloadDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    
+    const isMobile = useIsMobile();
+
     // 오늘 날짜 기준으로 기본값 설정
     const today = new Date();
     const currentYear = today.getFullYear();
@@ -72,32 +76,13 @@ export default function WorkloadDetailPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loading, setLoading] = useState(true);
-    // 공사팀은 자동 리다이렉트되므로, 상세 페이지에 접근했다면 공사팀일 가능성이 높음
-    // 초기값을 true로 설정하여 깜빡임 방지
-    const [isStaff, setIsStaff] = useState(true);
 
-    // 공사팀(스태프) 여부 확인
-    useEffect(() => {
-        const checkUserRole = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: profile } = await supabase
-                    .from("profiles")
-                    .select("role, department")
-                    .eq("id", user.id)
-                    .single();
-                if (profile) {
-                    setIsStaff(profile.role === "staff" || profile.department === "공사팀");
-                } else {
-                    // 프로필이 없으면 일반 사용자로 간주
-                    setIsStaff(false);
-                }
-            } else {
-                setIsStaff(false);
-            }
-        };
-        checkUserRole();
-    }, []);
+    // ✅ useUser 훅으로 권한 정보 가져오기
+
+    const { userPermissions, currentUserId } = useUser();
+    const isStaff = userPermissions.isStaff;
+    const isAdmin = userPermissions.isAdmin;
+    const isCEO = userPermissions.isCEO;
     const [summary, setSummary] = useState<{
         name: string;
         totalWork: number;
@@ -107,7 +92,13 @@ export default function WorkloadDetailPage() {
     const [detailEntries, setDetailEntries] = useState<WorkloadDetailEntry[]>([]);
 
     const itemsPerPage = 10;
+
+
     const personName = id ? decodeURIComponent(id) : "";
+    const [currentPersonName, setCurrentPersonName] = useState<string | null>(
+        null
+    );
+
 
     // 날짜별 내역 클릭 → 해당 출장보고서(ReportViewPage)로 이동
     const handleRowClick = (row: WorkloadDetailEntry) => {
@@ -117,14 +108,39 @@ export default function WorkloadDetailPage() {
 
     // 데이터 로드
     useEffect(() => {
+        // personName이 아직 없으면(user 로딩 전) 조회 종료하지 말고 로딩 유지
         if (!personName) {
-            setLoading(false);
+            setLoading(true);
             return;
         }
+
+        const guardAccess = async () => {
+            if (!isStaff || isAdmin || isCEO || !currentUserId) return true;
+            try {
+                const { data, error } = await supabase
+                    .from("profiles")
+                    .select("name")
+                    .eq("id", currentUserId)
+                    .single();
+                if (!error && data?.name) {
+                    setCurrentPersonName(data.name);
+                    if (data.name !== personName) {
+                        navigate("/workload", { replace: true });
+                        return false;
+                    }
+                }
+            } catch {
+                // ignore
+            }
+            return true;
+        };
 
         const loadData = async () => {
             setLoading(true);
             try {
+                const canAccess = await guardAccess();
+                if (!canAccess) return;
+
                 const yearNum = parseInt(selectedYear.replace("년", ""));
                 const monthNum = parseInt(selectedMonth.replace("월", ""));
 
@@ -145,7 +161,7 @@ export default function WorkloadDetailPage() {
         };
 
         loadData();
-    }, [personName, selectedYear, selectedMonth]);
+    }, [personName, selectedYear, selectedMonth, isStaff, isAdmin, isCEO, currentUserId, navigate]);
 
 
     // 페이지네이션 계산
@@ -171,21 +187,16 @@ export default function WorkloadDetailPage() {
 
             {/* Sidebar */}
             <div
-                className={`
-        fixed lg:static inset-y-0 left-0 z-50
-        transform ${
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:translate-x-0
-        transition-transform duration-300 ease-in-out
-      `}
+                className={`fixed lg:static inset-y-0 left-0 z-50 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
             >
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                <Header
-                    title={isStaff ? "워크로드" : `${personName} 작업자 워크로드`}
+            <Header
+                    title={`${personName || "워크로드"} 워크로드`}
+
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         !isStaff && (
@@ -201,14 +212,14 @@ export default function WorkloadDetailPage() {
                 />
 
                 {/* Content */}
-                <main className="flex-1 overflow-auto pt-6 pb-24 px-9">
+                <main className="flex-1 overflow-auto pt-6 pb-24 px-4 md:px-9">
                     {loading ? (
                         <WorkloadDetailSkeleton />
                     ) : (
-                        <div className="flex flex-col gap-6 w-full">
+                        <div className="flex flex-col gap-4 md:gap-6 w-full">
                             {/* 요약 카드 (Icon 기반) */}
                             {summary ? (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
                                     {[
                                         {
                                             label: "총 작업시간",
@@ -243,7 +254,7 @@ export default function WorkloadDetailPage() {
                                                 </span>
                                             </div>
                                             <div
-                                                className={`mt-2 text-[26px] font-bold ${card.color}`}
+                                                className={`mt-2 text-xl md:text-[26px] font-bold ${card.color}`}
                                             >
                                                 {card.value}
                                             </div>
@@ -253,8 +264,8 @@ export default function WorkloadDetailPage() {
                             ) : null}
 
                             {/* 조회 기간 */}
-                            <div className="flex flex-wrap items-center gap-4">
-                                <h2 className="text-[24px] font-semibold text-gray-900">
+                            <div className="flex flex-wrap items-center gap-2 md:gap-4">
+                                <h2 className="text-base md:text-[24px] font-semibold text-gray-900">
                                     조회 기간
                                 </h2>
                                 <YearMonthSelector
@@ -265,37 +276,76 @@ export default function WorkloadDetailPage() {
                                 />
                             </div>
 
-                            {/* 날짜별 세부 분석 테이블 */}
-                            <div className="bg-white border border-gray-200 rounded-2xl p-7">
-                                <h2 className="text-[22px] font-semibold text-gray-700 tracking-tight mb-6">
+                            {/* 날짜별 세부 분석 */}
+                            <div className={isMobile ? "" : "rounded-2xl border border-gray-200 bg-white p-7"}>
+                                <h2 className="text-base md:text-[22px] font-semibold text-gray-700 tracking-tight mb-3 md:mb-6">
                                     날짜별 세부 분석
                                 </h2>
 
                                 {detailEntries.length === 0 ? (
-                                    <div className="py-8 text-center text-gray-500">
-                                        데이터가 없습니다.
-                                    </div>
+                                    <p className="py-8 text-center text-gray-500 text-sm">
+                                        선택한 기간의 작업 내역이 없습니다.
+                                    </p>
+                                ) : isMobile ? (
+                                    <>
+                                        <ul className="flex flex-col gap-2">
+                                            {currentTableData.map((row) => {
+                                                const formattedDate = formatDetailDate(row.date);
+                                                const date = new Date(row.date + "T00:00:00");
+                                                const dayOfWeek = date.getDay();
+                                                let dateColor = "text-gray-800";
+                                                if (dayOfWeek === 0) dateColor = "text-red-600";
+                                                else if (dayOfWeek === 6) dateColor = "text-blue-600";
+                                                return (
+                                                    <li key={row.id}>
+                                                        <button
+                                                            type="button"
+                                                            className="w-full rounded-xl border border-gray-200 bg-white p-4 flex items-center justify-between gap-3 text-left active:bg-gray-50 transition-colors"
+                                                            onClick={() => handleRowClick(row)}
+                                                        >
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className={`font-medium ${dateColor}`}>{formattedDate}</p>
+                                                                <p className="text-sm text-gray-500 mt-0.5">
+                                                                    {row.vesselName || "—"} · {formatTimeRange(row.timeFrom, row.timeTo)}
+                                                                </p>
+                                                                <p className="text-sm text-gray-600 mt-1">
+                                                                    작업 {formatHours(row.workTime)} · 이동 {formatHours(row.travelTime)} · 대기 {formatHours(row.waitTime)}
+                                                                </p>
+                                                            </div>
+                                                            <IconChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+                                                        </button>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                        {totalPages > 1 && (
+                                            <Pagination
+                                                currentPage={currentPage}
+                                                totalPages={totalPages}
+                                                onPageChange={setCurrentPage}
+                                                className="py-4"
+                                            />
+                                        )}
+                                    </>
                                 ) : (
                                     <Table
                                         columns={[
                                             {
                                                 key: "date",
                                                 label: "날짜",
-                                                render: (_, row: WorkloadDetailEntry) => {
+                                                render: (_value, row: WorkloadDetailEntry, index: number) => {
+                                                    const prev = currentTableData[index - 1];
+                                                    if (prev?.date === row.date) {
+                                                        return <span className="text-transparent">-</span>;
+                                                    }
                                                     const formattedDate = formatDetailDate(row.date);
                                                     const date = new Date(row.date + "T00:00:00");
                                                     const dayOfWeek = date.getDay();
-                                                    
                                                     let colorClass = "text-gray-800";
-                                                    if (dayOfWeek === 0)
-                                                        colorClass = "text-red-600"; // 일요일
-                                                    else if (dayOfWeek === 6)
-                                                        colorClass = "text-blue-600"; // 토요일
-
+                                                    if (dayOfWeek === 0) colorClass = "text-red-600";
+                                                    else if (dayOfWeek === 6) colorClass = "text-blue-600";
                                                     return (
-                                                        <span
-                                                            className={`font-medium ${colorClass}`}
-                                                        >
+                                                        <span className={`font-medium ${colorClass}`}>
                                                             {formattedDate}
                                                         </span>
                                                     );
@@ -304,13 +354,16 @@ export default function WorkloadDetailPage() {
                                             {
                                                 key: "vesselName",
                                                 label: "호선명",
-                                                render: (value: string | null) => value || "-",
+                                                render: (value: string | null, row: WorkloadDetailEntry, index: number) => {
+                                                    const prev = currentTableData[index - 1];
+                                                    if (prev?.date === row.date) return <span className="text-transparent">-</span>;
+                                                    return value || "";
+                                                },
                                             },
                                             {
                                                 key: "workTime",
                                                 label: "작업시간",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatHours(row.workTime),
+                                                render: (_, row: WorkloadDetailEntry) => formatHours(row.workTime),
                                             },
                                             {
                                                 key: "timeRange",
@@ -321,26 +374,21 @@ export default function WorkloadDetailPage() {
                                             {
                                                 key: "travelTime",
                                                 label: "이동시간",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatHours(row.travelTime),
+                                                render: (_, row: WorkloadDetailEntry) => formatHours(row.travelTime),
                                             },
                                             {
                                                 key: "waitTime",
                                                 label: "대기시간",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatHours(row.waitTime),
+                                                render: (_, row: WorkloadDetailEntry) => formatHours(row.waitTime),
                                             },
                                         ]}
                                         data={currentTableData}
                                         rowKey="id"
                                         onRowClick={handleRowClick}
+                                        emptyText="선택한 기간의 작업 내역이 없습니다."
                                         pagination={
                                             totalPages > 1
-                                                ? {
-                                                      currentPage,
-                                                      totalPages,
-                                                      onPageChange: setCurrentPage,
-                                                  }
+                                                ? { currentPage, totalPages, onPageChange: setCurrentPage }
                                                 : undefined
                                         }
                                     />

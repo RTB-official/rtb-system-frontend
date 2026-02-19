@@ -11,7 +11,7 @@ import { IconMenu } from "../../components/icons/Icons";
 import { CalendarEvent } from "../../types";
 import useCalendarWheelNavigation from "../../hooks/useCalendarWheelNavigation";
 import { useAuth } from "../../store/auth";
-import { supabase } from "../../lib/supabase";
+import { useUser } from "../../hooks/useUser";
 import {
     getCalendarEvents,
     createCalendarEvent,
@@ -19,8 +19,9 @@ import {
     deleteCalendarEvent,
     calendarEventRecordToCalendarEvent,
 } from "../../lib/dashboardApi";
-import DashboardSkeleton from "../../components/common/DashboardSkeleton";
+import DashboardSkeleton from "../../components/common/skeletons/DashboardSkeleton";
 import { useHolidays } from "../../hooks/useHolidays";
+import useIsMobile from "../../hooks/useIsMobile";
 import {
     useDashboardEvents,
     useMergedHolidays,
@@ -28,6 +29,7 @@ import {
 } from "../../hooks/useDashboardEvents";
 import { useCellHeights } from "../../hooks/useCellHeights";
 import { useToast } from "../../components/ui/ToastProvider";
+import { supabase } from "../../lib/supabase";
 import {
     splitIntoWeeks,
     formatDateRange,
@@ -39,37 +41,78 @@ import CalendarGrid from "./components/CalendarGrid";
 
 export default function DashboardPage() {
     const { user } = useAuth();
+    const { userPermissions } = useUser();
     const navigate = useNavigate();
-    const { showError } = useToast();
+    const { showError, showSuccess } = useToast();
+    const safetyToastOnceRef = useRef(false);
     const today = new Date();
 
     const [year, setYear] = useState(today.getFullYear());
     const [month, setMonth] = useState(today.getMonth());
 
     // 권한 체크: 공사팀(스태프)은 접근 불가
+    // ✅ 안전문구/슬로건 토스트 (세션당 1회)
+    // ✅ 안전문구/슬로건 토스트 (로그인 1회당 딱 1회: pending 소비)
     useEffect(() => {
-        const checkAccess = async () => {
-            if (!user?.id) return;
+        if (safetyToastOnceRef.current) return;
+        safetyToastOnceRef.current = true;
 
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("role, department, position")
-                .eq("id", user.id)
-                .single();
+        // ✅ 로그인 직후 예약된 경우만
+        if (sessionStorage.getItem("rtb:safety_toast_pending") !== "1") return;
 
-            if (profile) {
-                const isStaff = profile.role === "staff" || profile.department === "공사팀";
-                const isCEO = profile.position === "대표";
-                const isAdmin = profile.role === "admin" || profile.department === "공무팀";
+        // ✅ 즉시 소비 (StrictMode 대비)
+        sessionStorage.setItem("rtb:safety_toast_pending", "0");
 
-                // 공사팀(스태프)만 접근 불가 - 조용히 리다이렉트
-                if (isStaff && !isCEO && !isAdmin) {
-                    navigate("/report", { replace: true });
+        const run = async () => {
+            try {
+                const { data: settings } = await supabase
+                    .from("safe_settings")
+                    .select("safe_phrase, slogan_path")
+                    .eq("id", 1)
+                    .single();
+
+                // 1️⃣ 슬로건 이미지 (위)
+                if (settings?.slogan_path) {
+                    const { data: signed } = await supabase.storage
+                        .from("safe-slogans")
+                        .createSignedUrl(settings.slogan_path, 60 * 60);
+
+                    if (signed?.signedUrl) {
+                        showSuccess({
+                            message: "",
+                            hideIcon: true,
+                            imageUrl: signed.signedUrl,
+                            imageAlt: "안전 슬로건",
+                            duration: 6000,
+                        });
+                    }
                 }
+
+                // 2️⃣ 안전 문구
+                showSuccess({
+                    message: settings?.safe_phrase?.trim()
+                        ? settings.safe_phrase
+                        : "등록된 안전 문구가 없습니다.",
+                    duration: 6000,
+                });
+            } catch (e) {
+                console.error(e);
             }
         };
-        checkAccess();
-    }, [user?.id, navigate]);
+
+        run();
+    }, [showSuccess]);
+
+
+
+
+
+    useEffect(() => {
+        // useUser 훅에서 이미 권한 정보를 가져왔으므로 추가 API 호출 불필요
+        if (userPermissions.isStaff && !userPermissions.isCEO && !userPermissions.isAdmin) {
+            navigate("/report", { replace: true });
+        }
+    }, [userPermissions, navigate]);
 
     // 공휴일 데이터
     const holidays = useHolidays(year, month);
@@ -85,6 +128,7 @@ export default function DashboardPage() {
 
     // 사이드바 상태
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const isMobile = useIsMobile();
 
     // 메뉴 상태
     const [menuOpen, setMenuOpen] = useState(false);
@@ -99,7 +143,7 @@ export default function DashboardPage() {
     const [hiddenEventsModalOpen, setHiddenEventsModalOpen] = useState(false);
     const [hiddenEventsDate, setHiddenEventsDate] = useState<{
         dateKey: string;
-        threshold: number;
+        hiddenEventIds: string[];
     } | null>(null);
     const [eventDetailMenuOpen, setEventDetailMenuOpen] = useState(false);
     const [eventDetailMenuPos, setEventDetailMenuPos] = useState<{
@@ -286,7 +330,8 @@ export default function DashboardPage() {
                             all_day: data.allDay,
                             attendees: data.attendees || [],
                         },
-                        user.id
+                        user.id,
+                        userPermissions.isAdmin
                     );
                 } else {
                     // 다른 타입의 이벤트는 수정 불가
@@ -335,7 +380,7 @@ export default function DashboardPage() {
             // event- 접두사가 있는 경우만 삭제 가능 (calendar_events 테이블의 일정)
             if (eventId.startsWith("event-")) {
                 const id = eventId.replace("event-", "");
-                await deleteCalendarEvent(id, user?.id);
+                await deleteCalendarEvent(id, user?.id, userPermissions.isAdmin);
             } else {
                 // 다른 타입의 이벤트는 삭제 불가
                 console.warn("Cannot delete this type of event");
@@ -375,11 +420,11 @@ export default function DashboardPage() {
                 />
             )}
 
-            {/* Sidebar - 데스크탑 고정, 모바일 슬라이드 */}
+            {/* Sidebar - 데스크탑 고정, 모바일 슬라이드(드로어) */}
             <div
                 className={`
           fixed lg:static inset-y-0 left-0 z-30
-          w-[239px] h-screen shrink-0
+          w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen
                         ? "translate-x-0"
@@ -413,10 +458,11 @@ export default function DashboardPage() {
                                 onPrevMonth={prevMonth}
                                 onNextMonth={nextMonth}
                                 onGoToday={goToday}
+                                isMobile={isMobile}
                             />
 
                             <div className="bg-white flex-1 flex flex-col min-h-0 overflow-visible">
-                                <WeekDayHeader />
+                                <WeekDayHeader isMobile={isMobile} />
 
                                 <div
                                     ref={calendarWheelRef}
@@ -428,6 +474,7 @@ export default function DashboardPage() {
                                         weeks={weeks}
                                         sortedEvents={sortedEvents}
                                         today={today}
+                                        isMobile={isMobile}
                                         dragStart={dragStart}
                                         dragEnd={dragEnd}
                                         isDragging={isDragging}
@@ -479,10 +526,10 @@ export default function DashboardPage() {
                                             setDragEnd(dateKey);
                                             setSelectedEndDateForModal(dateKey);
                                         }}
-                                        onHiddenCountClick={(dateKey, threshold) => {
+                                        onHiddenCountClick={(dateKey, hiddenEventIds) => {
                                             setHiddenEventsDate({
                                                 dateKey,
-                                                threshold,
+                                                hiddenEventIds,
                                             });
                                             setHiddenEventsModalOpen(true);
                                         }}
@@ -535,7 +582,6 @@ export default function DashboardPage() {
                 isOpen={scheduleModalOpen}
                 onClose={() => setScheduleModalOpen(false)}
                 onSave={(payload) => {
-                    console.log("새 일정:", payload);
                     setScheduleModalOpen(false);
                 }}
             />
@@ -556,7 +602,9 @@ export default function DashboardPage() {
                             hiddenEventsDate.dateKey,
                             sortedEvents
                         )
-                            .slice(hiddenEventsDate.threshold)
+                            .filter((event) =>
+                                hiddenEventsDate.hiddenEventIds.includes(event.id)
+                            )
                             .map((event) => (
                                 <div
                                     key={event.id}
@@ -580,7 +628,7 @@ export default function DashboardPage() {
                                             }}
                                         />
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-gray-900 break-words">
+                                            <p className="font-medium text-gray-900 wrap-break-word">
                                                 {event.title}
                                             </p>
                                             <p className="text-sm text-gray-500 mt-1">
@@ -588,6 +636,7 @@ export default function DashboardPage() {
                                                     event.startDate,
                                                     event.endDate
                                                 )}
+                                                {event.allDay && event.startDate === event.endDate ? " 하루 종일" : ""}
                                             </p>
                                         </div>
                                     </div>
@@ -605,6 +654,7 @@ export default function DashboardPage() {
                 onClose={() => setEventDetailMenuOpen(false)}
                 event={selectedEventForMenu}
                 currentUserId={user?.id}
+                isAdmin={userPermissions.isAdmin}
                 onEdit={(eventToEdit) => {
                     setEventDetailMenuOpen(false);
                     setEditingEvent(eventToEdit);

@@ -49,7 +49,7 @@ export const IconUpload = (props: { className?: string }) => (
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
     >
-        <g clip-path="url(#clip0_1399_4704)">
+        <g clipPath="url(#clip0_1399_4704)">
             <path
                 d="M18 15V18H6V15H4V18C4 19.1 4.9 20 6 20H18C19.1 20 20 19.1 20 18V15H18ZM7 9L8.41 10.41L11 7.83V16H13V7.83L15.59 10.41L17 9L12 4L7 9Z"
                 fill="#1E2939"
@@ -106,14 +106,11 @@ export const IconCard = (props: { className?: string }) => (
 export const IconCar = (props: { className?: string }) => (
     <svg
         className={props.className || "w-6 h-6"}
-        viewBox="0 0 24 24"
-        fill="none"
+        viewBox="0 -960 960 960"
+        fill="currentColor"
         xmlns="http://www.w3.org/2000/svg"
     >
-        <path
-            d="M8 6.4L5 3.4L6.4 2L9.4 5L8 6.4ZM16 6.4L14.6 5L17.6 2L19 3.4L16 6.4ZM11 5V0H13V5H11ZM4 24C3.71667 24 3.47933 23.904 3.288 23.712C3.096 23.5207 3 23.2833 3 23V15L5.1 9C5.2 8.7 5.37933 8.45833 5.638 8.275C5.896 8.09167 6.18333 8 6.5 8H17.5C17.8167 8 18.1043 8.09167 18.363 8.275C18.621 8.45833 18.8 8.7 18.9 9L21 15V23C21 23.2833 20.904 23.5207 20.712 23.712C20.5207 23.904 20.2833 24 20 24H19C18.7167 24 18.4793 23.904 18.288 23.712C18.096 23.5207 18 23.2833 18 23V22H6V23C6 23.2833 5.90433 23.5207 5.713 23.712C5.521 23.904 5.28333 24 5 24H4ZM5.8 13H18.2L17.15 10H6.85L5.8 13ZM7.5 19C7.91667 19 8.27067 18.854 8.562 18.562C8.854 18.2707 9 17.9167 9 17.5C9 17.0833 8.854 16.7293 8.562 16.438C8.27067 16.146 7.91667 16 7.5 16C7.08333 16 6.72933 16.146 6.438 16.438C6.146 16.7293 6 17.0833 6 17.5C6 17.9167 6.146 18.2707 6.438 18.562C6.72933 18.854 7.08333 19 7.5 19ZM16.5 19C16.9167 19 17.2707 18.854 17.562 18.562C17.854 18.2707 18 17.9167 18 17.5C18 17.0833 17.854 16.7293 17.562 16.438C17.2707 16.146 16.9167 16 16.5 16C16.0833 16 15.7293 16.146 15.438 16.438C15.146 16.7293 15 17.0833 15 17.5C15 17.9167 15.146 18.2707 15.438 18.562C15.7293 18.854 16.0833 19 16.5 19ZM5 20H19V15H5V20Z"
-            fill="currentColor"
-        />
+        <path d="M240-200v40q0 17-11.5 28.5T200-120h-40q-17 0-28.5-11.5T120-160v-320l84-240q6-18 21.5-29t34.5-11h440q19 0 34.5 11t21.5 29l84 240v320q0 17-11.5 28.5T800-120h-40q-17 0-28.5-11.5T720-160v-40H240Zm-8-360h496l-42-120H274l-42 120Zm68 240q25 0 42.5-17.5T360-380q0-25-17.5-42.5T300-440q-25 0-42.5 17.5T240-380q0 25 17.5 42.5T300-320Zm360 0q25 0 42.5-17.5T720-380q0-25-17.5-42.5T660-440q-25 0-42.5 17.5T600-380q0 25 17.5 42.5T660-320Z" />
     </svg>
 );
 
@@ -186,14 +183,11 @@ export const IconDownload = (props: { className?: string }) => (
 
 export const IconLock = (props: { className?: string }) => (
     <svg
-        className={props.className || "w-4 h-4"}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
+        className={props.className || "w-5 h-5"}
+        viewBox="0 -960 960 960"
+        fill="currentColor"
     >
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-        <path d="M7 11V7a5 5 0 0110 0v4" />
+        <path d="M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h40v-80q0-83 58.5-141.5T480-920q83 0 141.5 58.5T680-720v80h40q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm0-80h480v-400H240v400Zm240-120q33 0 56.5-23.5T560-360q0-33-23.5-56.5T480-440q-33 0-56.5 23.5T400-360q0 33 23.5 56.5T480-280ZM360-640h240v-80q0-50-35-85t-85-35q-50 0-85 35t-35 85v80ZM240-160v-400 400Z" />
     </svg>
 );
 
@@ -229,15 +223,11 @@ export const IconEyeOff = (props: { className?: string }) => (
 
 export const IconLogout = (props: { className?: string }) => (
     <svg
-        className={props.className || "w-4 h-4"}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
+        className={props.className || "w-5 h-5"}
+        viewBox="0 -960 960 960"
+        fill="currentColor"
     >
-        <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-        <path d="M16 17l5-5-5-5" />
-        <path d="M21 12H9" />
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h280v80H200Zm440-160-55-58 102-102H360v-80h327L585-622l55-58 200 200-200 200Z" />
     </svg>
 );
 
@@ -344,6 +334,30 @@ export const IconWorkload = (props: { className?: string }) => (
         <path
             d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM9 17H7V10H9V17ZM13 17H11V7H13V17ZM17 17H15V13H17V17Z"
             fill="currentColor"
+        />
+    </svg>
+);
+
+export const IconShieldCheck = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-6 h-6"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+    >
+        <path
+            d="M12 2.5L4.5 5.5V11.2C4.5 15.7 7.6 19.8 12 21.5C16.4 19.8 19.5 15.7 19.5 11.2V5.5L12 2.5Z"
+            fill="currentColor"
+            stroke="currentColor"
+            strokeWidth="0"
+        />
+        <path
+            d="M8.2 12.4L10.6 14.7L15.8 9.6"
+            stroke="var(--tbm-check-color, #ffffff)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
         />
     </svg>
 );
@@ -523,6 +537,20 @@ export const IconMore = (props: { className?: string }) => (
     </svg>
 );
 
+/** 세로 점 3개 (케밥 메뉴, 모바일용) */
+export const IconMoreVertical = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <circle cx="12" cy="6" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="18" r="2" />
+    </svg>
+);
+
 export const IconAirplane = (props: { className?: string }) => (
     <svg
         className={props.className || "w-4 h-4"}
@@ -534,5 +562,29 @@ export const IconAirplane = (props: { className?: string }) => (
             d="M21.5 12L18.5 11L13.5 6C13.5 5.17 12.83 4.5 12 4.5H11C10.17 4.5 9.5 5.17 9.5 6L9.5 9L4.5 11L2.5 12L4.5 13L9.5 15V19L7.5 21L6.5 22L12 21L17.5 22L16.5 21L14.5 19V15L19.5 13L21.5 12Z"
             fill="currentColor"
         />
+    </svg>
+);
+
+export const IconSettings = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-6 h-6"}
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+    >
+        <g clipPath="url(#clip0_settings)">
+            <path
+                d="M19.1401 12.9404C19.1801 12.6404 19.2001 12.3304 19.2001 12.0004C19.2001 11.6804 19.1801 11.3604 19.1301 11.0604L21.1601 9.48039C21.3401 9.34039 21.3901 9.07039 21.2801 8.87039L19.3601 5.55039C19.2401 5.33039 18.9901 5.26039 18.7701 5.33039L16.3801 6.29039C15.8801 5.91039 15.3501 5.59039 14.7601 5.35039L14.4001 2.81039C14.3601 2.57039 14.1601 2.40039 13.9201 2.40039H10.0801C9.84011 2.40039 9.65011 2.57039 9.61011 2.81039L9.25011 5.35039C8.66011 5.59039 8.12011 5.92039 7.63011 6.29039L5.24011 5.33039C5.02011 5.25039 4.77011 5.33039 4.65011 5.55039L2.74011 8.87039C2.62011 9.08039 2.66011 9.34039 2.86011 9.48039L4.89011 11.0604C4.84011 11.3604 4.80011 11.6904 4.80011 12.0004C4.80011 12.3104 4.82011 12.6404 4.87011 12.9404L2.84011 14.5204C2.66011 14.6604 2.61011 14.9304 2.72011 15.1304L4.64011 18.4504C4.76011 18.6704 5.01011 18.7404 5.23011 18.6704L7.62011 17.7104C8.12011 18.0904 8.65011 18.4104 9.24011 18.6504L9.60011 21.1904C9.65011 21.4304 9.84011 21.6004 10.0801 21.6004H13.9201C14.1601 21.6004 14.3601 21.4304 14.3901 21.1904L14.7501 18.6504C15.3401 18.4104 15.8801 18.0904 16.3701 17.7104L18.7601 18.6704C18.9801 18.7504 19.2301 18.6704 19.3501 18.4504L21.2701 15.1304C21.3901 14.9104 21.3401 14.6604 21.1501 14.5204L19.1401 12.9404ZM12.0001 15.6004C10.0201 15.6004 8.40011 13.9804 8.40011 12.0004C8.40011 10.0204 10.0201 8.40039 12.0001 8.40039C13.9801 8.40039 15.6001 10.0204 15.6001 12.0004C15.6001 13.9804 13.9801 15.6004 12.0001 15.6004Z"
+                fill="currentColor"
+            />
+        </g>
+        <defs>
+            <clipPath id="clip0_settings">
+                <rect width="24" height="24" fill="white" />
+            </clipPath>
+        </defs>
     </svg>
 );

@@ -44,7 +44,7 @@ export default function Tabs({
                         tabRefs.current[index] = el;
                     }}
                     onClick={() => onChange(item.value)}
-                    className={`relative z-10 px-4 py-2 text-[14px] font-medium transition-all duration-200 rounded-lg ${
+                    className={`relative z-10 px-4 py-2 text-[15px] font-medium transition-all duration-200 rounded-lg ${
                         value === item.value
                             ? "text-gray-900"
                             : "text-gray-400 hover:text-gray-500"

@@ -49,7 +49,6 @@ export function calculateAnnualLeave(
     if (yearsOfServiceAtYearStart < 1) {
         // 입사일 기준으로 매월 같은 날짜에 1개씩 지급
         // 해당 연도에 지급받을 연차 개수 계산 (현재 날짜까지)
-        // 전년도 12월에 지급받은 연차도 해당 연도 연차에 포함
         let count = 0;
         
         // 입사일의 일(day) 추출
@@ -106,11 +105,6 @@ export function calculateAnnualLeave(
             // 해당 연도 내에 있는 경우 카운트
             if (grantDate >= yearStart && grantDate <= yearEnd) {
                 count++;
-            } else if (calculatedYear === targetYear - 1 && calculatedMonth === 11) {
-                // 전년도 12월에 지급받은 연차도 해당 연도 연차에 포함
-                if (grantDate <= previousYearEnd) {
-                    count++;
-                }
             }
             
             // 다음 달로 이동
@@ -210,7 +204,7 @@ export function calculateRemainingLeave(
  */
 export interface VacationGrantHistory {
     date: string; // YYYY-MM-DD
-    granted: number; // 지급 일수
+    granted?: number; // 지급 일수
     expired?: number; // 소멸 일수 (있는 경우)
 }
 
@@ -247,6 +241,8 @@ export function getVacationGrantHistory(
         // 입사일 1년 되는 날 계산
         const oneYearAfterJoin = new Date(join);
         oneYearAfterJoin.setFullYear(join.getFullYear() + 1);
+        let anniversaryProratedGrantDays = 0;
+        let hasAnniversaryProratedGrant = false;
         
         // 입사일 1년 되는 날이 해당 연도 내에 있고, 현재 날짜 이전인 경우
         if (oneYearAfterJoin >= yearStart && oneYearAfterJoin <= yearEnd && oneYearAfterJoin <= currentDate) {
@@ -264,6 +260,8 @@ export function getVacationGrantHistory(
                 date: `${year}-${month}-${day}`,
                 granted: proratedDays,
             });
+            anniversaryProratedGrantDays = proratedDays;
+            hasAnniversaryProratedGrant = true;
         } else {
             // 입사일 1년 되는 날 이전까지는 매월 1개씩 지급
             while (true) {
@@ -296,7 +294,7 @@ export function getVacationGrantHistory(
                     continue;
                 }
                 
-                // 해당 연도 내에 있는 경우만 추가 (전년도 12월 연차는 해당 연도에 포함하지 않음)
+                // 해당 연도 내에 있는 경우만 추가
                 if (grantDate >= yearStart && grantDate <= yearEnd) {
                     // 타임존 문제 방지를 위해 로컬 날짜로 직접 구성
                     const year = grantDate.getFullYear();
@@ -318,29 +316,43 @@ export function getVacationGrantHistory(
             }
         }
         
-        // 입사일 1년 후 소멸 처리
-        const oneYearAfterJoinForExpiry = new Date(join);
-        oneYearAfterJoinForExpiry.setFullYear(join.getFullYear() + 1);
-        oneYearAfterJoinForExpiry.setDate(join.getDate() - 1); // 1년 되는 날의 전날
-        
-        // 해당 연도 내에 소멸이 발생하고, 현재 날짜 이후인 경우만 표시
-        if (oneYearAfterJoinForExpiry >= yearStart && oneYearAfterJoinForExpiry <= yearEnd && oneYearAfterJoinForExpiry <= currentDate) {
-            // 소멸 전에 지급받은 연차 중 소멸 대상 찾기
-            const expiredLeaves = history.filter(h => {
-                const grantDate = new Date(h.date);
-                return grantDate < oneYearAfterJoinForExpiry;
-            });
-            
-            if (expiredLeaves.length > 0) {
-                // 소멸 날짜에 소멸 내역 추가 (타임존 문제 방지를 위해 로컬 날짜로 직접 구성)
-                const year = oneYearAfterJoinForExpiry.getFullYear();
-                const month = String(oneYearAfterJoinForExpiry.getMonth() + 1).padStart(2, '0');
-                const day = String(oneYearAfterJoinForExpiry.getDate()).padStart(2, '0');
+        // Expiry handling for pre-1-year grants
+        if (hasAnniversaryProratedGrant) {
+            // Prorated grant on 1-year anniversary expires on 12/31 of that year
+            const yearEndDate = new Date(targetYear, 11, 31);
+            yearEndDate.setHours(0, 0, 0, 0);
+            if (yearEndDate <= currentDate && anniversaryProratedGrantDays > 0) {
+                const expiryYear = targetYear;
+                const expiryMonth = "12";
+                const expiryDay = "31";
                 history.push({
-                    date: `${year}-${month}-${day}`,
-                    granted: 0, // 소멸 내역이므로 granted는 0
-                    expired: -expiredLeaves.length,
+                    date: `${expiryYear}-${expiryMonth}-${expiryDay}`,
+                    expired: -anniversaryProratedGrantDays,
                 });
+            }
+        } else {
+            const oneYearAfterJoinForExpiry = new Date(join);
+            oneYearAfterJoinForExpiry.setFullYear(join.getFullYear() + 1);
+            oneYearAfterJoinForExpiry.setDate(join.getDate() - 1); // Day before 1-year anniversary
+            
+            // Only add expiry entry when expiry date is within the year and in the past
+            if (oneYearAfterJoinForExpiry >= yearStart && oneYearAfterJoinForExpiry <= yearEnd && oneYearAfterJoinForExpiry <= currentDate) {
+                // Find grants that expire before the expiry date
+                const expiredLeaves = history.filter(h => {
+                    const grantDate = new Date(h.date);
+                    return grantDate < oneYearAfterJoinForExpiry;
+                });
+                
+                if (expiredLeaves.length > 0) {
+                    // Add expiry entry on the expiry date
+                    const year = oneYearAfterJoinForExpiry.getFullYear();
+                    const month = String(oneYearAfterJoinForExpiry.getMonth() + 1).padStart(2, "0");
+                    const day = String(oneYearAfterJoinForExpiry.getDate()).padStart(2, "0");
+                    history.push({
+                        date: `${year}-${month}-${day}`,
+                        expired: -expiredLeaves.length,
+                    });
+                }
             }
         }
     } else {
@@ -423,7 +435,6 @@ export function getVacationGrantHistory(
             const expiryDay = '31';
             history.push({
                 date: `${expiryYear}-${expiryMonth}-${expiryDay}`,
-                granted: 0, // 소멸 내역이므로 granted는 0
                 expired: -totalDaysToExpire, // 해당 연도에 지급받은 모든 연차 소멸
             });
         }

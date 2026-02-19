@@ -1,27 +1,28 @@
 // src/pages/Login/LoginPage.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/store/auth";
-import { IconEye, IconEyeOff } from "@/components/icons/Icons";
-import { supabase } from "@/lib/supabase";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../store/auth";
+import { setRememberMe } from "../../lib/supabase";
+import { IconEye, IconEyeOff } from "../../components/icons/Icons";
+import Input from "../../components/common/Input";
+import Button from "../../components/common/Button";
 
 function LoginPage() {
   const nav = useNavigate();
+  const location = useLocation();
   const { signInWithUsername } = useAuth();
 
-  const [username, setUsername] = useState(""); // username으로 로그인
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState<{ username?: string; password?: string; common?: string }>({});
   const [submitting, setSubmitting] = useState(false);
 
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const newErrors: { username?: string; password?: string; common?: string } = {};
-
     if (!username.trim()) newErrors.username = "사용자명을 입력해 주세요";
     if (!password.trim()) {
       newErrors.password = "비밀번호를 입력해 주세요";
@@ -37,7 +38,8 @@ function LoginPage() {
     setErrors({});
     setSubmitting(true);
 
-    // ✅ Supabase Username 로그인 (username으로 profiles에서 email 찾아서 로그인)
+    // rememberMe 여부에 따라 auth storage 선택
+    setRememberMe(rememberMe);
     const res = await signInWithUsername(username.trim(), password);
 
     setSubmitting(false);
@@ -47,12 +49,29 @@ function LoginPage() {
       return;
     }
 
-    // rememberMe는 Supabase 기본 persistSession(true)로 이미 유지됨.
-    // (정말 rememberMe로 분기하려면, localStorage 기반 custom 처리로 확장 가능)
-    nav("/dashboard", { replace: true });
+    // rememberMe: 체크 시 localStorage, 해제 시 sessionStorage에 세션 저장됨.
+
+    // ✅ 로그인 성공 시: 안전 토스트를 "딱 1회" 띄우기 위한 pending 플래그
+    sessionStorage.setItem("rtb:safety_toast_pending", "1");
+
+    const from = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)
+      ?.from;
+    const redirectTo = from
+      ? `${from.pathname || ""}${from.search || ""}${from.hash || ""}`
+      : "";
+
+    const nextRole = res.role;
+    if (nextRole === "admin") {
+      nav("/dashboard", { replace: true });
+    } else {
+      if (redirectTo && redirectTo.startsWith("/report/pdf")) {
+        nav(redirectTo, { replace: true });
+      } else {
+        nav("/report", { replace: true });
+      }
+    }
+
   };
-
-
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] font-pretendard">
@@ -66,68 +85,47 @@ function LoginPage() {
         </div>
       </header>
 
-      <main className="flex items-center justify-center min-h-[calc(100vh-73px)] px-4">
-        <div className="w-full max-w-[400px] bg-white rounded-lg shadow-sm p-8">
+      <main className="flex items-center justify-center min-h-[calc(100vh-100px)] px-4">
+        <div className="w-full max-w-[400px] bg-white rounded-2xl p-8 border border-gray-200">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Login</h1>
-            <p className="text-sm text-gray-500">RTB 통합 관리 시스템에 로그인하세요</p>
+            <h1 className="text-2xl font-bold text-gray-900">Login</h1>
+            <p className="text-base text-gray-500">RTB 통합 관리 시스템에 로그인하세요</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1.5">
-                사용자명
-              </label>
-              <input
-                type="text"
-                id="username"
-                value={username}
-                onChange={(e) => {
-                  const lowerValue = e.target.value.toLowerCase();
-                  setUsername(lowerValue);
-                  if (errors.username) setErrors((prev) => ({ ...prev, username: undefined }));
-                }}
-                placeholder="사용자명을 입력해 주세요 (예: ck.kim)"
-                className={`w-full px-4 py-3 border rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20 focus:border-[#1E3A5F] transition-colors ${
-                  errors.username ? "border-red-500 bg-red-50" : "border-gray-300 bg-white"
-                }`}
-              />
-              {errors.username && <p className="mt-1.5 text-xs text-red-500">{errors.username}</p>}
-            </div>
+            <Input
+              label="사용자명"
+              value={username}
+              placeholder="사용자명을 입력해 주세요 (예: ck.kim)"
+              autoComplete="username"
+              error={errors.username}
+              onChange={(val) => {
+                const lower = val.toLowerCase();
+                setUsername(lower);
+                if (errors.username) setErrors((prev) => ({ ...prev, username: undefined }));
+              }}
+              // 기존 input과 비슷한 느낌 유지
+              labelClassName="mb-0"
+            />
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
-                비밀번호
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  id="password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
-                  }}
-                  placeholder="비밀번호를 입력해 주세요"
-                  className={`w-full px-4 py-3 pr-11 border rounded-md text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1E3A5F]/20 focus:border-[#1E3A5F] transition-colors ${
-                    errors.password ? "border-red-500 bg-red-50" : "border-gray-300 bg-white"
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors focus:outline-none"
-                  aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
-                >
-                  {showPassword ? (
-                    <IconEyeOff className="w-5 h-5" />
-                  ) : (
-                    <IconEye className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-              {errors.password && <p className="mt-1.5 text-xs text-red-500">{errors.password}</p>}
-            </div>
+            {/* ✅ Password Input + 클릭 가능한 아이콘 */}
+            <Input
+              label="비밀번호"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              placeholder="비밀번호를 입력해 주세요"
+              autoComplete="current-password"
+              error={errors.password}
+              onChange={(val) => {
+                setPassword(val);
+                if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+              }}
+              icon={showPassword ? <IconEyeOff className="w-5 h-5" /> : <IconEye className="w-5 h-5" />}
+              iconPosition="right"
+              iconClickable
+              iconAriaLabel={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+              onIconClick={() => setShowPassword((v) => !v)}
+            />
 
             <div className="flex items-center">
               <input
@@ -144,15 +142,16 @@ function LoginPage() {
 
             {errors.common && <div className="text-sm text-red-600">{errors.common}</div>}
 
-            <button
+            {/* ✅ Button 컴포넌트 적용 */}
+            <Button
               type="submit"
               disabled={submitting}
-              className="w-full bg-[#1E3A5F] hover:bg-[#152a45] disabled:opacity-60 text-white font-medium py-3 px-4 rounded-md transition-colors duration-200 text-sm"
+              fullWidth
+              size="lg"
+              className="bg-[#1E3A5F] hover:bg-[#152a45] focus:ring-[#1E3A5F]"
             >
               {submitting ? "로그인 중..." : "로그인"}
-            </button>
-
-
+            </Button>
           </form>
         </div>
       </main>

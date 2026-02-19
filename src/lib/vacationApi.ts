@@ -1,15 +1,26 @@
+// vacationApi.ts
 import { supabase } from "./supabase";
 import {
-    getAdminUserIds,
-    getGongmuTeamUserIds,
     createNotificationsForUsers,
 } from "./notificationApi";
-import { 
-    calculateAnnualLeave, 
-    getVacationGrantHistory as calculateGrantHistory, 
+
+import {
+    calculateAnnualLeave,
+    getVacationGrantHistory as calculateGrantHistory,
     type VacationGrantHistory,
-    updateVacationBalances
+    updateVacationBalances,
 } from "./vacationCalculator";
+
+function buildVacationMonthRange(year: number, monthZeroBased: number) {
+    const monthNumber = monthZeroBased + 1;
+    const monthString = String(monthNumber).padStart(2, "0");
+    const lastDay = new Date(year, monthZeroBased + 1, 0).getDate();
+    const lastDayString = String(lastDay).padStart(2, "0");
+    return {
+        startDate: `${year}-${monthString}-01`,
+        endDate: `${year}-${monthString}-${lastDayString}`,
+    };
+}
 
 // ==================== 타입 정의 ====================
 
@@ -79,44 +90,37 @@ export async function createVacation(
         throw new Error(`휴가 신청 실패: ${error.message}`);
     }
 
-    // 휴가 등록 시 공무팀 전체에 알림 생성 (본인 제외)
+    // ✅ 휴가 등록 시 대표(y.k)에게 알림 생성
     try {
-        console.log("🔔 [알림] 휴가 등록 알림 생성 시작...");
-        const gongmuUserIds = await getGongmuTeamUserIds();
-        console.log("🔔 [알림] 공무팀 사용자 ID 목록:", gongmuUserIds);
-        
-        // 본인 제외
-        const targetUserIds = gongmuUserIds.filter(id => id !== data.user_id);
-        console.log("🔔 [알림] 알림 대상 사용자 ID 목록 (본인 제외):", targetUserIds);
-        
-        if (targetUserIds.length > 0) {
-            // 사용자 이름 가져오기
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("name")
-                .eq("id", data.user_id)
-                .single();
+        // 신청자 이름 가져오기
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("name")
+            .eq("id", data.user_id)
+            .single();
 
             const userName = profile?.name || "사용자";
 
-            const result = await createNotificationsForUsers(
-                targetUserIds,
+            // ✅ 대표 계정 UUID 고정 (profiles.id)
+            const CEO_USER_ID = "62da12a4-8677-44f3-a1c8-09d6b635c322";
+    
+            await createNotificationsForUsers(
+                [CEO_USER_ID],
                 "휴가 신청",
                 `${userName}님이 휴가를 신청했습니다.`,
-                "vacation"
+                "vacation",
+                JSON.stringify({
+                    kind: "vacation_requested",
+                    requester_id: data.user_id,
+                })
             );
-            console.log("🔔 [알림] 알림 생성 완료:", result.length, "개");
-        } else {
-            console.warn("⚠️ [알림] 알림 대상 사용자가 없어 알림을 생성하지 않았습니다.");
-        }
+    
+    
     } catch (notificationError: any) {
         // 알림 생성 실패는 휴가 신청을 막지 않음
-        console.error(
-            "❌ [알림] 알림 생성 실패 (휴가는 정상 신청됨):",
-            notificationError?.message || notificationError,
-            notificationError
-        );
+        console.error("알림 생성 실패:", notificationError?.message || notificationError);
     }
+
 
     return vacation;
 }
@@ -159,14 +163,10 @@ export async function getVacations(
     }
 
     if (filters?.month !== undefined && filters?.year) {
-        const startDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-01`;
-        const endDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-31`;
+        const { startDate, endDate } = buildVacationMonthRange(
+            filters.year,
+            filters.month
+        );
         query = query.gte("date", startDate).lte("date", endDate);
     }
 
@@ -247,12 +247,49 @@ export async function updateVacationStatus(
         })
         .eq("id", id)
         .select()
-        .single();
+        .maybeSingle();
 
     if (error) {
         console.error("Error updating vacation status:", error);
         throw new Error(`휴가 상태 변경 실패: ${error.message}`);
     }
+    if (!vacation) {
+        throw new Error("휴가 상태 변경 실패: 권한이 없거나 대상 휴가를 찾을 수 없습니다.");
+    }
+
+    // ✅ 대표가 승인/반려하면 신청자에게 알림
+    try {
+        // 승인/반려자 이름(대표) 가져오기
+        const { data: updater } = await supabase
+            .from("profiles")
+            .select("name")
+            .eq("id", updatedBy)
+            .maybeSingle();
+
+        const updaterName = updater?.name || "관리자";
+
+        const title = status === "approved" ? "휴가 승인" : "휴가 반려";
+        const message =
+            status === "approved"
+                ? `${updaterName}님이 휴가를 승인했습니다.`
+                : `${updaterName}님이 휴가를 반려했습니다.`;
+
+        await createNotificationsForUsers(
+            [vacation.user_id],
+            title,
+            message,
+            "vacation",
+            JSON.stringify({
+                kind: "vacation_status_changed",
+                vacation_id: vacation.id,
+                status,
+            })
+        );
+    } catch (notificationError: any) {
+        console.error("승인/반려 알림 생성 실패:", notificationError?.message || notificationError);
+    }
+
+
 
     return vacation;
 }
@@ -285,16 +322,24 @@ export async function deleteVacation(
  */
 export async function getVacationStats(
     userId: string,
-    year: number
+    year: number,
+    vacations?: Vacation[] // 이미 가져온 휴가 데이터가 있으면 재사용
 ): Promise<{
     total: number;
     used: number;
     pending: number;
     remaining: number;
 }> {
-    const vacations = await getVacations(userId, { year });
+    const vacationData = vacations || await getVacations(userId, { year });
 
-    const stats = vacations.reduce(
+    const currentDate = new Date();
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("join_date")
+        .eq("id", userId)
+        .single();
+
+    const stats = vacationData.reduce(
         (acc, vacation) => {
             const days = vacation.leave_type === "FULL" ? 1 : 0.5;
 
@@ -310,57 +355,60 @@ export async function getVacationStats(
     );
 
     // 연차 잔액 조회 (있다면)
-    try {
-        const { data: balance } = await supabase
-            .from("vacation_balances")
-            .select("total_days")
-            .eq("user_id", userId)
-            .eq("year", year)
-            .single();
+    // 406 에러나 RLS 정책 문제를 방지하기 위해 maybeSingle 사용
+    const { data: balance, error: balanceError } = await supabase
+        .from("vacation_balances")
+        .select("total_days")
+        .eq("user_id", userId)
+        .eq("year", year)
+        .maybeSingle();
 
-        if (balance) {
-            stats.total = balance.total_days;
+    // 406 에러나 다른 에러 발생 시 fallback 처리 (에러를 조용히 처리)
+    if (balanceError || !balance) {
+        // 잔액 테이블에 없거나 접근 불가능하면 입사일 기준으로 계산
+        if (profile?.join_date) {
+            stats.total = calculateAnnualLeave(
+                profile.join_date,
+                year,
+                currentDate
+            );
             stats.remaining = stats.total - stats.used;
         } else {
-            // 잔액 테이블에 없으면 입사일 기준으로 계산
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("join_date")
-                .eq("id", userId)
-                .single();
-            
-            if (profile?.join_date) {
-                // 현재 날짜까지 지급받은 연차만 계산
-                stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
-                stats.remaining = stats.total - stats.used;
-            } else {
-                // 입사일이 없으면 기본값 15일
-                stats.total = 15;
-                stats.remaining = stats.total - stats.used;
-            }
-        }
-    } catch (error) {
-        // 잔액 테이블이 없거나 데이터가 없는 경우 입사일 기준으로 계산
-        try {
-            const { data: profile } = await supabase
-                .from("profiles")
-                .select("join_date")
-                .eq("id", userId)
-                .single();
-            
-            if (profile?.join_date) {
-                // 현재 날짜까지 지급받은 연차만 계산
-                stats.total = calculateAnnualLeave(profile.join_date, year, new Date());
-                stats.remaining = stats.total - stats.used;
-            } else {
-                // 입사일이 없으면 기본값 15일
-                stats.total = 15;
-                stats.remaining = stats.total - stats.used;
-            }
-        } catch (profileError) {
-            console.warn("프로필 조회 실패, 기본값 사용:", profileError);
-            stats.total = 15;
+            stats.total = 0;
             stats.remaining = stats.total - stats.used;
+        }
+    } else {
+        stats.total = balance.total_days;
+        stats.remaining = stats.total - stats.used;
+    }
+
+    // 1년 미만 근로자: 현재 연도 표기에 전년도 지급분 합산
+    if (profile?.join_date) {
+        const join = new Date(profile.join_date);
+        join.setHours(0, 0, 0, 0);
+        const yearStart = new Date(year, 0, 1);
+        yearStart.setHours(0, 0, 0, 0);
+        const yearsOfServiceAtYearStart =
+            (yearStart.getTime() - join.getTime()) / (1000 * 60 * 60 * 24) / 365;
+
+        if (yearsOfServiceAtYearStart < 1) {
+            const prevYearHistory = calculateGrantHistory(
+                profile.join_date,
+                year - 1,
+                currentDate
+            );
+            const prevGranted = prevYearHistory.reduce(
+                (sum, h) => sum + (h.granted || 0),
+                0
+            );
+            const prevExpired = Math.abs(
+                prevYearHistory.reduce((sum, h) => sum + (h.expired || 0), 0)
+            );
+            const carryOverDays = Math.max(0, prevGranted - prevExpired);
+            if (carryOverDays > 0) {
+                stats.total += carryOverDays;
+                stats.remaining += carryOverDays;
+            }
         }
     }
 
@@ -473,9 +521,9 @@ export async function getCurrentTotalAnnualLeave(userId: string): Promise<number
  */
 export function statusToKorean(status: VacationStatus): string {
     const mapping = {
-        pending: "대기 중",
+        pending: "승인 대기",
         approved: "승인 완료",
-        rejected: "반려",
+        rejected: "반려됨",
     };
     return mapping[status];
 }
@@ -490,6 +538,16 @@ export function leaveTypeToKorean(leaveType: LeaveType): string {
         PM: "오후 반차",
     };
     return mapping[leaveType];
+}
+
+/**
+ * 휴가 일수 표시: 정수(또는 n.0)면 "n일", 반차 등 소수면 "n.5일" (n.0일 표기 안 함)
+ */
+export function formatVacationDays(value: number | null | undefined): string {
+    if (value === null || value === undefined) return "";
+    const n = Number(value);
+    if (Math.abs(n - Math.round(n)) < 1e-9) return `${Math.round(n)}일`;
+    return `${Number(n).toFixed(1)}일`;
 }
 
 /**

@@ -31,6 +31,7 @@ export default function EventForm({
     editingEvent,
     onSave,
 }: EventFormProps) {
+    const { showError } = useToast();
     const [title, setTitle] = useState(editingEvent?.title || "");
     const [allDay, setAllDay] = useState(false);
     const [attendeeInput, setAttendeeInput] = useState("");
@@ -120,6 +121,17 @@ export default function EventForm({
             setStartDate(formatDateForInput(editingEvent.startDate));
             setEndDate(formatDateForInput(editingEvent.endDate));
             setAttendees(editingEvent.attendees || []);
+            setAllDay(editingEvent.allDay ?? false);
+            if (editingEvent.startTime) {
+                const [h, m] = editingEvent.startTime.split(":");
+                setStartHour(h ?? "09");
+                setStartMinute(m ?? "00");
+            }
+            if (editingEvent.endTime) {
+                const [h, m] = editingEvent.endTime.split(":");
+                setEndHour(h ?? "18");
+                setEndMinute(m ?? "00");
+            }
         }
     }, [editingEvent]);
 
@@ -169,7 +181,7 @@ export default function EventForm({
                     htmlFor="allDay"
                     className="ml-2 text-sm text-gray-700 cursor-pointer select-none"
                 >
-                    하루종일
+                    하루 종일
                 </label>
             </div>
 

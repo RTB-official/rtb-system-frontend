@@ -32,8 +32,18 @@ export default function ExpenseFormCard({
         type?: string;
         amount?: string;
     }>({});
+    const [isAdding, setIsAdding] = React.useState(false);
+    const isAddingRef = React.useRef(false);
 
-    const handleAdd = () => {
+    const canAddExpense =
+        (date || "").trim() !== "" &&
+        (type || "").trim() !== "" &&
+        (amount || "").trim() !== "" &&
+        !isNaN(Number(amount)) &&
+        Number(amount) > 0;
+
+    const handleAdd = async () => {
+        if (isAddingRef.current) return;
         const newErrors: typeof errors = {};
 
         if (!date || date.trim() === "") {
@@ -52,16 +62,22 @@ export default function ExpenseFormCard({
         }
 
         setErrors({});
-        if (onAdd) {
-            onAdd({
-                id: Date.now(),
-                date,
-                type,
-                amount,
-                detail,
-                img: preview,
-                file: selectedFile, // 파일 객체 전달
-            });
+        isAddingRef.current = true;
+        setIsAdding(true);
+        try {
+            if (onAdd) {
+                await Promise.resolve(
+                    onAdd({
+                        id: Date.now(),
+                        date,
+                        type,
+                        amount,
+                        detail,
+                        img: preview,
+                        file: selectedFile, // 파일 객체 전달
+                    })
+                );
+            }
             // Reset form
             setDate(initialDate || "");
             setType("");
@@ -72,6 +88,9 @@ export default function ExpenseFormCard({
             if (fileRef.current) {
                 fileRef.current.value = "";
             }
+        } finally {
+            isAddingRef.current = false;
+            setIsAdding(false);
         }
     };
 
@@ -88,19 +107,19 @@ export default function ExpenseFormCard({
             <div className="flex-1 flex flex-col justify-between gap-6">
                 <div className="space-y-6">
                     <div>
-                    <DatePicker
-                        label="날짜"
-                        value={date}
+                        <DatePicker
+                            label="날짜"
+                            value={date}
                             onChange={(value) => {
                                 setDate(value);
                                 if (errors.date) {
                                     setErrors((prev) => ({ ...prev, date: undefined }));
                                 }
                             }}
-                        placeholder="연도. 월. 일"
-                        icon={<IconCalendar className="w-6 h-6" />}
-                        iconPosition="right"
-                    />
+                            placeholder="연도. 월. 일"
+                            icon={<IconCalendar className="w-6 h-6" />}
+                            iconPosition="right"
+                        />
                         {errors.date && (
                             <p className="text-red-500 text-xs mt-1">{errors.date}</p>
                         )}
@@ -113,10 +132,11 @@ export default function ExpenseFormCard({
                                 fullWidth
                                 placeholder="유형 선택"
                                 options={[
-                                    { value: "주유", label: "주유" },
-                                    { value: "통행료", label: "통행료" },
+                                    { value: "유대", label: "유대" },
                                     { value: "식비", label: "식비" },
-                                    { value: "자재구매", label: "자재구매" },
+                                    { value: "자재 구매", label: "자재 구매" },
+                                    { value: "도로비", label: "도로비" },
+                                    { value: "주차비", label: "주차비" },
                                     { value: "기타", label: "기타" },
                                 ]}
                                 value={type}
@@ -210,10 +230,12 @@ export default function ExpenseFormCard({
 
             <div>
                 <Button
-                    variant="secondary"
-                    size="md"
+                    variant={canAddExpense ? "primary" : "disabled"}
+                    size="lg"
                     fullWidth
                     onClick={handleAdd}
+                    disabled={!canAddExpense}
+                    loading={isAdding}
                 >
                     추가
                 </Button>

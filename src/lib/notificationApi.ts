@@ -9,6 +9,7 @@ export interface Notification {
     title: string;
     message: string;
     type: "report" | "schedule" | "vacation" | "other";
+    meta?: string | null;
     created_at: string;
     read_at: string | null;
 }
@@ -18,6 +19,7 @@ export interface CreateNotificationInput {
     title: string;
     message: string;
     type: "report" | "schedule" | "vacation" | "other";
+    meta?: string;
 }
 
 // ==================== 알림 생성 ====================
@@ -28,22 +30,45 @@ export interface CreateNotificationInput {
 export async function createNotification(
     data: CreateNotificationInput
 ): Promise<Notification> {
-    const { data: notification, error } = await supabase
-        .from("notifications")
-        .insert([data])
-        .select()
-        .single();
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    const {
+        data: { session },
+    } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+
+    const headers: Record<string, string> = {};
+    if (anonKey) {
+        headers["apikey"] = anonKey;
+    }
+    if (accessToken) {
+        headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
+    const { data: result, error } = await supabase.functions.invoke(
+        "create-notifications",
+        {
+            body: {
+                userIds: [data.user_id],
+                title: data.title,
+                message: data.message,
+                type: data.type,
+                meta: data.meta ?? null,
+            },
+            headers: Object.keys(headers).length > 0 ? headers : undefined,
+        }
+    );
 
     if (error) {
         console.error("Error creating notification:", error);
-        if (error.message?.includes("Could not find the table") || error.message?.includes("does not exist")) {
-            console.error("❌ [알림] notifications 테이블이 존재하지 않습니다. scripts/create_notifications_table.sql을 실행해주세요.");
-            throw new Error(`notifications 테이블이 존재하지 않습니다. 데이터베이스 관리자에게 문의하세요.`);
-        }
         throw new Error(`알림 생성 실패: ${error.message}`);
     }
 
-    return notification;
+    const created = result?.data?.[0];
+    if (!created) {
+        throw new Error("알림 생성 실패: 응답 데이터 없음");
+    }
+
+    return created as Notification;
 }
 
 /**
@@ -53,142 +78,43 @@ export async function createNotificationsForUsers(
     userIds: string[],
     title: string,
     message: string,
-    type: "report" | "schedule" | "vacation" | "other"
+    type: "report" | "schedule" | "vacation" | "other",
+    meta?: string
 ): Promise<Notification[]> {
-    // RLS 정책 문제로 인해 함수를 사용하거나, 하나씩 생성
-    // 먼저 직접 INSERT 시도
-    const notifications = userIds.map((user_id) => ({
-        user_id,
-        title,
-        message,
-        type,
-    }));
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    const {
+        data: { session },
+    } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
 
-    let data: Notification[] = [];
-    let error: any = null;
-
-    // 방법 1: 일괄 INSERT 시도
-    const { data: insertData, error: insertError } = await supabase
-        .from("notifications")
-        .insert(notifications)
-        .select();
-
-    if (insertError) {
-        console.warn("⚠️ [알림] 일괄 생성 실패, 개별 생성 시도:", insertError.message);
-        
-        // 방법 2: RLS 함수 사용 시도 (함수가 있는 경우)
-        try {
-            const functionResults = await Promise.allSettled(
-                userIds.map(async (user_id) => {
-                    try {
-                        const { data: funcData, error: funcError } = await supabase.rpc(
-                            'create_notification_for_user',
-                            {
-                                p_user_id: user_id,
-                                p_title: title,
-                                p_message: message,
-                                p_type: type,
-                            }
-                        );
-                        
-                        if (funcError) {
-                            console.error(`❌ [알림] 함수 호출 실패 (${user_id}):`, funcError);
-                            throw funcError;
-                        }
-                        
-                        // 함수가 JSON 객체를 직접 반환하므로 그대로 사용
-                        if (!funcData) {
-                            console.error(`❌ [알림] 함수가 null 반환 (${user_id})`);
-                            throw new Error("함수가 null을 반환했습니다");
-                        }
-                        
-                    // JSON 객체를 Notification 타입으로 변환
-                    const notification: Notification = {
-                        id: funcData.id,
-                        user_id: funcData.user_id,
-                        title: funcData.title,
-                        message: funcData.message,
-                        type: funcData.type,
-                        read_at: funcData.read_at || null,
-                        created_at: funcData.created_at,
-                    };
-                        
-                        return notification;
-                    } catch (err) {
-                        console.error(`❌ [알림] 개별 함수 호출 실패 (${user_id}):`, err);
-                        throw err;
-                    }
-                })
-            );
-            
-            const successful = functionResults
-                .filter((result): result is PromiseFulfilledResult<Notification> => 
-                    result.status === 'fulfilled' && result.value !== null
-                )
-                .map(result => result.value);
-            
-            const failed = functionResults.filter(result => result.status === 'rejected');
-            
-            if (failed.length > 0) {
-                console.warn(`⚠️ [알림] ${failed.length}개 함수 호출 실패:`, failed.map(r => r.status === 'rejected' ? r.reason : null));
-            }
-            
-            if (successful.length > 0) {
-                console.log(`✅ [알림] 함수를 통해 ${successful.length}/${userIds.length}개 알림 생성 완료`);
-                return successful;
-            }
-        } catch (funcError) {
-            console.error("❌ [알림] 함수 생성 전체 실패:", funcError);
-        }
-        
-        // 방법 3: 개별 INSERT 시도
-        console.warn("⚠️ [알림] 개별 생성 시도 중...");
-        const individualResults = await Promise.allSettled(
-            userIds.map(async (user_id) => {
-                const { data: indData, error: indError } = await supabase
-                    .from("notifications")
-                    .insert([{ user_id, title, message, type }])
-                    .select()
-                    .single();
-                
-                if (indError) {
-                    throw indError;
-                }
-                return indData;
-            })
-        );
-        
-        const successful = individualResults
-            .filter((result): result is PromiseFulfilledResult<Notification> => 
-                result.status === 'fulfilled' && result.value !== null
-            )
-            .map(result => result.value);
-        
-        if (successful.length > 0) {
-            console.log(`✅ [알림] 개별 생성으로 ${successful.length}/${userIds.length}개 알림 생성 완료`);
-            return successful;
-        }
-        
-        // 모든 방법 실패
-        error = insertError;
-    } else {
-        data = insertData || [];
+    const headers: Record<string, string> = {};
+    if (anonKey) {
+        headers["apikey"] = anonKey;
     }
+    if (accessToken) {
+        headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
+    const { data: result, error } = await supabase.functions.invoke(
+        "create-notifications",
+        {
+            body: {
+                userIds,
+                title,
+                message,
+                type,
+                meta: meta ?? null,
+            },
+            headers: Object.keys(headers).length > 0 ? headers : undefined,
+        }
+    );
 
     if (error) {
         console.error("Error creating notifications:", error);
-        if (error.message?.includes("Could not find the table") || error.message?.includes("does not exist")) {
-            console.error("❌ [알림] notifications 테이블이 존재하지 않습니다. scripts/create_notifications_table.sql을 실행해주세요.");
-            throw new Error(`notifications 테이블이 존재하지 않습니다. 데이터베이스 관리자에게 문의하세요.`);
-        }
-        if (error.message?.includes("row-level security") || error.message?.includes("RLS")) {
-            console.error("❌ [알림] RLS 정책 문제입니다. scripts/fix_notification_rls.sql을 실행해주세요.");
-            throw new Error(`RLS 정책 문제: ${error.message}`);
-        }
         throw new Error(`알림 생성 실패: ${error.message}`);
     }
 
-    return data;
+    return (result?.data || []) as Notification[];
 }
 
 // ==================== 알림 조회 ====================
@@ -357,4 +283,3 @@ export async function getAdminUserIds(): Promise<string[]> {
 
     return data?.map((p) => p.id) || [];
 }
-

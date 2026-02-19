@@ -12,7 +12,7 @@ import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import CreationSkeleton from "../../components/common/CreationSkeleton";
-import { useWorkReportStore, LOCATIONS } from "../../store/workReportStore";
+import { useWorkReportStore } from "../../store/workReportStore";
 import { IconArrowBack, IconReport } from "../../components/icons/Icons";
 import {
     createWorkLog,
@@ -71,14 +71,15 @@ export default function CreationPage() {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [isSubmittedWorkLog, setIsSubmittedWorkLog] = useState(false);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+    const [navigateConfirmOpen, setNavigateConfirmOpen] = useState(false);
 
 
-    
-    
+
+
     // ✅ 최초 작성자 유지용(업데이트 시 author NOT NULL 방지)
     const [originalAuthor, setOriginalAuthor] = useState<string | null>(null);
     const [originalCreatedBy, setOriginalCreatedBy] = useState<string | null>(null);
-    
+
     const navigate = useNavigate();
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
@@ -89,7 +90,7 @@ export default function CreationPage() {
         subject,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         workers,
@@ -103,7 +104,7 @@ export default function CreationPage() {
         setSubject,
         setOrderGroup,
         setOrderPerson,
-        setLocation,
+        setLocations,
         setLocationCustom,
         toggleVehicle,
         setVehicles,
@@ -125,7 +126,7 @@ export default function CreationPage() {
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,
@@ -144,7 +145,7 @@ export default function CreationPage() {
         subject,
         orderGroup,
         orderPerson,
-        location,
+        locations,
         locationCustom,
         vehicles,
         workers,
@@ -156,29 +157,29 @@ export default function CreationPage() {
 
     const [isDirty, setIsDirty] = useState(false);
 
-// ✅ 최신 makeSnapshot 참조용 (비동기/timeout에서도 최신값 사용)
-const makeSnapshotRef = useRef(makeSnapshot);
-useEffect(() => {
-    makeSnapshotRef.current = makeSnapshot;
-}, [makeSnapshot]);
+    // ✅ 최신 makeSnapshot 참조용 (비동기/timeout에서도 최신값 사용)
+    const makeSnapshotRef = useRef(makeSnapshot);
+    useEffect(() => {
+        makeSnapshotRef.current = makeSnapshot;
+    }, [makeSnapshot]);
 
 
-// 새로 작성 모드일 때 폼 초기화
-useEffect(() => {
-    if (!isEditMode) {
-        resetForm();
-        setLastSavedAt(null);
-        setHasUnsavedChanges(false);
-        setIsSubmittedWorkLog(false);
+    // 새로 작성 모드일 때 폼 초기화
+    useEffect(() => {
+        if (!isEditMode) {
+            resetForm();
+            setLastSavedAt(null);
+            setHasUnsavedChanges(false);
+            setIsSubmittedWorkLog(false);
 
-        // ✅ 초기 스냅샷(빈 폼 기준) 저장
-        // resetForm이 store를 바로 반영하지 않을 수 있어 다음 tick에 잡음
-        setTimeout(() => {
-            initialSnapshotRef.current = makeSnapshotRef.current();
-            setIsDirty(false);
-        }, 0);
-    }
-}, [isEditMode, resetForm]);
+            // ✅ 초기 스냅샷(빈 폼 기준) 저장
+            // resetForm이 store를 바로 반영하지 않을 수 있어 다음 tick에 잡음
+            setTimeout(() => {
+                initialSnapshotRef.current = makeSnapshotRef.current();
+                setIsDirty(false);
+            }, 0);
+        }
+    }, [isEditMode, resetForm]);
 
 
     // 수정 모드일 때 기존 데이터 로드
@@ -206,7 +207,7 @@ useEffect(() => {
                 // ✅ 최초 작성자/생성자 보관 (수정 시 그대로 유지)
                 setOriginalAuthor((data.workLog.author ?? null) as any);
                 setOriginalCreatedBy((data.workLog.created_by ?? null) as any);
-                
+
                 // 기본 정보 설정
                 if (data.workLog.vessel) setVessel(data.workLog.vessel);
                 if (data.workLog.engine) setEngine(data.workLog.engine);
@@ -216,16 +217,11 @@ useEffect(() => {
                 if (data.workLog.order_person)
                     setOrderPerson(data.workLog.order_person);
                 if (data.workLog.location) {
-                    if (
-                        data.workLog.location === "OTHER" ||
-                        !LOCATIONS.includes(data.workLog.location)
-                    ) {
-                        setLocation("OTHER");
-                        if (data.workLog.location)
-                            setLocationCustom(data.workLog.location);
-                    } else {
-                        setLocation(data.workLog.location);
-                    }
+                    const parsedLocations = String(data.workLog.location)
+                        .split(",")
+                        .map((loc) => loc.trim())
+                        .filter(Boolean);
+                    setLocations(parsedLocations);
                 }
                 if (data.workLog.vehicle) {
                     const vehicleList = data.workLog.vehicle
@@ -276,8 +272,7 @@ useEffect(() => {
             } catch (error: any) {
                 console.error("Error loading work log:", error);
                 showError(
-                    `보고서 로드 실패: ${
-                        error.message || "알 수 없는 오류가 발생했습니다."
+                    `보고서 로드 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                     }`
                 );
                 navigate("/report");
@@ -319,52 +314,53 @@ useEffect(() => {
 
             // 출장 보고서 생성 또는 업데이트
             const resolvedLocation =
-                location === "OTHER" ? locationCustom : location;
+                locations.length > 0 ? locations.join(", ") : undefined;
             const resolvedVehicle =
                 vehicles.length > 0 ? vehicles.join(", ") : null;
 
-                const workLogData = {
-                    // ✅ 수정모드면 최초 작성자 유지 (NOT NULL + 작성자 덮어쓰기 방지)
-                    author: isEditMode ? (originalAuthor || authorName) : authorName,
-                
-                    vessel,
-                    engine,
-                    order_group: orderGroup || undefined,
-                    order_person: orderPerson || undefined,
-                    location: resolvedLocation || undefined,
-                    vehicle: resolvedVehicle || undefined,
-                    subject,
-                    workers,
-                    entries: workLogEntries.map((entry) => ({
-                        dateFrom: entry.dateFrom,
-                        timeFrom: entry.timeFrom || undefined,
-                        dateTo: entry.dateTo,
-                        timeTo: entry.timeTo || undefined,
-                        descType: entry.descType,
-                        details: entry.details,
-                        persons: entry.persons,
-                        note: entry.note || undefined,
-                        moveFrom: entry.moveFrom || undefined,
-                        moveTo: entry.moveTo || undefined,
-                        lunch_worked: !!entry.noLunch,
-                    })),
-                    expenses: expenses.map((exp) => ({
-                        date: exp.date,
-                        type: exp.type,
-                        detail: exp.detail,
-                        amount: exp.amount,
-                    })),
-                    materials: materials.map((mat) => ({
-                        name: mat.name,
-                        qty: mat.qty,
-                        unit: mat.unit || undefined,
-                    })),
-                    is_draft: false,
-                
-                    // ✅ 수정모드면 created_by도 기존 유지(원하면 생략 가능하지만, 덮어쓰기 타입이면 유지가 안전)
-                    created_by: isEditMode ? (originalCreatedBy || user?.id || undefined) : (user?.id || undefined),
-                };
-                
+            const workLogData = {
+                // ✅ 수정모드면 최초 작성자 유지 (NOT NULL + 작성자 덮어쓰기 방지)
+                author: isEditMode ? (originalAuthor || authorName) : authorName,
+
+                vessel,
+                engine,
+                order_group: orderGroup || undefined,
+                order_person: orderPerson || undefined,
+                location: resolvedLocation,
+                vehicle: resolvedVehicle || undefined,
+                subject,
+                workers,
+                entries: workLogEntries.map((entry) => ({
+                    id: entry.id,
+                    dateFrom: entry.dateFrom,
+                    timeFrom: entry.timeFrom || undefined,
+                    dateTo: entry.dateTo,
+                    timeTo: entry.timeTo || undefined,
+                    descType: entry.descType,
+                    details: entry.details,
+                    persons: entry.persons,
+                    note: entry.note || undefined,
+                    moveFrom: entry.moveFrom || undefined,
+                    moveTo: entry.moveTo || undefined,
+                    lunch_worked: !!entry.noLunch,
+                })),
+                expenses: expenses.map((exp) => ({
+                    date: exp.date,
+                    type: exp.type,
+                    detail: exp.detail,
+                    amount: exp.amount,
+                })),
+                materials: materials.map((mat) => ({
+                    name: mat.name,
+                    qty: mat.qty,
+                    unit: mat.unit || undefined,
+                })),
+                is_draft: false,
+
+                // ✅ 수정모드면 created_by도 기존 유지(원하면 생략 가능하지만, 덮어쓰기 타입이면 유지가 안전)
+                created_by: isEditMode ? (originalCreatedBy || user?.id || undefined) : (user?.id || undefined),
+            };
+
 
             let workLog: WorkLog;
             if (isEditMode && workLogId) {
@@ -388,17 +384,17 @@ useEffect(() => {
                     file_size?: number;
                     created_by?: string;
                 }> = [];
-                
+
                 for (const file of newFiles) {
                     if (!file.file) continue;
-                    
+
                     try {
                         const filePath = await uploadReceiptFile(
                             file.file,
                             workLog.id,
                             file.category
                         );
-                
+
                         receipts.push({
                             category: mapReceiptCategory(file.category),
                             storage_bucket: "work-log-recipts", // 버킷 이름 (기본값과 다를 수 있으므로 명시)
@@ -419,17 +415,6 @@ useEffect(() => {
 
                 // receipts 저장
                 if (receipts.length > 0) {
-                    // 디버깅: 사용자 정보 확인
-                    console.log("=== 영수증 저장 디버깅 ===");
-                    console.log("User ID:", user?.id);
-                    console.log("Work Log ID:", workLog.id);
-                    console.log("Receipts to insert:", receipts);
-                    
-                    // 인증 상태 확인
-                    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-                    console.log("Auth User:", authUser);
-                    console.log("Auth Error:", authError);
-                    
                     const insertDataList = receipts.map((r) => {
                         // 명시적으로 필드 지정 (스프레드 연산자 대신)
                         const insertData: any = {
@@ -438,35 +423,25 @@ useEffect(() => {
                             storage_bucket: r.storage_bucket,
                             storage_path: r.storage_path,
                         };
-                        
+
                         // 선택적 필드 추가
                         if (r.original_name) insertData.original_name = r.original_name;
                         if (r.mime_type) insertData.mime_type = r.mime_type;
                         if (r.file_size) insertData.file_size = r.file_size;
                         if (user?.id) insertData.created_by = user.id;
-                        
+
                         return insertData;
                     });
-                    
-                    console.log("Insert Data List:", JSON.stringify(insertDataList, null, 2));
-                    
-                    const { data: insertData, error: receiptsError } = await supabase
-                    .from("work_log_receipt")
-                    .insert(insertDataList)
-                    .select();
+
+                    const { error: receiptsError } = await supabase
+                        .from("work_log_receipt")
+                        .insert(insertDataList)
+                        .select();
 
                     if (receiptsError) {
-                        console.error("=== 영수증 저장 에러 상세 ===");
-                        console.error("Error Code:", receiptsError.code);
-                        console.error("Error Message:", receiptsError.message);
-                        console.error("Error Details:", receiptsError.details);
-                        console.error("Error Hint:", receiptsError.hint);
-                        console.error("Full Error:", JSON.stringify(receiptsError, null, 2));
                         showError(`영수증 DB 저장 실패: ${receiptsError.message || "알 수 없는 오류"}`);
                         throw receiptsError; // ✅ DB 저장 실패면 제출도 실패 처리
                     }
-                    
-                    console.log("영수증 저장 성공:", insertData);
                 }
             }
 
@@ -478,8 +453,7 @@ useEffect(() => {
         } catch (error: any) {
             console.error("Error submitting work log:", error);
             showError(
-                `제출 실패: ${
-                    error.message || "알 수 없는 오류가 발생했습니다."
+                `제출 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                 }`
             );
         } finally {
@@ -495,7 +469,7 @@ useEffect(() => {
             return;
         }
         if (workers.length === 0) {
-            showError("작업자를 선택해주세요.");
+            showError("인원을을 선택해주세요.");
             return;
         }
         if (workLogEntries.length === 0) {
@@ -535,7 +509,7 @@ useEffect(() => {
                 }
 
                 const resolvedLocation =
-                    location === "OTHER" ? locationCustom : location;
+                    locations.length > 0 ? locations.join(", ") : undefined;
                 const resolvedVehicle =
                     vehicles.length > 0 ? vehicles.join(", ") : null;
 
@@ -544,12 +518,12 @@ useEffect(() => {
 
                 const draftData = {
                     author: isEditMode ? (originalAuthor || authorName) : authorName,
-                
+
                     vessel: vessel || undefined,
                     engine: engine || undefined,
                     order_group: orderGroup || undefined,
                     order_person: orderPerson || undefined,
-                    location: resolvedLocation || undefined,
+                    location: resolvedLocation,
                     vehicle: resolvedVehicle || undefined,
                     subject: subject || undefined,
                     workers: workers || [],
@@ -580,8 +554,8 @@ useEffect(() => {
                     is_draft: true,
                     created_by: isEditMode ? (originalCreatedBy || user.id) : user.id,
                 };
-                
-                
+
+
                 if (isEditMode && workLogId) {
                     // 수정 모드: 기존 레코드 업데이트
                     await updateWorkLog(Number(workLogId), draftData);
@@ -600,13 +574,12 @@ useEffect(() => {
                     showSuccess("임시저장이 완료되었습니다!");
                     navigate("/report"); // ✅ 임시저장 후 목록으로 이동
                 }
-                
+
             } catch (error: any) {
                 console.error("Error saving draft:", error);
                 if (!silent) {
                     showError(
-                        `임시저장 실패: ${
-                            error.message || "알 수 없는 오류가 발생했습니다."
+                        `임시저장 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                         }`
                     );
                 }
@@ -620,7 +593,7 @@ useEffect(() => {
             subject,
             orderGroup,
             orderPerson,
-            location,
+            locations,
             locationCustom,
             vehicles,
             workers,
@@ -654,8 +627,8 @@ useEffect(() => {
         setIsDirty(current !== initial);
     }, [makeSnapshot]);
 
-     // ✅ dirty일 때만: 뒤로가기 / 새로고침(이탈) 확인 팝업
-     useEffect(() => {
+    // ✅ dirty일 때만: 뒤로가기 / 새로고침(이탈) 확인 팝업
+    useEffect(() => {
         // ✅ 로딩 중(초기 마운트/리프레시)엔 history 가드 걸지 않음
         if (loading) return;
         if (!isDirty) return;
@@ -676,16 +649,7 @@ useEffect(() => {
         };
 
         function handlePopState() {
-            const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-            if (!ok) {
-                // ✅ 취소면 현재 페이지 유지
-                pushState();
-                return;
-            }
-        
-            // ✅ 확인이면: (C→B는 이미 발생) 이제 B→A로 실제 이동
-            cleanup();
-            navigate(-1);
+            setNavigateConfirmOpen(true);
         }
 
         window.addEventListener("beforeunload", handleBeforeUnload);
@@ -697,18 +661,18 @@ useEffect(() => {
         };
     }, [isDirty, loading, navigate]);
 
-    
 
- 
 
-// 뒤로가기 버튼 클릭 (dirty일 때만 확인)
-const handleBackClick = () => {
-    if (isDirty) {
-        const ok = window.confirm("작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?");
-        if (!ok) return;
-    }
-    navigate("/report");
-};
+
+
+    // 뒤로가기 버튼 클릭 (dirty일 때만 확인)
+    const handleBackClick = () => {
+        if (isDirty) {
+            setNavigateConfirmOpen(true);
+            return;
+        }
+        navigate("/report");
+    };
 
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
@@ -724,7 +688,7 @@ const handleBackClick = () => {
             <div
                 className={`
         fixed lg:static inset-y-0 left-0 z-30
-        w-[239px] h-screen shrink-0
+        w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
         transform transition-transform duration-300 ease-in-out
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
       `}
@@ -836,6 +800,23 @@ const handleBackClick = () => {
                 cancelText="취소"
                 confirmVariant="primary"
                 isLoading={submitting}
+            />
+
+            {/* 나감 확인 다이얼로그 */}
+            <ConfirmDialog
+                isOpen={navigateConfirmOpen}
+                onClose={() => {
+                    setNavigateConfirmOpen(false);
+                }}
+                onConfirm={() => {
+                    setNavigateConfirmOpen(false);
+                    navigate("/report");
+                }}
+                title="나가기"
+                message="작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?"
+                confirmText="나가기"
+                cancelText="취소"
+                confirmVariant="danger"
             />
         </div>
     );

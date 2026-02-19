@@ -1,0 +1,2 @@
+# DB 트리거(pg_net)가 JWT 없이 호출하므로 verify_jwt = false 필수
+verify_jwt = false

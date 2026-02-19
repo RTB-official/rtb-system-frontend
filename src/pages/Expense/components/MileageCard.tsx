@@ -4,6 +4,7 @@ import DatePicker from "../../../components/ui/DatePicker";
 import Input from "../../../components/common/Input";
 import Button from "../../../components/common/Button";
 import SectionCard from "../../../components/ui/SectionCard";
+import useIsMobile from "../../../hooks/useIsMobile";
 
 export default function MileageCard({
     onAdd,
@@ -16,12 +17,15 @@ export default function MileageCard({
     React.useEffect(() => {
         if (initialDate) setDate(initialDate);
     }, [initialDate]);
+    const isMobile = useIsMobile();
     const [from, setFrom] = React.useState("자택");
-    const [to, setTo] = React.useState("공장");
+    const [to, setTo] = React.useState("공장/사무실");
     const [distance, setDistance] = React.useState("");
     const [note, setNote] = React.useState("");
+    const [isAdding, setIsAdding] = React.useState(false);
+    const isAddingRef = React.useRef(false);
 
-    const chips = ["자택", "공장", "출장지"];
+    const chips = ["자택", "공장/사무실", "출장지"];
     const costPerKm = 250;
     const cost = Number(distance || 0) * costPerKm;
     const numericCost = cost.toLocaleString("ko-KR");
@@ -31,20 +35,34 @@ export default function MileageCard({
         </span>
     );
 
-    const handleAdd = () => {
-        if (onAdd) {
-            onAdd({
-                id: Date.now(),
-                date,
-                from,
-                to,
-                distance,
-                note,
-                cost,
-            });
+    const canAddMileage =
+        (date || "").trim() !== "" &&
+        (distance || "").trim() !== "" &&
+        Number(distance) > 0;
+
+    const handleAdd = async () => {
+        if (!canAddMileage || !onAdd) return;
+        if (isAddingRef.current) return;
+        isAddingRef.current = true;
+        setIsAdding(true);
+        try {
+            await Promise.resolve(
+                onAdd({
+                    id: Date.now(),
+                    date,
+                    from,
+                    to,
+                    distance,
+                    note,
+                    cost,
+                })
+            );
             // Reset form
             setDistance("");
             setNote("");
+        } finally {
+            isAddingRef.current = false;
+            setIsAdding(false);
         }
     };
 
@@ -70,11 +88,11 @@ export default function MileageCard({
                     />
 
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
+                        <div className="min-w-0 w-full">
                             <label className="text-xs text-gray-500 mb-2 block">
                                 출발지
                             </label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className={`flex w-full gap-1.5 ${isMobile ? "flex-wrap" : ""}`}>
                                 {chips.map((c) => (
                                     <Button
                                         key={c}
@@ -82,8 +100,8 @@ export default function MileageCard({
                                         variant={
                                             from === c ? "primary" : "outline"
                                         }
-                                        size="lg"
-                                        fullWidth
+                                        size={isMobile ? "md" : "lg"}
+                                        className={isMobile ? "" : "flex-1 min-w-0"}
                                     >
                                         {c}
                                     </Button>
@@ -91,11 +109,11 @@ export default function MileageCard({
                             </div>
                         </div>
 
-                        <div>
+                        <div className="min-w-0 w-full">
                             <label className="text-xs text-gray-500 mb-2 block">
                                 도착지
                             </label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className={`flex w-full gap-1.5 ${isMobile ? "flex-wrap" : ""}`}>
                                 {chips.map((c) => (
                                     <Button
                                         key={c}
@@ -103,8 +121,8 @@ export default function MileageCard({
                                         variant={
                                             to === c ? "primary" : "outline"
                                         }
-                                        size="lg"
-                                        fullWidth
+                                        size={isMobile ? "md" : "lg"}
+                                        className={isMobile ? "" : "flex-1 min-w-0"}
                                     >
                                         {c}
                                     </Button>
@@ -161,10 +179,10 @@ export default function MileageCard({
                 <div className="space-y-3">
                     <div>
                         <Input
-                            label="상세내용"
+                            label="호선 및 기타사항"
                             value={note}
                             onChange={setNote}
-                            placeholder="상세내용"
+                            placeholder="호선 및 기타사항"
                         />
                     </div>
                 </div>
@@ -178,10 +196,12 @@ export default function MileageCard({
                     </div>
                 </div>
                 <Button
-                    variant="secondary"
+                    variant={canAddMileage ? "primary" : "disabled"}
                     size="lg"
                     fullWidth
                     onClick={handleAdd}
+                    disabled={!canAddMileage}
+                    loading={isAdding}
                 >
                     추가
                 </Button>

@@ -1,6 +1,17 @@
 import { supabase } from "./supabase";
 import { compressImageFile } from "./imageUtils";
 
+function buildMonthRange(year: number, monthZeroBased: number) {
+    const monthNumber = monthZeroBased + 1;
+    const monthString = String(monthNumber).padStart(2, "0");
+    const lastDay = new Date(year, monthZeroBased + 1, 0).getDate();
+    const lastDayString = String(lastDay).padStart(2, "0");
+    return {
+        startDate: `${year}-${monthString}-01`,
+        endDate: `${year}-${monthString}-${lastDayString}`,
+    };
+}
+
 // ==================== 타입 정의 ====================
 
 export interface PersonalExpense {
@@ -119,10 +130,15 @@ export async function getPersonalExpenses(
             2,
             "0"
         )}-01`;
+        const lastDay = new Date(
+            filters.year,
+            filters.month + 1,
+            0
+        ).getDate();
         const endDate = `${filters.year}-${String(filters.month + 1).padStart(
             2,
             "0"
-        )}-31`;
+        )}-${String(lastDay).padStart(2, "0")}`;
         query = query
             .gte("expense_date", startDate)
             .lte("expense_date", endDate);
@@ -231,10 +247,15 @@ export async function getPersonalMileages(
             2,
             "0"
         )}-01`;
+        const lastDay = new Date(
+            filters.year,
+            filters.month + 1,
+            0
+        ).getDate();
         const endDate = `${filters.year}-${String(filters.month + 1).padStart(
             2,
             "0"
-        )}-31`;
+        )}-${String(lastDay).padStart(2, "0")}`;
         query = query.gte("m_date", startDate).lte("m_date", endDate);
     }
 
@@ -319,11 +340,8 @@ export async function getPersonalExpenseStats(
     }
 
     if (month !== undefined && year) {
-        const startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-        const endDate = `${year}-${String(month + 1).padStart(2, "0")}-31`;
-        query = query
-            .gte("expense_date", startDate)
-            .lte("expense_date", endDate);
+        const { startDate, endDate } = buildMonthRange(year, month);
+        query = query.gte("expense_date", startDate).lte("expense_date", endDate);
     }
 
     const { data, error } = await query;
@@ -373,8 +391,7 @@ export async function getPersonalMileageStats(
     }
 
     if (month !== undefined && year) {
-        const startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-        const endDate = `${year}-${String(month + 1).padStart(2, "0")}-31`;
+        const { startDate, endDate } = buildMonthRange(year, month);
         query = query.gte("m_date", startDate).lte("m_date", endDate);
     }
 
@@ -550,14 +567,10 @@ export async function getAllUsersExpenseSummary(filters?: {
     }
 
     if (filters?.month !== undefined && filters?.year) {
-        const startDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-01`;
-        const endDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-31`;
+        const { startDate, endDate } = buildMonthRange(
+            filters.year,
+            filters.month
+        );
         mileageQuery = mileageQuery
             .gte("m_date", startDate)
             .lte("m_date", endDate);
@@ -696,14 +709,10 @@ export async function getUserMileageDetails(
     }
 
     if (filters?.month !== undefined && filters?.year) {
-        const startDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-01`;
-        const endDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-31`;
+        const { startDate, endDate } = buildMonthRange(
+            filters.year,
+            filters.month
+        );
         query = query.gte("m_date", startDate).lte("m_date", endDate);
     }
 
@@ -751,14 +760,10 @@ export async function getUserCardExpenseDetails(
     }
 
     if (filters?.month !== undefined && filters?.year) {
-        const startDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-01`;
-        const endDate = `${filters.year}-${String(filters.month + 1).padStart(
-            2,
-            "0"
-        )}-31`;
+        const { startDate, endDate } = buildMonthRange(
+            filters.year,
+            filters.month
+        );
         query = query
             .gte("expense_date", startDate)
             .lte("expense_date", endDate);

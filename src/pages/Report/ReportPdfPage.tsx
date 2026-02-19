@@ -100,16 +100,10 @@ function kr_fixed_holidays(year: number) {
     ];
 }
 
-function isWeekend(ymd: string) {
-    const ts = new Date(ymd);
-    const w = ts.getDay(); // 0=일,6=토
-    return w === 0 || w === 6;
-}
 
 export default function ReportPdfPage() {
     const [params] = useSearchParams();
     const id = Number(params.get("id") ?? 0);
-    const autoPrint = params.get("autoPrint") === "1";
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -125,17 +119,8 @@ export default function ReportPdfPage() {
     const [receipts, setReceipts] = useState<PdfReceipt[]>([]);
     const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
     const { setWorkLogEntries } = useWorkReportStore();
+    
 
-    const [previewFile, setPreviewFile] = useState<{
-        url: string;
-        name: string;
-        type: string;
-    } | null>(null);
-
-    const openPreview = (url: string, name: string, type: string) => {
-        setPreviewFile({ url, name, type });
-    };
-    const closePreview = () => setPreviewFile(null);
 
 
     useEffect(() => {
@@ -706,6 +691,8 @@ export default function ReportPdfPage() {
       overflow-wrap:anywhere;
     }
 
+
+
     .detail-table thead th{
       background:#eef3ff;
       text-align:center;
@@ -719,11 +706,11 @@ export default function ReportPdfPage() {
     .dcol-m{ width:7mm; }
     .dcol-d{ width:7mm; }
     .dcol-w{ width:7mm; }
-    .dcol-type{ width:16mm; }
+    .dcol-type{ width:14mm; }   /* ✅ 구분 줄임 */
     .dcol-from{ width:14mm; }
     .dcol-to{ width:14mm; }
     .dcol-desc{ width:auto; }
-    .dcol-rmk{ width:30mm; }
+    .dcol-rmk{ width:32mm; }    /* ✅ 비고 늘림 */
 
     .detail-center{ text-align:center; }
     .detail-right{ text-align:right; }
@@ -781,7 +768,12 @@ export default function ReportPdfPage() {
       margin-right:0 !important;
     }
 
-
+    /* ✅ PDF에서 '일별 시간표'만 70%로 축소 */
+    .timeline-section .daily-timesheet{
+      transform: scale(0.8);
+      transform-origin: top left;
+      width: calc(100% / 0.7); /* 줄어든 만큼 가로폭 보정 */
+    }
 
     
     
@@ -799,6 +791,14 @@ export default function ReportPdfPage() {
       word-break:break-word;
       overflow-wrap:anywhere;
     }
+
+        /* ✅ 지출내역: 상세내용(3번째 컬럼) 이름이 글자 단위로 쪼개지지 않게 */
+    .table.expenses td:nth-child(3){
+      word-break: keep-all;     /* '이종훈' 같은 단어를 쪼개지 않음 */
+      overflow-wrap: normal;    /* anywhere로 강제 쪼개는 것 방지 */
+      white-space: normal;
+    }
+
     .table th{ background:#eef1f6; color:#364152; font-weight:700; }
     .table tbody tr:nth-child(odd){ background:#fbfcfe; }
     
@@ -881,10 +881,10 @@ export default function ReportPdfPage() {
                                                     />
                                                 </td>
                                                 <td className="title-cell">
-                                                    <div className="doc-title">
-                                                        출장 보고서
-                                                    </div>
-                                                </td>
+                                                     <div className="doc-title">
+                                                         {log?.subject?.includes("[교육]") ? "교육 보고서" : "출장 보고서"}
+                                                     </div>
+                                                 </td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -904,44 +904,85 @@ export default function ReportPdfPage() {
                                 <col className="v" />
                             </colgroup>
                             <tbody>
-                                <tr>
-                                    <th>기간</th>
-                                    <td>{workPeriodText}</td>
-                                    <th>작성자</th>
-                                    <td>{String(log.author ?? "")}</td>
-                                </tr>
-                                <tr>
-                                    <th>출장지</th>
-                                    <td>{String(log.location ?? "")}</td>
-                                    <th>호선</th>
-                                    <td>{String(log.vessel ?? "")}</td>
-                                </tr>
-                                <tr>
-                                    <th>엔진타입</th>
-                                    <td>{String(log.engine ?? "").toUpperCase()}</td>
-                                    <th>참관감독</th>
-                                    <td>
-                                        {String(
-                                            `${log.order_group ?? ""}-${log.order_person ?? ""}`
-                                        ).replace(/^-|-$/g, "")}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th>출장목적</th>
-                                    <td colSpan={3} style={{ whiteSpace: "pre-wrap" }}>
-                                        {String(log.subject ?? "")}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th>인원</th>
-                                    <td colSpan={3}>
-                                        {persons.length ? (
-                                            `${persons.join(", ")} (${persons.length}명)`
-                                        ) : (
-                                            <span className="muted">없음</span>
-                                        )}
-                                    </td>
-                                </tr>
+                                {(() => {
+                                    const isEducation = log?.subject?.includes("[교육]");
+                                    if (isEducation) {
+                                        return (
+                                            <>
+                                                <tr>
+                                                    <th>기간</th>
+                                                    <td>{workPeriodText}</td>
+                                                    <th>작성자</th>
+                                                    <td>{String(log.author ?? "")}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th>교육 장소</th>
+                                                    <td>{String(log.location ?? "")}</td>
+                                                    <th>교육 강사</th>
+                                                    <td>{String(log.order_person ?? "")}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th>교육 내용</th>
+                                                    <td colSpan={3} style={{ whiteSpace: "pre-wrap" }}>
+                                                        {String(log.subject ?? "")}
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <th>참석 인원</th>
+                                                    <td colSpan={3}>
+                                                        {persons.length ? (
+                                                            `${persons.join(", ")} (${persons.length}명)`
+                                                        ) : (
+                                                            <span className="muted">없음</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            </>
+                                        );
+                                    }
+                                    return (
+                                        <>
+                                            <tr>
+                                                <th>기간</th>
+                                                <td>{workPeriodText}</td>
+                                                <th>작성자</th>
+                                                <td>{String(log.author ?? "")}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>출장지</th>
+                                                <td>{String(log.location ?? "")}</td>
+                                                <th>호선</th>
+                                                <td>{String(log.vessel ?? "")}</td>
+                                            </tr>
+                                            <tr>
+                                                <th>엔진타입</th>
+                                                <td>{String(log.engine ?? "").toUpperCase()}</td>
+                                                <th>참관감독</th>
+                                                <td>
+                                                    {String(
+                                                        `${log.order_group ?? ""}-${log.order_person ?? ""}`
+                                                    ).replace(/^-|-$/g, "")}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th>출장목적</th>
+                                                <td colSpan={3} style={{ whiteSpace: "pre-wrap" }}>
+                                                    {String(log.subject ?? "")}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th>인원</th>
+                                                <td colSpan={3}>
+                                                    {persons.length ? (
+                                                        `${persons.join(", ")} (${persons.length}명)`
+                                                    ) : (
+                                                        <span className="muted">없음</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        </>
+                                    );
+                                })()}
                             </tbody>
                         </table>
                     </div>
@@ -1076,9 +1117,9 @@ export default function ReportPdfPage() {
                     {/* 타임라인 */}
                     <div className="section timeline-section">
 
-                        <div className="timeline-root">
-                            <TimelineSummarySection />
-                        </div>
+                    <div className="timeline-root">
+                        <TimelineSummarySection showWorkTimeRange />
+                    </div>
                     </div>
 
                     {/* 소모 자재 */}
@@ -1106,16 +1147,12 @@ export default function ReportPdfPage() {
                                             <tr key={i}>
                                                 <td>{a?.material_name ?? ""}</td>
                                                 <td className="right">
-                                                    {a
-                                                        ? `${Number(a.qty ?? 0)} ${a.unit ?? ""}`
-                                                        : ""}
+                                                    {a ? `${String(a.qty ?? "")} ${a.unit ?? ""}` : ""}
                                                 </td>
     
                                                 <td>{b?.material_name ?? ""}</td>
                                                 <td className="right">
-                                                    {b
-                                                        ? `${Number(b.qty ?? 0)} ${b.unit ?? ""}`
-                                                        : ""}
+                                                    {b ? `${String(b.qty ?? "")} ${b.unit ?? ""}` : ""}
                                                 </td>
                                             </tr>
                                         );
@@ -1131,7 +1168,7 @@ export default function ReportPdfPage() {
                         {!expenses.length ? (
                             <p className="muted">없음</p>
                         ) : (
-                            <table className="table">
+                            <table className="table expenses">
                                 <thead>
                                     <tr>
                                         <th>날짜</th>
@@ -1182,7 +1219,7 @@ export default function ReportPdfPage() {
                                 { key: "숙박영수증", title: "숙박 영수증" },
                                 { key: "자재구매영수증", title: "자재 영수증" },
                                 { key: "식비및유대영수증", title: "식비 및 유대 영수증" },
-                                { key: "기타", title: "기타 (TBM사진 등)" },
+                                { key: "기타", title: "기타" },
                             ] as const;
 
                             const grouped = categories.map((c) => ({
@@ -1342,42 +1379,6 @@ export default function ReportPdfPage() {
                         })()}
                     </div>
 
-                    {previewFile && (
-                    <div
-                        className="preview-overlay"
-                        onClick={closePreview} // ✅ 바깥 클릭 시 닫힘
-                    >
-                        <button
-                            type="button"
-                            className="preview-close"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                closePreview();
-                            }}
-                            aria-label="닫기"
-                        >
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                                <path
-                                    d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"
-                                    fill="currentColor"
-                                />
-                            </svg>
-                        </button>
-
-                        <div
-                            className="preview-body"
-                            onClick={(e) => e.stopPropagation()} // ✅ 이미지 클릭은 닫힘 방지
-                        >
-                            {/* 지금은 영수증이 이미지라고 가정 */}
-                            <img
-                                src={previewFile.url}
-                                alt={previewFile.name}
-                                className="preview-img"
-                            />
-                            <div className="preview-caption">{previewFile.name}</div>
-                        </div>
-                    </div>
-                )}
 
                 </div>
             </div>

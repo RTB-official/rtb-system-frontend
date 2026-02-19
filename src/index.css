@@ -125,3 +125,13 @@ button:focus {
 *:focus {
     outline: none !important;
 }
+
+/* 확장 패널 열릴 때 부드러운 등장 */
+@keyframes expandable-panel-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}

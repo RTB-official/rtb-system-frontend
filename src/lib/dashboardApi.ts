@@ -1,3 +1,4 @@
+// dashboardApi.ts
 import { supabase } from "./supabase";
 import { CalendarEvent } from "../types";
 import { Vacation } from "./vacationApi";
@@ -54,10 +55,12 @@ export interface WorkLogWithPersons {
     id: number;
     author: string;
     subject: string;
+    vessel?: string | null;
     created_at: string;
     persons: string[];
     date_from?: string;
     date_to?: string;
+    leaderName?: string;
 }
 
 // ==================== 유틸리티 함수 ====================
@@ -83,8 +86,15 @@ export async function createCalendarEvent(
         .from("calendar_events")
         .insert([
             {
-                ...data,
+                user_id: data.user_id,
+                title: data.title,
+                color: data.color ?? "#60a5fa",
+                start_date: data.start_date,
+                end_date: data.end_date,
+                start_time: data.start_time ?? null,
+                end_time: data.end_time ?? null,
                 all_day: data.all_day ?? true,
+                description: data.description ?? null,
                 attendees: data.attendees || [],
             },
         ])
@@ -98,8 +108,6 @@ export async function createCalendarEvent(
 
     // 일정 생성 시 공무팀 및 참여자에게 알림 생성
     try {
-        console.log("🔔 [알림] 일정 생성 알림 시작...");
-        
         // 사용자 이름 가져오기
         const { data: profile } = await supabase
             .from("profiles")
@@ -112,8 +120,6 @@ export async function createCalendarEvent(
 
         // 1. 참여자에게 알림 보내기
         if (data.attendees && data.attendees.length > 0) {
-            console.log("🔔 [알림] 참여자 알림 생성 시작...", data.attendees);
-            
             // 참여자 이름을 user_id로 변환
             const { data: attendeeProfiles } = await supabase
                 .from("profiles")
@@ -126,13 +132,12 @@ export async function createCalendarEvent(
                     .filter(id => id !== data.user_id); // 본인 제외
 
                 if (attendeeUserIds.length > 0) {
-                    const attendeeResult = await createNotificationsForUsers(
+                    await createNotificationsForUsers(
                         attendeeUserIds,
                         "일정 참여 초대",
                         `${userName}님이 "${data.title}" 일정에 당신을 참여자로 추가했습니다.`,
                         "schedule"
                     );
-                    console.log("🔔 [알림] 참여자 알림 생성 완료:", attendeeResult.length, "개");
                     targetUserIds.push(...attendeeUserIds);
                 }
             }
@@ -145,21 +150,16 @@ export async function createCalendarEvent(
         );
         
         if (gongmuTargetUserIds.length > 0) {
-            const gongmuResult = await createNotificationsForUsers(
+            await createNotificationsForUsers(
                 gongmuTargetUserIds,
                 "새 일정",
                 `${userName}님이 새 일정 "${data.title}"을(를) 추가했습니다.`,
                 "schedule"
             );
-            console.log("🔔 [알림] 공무팀 알림 생성 완료:", gongmuResult.length, "개");
         }
     } catch (notificationError: any) {
         // 알림 생성 실패는 일정 생성을 막지 않음
-        console.error(
-            "❌ [알림] 알림 생성 실패 (일정은 정상 생성됨):",
-            notificationError?.message || notificationError,
-            notificationError
-        );
+        console.error("알림 생성 실패:", notificationError?.message || notificationError);
     }
 
     return event;
@@ -171,8 +171,10 @@ export async function createCalendarEvent(
 export async function updateCalendarEvent(
     eventId: string,
     data: UpdateCalendarEventInput,
-    currentUserId?: string
+    currentUserId?: string,
+    isAdmin?: boolean
 ): Promise<CalendarEventRecord> {
+
     // 권한 체크 및 기존 일정 정보 가져오기
     let existingEvent: { user_id?: string; attendees?: string[] | null; title?: string } | null = null;
     
@@ -188,9 +190,10 @@ export async function updateCalendarEvent(
             throw new Error(`일정 조회 실패: ${fetchError.message}`);
         }
 
-        if (fetchedEvent?.user_id !== currentUserId) {
-            throw new Error("일정을 수정할 권한이 없습니다. 생성자만 수정할 수 있습니다.");
+        if (fetchedEvent?.user_id !== currentUserId && !isAdmin) {
+            throw new Error("일정을 수정할 권한이 없습니다. 생성자 또는 관리자만 수정할 수 있습니다.");
         }
+
 
         existingEvent = fetchedEvent;
     } else {
@@ -204,9 +207,18 @@ export async function updateCalendarEvent(
         existingEvent = fetchedEvent;
     }
 
+    const updatePayload: Record<string, unknown> = { ...data };
+    if (data.all_day === true) {
+        updatePayload.start_time = null;
+        updatePayload.end_time = null;
+    } else {
+        updatePayload.start_time = data.start_time ?? null;
+        updatePayload.end_time = data.end_time ?? null;
+    }
+
     const { data: event, error } = await supabase
         .from("calendar_events")
-        .update(data)
+        .update(updatePayload)
         .eq("id", eventId)
         .select()
         .single();
@@ -225,8 +237,6 @@ export async function updateCalendarEvent(
             );
 
             if (newAttendees.length > 0) {
-                console.log("🔔 [알림] 새 참여자 알림 생성 시작...", newAttendees);
-
                 // 사용자 이름 가져오기
                 const { data: profile } = await supabase
                     .from("profiles")
@@ -248,13 +258,12 @@ export async function updateCalendarEvent(
                         .filter(id => id !== currentUserId); // 본인 제외
 
                     if (attendeeUserIds.length > 0) {
-                        const result = await createNotificationsForUsers(
+                        await createNotificationsForUsers(
                             attendeeUserIds,
                             "일정 참여 초대",
                             `${userName}님이 "${existingEvent.title || event.title}" 일정에 당신을 참여자로 추가했습니다.`,
                             "schedule"
                         );
-                        console.log("🔔 [알림] 새 참여자 알림 생성 완료:", result.length, "개");
                     }
                 }
             }
@@ -276,7 +285,8 @@ export async function updateCalendarEvent(
  */
 export async function deleteCalendarEvent(
     eventId: string,
-    currentUserId?: string
+    currentUserId?: string,
+    isAdmin?: boolean
 ): Promise<void> {
     // 권한 체크: 생성자만 삭제 가능
     if (currentUserId) {
@@ -291,15 +301,19 @@ export async function deleteCalendarEvent(
             throw new Error(`일정 조회 실패: ${fetchError.message}`);
         }
 
-        if (existingEvent?.user_id !== currentUserId) {
-            throw new Error("일정을 삭제할 권한이 없습니다. 생성자만 삭제할 수 있습니다.");
+        if (existingEvent?.user_id !== currentUserId && !isAdmin) {
+            throw new Error("일정을 삭제할 권한이 없습니다. 생성자 또는 관리자만 삭제할 수 있습니다.");
         }
+
     }
 
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
         .from("calendar_events")
         .delete()
-        .eq("id", eventId);
+        .eq("id", eventId)
+        .select("id"); // ✅ 삭제된 row 반환
+
+    console.log("deletedRows:", deletedRows);
 
     if (error) {
         console.error("Error deleting calendar event:", error);
@@ -370,15 +384,15 @@ export async function getWorkLogsForDashboard(
         const lastDay = getLastDayOfMonth(filters.year, filters.month);
         const startDate = `${filters.year}-${String(month).padStart(2, "0")}-01`;
         const endDate = `${filters.year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-        entriesQuery = entriesQuery
-            .gte("date_from", startDate)
-            .lte("date_from", endDate);
+        entriesQuery = entriesQuery.or(
+            `and(date_from.gte.${startDate},date_from.lte.${endDate}),and(date_to.gte.${startDate},date_to.lte.${endDate})`
+        );
     } else if (filters?.year) {
         const startDate = `${filters.year}-01-01`;
         const endDate = `${filters.year}-12-31`;
-        entriesQuery = entriesQuery
-            .gte("date_from", startDate)
-            .lte("date_from", endDate);
+        entriesQuery = entriesQuery.or(
+            `and(date_from.gte.${startDate},date_from.lte.${endDate}),and(date_to.gte.${startDate},date_to.lte.${endDate})`
+        );
     }
 
     const { data: entriesData, error: entriesError } = await entriesQuery;
@@ -395,7 +409,7 @@ export async function getWorkLogsForDashboard(
     const [workLogsResult, personsResult] = await Promise.all([
         supabase
             .from("work_logs")
-            .select("id, author, subject, created_at")
+            .select("id, author, subject, vessel, created_at")
             .eq("is_draft", false)
             .in("id", workLogIds)
             .limit(500),
@@ -435,30 +449,91 @@ export async function getWorkLogsForDashboard(
         }
     }
 
+    const uniquePersonNames = Array.from(
+        new Set(
+            Array.from(personsMap.values()).flat().filter((name) => !!name)
+        )
+    );
+
+    const profileMap = new Map<
+        string,
+        { isTeamLead: boolean; position: string }
+    >();
+    if (uniquePersonNames.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+            .from("profiles")
+            .select("name, position, role, is_team_lead")
+            .in("name", uniquePersonNames);
+
+        if (profilesError) {
+            console.error("profiles 조회 실패:", profilesError.message);
+        } else if (profiles) {
+            profiles.forEach((p) => {
+                if (!p.name) return;
+                const position = p.position || p.role || "";
+                profileMap.set(p.name, {
+                    isTeamLead: !!p.is_team_lead,
+                    position,
+                });
+            });
+        }
+    }
+
+    const roleOrder: Record<string, number> = {
+        "대표": 1,
+        "감사": 2,
+        "부장": 3,
+        "차장": 4,
+        "과장": 5,
+        "대리": 6,
+        "주임": 7,
+        "사원": 8,
+        "인턴": 9,
+    };
+
+    const pickLeaderName = (names: string[]) => {
+        const leaders = names.filter((name) => {
+            const profile = profileMap.get(name);
+            return profile?.isTeamLead;
+        });
+        const candidates = leaders.length > 0 ? leaders : names;
+        if (candidates.length === 0) return "";
+        return candidates.sort((a, b) => {
+            const posA = profileMap.get(a)?.position || "";
+            const posB = profileMap.get(b)?.position || "";
+            const rankA = roleOrder[posA] ?? 999;
+            const rankB = roleOrder[posB] ?? 999;
+            if (rankA !== rankB) return rankA - rankB;
+            return 0;
+        })[0];
+    };
+
     const datesMap = new Map<
         number,
         { date_from?: string; date_to?: string }
     >();
     for (const entry of entriesData) {
         const logId = entry.work_log_id;
+        const startCandidate = entry.date_from || entry.date_to || undefined;
+        const endCandidate = entry.date_to || entry.date_from || undefined;
         if (!datesMap.has(logId)) {
             datesMap.set(logId, {
-                date_from: entry.date_from || undefined,
-                date_to: entry.date_to || undefined,
+                date_from: startCandidate,
+                date_to: endCandidate,
             });
         } else {
             const existing = datesMap.get(logId)!;
             if (
-                entry.date_from &&
-                (!existing.date_from || entry.date_from < existing.date_from)
+                startCandidate &&
+                (!existing.date_from || startCandidate < existing.date_from)
             ) {
-                existing.date_from = entry.date_from;
+                existing.date_from = startCandidate;
             }
             if (
-                entry.date_to &&
-                (!existing.date_to || entry.date_to > existing.date_to)
+                endCandidate &&
+                (!existing.date_to || endCandidate > existing.date_to)
             ) {
-                existing.date_to = entry.date_to;
+                existing.date_to = endCandidate;
             }
         }
     }
@@ -469,15 +544,18 @@ export async function getWorkLogsForDashboard(
     for (const log of workLogs) {
         const persons = personsMap.get(log.id) || [];
         const dates = datesMap.get(log.id);
+        const leaderName = pickLeaderName(persons);
 
         result.push({
             id: log.id,
             author: log.author,
             subject: log.subject,
+            vessel: log.vessel,
             created_at: log.created_at,
             persons,
             date_from: dates?.date_from,
             date_to: dates?.date_to,
+            leaderName,
         });
     }
 
@@ -495,8 +573,8 @@ export function vacationToCalendarEvent(
 ): CalendarEvent {
     const leaveTypeMap: Record<string, string> = {
         FULL: "연차",
-        AM: "오전반차",
-        PM: "오후반차",
+        AM: "오전 반차",
+        PM: "오후 반차",
     };
 
     const leaveTypeText = leaveTypeMap[vacation.leave_type] || vacation.leave_type;
@@ -506,11 +584,11 @@ export function vacationToCalendarEvent(
         : `휴가 ${leaveTypeText}`;
 
     // 상태에 따라 색상 변경
-    let color = "#60a5fa"; // 기본 파란색 (승인 완료)
+    let color = "#60a5fa"; // 승인
     if (vacation.status === "pending") {
-        color = "#fbbf24"; // 노란색 (대기 중)
+        color = "#fbbf24"; // 대기중
     } else if (vacation.status === "rejected") {
-        color = "#ef4444"; // 빨간색 (반려)
+        color = "#ef4444"; // 거절
     }
 
     return {
@@ -523,6 +601,7 @@ export function vacationToCalendarEvent(
     };
 }
 
+
 /**
  * 출장보고서를 CalendarEvent로 변환
  */
@@ -531,10 +610,16 @@ export function workLogToCalendarEvent(
 ): CalendarEvent {
     const startDate = workLog.date_from || workLog.created_at.split("T")[0];
     const endDate = workLog.date_to || startDate;
+    const vessel = workLog.vessel?.trim() || "";
+    const subject = workLog.subject?.trim() || "";
+    const detail = [vessel, subject].filter(Boolean).join(" ");
+    const baseTitle = detail || "출장 보고서";
+    const leaderName = workLog.leaderName?.trim();
+    const title = leaderName ? `${leaderName} - ${baseTitle}` : baseTitle;
 
     return {
         id: `worklog-${workLog.id}`,
-        title: `출장 보고서 - ${workLog.subject}`,
+        title,
         color: "#84cc16", // 연두색
         startDate,
         endDate,
@@ -582,6 +667,9 @@ export function calendarEventRecordToCalendarEvent(
         color: "#fb923c", // 주황색 (일정)
         startDate: record.start_date,
         endDate: record.end_date,
+        allDay: record.all_day,
+        startTime: record.start_time ?? undefined,
+        endTime: record.end_time ?? undefined,
         userId: record.user_id, // 생성자 ID 포함
         attendees: record.attendees || [],
     };
