@@ -517,6 +517,7 @@ if (newFiles.length > 0) {
                     subject: subject || undefined,
                     workers: workers || [],
                     entries: workLogEntries.map((entry) => ({
+                        id: entry.id,
                         dateFrom: entry.dateFrom,
                         timeFrom: entry.timeFrom ? entry.timeFrom.slice(0, 5) : undefined,
                         dateTo: entry.dateTo,
@@ -784,7 +785,6 @@ if (newFiles.length > 0) {
                                     저장됨
                                 </span>
                             )}
-                            {!isSubmittedWorkLog && (
                                 <Button
                                     variant="outline"
                                     size="md"
@@ -794,7 +794,6 @@ if (newFiles.length > 0) {
                                 >
                                     {savingDraft ? "저장 중..." : "임시 저장"}
                                 </Button>
-                            )}
                             <Button
                                 variant="primary"
                                 size="md"
