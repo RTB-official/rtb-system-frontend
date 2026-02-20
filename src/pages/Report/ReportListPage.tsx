@@ -227,62 +227,78 @@ export default function ReportListPage() {
                         const profileName = myProfile?.name?.trim() || "";
                         resolvedUserName = profileName || null;
 
-                        if (isStaffMember && profileName) {
-                            const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
-
-                            if (workLogIds.length > 0) {
-                                // 1) 해당 workLog들의 entry id / work_log_id 조회
-                                const { data: wlEntries, error: wlEntriesError } =
-                                    await supabase
+                        if (isStaffMember) {
+                            // ✅ staff는 "내가 작성한 보고서"는 항상 보이게 + "내가 참석한 보고서"도 보이게(합집합)
+                            const myId = user.id;
+                        
+                            const myOwnIds = new Set<number>(
+                                workLogs
+                                    .filter((w: any) => w.created_by === myId)
+                                    .map((w) => w.id)
+                                    .filter(Boolean)
+                            );
+                        
+                            // profileName이 없으면 참석자 기반 필터링이 불가하므로, 작성한 것만 노출
+                            if (!profileName) {
+                                workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
+                            } else {
+                                const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
+                        
+                                if (workLogIds.length > 0) {
+                                    // 1) 해당 workLog들의 entry id / work_log_id 조회
+                                    const { data: wlEntries, error: wlEntriesError } = await supabase
                                         .from("work_log_entries_with_hours")
                                         .select("id, work_log_id")
                                         .in("work_log_id", workLogIds);
-
-                                if (wlEntriesError) {
-                                    console.error("entries 조회 실패:", wlEntriesError);
-                                    workLogs = []; // 실패 시 staff는 안전하게 빈 목록
-                                } else {
-                                    const entryIdToWorkLogId = new Map<number, number>();
-                                    const entryIds: number[] = [];
-
-                                    (wlEntries || []).forEach((e: any) => {
-                                        const entryId = Number(e.id);
-                                        const wlId = Number(e.work_log_id);
-                                        if (!entryId || !wlId) return;
-                                        entryIdToWorkLogId.set(entryId, wlId);
-                                        entryIds.push(entryId);
-                                    });
-
-                                    if (entryIds.length === 0) {
-                                        workLogs = [];
+                        
+                                    if (wlEntriesError) {
+                                        console.error("entries 조회 실패:", wlEntriesError);
+                                        // ✅ 실패해도 "내가 작성한 것"은 유지
+                                        workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
                                     } else {
-                                        // 2) 본인이 참여한 entry만 조회
-                                        const { data: persons, error: personsError } =
-                                            await supabase
+                                        const entryIdToWorkLogId = new Map<number, number>();
+                                        const entryIds: number[] = [];
+                        
+                                        (wlEntries || []).forEach((e: any) => {
+                                            const entryId = Number(e.id);
+                                            const wlId = Number(e.work_log_id);
+                                            if (!entryId || !wlId) return;
+                                            entryIdToWorkLogId.set(entryId, wlId);
+                                            entryIds.push(entryId);
+                                        });
+                        
+                                        if (entryIds.length === 0) {
+                                            // ✅ entry가 없어도 내가 작성한 것은 보이게
+                                            workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
+                                        } else {
+                                            // 2) 본인이 참여한 entry만 조회
+                                            const { data: persons, error: personsError } = await supabase
                                                 .from("work_log_entry_persons")
                                                 .select("entry_id, person_name")
                                                 .eq("person_name", profileName)
                                                 .in("entry_id", entryIds);
-
-                                        if (personsError) {
-                                            console.error("entry_persons 조회 실패:", personsError);
-                                            workLogs = [];
-                                        } else {
-                                            const allowedWorkLogIds = new Set<number>();
-                                            (persons || []).forEach((p: any) => {
-                                                const entryId = Number(p.entry_id);
-                                                const wlId = entryIdToWorkLogId.get(entryId);
-                                                if (wlId) allowedWorkLogIds.add(wlId);
-                                            });
-
-                                            workLogs = workLogs.filter((w) =>
-                                                allowedWorkLogIds.has(w.id)
-                                            );
+                        
+                                            if (personsError) {
+                                                console.error("entry_persons 조회 실패:", personsError);
+                                                // ✅ 실패해도 내가 작성한 것은 보이게
+                                                workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
+                                            } else {
+                                                const allowedWorkLogIds = new Set<number>([...myOwnIds]);
+                        
+                                                (persons || []).forEach((p: any) => {
+                                                    const entryId = Number(p.entry_id);
+                                                    const wlId = entryIdToWorkLogId.get(entryId);
+                                                    if (wlId) allowedWorkLogIds.add(wlId);
+                                                });
+                        
+                                                workLogs = workLogs.filter((w) => allowedWorkLogIds.has(w.id));
+                                            }
                                         }
                                     }
+                                } else {
+                                    // ✅ workLogs가 비어있으면 그대로(=어차피 없음)
+                                    workLogs = [];
                                 }
-                            } else {
-                                workLogs = [];
                             }
                         }
                     }
