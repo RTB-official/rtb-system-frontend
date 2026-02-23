@@ -1,3 +1,4 @@
+// src/components/board/BoardPostCards.tsx
 import { useState } from "react";
 import type { ReactNode } from "react";
 import SectionCard from "../ui/SectionCard";
@@ -82,7 +83,7 @@ export function BoardPostCard({
                             <div className="flex flex-col gap-2">
                 {chip ? (
                     <>
-                        <div className="flex items-start justify-between">
+                        <div className="flex items-start justify-between gap-2">
                             <Chip
                                 color={chip.color}
                                 variant={chip.variant ?? "solid"}
@@ -91,14 +92,18 @@ export function BoardPostCard({
                             >
                                 {chip.label}
                             </Chip>
-                            {headerRight}
+
+                            {headerRight ? <div className="shrink-0">{headerRight}</div> : null}
                         </div>
                         <h2 className="mt-1 text-xl font-bold text-gray-800 md:text-2xl">{title || "—"}</h2>
                     </>
                 ) : (
                     <div className="flex items-center justify-between gap-2">
-                        <h2 className="min-w-0 flex-1 text-xl font-bold text-gray-800 md:text-2xl">{title || "—"}</h2>
-                        {headerRight}
+                        <h2 className="min-w-0 flex-1 text-xl font-bold text-gray-800 md:text-2xl">
+                            {title || "—"}
+                        </h2>
+
+                        {headerRight ? <div className="shrink-0">{headerRight}</div> : null}
                     </div>
                 )}
                 {(() => {

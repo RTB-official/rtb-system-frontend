@@ -1,3 +1,4 @@
+// src/pages/Members/MembersPage.tsx
 import { useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import { supabase } from "../../lib/supabase";
@@ -10,7 +11,7 @@ import PageContainer from "../../components/common/PageContainer";
 import MembersSkeleton from "../../components/common/skeletons/MembersSkeleton";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
-import { uploadPassportPhoto, uploadProfilePhoto } from "../../lib/memberFilesApi";
+import { uploadPassportPhoto, uploadProfilePhoto, uploadSignature } from "../../lib/memberFilesApi";
 import { useMembersData } from "./useMembersData";
 import { getFilteredMembers, getMembersByRole } from "./membersListUtils";
 import { normalizeDateToISO } from "./utils";
@@ -225,6 +226,26 @@ export default function MembersPage() {
                             }
                         } catch (e: any) {
                             showError(e?.message || "증명사진 업로드에 실패했습니다.");
+                        }
+                    }
+                    if (payload.signatureFile) {
+                        try {
+                            const prevBucket = selectedMember.signatureBucket;
+                            const prevPath = selectedMember.signaturePath;
+                            const uploaded = await uploadSignature(selectedMemberId, payload.signatureFile);
+                            await supabase
+                                .from("profiles")
+                                .update({
+                                    signature_bucket: uploaded.bucket,
+                                    signature_path: uploaded.path,
+                                    signature_name: uploaded.name,
+                                })
+                                .eq("id", selectedMemberId);
+                            if (prevBucket && prevPath && (prevBucket !== uploaded.bucket || prevPath !== uploaded.path)) {
+                                await deleteStorageFile(prevBucket, prevPath);
+                            }
+                        } catch (e: any) {
+                            showError(e?.message || "서명 업로드에 실패했습니다.");
                         }
                     }
                     const { error: ppError } = await supabase.from("profile_passports").upsert(

@@ -1,3 +1,4 @@
+// src/lib/boardApi.ts
 import { supabase } from "./supabase";
 
 export type BoardPostType = "notice" | "post" | "vote";

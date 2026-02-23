@@ -1,3 +1,4 @@
+// src/pages/Board/BoardCreatePage.tsx
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";

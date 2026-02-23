@@ -316,12 +316,15 @@ try {
 }
 
 if (hasWorkLogDeleteEvent || !workLogExists || looksLikeCascadeDelete) {
-  // 🔥 중요: 전체 삭제면 메일을 보내지 않고, 쌓인 이벤트만 정리(sent 처리)
-  await admin
-    .from("email_events")
-    .update({ sent_at: new Date().toISOString() })
-    .eq("work_log_id", workLogId)
-    .is("sent_at", null);
+  // 🔥 중요: 전체 삭제면 메일을 보내지 않고, 이번에 읽은 이벤트만 sent 처리(레이스 방지)
+  const pendingIds = (pendingEvents || []).map((e: any) => e?.id).filter((x: any) => x != null);
+
+  if (pendingIds.length > 0) {
+    await admin
+      .from("email_events")
+      .update({ sent_at: new Date().toISOString() })
+      .in("id", pendingIds);
+  }
 
   console.log("skip_reason", "worklog_deleted_no_email", {
     workLogId,
@@ -347,11 +350,14 @@ const { subject, text, html } = await buildBatchedReportEmail(workLogId, safeEve
 
 // 혹시 안전장치로 비어있으면 스킵
 if (!subject) {
-  await admin
-    .from("email_events")
-    .update({ sent_at: new Date().toISOString() })
-    .eq("work_log_id", workLogId)
-    .is("sent_at", null);
+  const pendingIds = (pendingEvents || []).map((e: any) => e?.id).filter((x: any) => x != null);
+
+  if (pendingIds.length > 0) {
+    await admin
+      .from("email_events")
+      .update({ sent_at: new Date().toISOString() })
+      .in("id", pendingIds);
+  }
 
   console.log("skip_reason", "empty_subject_after_build", { workLogId });
   return SKIP_200();
@@ -372,12 +378,15 @@ if (!ok) {
   return SKIP_200();
 }
 
-// 🔥 중요: 같은 work_log_id의 미발송 전부 정리
-await admin
-  .from("email_events")
-  .update({ sent_at: new Date().toISOString() })
-  .eq("work_log_id", workLogId)
-  .is("sent_at", null);
+// 🔥 중요: 이번에 보낸 이벤트만 sent 처리(레이스 방지)
+const pendingIds = (pendingEvents || []).map((e: any) => e?.id).filter((x: any) => x != null);
+
+if (pendingIds.length > 0) {
+  await admin
+    .from("email_events")
+    .update({ sent_at: new Date().toISOString() })
+    .in("id", pendingIds);
+}
 
 console.log("send_result", "ok_batched_email_events", { workLogId });
 

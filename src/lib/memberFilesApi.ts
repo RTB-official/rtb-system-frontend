@@ -1,7 +1,9 @@
+// src/lib/memberFilesApi.ts
 import { supabase } from "./supabase";
 
 const PROFILE_PHOTO_BUCKET = "profile-photos";
 const PASSPORT_PHOTO_BUCKET = "passport-photos";
+const SIGNATURE_BUCKET = "signatures";
 
 const getRandomId = () => {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -43,4 +45,11 @@ export async function uploadPassportPhoto(
     file: File
 ): Promise<{ bucket: string; path: string; name: string }> {
     return uploadMemberFile(PASSPORT_PHOTO_BUCKET, userId, file);
+}
+
+export async function uploadSignature(
+    userId: string,
+    file: File
+): Promise<{ bucket: string; path: string; name: string }> {
+    return uploadMemberFile(SIGNATURE_BUCKET, userId, file);
 }

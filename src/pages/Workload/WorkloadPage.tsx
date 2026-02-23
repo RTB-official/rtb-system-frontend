@@ -505,11 +505,13 @@ export default function WorkloadPage() {
 
                 const chartSummaries = aggregatePersonWorkload(entries.value, chartProfiles);
                 const newChartData = generateChartData(chartSummaries);
+                // ✅ 테스트 계정 "공사팀" 그래프에서 제외
+const filteredChartData = newChartData.filter((d) => d.name !== "공사팀");
                 const newTableData = generateTableData(summaries);
 
                 if (cancelled || loadRequestIdRef.current !== requestId) return;
 
-                setChartData(newChartData);
+                setChartData(filteredChartData);
                 setTableData(newTableData);
                 setCurrentPage(1);
                 setLoading(false);

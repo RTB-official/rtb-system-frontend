@@ -11,6 +11,7 @@ import { useUser } from "../../hooks/useUser";
 import TbmDetailSkeleton from "../../components/common/skeletons/TbmDetailSkeleton";
 import TbmDetailSheet from "../../components/tbm/TbmDetailSheet";
 import { generateTbmPdf } from "../../lib/pdfUtils";
+import { supabase } from "../../lib/supabase";
 
 export default function TbmDetailPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -22,6 +23,7 @@ export default function TbmDetailPage() {
     const [tbm, setTbm] = useState<TbmRecord | null>(null);
     const [participants, setParticipants] = useState<TbmParticipant[]>([]);
     const [signing, setSigning] = useState(false);
+    const [signatureUrls, setSignatureUrls] = useState<Map<string, string>>(new Map());
 
     useEffect(() => {
         const load = async () => {
@@ -31,6 +33,55 @@ export default function TbmDetailPage() {
                 const data = await getTbmDetail(id);
                 setTbm(data.tbm);
                 setParticipants(data.participants);
+
+                // 서명 완료된 참가자들의 서명 이미지 URL 미리 로드
+                const signedUserIds = data.participants
+                    .filter((p) => p.user_id && p.signed_at)
+                    .map((p) => p.user_id!);
+
+                if (signedUserIds.length > 0) {
+                    const { data: profiles, error } = await supabase
+                        .from("profiles")
+                        .select("id, signature_bucket, signature_path")
+                        .in("id", signedUserIds);
+
+                    if (!error && profiles) {
+                        const urlMap = new Map<string, string>();
+
+                        // 병렬로 URL 생성
+                        const urlPromises = profiles.map(async (profile) => {
+                            if (profile.signature_bucket && profile.signature_path) {
+                                try {
+                                    const { data, error: urlError } = await supabase.storage
+                                        .from(profile.signature_bucket)
+                                        .createSignedUrl(profile.signature_path, 60 * 60);
+
+                                    if (!urlError && data) {
+                                        return { userId: profile.id, url: data.signedUrl };
+                                    } else {
+                                        const { data: publicData } = supabase.storage
+                                            .from(profile.signature_bucket)
+                                            .getPublicUrl(profile.signature_path);
+                                        return { userId: profile.id, url: publicData.publicUrl };
+                                    }
+                                } catch (e) {
+                                    console.error(`서명 URL 로드 실패 (${profile.id}):`, e);
+                                    return null;
+                                }
+                            }
+                            return null;
+                        });
+
+                        const results = await Promise.all(urlPromises);
+                        results.forEach((result) => {
+                            if (result) {
+                                urlMap.set(result.userId, result.url);
+                            }
+                        });
+
+                        setSignatureUrls(urlMap);
+                    }
+                }
             } catch (e: any) {
                 showError(e?.message || "TBM을 불러오지 못했습니다.");
             } finally {
@@ -58,6 +109,34 @@ export default function TbmDetailPage() {
                         : p
                 )
             );
+
+            // 서명 후 서명 이미지 URL 로드
+            if (currentUserId) {
+                const { data: profile, error } = await supabase
+                    .from("profiles")
+                    .select("id, signature_bucket, signature_path")
+                    .eq("id", currentUserId)
+                    .single();
+
+                if (!error && profile?.signature_bucket && profile?.signature_path) {
+                    try {
+                        const { data, error: urlError } = await supabase.storage
+                            .from(profile.signature_bucket)
+                            .createSignedUrl(profile.signature_path, 60 * 60);
+
+                        if (!urlError && data) {
+                            setSignatureUrls((prev) => new Map(prev).set(currentUserId, data.signedUrl));
+                        } else {
+                            const { data: publicData } = supabase.storage
+                                .from(profile.signature_bucket)
+                                .getPublicUrl(profile.signature_path);
+                            setSignatureUrls((prev) => new Map(prev).set(currentUserId, publicData.publicUrl));
+                        }
+                    } catch (e) {
+                        console.error("서명 이미지 URL 로드 실패:", e);
+                    }
+                }
+            }
 
             showSuccess("서명 처리되었습니다.");
         } catch (e: any) {
@@ -131,6 +210,7 @@ export default function TbmDetailPage() {
                                 variant="screen"
                                 currentUserId={currentUserId}
                                 onSign={handleSign}
+                                signatureUrls={signatureUrls}
                             />
                         </div>
                     )}

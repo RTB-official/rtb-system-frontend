@@ -1,3 +1,4 @@
+//lib/recipients.ts
 // @ts-nocheck
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { INVOICE_EMAILS, CEO_EMAIL, fetchUserEmail } from "./shared.ts";

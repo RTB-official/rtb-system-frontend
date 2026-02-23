@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import Chip from "../ui/Chip";
 import EmptyValueIndicator from "../../pages/Expense/components/EmptyValueIndicator";
 import { TbmParticipant, TbmRecord } from "../../lib/tbmApi";
 import useIsMobile from "../../hooks/useIsMobile";
+import { supabase } from "../../lib/supabase";
+import ImagePreviewModal from "../ui/ImagePreviewModal";
 
 type TbmDetailSheetProps = {
     tbm: TbmRecord;
@@ -10,6 +12,7 @@ type TbmDetailSheetProps = {
     variant?: "screen" | "pdf";
     currentUserId?: string | null;
     onSign?: (participant: TbmParticipant) => void;
+    signatureUrls?: Map<string, string>;
 };
 
 const stripCodePrefix = (value: string) =>
@@ -164,6 +167,7 @@ export default function TbmDetailSheet({
     variant = "screen",
     currentUserId,
     onSign,
+    signatureUrls: propSignatureUrls,
 }: TbmDetailSheetProps) {
     const isMobile = useIsMobile();
     const detailRows = useMemo(() => buildRows(tbm), [tbm]);
@@ -178,26 +182,136 @@ export default function TbmDetailSheet({
         return rows;
     }, [participants]);
 
+    // props로 전달된 서명 URL이 있으면 사용, 없으면 내부에서 로드
+    const [internalSignatureUrls, setInternalSignatureUrls] = useState<Map<string, string>>(new Map());
+    const signatureUrls = propSignatureUrls || internalSignatureUrls;
+
+    // 서명 이미지 미리보기 모달
+    const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [previewImageName, setPreviewImageName] = useState<string | null>(null);
+
+    useEffect(() => {
+        // props로 서명 URL이 전달되지 않은 경우에만 내부에서 로드
+        if (propSignatureUrls) return;
+
+        const loadSignatures = async () => {
+            const userIds = participants
+                .filter((p) => p.user_id && p.signed_at)
+                .map((p) => p.user_id!);
+
+            if (userIds.length === 0) {
+                setInternalSignatureUrls(new Map());
+                return;
+            }
+
+            const { data: profiles, error } = await supabase
+                .from("profiles")
+                .select("id, signature_bucket, signature_path")
+                .in("id", userIds);
+
+            if (error || !profiles) {
+                console.error("서명 정보 로드 실패:", error);
+                return;
+            }
+
+            const urlMap = new Map<string, string>();
+
+            // 병렬로 URL 생성
+            const urlPromises = profiles.map(async (profile) => {
+                if (profile.signature_bucket && profile.signature_path) {
+                    try {
+                        const { data, error: urlError } = await supabase.storage
+                            .from(profile.signature_bucket)
+                            .createSignedUrl(profile.signature_path, 60 * 60);
+
+                        if (!urlError && data) {
+                            return { userId: profile.id, url: data.signedUrl };
+                        } else {
+                            const { data: publicData } = supabase.storage
+                                .from(profile.signature_bucket)
+                                .getPublicUrl(profile.signature_path);
+                            return { userId: profile.id, url: publicData.publicUrl };
+                        }
+                    } catch (e) {
+                        console.error(`서명 URL 로드 실패 (${profile.id}):`, e);
+                        return null;
+                    }
+                }
+                return null;
+            });
+
+            const results = await Promise.all(urlPromises);
+            results.forEach((result) => {
+                if (result) {
+                    urlMap.set(result.userId, result.url);
+                }
+            });
+
+            setInternalSignatureUrls(urlMap);
+        };
+
+        loadSignatures();
+    }, [participants, propSignatureUrls]);
+
     const renderSignatureCell = (participant: TbmParticipant | null) => {
+        const hasSignature = !!participant?.signed_at;
+        const signatureUrl = participant?.user_id ? signatureUrls.get(participant.user_id) : null;
+
         if (variant === "pdf") {
+            if (signatureUrl) {
+                return (
+                    <div className="flex items-center justify-center">
+                        <img
+                            src={signatureUrl}
+                            alt={`${participant?.name || ""} 서명`}
+                            style={{
+                                maxWidth: "80px",
+                                maxHeight: "40px",
+                                objectFit: "contain",
+                            }}
+                        />
+                    </div>
+                );
+            }
             return (
                 <div className="flex items-center justify-center text-[16px] -mt-2 font-bold text-gray-900">
-                    {participant?.signed_at ? "✓" : ""}
+                    {hasSignature ? "✓" : ""}
                 </div>
             );
         }
+
+        // PDF 버전이 아닐 때만 클릭 가능하도록
 
         const canSign =
             !!participant &&
             participant.user_id === currentUserId &&
             !participant.signed_at;
 
+        // 서명 이미지가 있으면 이미지 표시
+        if (hasSignature && signatureUrl) {
+            return (
+                <div className="flex items-center justify-center w-[80px] h-[40px]">
+                    <img
+                        src={signatureUrl}
+                        alt={`${participant.name || ""} 서명`}
+                        className="max-w-[80px] max-h-[40px] object-contain cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewImageUrl(signatureUrl);
+                            setPreviewImageName(`${participant.name || ""} 서명`);
+                        }}
+                    />
+                </div>
+            );
+        }
+
+        // 서명 이미지가 없으면 체크박스 표시 (서명 이미지 크기에 맞춰 공간 확보)
         return (
-            <div className="flex items-center justify-center">
+            <div className="flex items-center justify-center w-[80px] h-[40px]">
                 <input
                     type="checkbox"
                     className="w-4 h-4 rounded border-gray-200 text-blue-600 focus:ring-blue-500"
-                    checked={!!participant?.signed_at}
+                    checked={hasSignature}
                     disabled={!canSign}
                     onChange={() => participant && onSign?.(participant)}
                 />
@@ -389,13 +503,13 @@ export default function TbmDetailSheet({
                         {/* Participant Rows */}
                         {groupedParticipants.map(([left, right], idx) => (
                             <tr key={idx}>
-                                <td style={{ ...pdfTdStyle, paddingTop: "4px", paddingRight: "32px", paddingBottom: "18px", paddingLeft: "32px", fontWeight: 500 }}>
+                                <td style={{ ...pdfTdStyle, paddingTop: "4px", paddingRight: "32px", paddingBottom: "18px", paddingLeft: "32px", fontWeight: 500, textAlign: "center" }}>
                                     {renderPdfText(left?.name)}
                                 </td>
                                 <td style={{ ...pdfBorderStyle, textAlign: "center", verticalAlign: "middle" }}>
                                     {renderSignatureCell(left)}
                                 </td>
-                                <td style={{ ...pdfTdStyle, paddingTop: "4px", paddingRight: "32px", paddingBottom: "18px", paddingLeft: "32px", fontWeight: 500 }}>
+                                <td style={{ ...pdfTdStyle, paddingTop: "4px", paddingRight: "32px", paddingBottom: "18px", paddingLeft: "32px", fontWeight: 500, textAlign: "center" }}>
                                     {renderPdfText(right?.name)}
                                 </td>
                                 <td style={{ ...pdfBorderStyle, textAlign: "center", verticalAlign: "middle" }}>
@@ -541,7 +655,13 @@ export default function TbmDetailSheet({
                 <div className="text-center font-bold py-2 md:py-2.5 border-b border-gray-200 bg-gray-50/50 text-gray-800 text-sm md:text-base">
                     참석자 확인
                 </div>
-                <table className="w-full text-xs md:text-sm border-collapse table-fixed">
+                <table className="w-full text-xs md:text-sm border-collapse">
+                    <colgroup>
+                        <col className="w-auto" />
+                        <col className="w-[100px] md:w-[120px]" />
+                        <col className="w-auto" />
+                        <col className="w-[100px] md:w-[120px]" />
+                    </colgroup>
                     <thead>
                         <tr className="border-b border-gray-200 bg-gray-50/80">
                             <th className="py-2 md:py-2.5 border-r border-gray-200 font-bold text-gray-700">이름</th>
@@ -553,19 +673,31 @@ export default function TbmDetailSheet({
                     <tbody>
                         {groupedParticipants.map(([left, right], idx) => (
                             <tr key={idx} className="border-b border-gray-200 last:border-b-0">
-                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">
+                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-center font-medium text-gray-900">
                                     {left?.name ? left.name : <EmptyValueIndicator />}
                                 </td>
-                                <td className="px-2 py-2 md:px-4 md:py-3 border-r border-gray-200 align-middle">{renderSignatureCell(left)}</td>
-                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-left font-medium text-gray-900">
+                                <td className="px-2 py-2 md:px-4 md:py-3 border-r border-gray-200 align-middle" style={{ minWidth: '100px', minHeight: '48px' }}>{renderSignatureCell(left)}</td>
+                                <td className="px-3 py-2 md:px-6 md:py-3 border-r border-gray-200 text-center font-medium text-gray-900">
                                     {right?.name ? right.name : <EmptyValueIndicator />}
                                 </td>
-                                <td className="px-2 py-2 md:px-4 md:py-3 align-middle">{renderSignatureCell(right)}</td>
+                                <td className="px-2 py-2 md:px-4 md:py-3 align-middle" style={{ minWidth: '100px', minHeight: '48px' }}>{renderSignatureCell(right)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
+
+            {/* 서명 이미지 미리보기 모달 */}
+            <ImagePreviewModal
+                isOpen={!!previewImageUrl}
+                onClose={() => {
+                    setPreviewImageUrl(null);
+                    setPreviewImageName(null);
+                }}
+                imageSrc={previewImageUrl}
+                imageAlt={previewImageName || "서명"}
+                fileName={previewImageName || undefined}
+            />
         </div>
     );
 }

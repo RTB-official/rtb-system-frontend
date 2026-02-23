@@ -1,3 +1,4 @@
+// src/components/board/BoardListSkeleton.tsx
 import SectionCard from "../ui/SectionCard";
 
 /** 게시판 목록 로딩 스켈레톤 - 카드 형태로 목록과 동일한 레이아웃 */

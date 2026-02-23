@@ -617,6 +617,52 @@ export async function generateTbmPdf({ tbmId, onError }: TbmPdfParams): Promise<
 
         if (!tbm) throw new Error("TBM 정보를 불러오지 못했습니다.");
 
+        // 서명 완료된 참가자들의 서명 이미지 URL 로드
+        const signatureUrls = new Map<string, string>();
+        const signedUserIds = (participants || [])
+            .filter((p) => p.user_id && p.signed_at)
+            .map((p) => p.user_id!);
+
+        if (signedUserIds.length > 0) {
+            const { supabase } = await import("./supabase");
+            const { data: profiles, error } = await supabase
+                .from("profiles")
+                .select("id, signature_bucket, signature_path")
+                .in("id", signedUserIds);
+
+            if (!error && profiles) {
+                const urlPromises = profiles.map(async (profile) => {
+                    if (profile.signature_bucket && profile.signature_path) {
+                        try {
+                            const { data, error: urlError } = await supabase.storage
+                                .from(profile.signature_bucket)
+                                .createSignedUrl(profile.signature_path, 60 * 60);
+
+                            if (!urlError && data) {
+                                return { userId: profile.id, url: data.signedUrl };
+                            } else {
+                                const { data: publicData } = supabase.storage
+                                    .from(profile.signature_bucket)
+                                    .getPublicUrl(profile.signature_path);
+                                return { userId: profile.id, url: publicData.publicUrl };
+                            }
+                        } catch (e) {
+                            console.error(`서명 URL 로드 실패 (${profile.id}):`, e);
+                            return null;
+                        }
+                    }
+                    return null;
+                });
+
+                const results = await Promise.all(urlPromises);
+                results.forEach((result) => {
+                    if (result) {
+                        signatureUrls.set(result.userId, result.url);
+                    }
+                });
+            }
+        }
+
         container = document.createElement("div");
         container.style.position = "fixed";
         container.style.left = "-10000px";
@@ -629,7 +675,7 @@ export async function generateTbmPdf({ tbmId, onError }: TbmPdfParams): Promise<
 
         root = createRoot(container);
 
-        // ✅ TBM은 캔버스로 “화면을 찍는” 방식이라
+        // ✅ TBM은 캔버스로 "화면을 찍는" 방식이라
         // CSS 폰트가 제대로 적용되어야 한글이 안 깨짐.
         // 그래서 fontFamily를 NanumGothic으로 강제.
         root.render(
@@ -648,6 +694,7 @@ export async function generateTbmPdf({ tbmId, onError }: TbmPdfParams): Promise<
                     tbm,
                     participants: participants || [],
                     variant: "pdf",
+                    signatureUrls,
                 })
             )
         );
@@ -658,6 +705,26 @@ export async function generateTbmPdf({ tbmId, onError }: TbmPdfParams): Promise<
             await (document as any).fonts.ready;
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // 서명 이미지 로딩 대기
+        if (signatureUrls.size > 0) {
+            const imagePromises: Promise<void>[] = [];
+            signatureUrls.forEach((url) => {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                const promise = new Promise<void>((resolve) => {
+                    img.onload = () => resolve();
+                    img.onerror = () => resolve(); // 실패해도 계속 진행
+                    img.src = url;
+                    // 타임아웃 설정 (5초)
+                    setTimeout(() => resolve(), 5000);
+                });
+                imagePromises.push(promise);
+            });
+            await Promise.all(imagePromises);
+            // 추가 대기 시간 (이미지 렌더링 완료 보장)
+            await new Promise((resolve) => setTimeout(resolve, 200));
+        }
 
         const sheet = container.querySelector("[data-tbm-sheet]") as HTMLElement | null;
         if (!sheet) throw new Error("TBM PDF 렌더링에 실패했습니다.");

@@ -1,8 +1,9 @@
+//libshared.ts
 // @ts-nocheck
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 /** 출장보고서/인보이스 등 공무팀 수신자 */
-export const INVOICE_EMAILS = ["invoice@rtb-kor.com"];
+export const INVOICE_EMAILS = ["invoicertb-kor.com"];
 export const CEO_EMAIL = "y.k@rtb-kor.com";
 
 export const escapeHtml = (s: string) =>
