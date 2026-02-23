@@ -36,7 +36,6 @@ type SortKey =
     | "color"
     | "primaryUser"
     | "insurer"
-    | "rentalStart"
     | "contractEnd"
     | "inspection"
     | "engineOil";
@@ -60,6 +59,8 @@ const emptyForm: VehicleForm = {
     inspection: "",
     engineOil: "",
     engineOilKm: "",
+    currentKm: "",
+    currentKmDate: "",
     repair: "",
     registrationBucket: "",
     registrationPath: "",
@@ -128,13 +129,11 @@ export default function VehiclesPage() {
         };
         const getDateValue = (row: VehicleRow, key: SortKey) => {
             const value =
-                key === "rentalStart"
-                    ? row.form.rentalStart
-                    : key === "contractEnd"
-                        ? row.form.contractEnd
-                        : key === "inspection"
-                            ? row.form.inspection
-                            : row.form.engineOil;
+                key === "contractEnd"
+                    ? row.form.contractEnd
+                    : key === "inspection"
+                        ? row.form.inspection
+                        : row.form.engineOil;
             if (!value) return Number.NEGATIVE_INFINITY;
             return new Date(value).getTime();
         };
@@ -456,17 +455,30 @@ export default function VehiclesPage() {
                                                     {isExpanded && (
                                                         <div className="space-y-2 border-t border-gray-100 px-4 py-4">
                                                             {row.form.color && <VehicleDetailRow label="색상" value={row.form.color} />}
-                                                            {row.form.primaryUser && <VehicleDetailRow label="주 사용자" value={row.form.primaryUser} />}
-                                                            {(row.form.rentalStart || row.form.contractEnd) && (
+                                                            {row.form.primaryUser && <VehicleDetailRow label="담당자" value={row.form.primaryUser} />}
+                                                            {row.form.contractEnd && (
                                                                 <VehicleDetailRow
-                                                                    label="대여"
-                                                                    value={`${row.form.rentalStart || "—"} ~ ${row.form.contractEnd || "—"}`}
+                                                                    label="계약 만료일"
+                                                                    value={row.form.contractEnd}
                                                                 />
                                                             )}
                                                             {row.form.insurer && <VehicleDetailRow label="보험사" value={row.form.insurer} />}
                                                             {row.form.inspection && <VehicleDetailRow label="검사 만료일" value={row.form.inspection} />}
                                                             {row.form.engineOil && <VehicleDetailRow label="엔진오일 정비" value={row.form.engineOil} />}
                                                             {row.form.engineOilKm && <VehicleDetailRow label="정비 km" value={formatWithCommas(row.form.engineOilKm)} />}
+                                                            {row.form.currentKm && (
+                                                                <VehicleDetailRow 
+                                                                    label="현재 km" 
+                                                                    value={
+                                                                        <div className="flex flex-col">
+                                                            <span>{formatWithCommas(row.form.currentKm)}</span>
+                                                            {row.form.currentKmDate && (
+                                                                <span className="text-xs text-gray-500">{row.form.currentKmDate}</span>
+                                                            )}
+                                                        </div>
+                                                                    } 
+                                                                />
+                                                            )}
                                                             {row.form.repair && <VehicleDetailRow label="기타수리" value={row.form.repair} />}
                                                         </div>
                                                     )}
@@ -525,22 +537,12 @@ export default function VehiclesPage() {
                                         {
                                             key: "primaryUser",
                                             label: renderSortLabel(
-                                                "주 사용자",
+                                                "담당자",
                                                 "primaryUser"
                                             ),
                                             width: "100px",
                                             render: (_, row: VehicleRow) =>
                                                 row.form.primaryUser ?? "",
-                                        },
-                                        {
-                                            key: "rentalStart",
-                                            label: renderSortLabel(
-                                                "대여 개시일",
-                                                "rentalStart"
-                                            ),
-                                            width: "110px",
-                                            render: (_, row: VehicleRow) =>
-                                                row.form.rentalStart ?? "",
                                         },
                                         {
                                             key: "contractEnd",
@@ -575,10 +577,28 @@ export default function VehiclesPage() {
                                         },
                                         {
                                             key: "engineOilKm",
-                                            label: "정비 km",
+                                            label: "오일 정비 km",
                                             width: "100px",
                                             render: (_, row: VehicleRow) =>
                                                 formatWithCommas(row.form.engineOilKm),
+                                        },
+                                        {
+                                            key: "currentKm",
+                                            label: "현재 km",
+                                            width: "120px",
+                                            render: (_, row: VehicleRow) => {
+                                                const km = formatWithCommas(row.form.currentKm);
+                                                const date = row.form.currentKmDate;
+                                                if (km && date) {
+                                                    return (
+                                                        <div className="flex flex-col">
+                                                            <span>{km}</span>
+                                                            <span className="text-xs text-gray-500">{date}</span>
+                                                        </div>
+                                                    );
+                                                }
+                                                return km || "";
+                                            },
                                         },
                                         {
                                             key: "repair",
@@ -701,22 +721,12 @@ export default function VehiclesPage() {
                             placeholder="예) 흰색, 검정"
                         />
                         <Input
-                            label="주 사용자"
+                            label="담당자"
                             value={editForm.primaryUser}
                             onChange={(v) =>
                                 setEditForm({ ...editForm, primaryUser: v })
                             }
                             placeholder="예) 홍길동"
-                        />
-                        <DatePicker
-                            label="대여 개시일"
-                            value={editForm.rentalStart}
-                            onChange={(v) =>
-                                setEditForm({ ...editForm, rentalStart: v })
-                            }
-                            placeholder="연도-월-일"
-                            minYear={2021}
-                            maxYear={2035}
                         />
                         <DatePicker
                             label="계약 만료일"
@@ -766,6 +776,30 @@ export default function VehiclesPage() {
                                 })
                             }
                             placeholder="예) 120000"
+                        />
+                        <Input
+                            label="현재 km"
+                            value={formatWithCommas(editForm.currentKm)}
+                            onChange={(v) => {
+                                const digits = onlyDigits(v);
+                                setEditForm({
+                                    ...editForm,
+                                    currentKm: digits,
+                                    // 현재 km를 입력하면 오늘 날짜 자동 설정
+                                    currentKmDate: digits ? new Date().toISOString().split('T')[0] : "",
+                                });
+                            }}
+                            placeholder="예) 150000"
+                        />
+                        <DatePicker
+                            label="현재 km 입력일"
+                            value={editForm.currentKmDate}
+                            onChange={(v) =>
+                                setEditForm({ ...editForm, currentKmDate: v })
+                            }
+                            placeholder="연도-월-일"
+                            minYear={2021}
+                            maxYear={2035}
                         />
                         <Input
                             label="기타수리"
