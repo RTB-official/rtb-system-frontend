@@ -1,33 +1,53 @@
+//lib/recipients.ts
 // @ts-nocheck
-import {
-  normalize,
-  formatDateRange,
-  formatTimeRange,
-  buildEmailHtml,
-  buildEmailText,
-  escapeHtml,
-} from "./shared.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { INVOICE_EMAILS, CEO_EMAIL, fetchUserEmail } from "./shared.ts";
 
-const SUBJECT_PREFIX = "[RTB 통합 관리 시스템]";
-
-export function buildCalendarContent(
+export async function getRecipients(
+  admin: ReturnType<typeof createClient>,
+  table: string,
+  operation: string,
   record: Record<string, any>,
-  actorName: string
-): { subject: string; text: string; html: string; skip: false } {
-  const subject = `${SUBJECT_PREFIX} ${actorName}님이 일정을 등록했습니다.`;
-  const title = normalize(record.title) || "일정";
-  const date = formatDateRange(record.start_date, record.end_date);
-  const time = formatTimeRange(record.start_time, record.end_time, record.all_day);
-  const summary = `${actorName}님이 ${date || "일정 날짜"}에 "${title}" 일정을 등록했습니다.`;
-  const baseDetails: string[] = [];
-  if (time) baseDetails.push(`시간: ${time}`);
-  if (Array.isArray(record.attendees) && record.attendees.length > 0) {
-    baseDetails.push(`참여자: ${record.attendees.join(", ")}`);
-  }
-  const desc = normalize(record.description);
-  if (desc) baseDetails.push(`내용: ${desc}`);
+  changes?: Record<string, { before?: unknown; after?: unknown }>
+): Promise<string[]> {
+  const op = (operation || "").toUpperCase();
 
-  const text = buildEmailText(summary, baseDetails, []);
-  const html = buildEmailHtml(subject, summary, baseDetails, [], escapeHtml);
-  return { subject, text, html, skip: false };
+  if (table === "calendar_events" && op === "INSERT") return INVOICE_EMAILS;
+  if (table === "work_logs") return INVOICE_EMAILS;
+  if (table === "work_log_entries" || table === "work_log_expenses" || table === "work_log_materials") {
+    return INVOICE_EMAILS;
+  }
+  if (table === "vacations") {
+    if (op === "INSERT") return [CEO_EMAIL];
+    if (op === "UPDATE" && changes?.status?.after === "approved") {
+      const email = await fetchUserEmail(admin, record?.user_id);
+      if (email) return [email];
+    }
+    return [];
+  }
+  if (table === "notifications") {
+    let kind: string | null = null;
+    const metaRaw = record?.meta;
+    if (typeof metaRaw === "string") {
+      try {
+        const m = JSON.parse(metaRaw);
+        kind = m?.kind ?? null;
+      } catch {
+        kind = null;
+      }
+    } else if (metaRaw && typeof metaRaw === "object") {
+      kind = metaRaw?.kind ?? null;
+    }
+    if (kind === "passport_expiry_within_1y" || kind === "member_passport_expiry") {
+      const email = await fetchUserEmail(admin, record?.user_id);
+      const list = [...INVOICE_EMAILS];
+      if (email && !list.includes(email)) list.push(email);
+      return list;
+    }
+    if (kind === "vehicle_inspection_due_2m" || kind === "vehicle_inspection_due_1m") {
+      return INVOICE_EMAILS;
+    }
+    return [];
+  }
+  return INVOICE_EMAILS;
 }

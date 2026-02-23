@@ -1,3 +1,4 @@
+// src/components/icons/Icons.tsx
 // React import 제거: 최신 JSX 런타임 사용
 
 export const IconRTBLogo = (props: { className?: string }) => (

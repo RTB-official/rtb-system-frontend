@@ -22,6 +22,9 @@ export type Member = {
     passportPhotoBucket: string;
     passportPhotoPath: string;
     passportPhotoName: string;
+    signatureBucket: string;
+    signaturePath: string;
+    signatureName: string;
 };
 
 export type MembersTab = "ALL" | "ADMIN" | "STAFF";

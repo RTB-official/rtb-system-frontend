@@ -1,3 +1,4 @@
+// src/components/board/BoardEditSkeleton.tsx
 import SkeletonSectionCard from "../common/skeletons/SkeletonSectionCard";
 
 /** 게시글 수정 페이지 로딩 스켈레톤 */

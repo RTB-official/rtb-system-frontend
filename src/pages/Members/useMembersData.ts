@@ -147,7 +147,8 @@ export function useMembersData() {
             .select(
                 `
                 id, username, name, role, department, email, join_date, birth_date, phone_number, address, position,
-                profile_photo_bucket, profile_photo_path, profile_photo_name, created_at
+                profile_photo_bucket, profile_photo_path, profile_photo_name,
+                signature_bucket, signature_path, signature_name, created_at
             `,
             )
             .order("created_at", { ascending: true });
@@ -242,6 +243,15 @@ export function useMembersData() {
                 passportPhotoName: shouldMaskPassport
                     ? ""
                     : (pp?.passport_image_name ?? ""),
+                signatureBucket: shouldMaskOtherFields
+                    ? ""
+                    : (p.signature_bucket ?? ""),
+                signaturePath: shouldMaskOtherFields
+                    ? ""
+                    : (p.signature_path ?? ""),
+                signatureName: shouldMaskOtherFields
+                    ? ""
+                    : (p.signature_name ?? ""),
             };
         });
 

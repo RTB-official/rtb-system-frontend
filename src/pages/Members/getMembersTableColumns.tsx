@@ -1,3 +1,4 @@
+// src/pages/Members/getMembersTableColumns.tsx
 import type { TableColumn } from "../../components/common/Table";
 import Avatar from "../../components/common/Avatar";
 import Chip from "../../components/ui/Chip";

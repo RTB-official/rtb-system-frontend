@@ -50,8 +50,6 @@ export async function getWorkLogIsDraft(workLogId?: number): Promise<boolean> {
   return data?.is_draft === true;
 }
 
-
-
 const roleOrder: Record<string, number> = {
   대표: 1,
   감사: 2,
@@ -75,9 +73,11 @@ export async function getWorkLogExtras(admin: SupabaseClient, workLogId?: number
       .select("date_from, time_from, date_to, time_to, desc_type, details, note, move_from, move_to")
       .eq("work_log_id", workLogId),
   ]);
+
   const participants = Array.from(
     new Set((personsRes.data || []).map((p: any) => normalize(p.person_name)).filter(Boolean))
   );
+
   let period = "";
   let entries: string[] = [];
   if (entriesRes.data && entriesRes.data.length > 0) {
@@ -97,20 +97,24 @@ export async function getWorkLogExtras(admin: SupabaseClient, workLogId?: number
     period = formatDateRange(minDate, maxDate);
     entries = sortedEntries.slice(0, 5).map((entry: any) => formatEntryLine(entry));
   }
+
   let leaderName = "";
   if (participants.length > 0) {
     const { data: profiles } = await admin
       .from("profiles")
       .select("name, position, role, is_team_lead")
       .in("name", participants);
+
     const profileMap = new Map(
       (profiles || []).map((p: any) => [
         p.name,
         { isTeamLead: !!p.is_team_lead, position: normalize(p.position || p.role) },
       ])
     );
+
     const leaders = participants.filter((name) => profileMap.get(name)?.isTeamLead);
     const candidates = leaders.length > 0 ? leaders : participants;
+
     leaderName =
       candidates.sort((a, b) => {
         const rankA = roleOrder[profileMap.get(a)?.position || ""] ?? 999;
@@ -118,6 +122,7 @@ export async function getWorkLogExtras(admin: SupabaseClient, workLogId?: number
         return rankA - rankB;
       })[0] || "";
   }
+
   return { participants, leaderName, period, entries, entryCount: entriesRes.data?.length ?? 0 };
 }
 
@@ -190,12 +195,24 @@ type WorkLogEntrySummary = {
 
 function formatEntryLine(entry: WorkLogEntrySummary): string {
   const date = formatDateRange(entry.date_from, entry.date_to);
-  const time = formatTimeRange(entry.time_from, entry.time_to, false);
+
+  // ✅ HH:mm 까지만 표시
+  const trimToMinute = (t?: string) => {
+    const v = normalize(t);
+    if (!v) return "";
+    return v.length >= 5 ? v.slice(0, 5) : v; // "HH:mm"
+  };
+
+  const from = trimToMinute(entry.time_from);
+  const to = trimToMinute(entry.time_to);
+  const time = from && to ? `${from} ~ ${to}` : from || to;
+
   const type = normalize(entry.desc_type) || "작업";
   const detail = normalize(entry.details);
   const note = normalize(entry.note);
   const moveFrom = normalize(entry.move_from);
   const moveTo = normalize(entry.move_to);
+
   let line = [[date, time].filter(Boolean).join(" "), type].filter(Boolean).join(" · ");
   if (moveFrom || moveTo) line += ` (${moveFrom || "-"} → ${moveTo || "-"})`;
   if (detail) line += ` | ${detail}`;
@@ -242,7 +259,6 @@ const materialChangeLabels: Record<string, string> = {
   unit: "단위",
   updated_at: "수정 시각",
 };
-
 const personChangeLabels: Record<string, string> = {
   person_name: "참가자",
   role: "역할",
@@ -250,7 +266,6 @@ const personChangeLabels: Record<string, string> = {
   note: "비고",
   updated_at: "수정 시각",
 };
-
 const receiptChangeLabels: Record<string, string> = {
   vendor: "상호",
   receipt_date: "영수증 날짜",
@@ -265,6 +280,13 @@ const detailSkipKeys = new Set(["id", "created_at", "is_draft", "work_log_id"]);
 type DetailLineWithType = { text: string; type: "add" | "delete" | "update"; category: string; sortKey?: string };
 const SECTION_ORDER = ["출장보고서", "작업 일지", "지출 내역", "소모자재", "참가자", "영수증"] as const;
 const PAIR_SECTIONS = new Set(["작업 일지", "지출 내역", "소모자재"]);
+
+// ✅ 화살표(⬇)를 "~" 위치에 맞춰 정렬 (선행 공백 포함 문자열 생성)
+function buildArrowLineAlignedToTilde(line: string): string {
+  const idx = String(line || "").indexOf("~");
+  // "~" 문자의 시작 위치에 맞춤 (필요하면 +1 로 미세조정 가능)
+  return idx >= 0 ? " ".repeat(idx) + "⬇" : "⬇";
+}
 
 export function formatBatchedEventDetailLines(ev: {
   table: string;
@@ -307,7 +329,7 @@ export function formatBatchedEventDetailLines(ev: {
     }
 
     if (op === "UPDATE") {
-      // ✅ before/after 한 줄 요약으로 표시
+      // ✅ before/after 한 줄 요약(3줄)로 표시
       const beforeRec: any = { ...(record as any) };
       const afterRec: any = { ...(record as any) };
 
@@ -322,9 +344,9 @@ export function formatBatchedEventDetailLines(ev: {
       const afterLine = formatEntryLine(afterRec as WorkLogEntrySummary);
 
       if (beforeLine && afterLine && beforeLine !== afterLine) {
-        push(`${beforeLine} → ${afterLine} · 수정됨`, "update", "작업 일지", sortKey);
+        const arrowLine = buildArrowLineAlignedToTilde(beforeLine);
+        push(`${beforeLine}\n${arrowLine}\n${afterLine} · 수정됨`, "update", "작업 일지", sortKey);
       } else {
-        // fallback: 기존 방식(필드 변경)
         build(entryChangeLabels).forEach((l) => push(l, "update", "작업 일지"));
       }
       return lines;
@@ -337,7 +359,6 @@ export function formatBatchedEventDetailLines(ev: {
 
     return lines;
   }
-
 
   if (table === "work_log_expenses") {
     const date = formatKoreanDate(record.expense_date);
@@ -364,7 +385,6 @@ export function formatBatchedEventDetailLines(ev: {
     return lines;
   }
 
-  // 참가자(출장 인원) 관련
   if (table === "work_log_persons" || table === "work_log_entry_persons") {
     const name = normalize(record.person_name) || normalize(record.name) || "-";
     const sortKey = `${name}|${normalize(record.role)}|${normalize(record.position)}`;
@@ -374,7 +394,6 @@ export function formatBatchedEventDetailLines(ev: {
     return lines;
   }
 
-  // 영수증/첨부 관련
   if (table === "work_log_receipt") {
     const vendor = normalize(record.vendor) || normalize(record.store) || "-";
     const amount = record.amount != null ? Number(record.amount).toLocaleString("ko-KR") + "원" : "-";
@@ -417,10 +436,7 @@ export async function buildBatchedReportEmail(
     (ev: any) => String(ev?.table || "") === "work_log_entries" && String(ev?.operation || "").toUpperCase() === "DELETE"
   ).length;
 
-  const looksLikeCascadeDelete =
-    allDeleteOnly &&
-    (distinctTables >= 2 || deleteCountEntries >= 2 || (events?.length ?? 0) >= 6);
-
+  const looksLikeCascadeDelete = allDeleteOnly && (distinctTables >= 2 || deleteCountEntries >= 2 || (events?.length ?? 0) >= 6);
   if (looksLikeCascadeDelete) return { subject: "", text: "", html: "" };
 
   // ✅ 1) work_logs가 이미 없어도(커밋 후/캐스케이드) 메일 만들지 않음
@@ -431,13 +447,12 @@ export async function buildBatchedReportEmail(
     // 체크 실패 시엔 계속 진행
   }
 
-
   const info = await fetchWorkLogInfo(admin, workLogId);
   const author = info.author || "사용자";
   const { participants, leaderName, period } = await getWorkLogExtras(admin, workLogId);
   const title = info.subject || "출장보고서";
 
-  // ✅ 2) events에 work_logs INSERT가 없어도 "첫 발송인지"로 작성/수정 판정
+  // ✅ 2) "첫 발송인지"로 작성/수정 판정
   const { count: sentCount } = await admin
     .from("email_events")
     .select("id", { count: "exact", head: true })
@@ -446,7 +461,7 @@ export async function buildBatchedReportEmail(
 
   const isCreate = (sentCount ?? 0) === 0;
 
-  // ✅ 작성일 때는 변경 섹션(작업일지/지출/소모자재 추가됨 등) 자체를 만들지 않음
+  // ✅ 작성일 때는 변경 섹션 자체를 만들지 않음
   const changeLines: DetailLineWithType[] = [];
   if (!isCreate) {
     for (const ev of events) changeLines.push(...formatBatchedEventDetailLines(ev));
@@ -480,7 +495,9 @@ export async function buildBatchedReportEmail(
         const before = deletes[i].text.replace(/\s*→\s*삭제됨$/, "").trim();
         const after = adds[i].text.replace(/\s*추가됨$/, "").trim();
         if (before === after) continue;
-        merged.push({ text: `${before} → ${after}`, type: "update", category: section });
+
+        const arrowLine = buildArrowLineAlignedToTilde(before);
+        merged.push({ text: `${before}\n${arrowLine}\n${after}`, type: "update", category: section });
       }
 
       bySection.set(section, [...updates, ...merged, ...deletes.slice(pairCount), ...adds.slice(pairCount)]);
@@ -507,7 +524,7 @@ export async function buildBatchedReportEmail(
     `작업 기간: ${period || "-"}`,
   ];
 
-  // ✅ TEXT: 작성일 때는 변경/섹션을 아예 출력하지 않음
+  // ✅ TEXT: 작성일 때는 변경 섹션 출력 안 함
   const textParts: string[] = [summary, ...headerLines];
 
   if (!isCreate) {
@@ -517,7 +534,15 @@ export async function buildBatchedReportEmail(
       if (!items || items.length === 0) continue;
       textParts.push("", section);
       items.sort(typeOrder);
-      for (const x of items) textParts.push(`  • ${x.text}`);
+
+      // ✅ 멀티라인 bullet 들여쓰기(화살표 정렬 유지)
+      for (const x of items) {
+        const firstPrefix = "  • ";
+        const nextPrefix = "    ";
+        const lines = String(x.text || "").split("\n");
+        const formatted = lines.map((ln, i) => (i === 0 ? firstPrefix : nextPrefix) + ln).join("\n");
+        textParts.push(formatted);
+      }
     }
   }
 
@@ -525,30 +550,39 @@ export async function buildBatchedReportEmail(
 
   // ✅ HTML 섹션(수정일 때만)
   const colorByType = { add: "#059669", delete: "#dc2626", update: "#2563eb" as const };
-  let htmlSections = "";
 
+  // ✅ HTML: 줄바꿈 + 선행 공백 보존(&nbsp;)
+  const htmlPreserveLeadingSpaces = (escaped: string) =>
+    escaped
+      .split("\n")
+      .map((line) => line.replace(/^( +)/, (m) => "&nbsp;".repeat(m.length)))
+      .join("<br/>");
+
+  let htmlSections = "";
   if (!isCreate) {
     for (const section of SECTION_ORDER) {
       const items = bySection.get(section);
       if (!items || items.length === 0) continue;
       items.sort(typeOrder);
+
       const lis = items
-        .map(
-          (x) =>
-            `<li style="margin:4px 0;color:${colorByType[x.type]};font-size:15px;line-height:1.6;">${escapeHtml(
-              x.text
-            )}</li>`
-        )
+        .map((x) => {
+          const escaped = escapeHtml(String(x.text || ""));
+          const safe = htmlPreserveLeadingSpaces(escaped);
+          return `<li style="margin:4px 0;color:${colorByType[x.type]};font-size:15px;line-height:1.6;white-space:normal;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;">${safe}</li>`;
+        })
         .join("");
-      htmlSections += `<div style="margin-top:14px;font-weight:700;color:#374151;font-size:15px;">${escapeHtml(
-        section
-      )}</div><ul style="margin:6px 0 0 18px;list-style:disc;padding-left:20px;">${lis}</ul>`;
+
+      htmlSections +=
+        `<div style="margin-top:14px;font-weight:700;color:#374151;font-size:15px;">${escapeHtml(section)}</div>` +
+        `<ul style="margin:6px 0 0 18px;list-style:disc;padding-left:20px;">${lis}</ul>`;
     }
   }
 
-  const baseHtmlList = `<ul style="margin:10px 0 0 18px;list-style:disc;padding-left:20px;font-size:16px;line-height:1.7;">${headerLines
-    .map((item) => `<li style="margin:4px 0;color:#1f2937;">${escapeHtml(item)}</li>`)
-    .join("")}</ul>`;
+  const baseHtmlList =
+    `<ul style="margin:10px 0 0 18px;list-style:disc;padding-left:20px;font-size:16px;line-height:1.7;">` +
+    headerLines.map((item) => `<li style="margin:4px 0;color:#1f2937;">${escapeHtml(item)}</li>`).join("") +
+    `</ul>`;
 
   const htmlDetails =
     baseHtmlList +
@@ -596,9 +630,6 @@ export async function buildBatchedReportEmail(
   return { subject, text, html };
 }
 
-
-
-
 export async function buildWorkLogContent(
   table: string,
   record: Record<string, any>,
@@ -644,7 +675,6 @@ export async function buildWorkLogContent(
       ? `${actorName}님이 출장보고서를 수정했습니다.`
       : `${actorName}님이 출장보고서를 등록했습니다.`;
 
-
     const title = normalize(record.subject) || "출장보고서";
     const vessel = normalize(record.vessel);
     const location = normalize(record.location);
@@ -687,26 +717,44 @@ export async function buildWorkLogContent(
 
   if (table === "work_log_entries" || table === "work_log_expenses" || table === "work_log_materials") {
     const workLogId = Number(record?.work_log_id);
+
+    // 1) 임시저장 상태면 단건 메일은 스킵
     if (workLogId && admin && (await getWorkLogIsDraft(workLogId))) {
       return { subject: "", text: "", html: "", skip: true };
+    }
+
+    // 2) ✅ 핵심: 아직 한번도 발송된 적이 없는 work_log라면(=첫 제출/첫 작성 단계)
+    //    entries/expenses/materials 단건 "수정" 메일은 보내지 않음.
+    //    (첫 메일은 buildBatchedReportEmail()의 "작성했습니다" 1통만 가도록)
+    if (workLogId && admin) {
+      const { count: sentCount } = await admin
+        .from("email_events")
+        .select("id", { count: "exact", head: true })
+        .eq("work_log_id", workLogId)
+        .not("sent_at", "is", null);
+
+      if ((sentCount ?? 0) === 0) {
+        return { subject: "", text: "", html: "", skip: true };
+      }
     }
   }
 
   if (table === "work_log_entries") {
     const workLogId = Number(record.work_log_id);
     if (!admin) return { subject: "", text: "", html: "", skip: true };
+
     const { participants, leaderName, period } = await getWorkLogExtras(admin, workLogId);
     const info = await fetchWorkLogInfo(admin, workLogId);
     const title = info.subject || "출장보고서";
     const entryActor = info.author || (await fetchUserName(record.user_id)) || actorName;
+
     const isDelete = op === "DELETE";
     const isUpdate = op === "UPDATE" || (hasChanges && !isDelete) || updatedDifferent;
-    if (isDelete) {
-      return { subject: "", text: "", html: "", skip: true };
-    }
-    let subject: string, summary: string;
-    subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
-    summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
+    if (isDelete) return { subject: "", text: "", html: "", skip: true };
+
+    const subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
+    const summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
+
     const baseDetails = [
       `작성자: ${info.author || entryActor || "-"}`,
       `출장목적: ${title || "-"}`,
@@ -715,8 +763,12 @@ export async function buildWorkLogContent(
       `참가자: ${participants.length > 0 ? participants.join(", ") : "-"}`,
       `작업 기간: ${period || "-"}`,
     ];
+
     const entryDate = formatDateRange(record.date_from, record.date_to);
+
+    // ✅ 단건 알림은 기존 formatTimeRange 유지(원하면 여기에도 HH:mm 적용 가능)
     const entryTime = formatTimeRange(record.time_from, record.time_to, record.all_day);
+
     baseDetails.push(`작업 유형: ${normalize(record.desc_type) || "-"}`);
     if (entryDate) baseDetails.push(`작업 일자: ${entryDate}`);
     if (entryTime) baseDetails.push(`작업 시간: ${entryTime}`);
@@ -727,6 +779,7 @@ export async function buildWorkLogContent(
 
     const entryChangeLines = isUpdate ? buildChangeLines(changes, entryChangeLabels, defaultSkipChangeKeys) : [];
     let changeDetails: string[] = entryChangeLines.length > 0 ? ["작업 일지 변경 내용:", ...entryChangeLines] : [];
+
     if (isUpdate && changeDetails.length === 0) {
       const snapshot: string[] = [];
       if (entryDate) snapshot.push(`작업 일자: ${entryDate}`);
@@ -745,6 +798,7 @@ export async function buildWorkLogContent(
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
+
     const text = buildEmailText(summary, baseDetails, changeDetails, action);
     const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
     return { subject, text, html, skip: false };
@@ -753,17 +807,18 @@ export async function buildWorkLogContent(
   if (table === "work_log_expenses") {
     const workLogId = Number(record.work_log_id);
     if (!admin) return { subject: "", text: "", html: "", skip: true };
+
     const info = await fetchWorkLogInfo(admin, workLogId);
     const title = info.subject || "출장보고서";
     const entryActor = info.author || (await fetchUserName(record.user_id)) || actorName;
+
     const isDelete = op === "DELETE";
     const isUpdate = !isDelete && (op === "UPDATE" || hasChanges || updatedDifferent);
-    if (isDelete) {
-      return { subject: "", text: "", html: "", skip: true };
-    }
-    let subject: string, summary: string;
-    subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
-    summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
+    if (isDelete) return { subject: "", text: "", html: "", skip: true };
+
+    const subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
+    const summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
+
     const baseDetails = [`출장목적: ${title || "-"}`];
     baseDetails.push(`날짜: ${formatKoreanDate(record.expense_date)}`);
     baseDetails.push(`유형: ${normalize(record.expense_type) || "-"}`);
@@ -772,6 +827,7 @@ export async function buildWorkLogContent(
 
     const expenseChangeLines = isUpdate ? buildChangeLines(changes, expenseChangeLabels, defaultSkipChangeKeys) : [];
     let changeDetails: string[] = expenseChangeLines.length > 0 ? ["지출 내역 변경 내용:", ...expenseChangeLines] : [];
+
     if (isUpdate && changeDetails.length === 0) {
       const snapshot: string[] = [
         `날짜: ${formatKoreanDate(record.expense_date) || "-"}`,
@@ -786,6 +842,7 @@ export async function buildWorkLogContent(
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
+
     const text = buildEmailText(summary, baseDetails, changeDetails, action);
     const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
     return { subject, text, html, skip: false };
@@ -794,17 +851,18 @@ export async function buildWorkLogContent(
   if (table === "work_log_materials") {
     const workLogId = Number(record.work_log_id);
     if (!admin) return { subject: "", text: "", html: "", skip: true };
+
     const info = await fetchWorkLogInfo(admin, workLogId);
     const title = info.subject || "출장보고서";
     const entryActor = info.author || (await fetchUserName(record.user_id)) || actorName;
+
     const isDelete = op === "DELETE";
     const isUpdate = !isDelete && (op === "UPDATE" || hasChanges || updatedDifferent);
-    if (isDelete) {
-      return { subject: "", text: "", html: "", skip: true };
-    }
-    let subject: string, summary: string;
-    subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
-    summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
+    if (isDelete) return { subject: "", text: "", html: "", skip: true };
+
+    const subject = `${SUBJECT_PREFIX} ${entryActor}님이 출장보고서를 수정했습니다.`;
+    const summary = `${entryActor}님이 "${title}" 출장보고서를 수정했습니다.`;
+
     const baseDetails = [`출장목적: ${title || "-"}`];
     baseDetails.push(`자재명: ${normalize(record.material_name) || "-"}`);
     baseDetails.push(`수량: ${record.qty != null ? String(record.qty) : "-"}`);
@@ -812,6 +870,7 @@ export async function buildWorkLogContent(
 
     const materialChangeLines = isUpdate ? buildChangeLines(changes, materialChangeLabels, defaultSkipChangeKeys) : [];
     let changeDetails: string[] = materialChangeLines.length > 0 ? ["소모자재 변경 내용:", ...materialChangeLines] : [];
+
     if (isUpdate && changeDetails.length === 0) {
       const snapshot: string[] = [
         `자재명: ${normalize(record.material_name) || "-"}`,
@@ -825,6 +884,7 @@ export async function buildWorkLogContent(
       Number.isFinite(workLogId) && workLogId > 0
         ? { label: "보고서 바로가기", url: `${REPORT_BASE_URL}/report/${workLogId}` }
         : undefined;
+
     const text = buildEmailText(summary, baseDetails, changeDetails, action);
     const html = buildEmailHtml(subject, summary, baseDetails, changeDetails, escapeHtml, action);
     return { subject, text, html, skip: false };

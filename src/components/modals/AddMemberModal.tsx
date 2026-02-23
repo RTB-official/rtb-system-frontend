@@ -6,6 +6,7 @@ import DatePicker from "../ui/DatePicker";
 import Input from "../common/Input";
 import Select from "../common/Select";
 import Avatar from "../common/Avatar";
+import { supabase } from "../../lib/supabase";
 
 type Props = {
     isOpen: boolean;
@@ -26,6 +27,7 @@ type Props = {
         passportExpiry: string; // YYMMDD (예: 251227)
         profilePhotoFile?: File | null;
         passportPhotoFile?: File | null;
+        signatureFile?: File | null;
     }) => void;
 };
 
@@ -50,11 +52,16 @@ export default function AddMemberModal({
     const [passportExpiry, setPassportExpiry] = useState("");
     const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
     const [passportPhotoFile, setPassportPhotoFile] = useState<File | null>(null);
+    const [signatureFile, setSignatureFile] = useState<File | null>(null);
+    const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+    const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
 
     const profilePhotoLabel =
         profilePhotoFile?.name || member?.profilePhotoName || "";
     const passportPhotoLabel =
         passportPhotoFile?.name || member?.passportPhotoName || "";
+    const signatureLabel =
+        signatureFile?.name || member?.signatureName || "";
 
     const normalizeDateForPicker = (v?: string | null) => {
         const s = (v || "").trim();
@@ -113,6 +120,7 @@ export default function AddMemberModal({
             setPassportExpiry(member.passportExpiry || "");
             setProfilePhotoFile(null);
             setPassportPhotoFile(null);
+            setSignatureFile(null);
         } else {
             setJoinDate("");
             setBirthDate("");
@@ -127,9 +135,107 @@ export default function AddMemberModal({
             setPassportExpiry("");
             setProfilePhotoFile(null);
             setPassportPhotoFile(null);
+            setSignatureFile(null);
         }
     }, [member, isOpen]);
 
+    // 증명사진 썸네일 URL 관리
+    useEffect(() => {
+        let objectUrl: string | null = null;
+        let signedUrl: string | null = null;
+
+        const loadThumbnail = async () => {
+            // 새로 선택한 파일이 있으면 File 객체에서 썸네일 생성
+            if (profilePhotoFile) {
+                objectUrl = URL.createObjectURL(profilePhotoFile);
+                setProfilePhotoUrl(objectUrl);
+                return;
+            }
+
+            // 기존 파일이 있으면 Supabase에서 URL 가져오기
+            if (member?.profilePhotoBucket && member?.profilePhotoPath) {
+                try {
+                    const { data, error } = await supabase.storage
+                        .from(member.profilePhotoBucket)
+                        .createSignedUrl(member.profilePhotoPath, 60 * 60); // 1시간 유효
+                    
+                    if (!error && data) {
+                        signedUrl = data.signedUrl;
+                        setProfilePhotoUrl(signedUrl);
+                    } else {
+                        // signed URL 실패 시 public URL 시도
+                        const { data: publicData } = supabase.storage
+                            .from(member.profilePhotoBucket)
+                            .getPublicUrl(member.profilePhotoPath);
+                        setProfilePhotoUrl(publicData.publicUrl);
+                    }
+                } catch (error) {
+                    console.error("증명사진 URL 로드 실패:", error);
+                    setProfilePhotoUrl(null);
+                }
+            } else {
+                setProfilePhotoUrl(null);
+            }
+        };
+
+        loadThumbnail();
+
+        // cleanup: object URL 정리
+        return () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [profilePhotoFile, member?.profilePhotoBucket, member?.profilePhotoPath]);
+
+    // 서명 썸네일 URL 관리
+    useEffect(() => {
+        let objectUrl: string | null = null;
+        let signedUrl: string | null = null;
+
+        const loadThumbnail = async () => {
+            // 새로 선택한 파일이 있으면 File 객체에서 썸네일 생성
+            if (signatureFile) {
+                objectUrl = URL.createObjectURL(signatureFile);
+                setSignatureUrl(objectUrl);
+                return;
+            }
+
+            // 기존 파일이 있으면 Supabase에서 URL 가져오기
+            if (member?.signatureBucket && member?.signaturePath) {
+                try {
+                    const { data, error } = await supabase.storage
+                        .from(member.signatureBucket)
+                        .createSignedUrl(member.signaturePath, 60 * 60); // 1시간 유효
+                    
+                    if (!error && data) {
+                        signedUrl = data.signedUrl;
+                        setSignatureUrl(signedUrl);
+                    } else {
+                        // signed URL 실패 시 public URL 시도
+                        const { data: publicData } = supabase.storage
+                            .from(member.signatureBucket)
+                            .getPublicUrl(member.signaturePath);
+                        setSignatureUrl(publicData.publicUrl);
+                    }
+                } catch (error) {
+                    console.error("서명 URL 로드 실패:", error);
+                    setSignatureUrl(null);
+                }
+            } else {
+                setSignatureUrl(null);
+            }
+        };
+
+        loadThumbnail();
+
+        // cleanup: object URL 정리
+        return () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+    }, [signatureFile, member?.signatureBucket, member?.signaturePath]);
 
     const handleSubmit = () => {
         const payload = {
@@ -147,6 +253,7 @@ export default function AddMemberModal({
             passportExpiry,
             profilePhotoFile,
             passportPhotoFile,
+            signatureFile,
         };
         onSubmit?.(payload);
         onClose();
@@ -368,6 +475,7 @@ export default function AddMemberModal({
                             </label>
                             <input
                                 type="file"
+                                accept="image/*"
                                 onChange={(e) =>
                                     setProfilePhotoFile(
                                         e.target.files?.[0] ?? null
@@ -375,11 +483,69 @@ export default function AddMemberModal({
                                 }
                                 className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
                             />
-                            <div className="mt-1 text-[12px] text-gray-500">
-                                {profilePhotoLabel
-                                    ? `현재 파일: ${profilePhotoLabel}`
-                                    : "현재 파일 없음"}
-                            </div>
+                            {profilePhotoUrl && (
+                                <div className="mt-3 flex items-center gap-3">
+                                    <img
+                                        src={profilePhotoUrl}
+                                        alt="증명사진 썸네일"
+                                        className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-[12px] font-medium text-gray-900">
+                                            {profilePhotoLabel
+                                                ? `현재 파일: ${profilePhotoLabel}`
+                                                : "현재 파일 없음"}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            {!profilePhotoUrl && (
+                                <div className="mt-1 text-[12px] text-gray-500">
+                                    {profilePhotoLabel
+                                        ? `현재 파일: ${profilePhotoLabel}`
+                                        : "현재 파일 없음"}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 서명 */}
+                        <div className="mt-6">
+                            <label className="text-[12px] font-medium text-gray-900 block mb-2">
+                                서명
+                            </label>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) =>
+                                    setSignatureFile(
+                                        e.target.files?.[0] ?? null
+                                    )
+                                }
+                                className="block w-full text-sm text-gray-700 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                            />
+                            {signatureUrl && (
+                                <div className="mt-3 flex items-center gap-3">
+                                    <img
+                                        src={signatureUrl}
+                                        alt="서명 썸네일"
+                                        className="w-20 h-20 object-contain rounded-lg border border-gray-200 bg-white"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="text-[12px] font-medium text-gray-900">
+                                            {signatureLabel
+                                                ? `현재 파일: ${signatureLabel}`
+                                                : "현재 파일 없음"}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            {!signatureUrl && (
+                                <div className="mt-1 text-[12px] text-gray-500">
+                                    {signatureLabel
+                                        ? `현재 파일: ${signatureLabel}`
+                                        : "현재 파일 없음"}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

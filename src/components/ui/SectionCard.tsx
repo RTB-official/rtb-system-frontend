@@ -1,3 +1,4 @@
+// src/components/ui/SectionCard.tsx
 import type { ReactNode } from "react";
 
 interface SectionCardProps {

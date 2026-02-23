@@ -1,3 +1,4 @@
+// src/pages/Board/BoardListPage.tsx
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -174,7 +175,9 @@ export default function BoardListPage() {
                             </div>
                         ) : (
                             posts.map((row) => {
-                                const isOwner = currentUserId && row.author_id === currentUserId;
+                                const isOwner =
+                                    !!currentUserId && String(row.author_id) === String(currentUserId);
+
                                 const headerRight = isOwner ? (
                                     <>
                                         <button
