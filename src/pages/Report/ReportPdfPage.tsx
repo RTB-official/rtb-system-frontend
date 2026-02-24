@@ -121,6 +121,79 @@ export default function ReportPdfPage() {
     const { setWorkLogEntries } = useWorkReportStore();
     
 
+    const [printReceiptSrcMap, setPrintReceiptSrcMap] = useState<Record<number, string>>({});
+    const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+    
+    // ✅ 인쇄용 영수증 이미지 압축 (리사이즈 + JPEG 변환)
+    // - maxWidth: 1200px 권장 (A4 인쇄에 충분)
+    // - quality: 0.7 권장
+    async function compressImageToJpegDataUrl(
+      url: string,
+      maxWidth = 1200,
+      quality = 0.7
+    ): Promise<string | null> {
+      try {
+        const img = new Image();
+        // ⚠️ CORS 허용이 없으면 canvas 변환이 실패할 수 있습니다.
+        img.crossOrigin = "anonymous";
+    
+        const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("image load fail"));
+          img.src = url;
+        });
+    
+        const w0 = loaded.naturalWidth || loaded.width;
+        const h0 = loaded.naturalHeight || loaded.height;
+        if (!w0 || !h0) return null;
+    
+        const scale = Math.min(1, maxWidth / w0);
+        const w = Math.max(1, Math.round(w0 * scale));
+        const h = Math.max(1, Math.round(h0 * scale));
+    
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+    
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return null;
+    
+        ctx.imageSmoothingEnabled = true;
+        // @ts-ignore
+        ctx.imageSmoothingQuality = "high";
+    
+        ctx.drawImage(loaded, 0, 0, w, h);
+    
+        // PNG 포함 모두 JPEG로 압축
+        return canvas.toDataURL("image/jpeg", quality);
+      } catch {
+        return null;
+      }
+    }
+    
+    async function buildPrintReceiptMap(
+      items: { id: number; url: string }[],
+      maxWidth = 1200,
+      quality = 0.7
+    ) {
+      const out: Record<number, string> = {};
+      for (const it of items) {
+        const dataUrl = await compressImageToJpegDataUrl(it.url, maxWidth, quality);
+        if (dataUrl) out[it.id] = dataUrl;
+      }
+      return out;
+    }
+    
+    // ✅ 인쇄 완료 후 정리(메모리 절약)
+    useEffect(() => {
+      const onAfterPrint = () => {
+        setIsPreparingPrint(false);
+        setPrintReceiptSrcMap({});
+      };
+      window.addEventListener("afterprint", onAfterPrint);
+      return () => window.removeEventListener("afterprint", onAfterPrint);
+    }, []);
+
 
 
     useEffect(() => {
@@ -431,28 +504,46 @@ export default function ReportPdfPage() {
                 {/* ✅ 브라우저 우측 상단 고정 버튼 (내용과 완전 분리) */}
                 <div className="pdf-save-fixed">
                 <button
-                        className="pdf-save-btn"
-                        onClick={() => {
-                            // ✅ 파일명 규칙 적용
-                            const filename = formatPdfFilename(
-                                workPeriodText.split(" ~ ")[0] || log?.date_from,
-                                workPeriodText.split(" ~ ")[1] || log?.date_to,
-                                log?.vessel,
-                                log?.subject
-                            );
+                className="pdf-save-btn"
+                onClick={async () => {
+                    // ✅ 파일명 규칙 적용
+                    const filename = formatPdfFilename(
+                    workPeriodText.split(" ~ ")[0] || log?.date_from,
+                    workPeriodText.split(" ~ ")[1] || log?.date_to,
+                    log?.vessel,
+                    log?.subject
+                    );
 
-                            const prevTitle = document.title;
-                            document.title = filename;
+                    const prevTitle = document.title;
 
-                            window.print();
+                    // ✅ 인쇄용(저용량) 영수증 이미지 준비
+                    setIsPreparingPrint(true);
+                    try {
+                    // 5~30장 기준: 1200px + quality 0.7 추천
+                    const map = await buildPrintReceiptMap(
+                        receiptImgs.map((r) => ({ id: r.id, url: r.url })),
+                        1200,
+                        0.7
+                    );
+                    setPrintReceiptSrcMap(map);
+                    } catch {
+                    // 실패해도 원본으로 인쇄 진행
+                    }
 
-                            // 인쇄 후 원래 타이틀 복구 (안전)
-                            setTimeout(() => {
-                                document.title = prevTitle;
-                            }, 300);
-                        }}
-                        type="button"
-                    >
+                    document.title = filename;
+
+                    // 렌더 반영을 위해 한 틱 양보
+                    setTimeout(() => {
+                    window.print();
+
+                    // 인쇄 후 원래 타이틀 복구 (안전)
+                    setTimeout(() => {
+                        document.title = prevTitle;
+                    }, 300);
+                    }, 50);
+                }}
+                type="button"
+                >
 
                         {/* 디스크 아이콘 (심플) */}
                         <svg
@@ -491,14 +582,9 @@ export default function ReportPdfPage() {
                 {/* ✅ 신형 PDF CSS (public 기준으로 폰트 경로만 조정) */}
                 <style>{`
     html, body {
-      page-break-inside: auto !important;
-      page-break-before: auto !important;
-      page-break-after: auto !important;
-    }
-    * {
-      page-break-inside: auto !important;
-      page-break-before: auto !important;
-      page-break-after: auto !important;
+      page-break-inside: auto;
+      page-break-before: auto;
+      page-break-after: auto;
     }
     
     @font-face{
@@ -629,10 +715,14 @@ export default function ReportPdfPage() {
     .doc-title{ font-size:20pt; font-weight:700; color:var(--brand); line-height:1.2; }
     
     /* Sections */
-    .section{ margin:12px 0 16px; }
+    .section{ 
+      margin:12px 0 16px; 
+      page-break-inside: avoid;
+    }
     .section h2{
       font-size:12.5pt; margin:0 0 8px; color:#222;
       border-left:3px solid var(--brand); padding-left:8px;
+      page-break-after: avoid;
     }
     
     /* 기본정보 Remaster — gap 최소화 */
@@ -693,12 +783,19 @@ export default function ReportPdfPage() {
 
 
 
+    .detail-table thead{
+      page-break-inside: avoid;
+      page-break-after: avoid;
+    }
     .detail-table thead th{
       background:#eef3ff;
       text-align:center;
       vertical-align:middle;
       white-space:nowrap;
       font-weight:700;
+    }
+    .detail-table tbody tr{
+      page-break-inside: avoid;
     }
 
     /* ✅ A4 안정 폭(mm 고정) */
@@ -727,6 +824,9 @@ export default function ReportPdfPage() {
     .detail-date-blue { color:#2563eb !important; font-weight:700; }
 
     /* ✅ 날짜 변경 구분선(테이블 깨짐 방지: border 제거) */
+    .detail-sep{
+      page-break-inside: avoid;
+    }
     .detail-sep td{
       padding:0 !important;
       height:3px;
@@ -753,6 +853,7 @@ export default function ReportPdfPage() {
     .timeline-section{
       width:100%;
       display:block;
+      page-break-inside: avoid;
     }
     .timeline-section .timeline-root{
       width:100% !important;
@@ -773,6 +874,28 @@ export default function ReportPdfPage() {
       transform: scale(0.8);
       transform-origin: top left;
       width: calc(100% / 0.7); /* 줄어든 만큼 가로폭 보정 */
+      page-break-inside: avoid; /* 라벨과 테이블이 함께 유지되도록 */
+    }
+    /* 일별 시간표 라벨과 테이블이 함께 유지되도록 */
+    .timeline-section .daily-timesheet h3{
+      page-break-after: avoid;
+    }
+    .timeline-section .daily-timesheet > div{
+      page-break-inside: avoid;
+    }
+    .timeline-section .daily-timesheet table{
+      page-break-before: avoid;
+    }
+    .timeline-section .daily-timesheet table tbody tr{
+      page-break-inside: avoid;
+    }
+    .timeline-section .daily-timesheet table thead{
+      page-break-inside: avoid;
+      page-break-after: avoid;
+    }
+    .timeline-section .daily-timesheet table tfoot{
+      page-break-inside: avoid;
+      page-break-before: avoid;
     }
 
     
@@ -784,6 +907,13 @@ export default function ReportPdfPage() {
       background:#fff;
       font-size:8pt;
       table-layout:fixed;
+    }
+    .table thead{
+      page-break-inside: avoid;
+      page-break-after: avoid;
+    }
+    .table tbody tr{
+      page-break-inside: avoid;
     }
     .table th,.table td{
       border:1px solid var(--line);
@@ -813,6 +943,10 @@ export default function ReportPdfPage() {
   border-collapse:separate;
   border-spacing:0 14px;
   table-layout:fixed;
+}
+
+.receipts-table tr{
+  page-break-inside: avoid;
 }
 
 .receipts-table td{
@@ -1297,7 +1431,7 @@ export default function ReportPdfPage() {
                                                                                 ) : (
                                                                                     <img
                                                                                         className="receipt-img"
-                                                                                        src={a.url}
+                                                                                        src={(isPreparingPrint && printReceiptSrcMap[a.id]) ? printReceiptSrcMap[a.id] : a.url}
                                                                                         alt={a.name || "receipt"}
                                                                                         onError={() => handleImageError(a.id)}
                                                                                         style={{ display: "block" }}
@@ -1346,7 +1480,7 @@ export default function ReportPdfPage() {
                                                                                 ) : (
                                                                                     <img
                                                                                         className="receipt-img"
-                                                                                        src={b.url}
+                                                                                        src={(isPreparingPrint && printReceiptSrcMap[b.id]) ? printReceiptSrcMap[b.id] : b.url}
                                                                                         alt={b.name || "receipt"}
                                                                                         onError={() => handleImageError(b.id)}
                                                                                         style={{ display: "block" }}
