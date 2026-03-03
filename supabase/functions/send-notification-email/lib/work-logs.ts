@@ -461,6 +461,19 @@ export async function buildBatchedReportEmail(
 
   const isCreate = (sentCount ?? 0) === 0;
 
+    // ✅ draft(true) → submit(false) 전환 감지
+    const hasDraftSubmitEvent = Array.isArray(events)
+    ? events.some((ev: any) => {
+        const t = String(ev?.table || "");
+        const op = String(ev?.operation || "").toUpperCase();
+        const before = (ev as any)?.changes?.is_draft?.before;
+        const after = (ev as any)?.changes?.is_draft?.after;
+        const beforeTrue = before === true || before === 1 || before === "true";
+        const afterFalse = after === false || after === 0 || after === "false";
+        return t === "work_logs" && op === "UPDATE" && beforeTrue && afterFalse;
+      })
+    : false;
+
   // ✅ 작성일 때는 변경 섹션 자체를 만들지 않음
   const changeLines: DetailLineWithType[] = [];
   if (!isCreate) {
@@ -508,11 +521,15 @@ export async function buildBatchedReportEmail(
     ({ delete: 0, add: 1, update: 2 }[a.type] - { delete: 0, add: 1, update: 2 }[b.type]);
 
   const subject = isCreate
-    ? `${SUBJECT_PREFIX} ${author}님이 출장보고서를 작성했습니다.`
+    ? hasDraftSubmitEvent
+      ? `${SUBJECT_PREFIX} ${author}님이 출장보고서를 제출했습니다.`
+      : `${SUBJECT_PREFIX} ${author}님이 출장보고서를 작성했습니다.`
     : `${SUBJECT_PREFIX} ${author}님이 출장보고서를 수정했습니다.`;
 
   const summary = isCreate
-    ? `${author}님이 출장보고서를 작성했습니다.`
+    ? hasDraftSubmitEvent
+      ? `${author}님이 출장보고서를 제출했습니다.`
+      : `${author}님이 출장보고서를 작성했습니다.`
     : `${author}님이 출장보고서를 수정했습니다.`;
 
   const headerLines = [
