@@ -1,13 +1,11 @@
 //expenseSection.tsx
-import { useRef, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import SectionCard from "../ui/SectionCard";
 import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
-import Select from "../common/Select";
-import Table from "../common/Table";
 import TextInput from "../ui/TextInput";
+import Select from "../common/Select";
 import RequiredIndicator from "../ui/RequiredIndicator";
-import ConfirmDialog from "../ui/ConfirmDialog";
 import {
     useWorkReportStore,
     formatCurrency,
@@ -35,14 +33,7 @@ export default function ExpenseSection() {
     const [typeCustom, setTypeCustom] = useState("");
     const [detail, setDetail] = useState("");
     const [amount, setAmount] = useState("");
-    const [isSaving, setIsSaving] = useState(false);
-    const isSavingRef = useRef(false);
-
-    // 삭제 확인 상태
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [expenseToDelete, setExpenseToDelete] = useState<number | string | null>(
-        null
-    );
+    const [currency, setCurrency] = useState<string>("원");
 
     // 에러 상태
     const [errors, setErrors] = useState<{
@@ -69,9 +60,9 @@ export default function ExpenseSection() {
 
     // 분류별 색상
     const getTypeClass = (t: string) => {
-        if (["조식", "중식", "석식", "간식", "식비"].includes(t)) return "bg-orange-50";
+        if (["조식", "중식", "석식", "간식"].includes(t)) return "bg-orange-50";
         if (t === "숙박") return "bg-blue-50";
-        if (["유대", "유류비", "주유"].includes(t)) return "bg-green-50";
+        if (t === "유류비") return "bg-green-50";
         return "bg-pink-50";
     };
 
@@ -81,9 +72,8 @@ export default function ExpenseSection() {
     };
 
     const handleAddExpense = () => {
-        if (isSavingRef.current) return;
         const finalDate = date || entryDates[0] || "";
-        const finalType = type === "기타" && typeCustom ? typeCustom : type;
+        const finalType = type === "OTHER" || type === "기타" ? (typeCustom || type) : type;
 
         // 유효성 검사
         const newErrors: typeof errors = {};
@@ -106,8 +96,6 @@ export default function ExpenseSection() {
         }
 
         setErrors({});
-        isSavingRef.current = true;
-        setIsSaving(true);
 
         if (editingExpenseId) {
             updateExpense(editingExpenseId, {
@@ -115,6 +103,7 @@ export default function ExpenseSection() {
                 type: finalType,
                 detail,
                 amount: parseCurrency(amount),
+                currency: currency || "원",
             });
         } else {
             addExpense({
@@ -122,17 +111,16 @@ export default function ExpenseSection() {
                 type: finalType,
                 detail,
                 amount: parseCurrency(amount),
+                currency: currency || "원",
             });
         }
 
-        // 초기화
+        // 초기화 (화폐 단위는 유지)
         setType("");
         setTypeCustom("");
         setDetail("");
         setAmount("");
-
-        isSavingRef.current = false;
-        setIsSaving(false);
+        // currency는 유지 (이전에 선택한 단위 그대로 사용)
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -145,10 +133,12 @@ export default function ExpenseSection() {
     const handleEdit = (expense: ExpenseEntry) => {
         editExpense(expense.id);
         setDate(expense.date);
-        setType(EXPENSE_TYPES.includes(expense.type) ? expense.type : "기타");
-        setTypeCustom(EXPENSE_TYPES.includes(expense.type) ? "" : expense.type);
+        const isInExpenseTypes = EXPENSE_TYPES.includes(expense.type);
+        setType(isInExpenseTypes ? expense.type : "OTHER");
+        setTypeCustom(isInExpenseTypes ? "" : expense.type);
         setDetail(expense.detail);
         setAmount(formatCurrency(expense.amount));
+        setCurrency(expense.currency || "원");
     };
 
     const handleCancel = () => {
@@ -158,6 +148,7 @@ export default function ExpenseSection() {
         setTypeCustom("");
         setDetail("");
         setAmount("");
+        // currency는 유지 (이전에 선택한 단위 그대로 사용)
     };
 
     // 인원 모두 추가
@@ -177,8 +168,13 @@ export default function ExpenseSection() {
     return (
         <SectionCard
             title="지출 내역"
+            headerContent={
+                <span className="font-medium text-[14px] text-gray-400">
+                    총 {expenses.length}건
+                </span>
+            }
         >
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 -mt-4">
                 {/* 입력 폼 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-2">
                     {/* 날짜 */}
@@ -221,17 +217,21 @@ export default function ExpenseSection() {
 
                     {/* 분류 */}
                     <div className="flex flex-col gap-2">
-                        <label className="font-medium text-[14px] text-gray-900">
-                            분류
-                            <RequiredIndicator />
-                        </label>
                         <Select
+                            label="분류"
+                            required
+                            placeholder="분류 선택"
+                            options={[
+                                ...EXPENSE_TYPES.filter((t) => t !== "기타").map((t) => ({
+                                    value: t,
+                                    label: t,
+                                })),
+                                { value: "OTHER", label: "기타" },
+                            ]}
                             value={type}
-                            onChange={(value) => {
-                                setType(value);
-                                if (value !== "기타") {
-                                    setTypeCustom("");
-                                }
+                            onChange={(val) => {
+                                setType(val);
+                                setTypeCustom("");
                                 if (errors.type) {
                                     setErrors((prev) => ({
                                         ...prev,
@@ -239,13 +239,11 @@ export default function ExpenseSection() {
                                     }));
                                 }
                             }}
-                            placeholder="분류 선택"
-                            options={EXPENSE_TYPES.map((t) => ({
-                                value: t,
-                                label: t,
-                            }))}
+                            error={errors.type}
+                            size="md"
+                            fullWidth
                         />
-                        {type === "기타" && (
+                        {(type === "OTHER" || type === "기타") && (
                             <TextInput
                                 placeholder="분류를 직접 입력"
                                 value={typeCustom}
@@ -261,32 +259,7 @@ export default function ExpenseSection() {
                                 onKeyDown={handleKeyDown}
                             />
                         )}
-                        {errors.type && (
-                            <p className="text-red-500 text-[12px]">
-                                {errors.type}
-                            </p>
-                        )}
                     </div>
-
-                    {/* 금액 */}
-                    <TextInput
-                        label="금액"
-                        required
-                        placeholder="0"
-                        value={amount}
-                        onChange={(val) => {
-                            handleAmountChange(val);
-                            if (errors.amount) {
-                                setErrors((prev) => ({
-                                    ...prev,
-                                    amount: undefined,
-                                }));
-                            }
-                        }}
-                        onKeyDown={handleKeyDown}
-                        icon={<span className="text-gray-500">원</span>}
-                        error={errors.amount}
-                    />
 
                     {/* 상세내용 */}
                     <TextInput
@@ -307,26 +280,69 @@ export default function ExpenseSection() {
                         error={errors.detail}
                     />
 
-                    <div className="flex justify-start md:col-start-2 -mt-2 mb-2">
-                        <Button
-                            onClick={handleAddAllPersons}
-                            variant="outline"
-                            size="sm"
-                        >
-                            인원 모두추가
-                        </Button>
+                    {/* 금액 */}
+                    <div className="flex flex-col gap-2">
+                        <label className="font-medium text-[14px] text-gray-900">
+                            금액
+                            <RequiredIndicator />
+                        </label>
+                        <div className="flex gap-2">
+                            <div className="flex-1">
+                                <TextInput
+                                    placeholder="0"
+                                    value={amount}
+                                    onChange={(val) => {
+                                        handleAmountChange(val);
+                                        if (errors.amount) {
+                                            setErrors((prev) => ({
+                                                ...prev,
+                                                amount: undefined,
+                                            }));
+                                        }
+                                    }}
+                                    onKeyDown={handleKeyDown}
+                                    error={errors.amount}
+                                />
+                            </div>
+                            <div className="w-24">
+                                <Select
+                                    options={[
+                                        { value: "원", label: "원" },
+                                        { value: "엔", label: "엔" },
+                                        { value: "달러", label: "달러" },
+                                        { value: "유로", label: "유로" },
+                                    ]}
+                                    value={currency}
+                                    onChange={(val) => setCurrency(val)}
+                                    size="md"
+                                />
+                            </div>
+                        </div>
+                        {errors.amount && (
+                            <p className="text-red-500 text-[12px]">
+                                {errors.amount}
+                            </p>
+                        )}
                     </div>
                 </div>
 
                 {/* 버튼들 */}
                 <div className="flex flex-col gap-5">
+                    <div className="flex justify-start">
+                        <Button
+                            onClick={handleAddAllPersons}
+                            variant="outline"
+                            size="md"
+                        >
+                            인원 모두추가
+                        </Button>
+                    </div>
                     <div className="flex gap-2 ㅡㅁㅁㅁ">
                         <Button
                             onClick={handleAddExpense}
                             variant="primary"
                             size="lg"
                             fullWidth
-                            loading={isSaving}
                         >
                             {editingExpenseId ? "수정 저장" : "추가"}
                         </Button>
@@ -344,124 +360,93 @@ export default function ExpenseSection() {
                 </div>
 
                 {/* 테이블 */}
-                <div className="mt-4">
-                    <Table<ExpenseEntry>
-                        columns={[
-                            {
-                                key: "date",
-                                label: "날짜",
-                                align: "center",
-                                headerClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px]",
-                                cellClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px] text-center",
-                                render: (value) => formatDate(String(value || "")),
-                            },
-                            {
-                                key: "type",
-                                label: "분류",
-                                align: "center",
-                                headerClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px]",
-                                cellClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px] text-center",
-                                render: (value) => {
-                                    if (value === "유류비" || value === "주유") return "유대";
-                                    return value || "-";
-                                },
-                            },
-                            {
-                                key: "detail",
-                                label: "상세내용",
-                                headerClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px]",
-                                cellClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px]",
-                            },
-                            {
-                                key: "amount",
-                                label: "금액",
-                                align: "center",
-                                headerClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px]",
-                                cellClassName:
-                                    "border border-gray-200 px-3 py-2 text-[13px] text-center relative",
-                                render: (value, row) => {
-                                    const isSelected = editingExpenseId === row.id;
+                {expenses.length > 0 && (
+                    <div className="overflow-x-auto mt-4">
+                        <table className="w-full border-collapse">
+                            <thead>
+                                <tr className="bg-gray-100">
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                        날짜
+                                    </th>
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                        분류
+                                    </th>
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                        상세내용
+                                    </th>
+                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                        금액
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {expenses.map((expense) => {
+                                    const isSelected = editingExpenseId === expense.id;
                                     return (
-                                        <div className="relative">
-                                            {formatCurrency(Number(value || 0))}원
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    e.stopPropagation();
-                                                    setExpenseToDelete(row.id);
-                                                    setDeleteConfirmOpen(true);
-                                                }}
-                                                className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${isSelected
-                                                        ? "opacity-100"
-                                                        : "opacity-0 group-hover:opacity-100"
+                                        <tr
+                                            key={expense.id}
+                                            onClick={() => handleEdit(expense)}
+                                            className={`group cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
+                                                expense.type
+                                            )} ${
+                                                isSelected
+                                                    ? "outline outline-2 outline-blue-500 -outline-offset-2"
+                                                    : ""
+                                            }`}
+                                        >
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
+                                                {formatDate(expense.date)}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
+                                                {expense.type}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px]">
+                                                {expense.detail}
+                                            </td>
+                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
+                                                {formatCurrency(expense.amount)}{expense.currency || "원"}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (
+                                                            confirm(
+                                                                "삭제하시겠습니까?"
+                                                            )
+                                                        )
+                                                            deleteExpense(
+                                                                expense.id
+                                                            );
+                                                    }}
+                                                    className={`absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border border-red-400 text-red-400 text-[11px] hover:bg-red-50 transition-opacity ${
+                                                        isSelected
+                                                            ? "opacity-100"
+                                                            : "opacity-0 group-hover:opacity-100"
                                                     }`}
-                                            >
-                                                ✕
-                                            </button>
-                                        </div>
+                                                >
+                                                    ✕
+                                                </button>
+                                            </td>
+                                        </tr>
                                     );
-                                },
-                            },
-                        ]}
-                        data={expenses}
-                        rowKey={(row) => row.id}
-                        onRowClick={(row) => handleEdit(row)}
-                        rowClassName={(row) => {
-                            const isSelected = editingExpenseId === row.id;
-                            return `group cursor-pointer hover:outline hover:outline-2 hover:outline-blue-400 hover:-outline-offset-2 ${getTypeClass(
-                                row.type
-                            )} ${isSelected
-                                    ? "outline outline-2 outline-blue-500 -outline-offset-2"
-                                    : ""
-                                }`;
-                        }}
-                        className="border-collapse"
-                        emptyText="등록된 지출 내역이 없습니다."
-                        footer={
-                            <tr>
-                                <td
-                                    colSpan={3}
-                                    className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
-                                >
-                                    합계<span className="font-light ml-0.5 text-[12px] text-gray-400">
-                                        ({expenses.length})
-                                    </span>
-                                </td>
-                                <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px]">
-                                    {formatCurrency(total)}원
-                                </td>
-                            </tr>
-                        }
-                    />
-                </div>
+                                })}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td
+                                        colSpan={3}
+                                        className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
+                                    >
+                                        합계
+                                    </td>
+                                    <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px]">
+                                        {formatCurrency(total)}원
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                )}
             </div>
-
-            <ConfirmDialog
-                isOpen={deleteConfirmOpen}
-                onClose={() => {
-                    setDeleteConfirmOpen(false);
-                    setExpenseToDelete(null);
-                }}
-                onConfirm={() => {
-                    if (expenseToDelete !== null) {
-                        deleteExpense(expenseToDelete as number);
-                    }
-                    setDeleteConfirmOpen(false);
-                    setExpenseToDelete(null);
-                }}
-                title="지출 내역 삭제"
-                message="해당 지출 내역을 삭제하시겠습니까?"
-                confirmText="삭제"
-                cancelText="취소"
-                confirmVariant="danger"
-            />
         </SectionCard>
     );
 }

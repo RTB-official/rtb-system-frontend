@@ -35,11 +35,16 @@ function calcWorkMinutesWithLunchRule(params: {
 
     const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
 
-    // ✅ 작업이 아니면 점심 규칙 적용 X
-    if (descType !== "작업") return totalMinutes;
+    // ✅ 작업과 대기가 아니면 점심 규칙 적용 X
+    if (descType !== "작업" && descType !== "대기") return totalMinutes;
 
-    // ✅ "점심 안 먹음"이면 전체 시간 카운트
-    if (noLunch) return totalMinutes;
+    // ✅ 대기는 무조건 점심시간 차감
+    if (descType === "대기") {
+        // 점심시간 차감 로직으로 진행
+    } else if (descType === "작업") {
+        // ✅ "점심 안 먹음"이면 전체 시간 카운트
+        if (noLunch) return totalMinutes;
+    }
 
     // ✅ 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
     let lunchOverlapMinutes = 0;
@@ -101,6 +106,34 @@ function toDateSafe(date: string, time: string) {
     }
 
     return new Date(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`);
+}
+
+// ✅ 날짜에 요일 추가 (YYYY-MM-DD(요일) 형식)
+function formatDateWithDay(dateString: string): string {
+    if (!dateString) return dateString;
+    try {
+        const date = new Date(`${dateString}T00:00:00`);
+        if (isNaN(date.getTime())) return dateString;
+        
+        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+        const dayIndex = date.getDay();
+        const dayName = dayNames[dayIndex];
+        
+        return `${dateString}(${dayName})`;
+    } catch {
+        return dateString;
+    }
+}
+
+// ✅ 시간 범위가 겹치는지 확인하는 함수
+function isTimeOverlapping(
+    start1: Date,
+    end1: Date,
+    start2: Date,
+    end2: Date
+): boolean {
+    // 겹침 조건: start1 < end2 && start2 < end1
+    return start1.getTime() < end2.getTime() && start2.getTime() < end1.getTime();
 }
 
 // ✅ 날짜跨越 엔트리를 "날짜별 카드"로 분할(표시용)
@@ -183,8 +216,7 @@ function stripSpecialText(note: string, target: string) {
 function stripSpecialNotes(note: string) {
     return (note || "")
         .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line && line !== NO_LUNCH_TEXT && line !== NO_DINNER_TEXT)
+        .filter((line) => line.trim() !== NO_LUNCH_TEXT && line.trim() !== NO_DINNER_TEXT)
         .join("\n");
 }
 
@@ -237,7 +269,7 @@ export default function WorkLogSection() {
     } = useWorkReportStore();
 
     // ✅ Toast 훅 추가
-    const { showError } = useToast();
+    const { showError, showSuccess } = useToast();
 
     const movePlaces = useMemo(() => {
         const extras = (locations || []).filter(Boolean);
@@ -273,6 +305,84 @@ export default function WorkLogSection() {
     );
     const [timeToHour, timeToMin] = (currentEntry.timeTo || "").split(":");
 
+    // ✅ 특정 출장지에서 작업 시간이 12시~13시를 포함하면 자동으로 점심 안 먹고 작업진행 체크
+    const autoLunchWorkLocations = ["PNC", "PNIT", "HPNT", "BNCT", "HJNC"];
+    
+    useEffect(() => {
+        // 작업 카드이고, 출장지가 특정 목록에 포함되고, 시간이 12시~13시를 포함하는지 확인
+        if (
+            currentEntry.descType === "작업" &&
+            currentEntry.dateFrom &&
+            currentEntry.timeFrom &&
+            currentEntry.dateTo &&
+            currentEntry.timeTo
+        ) {
+            // 출장지 확인
+            const locationStr = locations?.join(", ") || "";
+            const hasAutoLunchLocation = autoLunchWorkLocations.some((loc) =>
+                locationStr.includes(loc)
+            );
+
+            if (hasAutoLunchLocation) {
+                // 이미 체크되어 있거나 note에 문구가 있으면 스킵
+                const hasNoLunchText = (currentEntry.note || "").includes(NO_LUNCH_TEXT);
+                if (currentEntry.noLunch || hasNoLunchText) {
+                    return;
+                }
+
+                // 시간 범위가 12시~13시를 포함하는지 확인
+                const start = toDateSafe(currentEntry.dateFrom, currentEntry.timeFrom);
+                const end = toDateSafe(currentEntry.dateTo, currentEntry.timeTo);
+
+                if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+                    // 날짜별로 12시~13시 겹침 확인
+                    const cur = new Date(`${currentEntry.dateFrom}T00:00:00`);
+                    const last = new Date(`${currentEntry.dateTo}T00:00:00`);
+                    let hasLunchOverlap = false;
+
+                    while (cur <= last && !hasLunchOverlap) {
+                        const yyyy = cur.getFullYear();
+                        const mm = String(cur.getMonth() + 1).padStart(2, "0");
+                        const dd = String(cur.getDate()).padStart(2, "0");
+                        const d = `${yyyy}-${mm}-${dd}`;
+
+                        const lunchStart = new Date(`${d}T12:00:00`);
+                        const lunchEnd = new Date(`${d}T13:00:00`);
+
+                        // 겹침 확인: [start, end] ∩ [lunchStart, lunchEnd]
+                        const overlapStart = start > lunchStart ? start : lunchStart;
+                        const overlapEnd = end < lunchEnd ? end : lunchEnd;
+
+                        if (overlapEnd > overlapStart) {
+                            hasLunchOverlap = true;
+                        }
+
+                        cur.setDate(cur.getDate() + 1);
+                    }
+
+                    // 12시~13시를 포함하면 자동으로 체크
+                    if (hasLunchOverlap) {
+                        const baseNote = stripSpecialText(currentEntry.note || "", NO_LUNCH_TEXT);
+                        setCurrentEntry({
+                            noLunch: true,
+                            note: baseNote ? `${baseNote}\n${NO_LUNCH_TEXT}` : NO_LUNCH_TEXT,
+                        });
+                    }
+                }
+            }
+        }
+    }, [
+        currentEntry.descType,
+        currentEntry.dateFrom,
+        currentEntry.timeFrom,
+        currentEntry.dateTo,
+        currentEntry.timeTo,
+        currentEntry.noLunch,
+        currentEntry.note,
+        locations,
+        setCurrentEntry,
+    ]);
+
     // ✅ 수정 진입 시: note에 문구가 있으면 체크가 자동으로 켜지게만 처리
     // ✅ 문구 생성/삭제는 체크박스로만 가능 (textarea에서 편집 불가)
     useEffect(() => {
@@ -294,7 +404,7 @@ export default function WorkLogSection() {
         if (hasNoLunchText && !currentEntry.noLunch) {
             setCurrentEntry({ noLunch: true });
         }
-    }, [currentEntry.descType, currentEntry.noLunch, currentEntry.note, setCurrentEntry]);
+    }, [currentEntry.descType, currentEntry.note, setCurrentEntry]);
 
 
 
@@ -513,13 +623,53 @@ export default function WorkLogSection() {
             return;
         }
 
+        // ✅ 인원별 시간 겹침 체크
+        if (currentEntry.dateFrom && currentEntry.timeFrom && currentEntry.dateTo && currentEntry.timeTo) {
+            const currentStart = toDateSafe(currentEntry.dateFrom, currentEntry.timeFrom);
+            const currentEnd = toDateSafe(currentEntry.dateTo, currentEntry.timeTo);
+
+            if (!isNaN(currentStart.getTime()) && !isNaN(currentEnd.getTime())) {
+                // 현재 저장하려는 일지에 포함된 각 인원별로 시간 겹침 확인
+                for (const person of currentEntryPersons) {
+                    // 기존 일지들 중에서 현재 편집 중인 일지 제외
+                    const overlappingEntry = workLogEntries.find((e) => {
+                        if (editingEntryId && e.id === editingEntryId) return false;
+
+                        const entryPersons = (e as any).persons || [];
+                        if (!entryPersons.includes(person)) return false;
+
+                        if (!e.dateFrom || !e.timeFrom || !e.dateTo || !e.timeTo) return false;
+
+                        const entryStart = toDateSafe(e.dateFrom, e.timeFrom);
+                        const entryEnd = toDateSafe(e.dateTo, e.timeTo);
+
+                        if (isNaN(entryStart.getTime()) || isNaN(entryEnd.getTime())) return false;
+
+                        return isTimeOverlapping(currentStart, currentEnd, entryStart, entryEnd);
+                    });
+
+                    if (overlappingEntry) {
+                        showError(`${person}인원이 시간이 겹칩니다. 시간을 확인해주세요.`);
+                        return;
+                    }
+                }
+            }
+        }
+
         setErrors({});
         setCurrentEntry({ persons: currentEntryPersons });
         isSavingEntryRef.current = true;
         setIsSavingEntry(true);
         try {
+            const isEdit = !!editingEntryId;
             saveWorkLogEntry(showError);
             setHasDetour(false);
+            // ✅ 추가/수정 성공 토스트
+            if (isEdit) {
+                showSuccess("출장 업무 일지가 수정되었습니다.");
+            } else {
+                showSuccess("출장 업무 일지가 추가되었습니다.");
+            }
         } finally {
             isSavingEntryRef.current = false;
             setIsSavingEntry(false);
@@ -1229,11 +1379,11 @@ export default function WorkLogSection() {
                                                         <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                     </svg>
                                                     <span className="shrink-0">
-                                                        {entry.dateFrom} {toKoreanTime(entry.timeFrom)}
+                                                        {formatDateWithDay(entry.dateFrom)} {toKoreanTime(entry.timeFrom)}
                                                     </span>
                                                     <span className="text-gray-400 shrink-0">→</span>
                                                     <span className="shrink-0">
-                                                        {entry.dateTo} {toKoreanTime(entry.timeTo)}
+                                                        {formatDateWithDay(entry.dateTo)} {toKoreanTime(entry.timeTo)}
                                                     </span>
                                                 </div>
                                                 <div className="flex items-center gap-2 text-[13px] text-gray-600">

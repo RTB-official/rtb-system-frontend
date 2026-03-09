@@ -98,7 +98,7 @@ export default function ConsumablesSection() {
 
         setSelectedMaterial("");
         setCustomMaterial("");
-        setQuantity("");
+        setQuantity("1"); // 기본값 1로 유지
 
         isAddingRef.current = false;
         setIsAdding(false);
@@ -181,24 +181,91 @@ export default function ConsumablesSection() {
                 </div>
 
                 {/* 수량 (숫자만 또는 50ml 등 단위 포함 자유 입력) */}
-                <TextInput
-                    label="수량"
-                    required
-                    type="text"
-                    value={quantity}
-                    placeholder="예: 1, 0.5, 50ml, 1/3"
-                    onChange={(val) => {
-                        setQuantity(val);
-                        if (errors.quantity) {
-                            setErrors((prev) => ({
-                                ...prev,
-                                quantity: undefined,
-                            }));
-                        }
-                    }}
-                    onKeyDown={handleQuantityKeyDown}
-                    error={errors.quantity}
-                />
+                <div className="flex flex-col gap-2">
+                    <label className="font-medium text-[14px] md:text-[15px] text-[#101828] leading-[1.467]">
+                        수량
+                        <span className="text-red-600 text-sm ml-1">*</span>
+                    </label>
+                    <div className="relative">
+                        <input
+                            type="text"
+                            value={quantity}
+                            placeholder="예: 1, 0.5, 50ml, 1/3"
+                            onChange={(e) => {
+                                setQuantity(e.target.value);
+                                if (errors.quantity) {
+                                    setErrors((prev) => ({
+                                        ...prev,
+                                        quantity: undefined,
+                                    }));
+                                }
+                            }}
+                            onKeyDown={handleQuantityKeyDown}
+                            className="w-full h-12 border border-gray-200 rounded-xl px-4 pr-12 text-base text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                        />
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const parsed = parseQuantity(quantity);
+                                    if (parsed != null) {
+                                        setQuantity(String(parsed + 1));
+                                    } else {
+                                        setQuantity("1");
+                                    }
+                                }}
+                                className="w-6 h-5 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-t transition-colors"
+                            >
+                                <svg
+                                    className="w-3 h-3"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        d="M18 15L12 9L6 15"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                </svg>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const parsed = parseQuantity(quantity);
+                                    if (parsed != null && parsed > 1) {
+                                        setQuantity(String(parsed - 1));
+                                    } else if (parsed != null && parsed <= 1) {
+                                        setQuantity("1");
+                                    } else {
+                                        setQuantity("1");
+                                    }
+                                }}
+                                className="w-6 h-5 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-b transition-colors"
+                            >
+                                <svg
+                                    className="w-3 h-3"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        d="M6 9L12 15L18 9"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    {errors.quantity && (
+                        <p className="text-sm text-red-500">{errors.quantity}</p>
+                    )}
+                </div>
 
                 {/* 추가 버튼 */}
                 <Button

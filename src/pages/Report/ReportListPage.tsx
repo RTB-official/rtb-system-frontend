@@ -37,6 +37,52 @@ interface ReportItem {
     status: ReportStatus;
 }
 
+// ✅ 필터 상태를 sessionStorage에 저장
+const saveFilterToStorage = (search: string, year: string, month: string, activeTab: string) => {
+    try {
+        const filterKey = JSON.stringify({ search, year, month, activeTab });
+        sessionStorage.setItem("rtb:reportListFilter", filterKey);
+    } catch {
+        // sessionStorage 저장 실패 시 무시
+    }
+};
+
+// ✅ 필터 상태를 sessionStorage에서 복원
+const getStoredFilter = () => {
+    try {
+        const stored = sessionStorage.getItem("rtb:reportListFilter");
+        if (stored) {
+            return JSON.parse(stored);
+        }
+    } catch {
+        // sessionStorage 접근 실패 시 무시
+    }
+    return null;
+};
+
+// ✅ 페이지 번호를 sessionStorage에서 복원
+const getStoredPage = () => {
+    try {
+        const stored = sessionStorage.getItem("rtb:reportListPage");
+        if (stored) {
+            const page = parseInt(stored, 10);
+            return isNaN(page) || page < 1 ? 1 : page;
+        }
+    } catch {
+        // sessionStorage 접근 실패 시 무시
+    }
+    return 1;
+};
+
+// ✅ 페이지 번호를 sessionStorage에 저장
+const savePageToStorage = (page: number) => {
+    try {
+        sessionStorage.setItem("rtb:reportListPage", String(page));
+    } catch {
+        // sessionStorage 저장 실패 시 무시
+    }
+};
+
 export default function ReportListPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -525,9 +571,51 @@ export default function ReportListPage() {
         });
     }, [reports, search, year, month, activeTab]);
 
+    // ✅ 컴포넌트 마운트 시 필터와 페이지 번호 복원
+    const isInitialMountRef = useRef(true);
+    const prevFilterRef = useRef<{ search: string; year: string; month: string; activeTab: string } | null>(null);
+
     useEffect(() => {
-        setCurrentPage(1);
+        if (isInitialMountRef.current) {
+            isInitialMountRef.current = false;
+            const storedFilter = getStoredFilter();
+            const currentFilter = { search, year, month, activeTab };
+            
+            // 필터가 같으면 저장된 페이지 번호 복원
+            if (storedFilter && JSON.stringify(storedFilter) === JSON.stringify(currentFilter)) {
+                const storedPage = getStoredPage();
+                if (storedPage > 1) {
+                    setCurrentPage(storedPage);
+                }
+            }
+            
+            // 현재 필터 상태 저장
+            prevFilterRef.current = currentFilter;
+            saveFilterToStorage(search, year, month, activeTab);
+        }
+    }, []); // 마운트 시에만 실행
+
+    // ✅ 필터 변경 시 1페이지로 리셋 (sessionStorage도 업데이트)
+    useEffect(() => {
+        if (isInitialMountRef.current) return; // 초기 마운트는 위의 useEffect에서 처리
+
+        const currentFilter = { search, year, month, activeTab };
+        const prevFilter = prevFilterRef.current;
+        
+        // 필터가 실제로 변경되었을 때만 리셋
+        if (prevFilter && JSON.stringify(prevFilter) !== JSON.stringify(currentFilter)) {
+            setCurrentPage(1);
+            savePageToStorage(1);
+        }
+        
+        prevFilterRef.current = currentFilter;
+        saveFilterToStorage(search, year, month, activeTab);
     }, [search, year, month, activeTab]);
+
+    // ✅ 페이지 변경 시 sessionStorage에 저장
+    useEffect(() => {
+        savePageToStorage(currentPage);
+    }, [currentPage]);
 
     const totalPages = Math.ceil(filtered.length / itemsPerPage);
     const currentData = useMemo(() => {

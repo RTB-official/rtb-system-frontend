@@ -92,7 +92,9 @@ const splitEntryByDay = (entry: {
 
     // 한 날짜 세그먼트의 점심 겹침(12:00~13:00) 차감 계산
     const calcLunchDeduct = (segStart: Date, segEnd: Date) => {
-        if (entry.descType !== "작업" || entry.noLunch) return 0;
+        // ✅ 작업: 점심 안 먹음이면 차감 안함, 대기: 무조건 차감
+        if (entry.descType === "작업" && entry.noLunch) return 0;
+        if (entry.descType !== "작업" && entry.descType !== "대기") return 0;
 
         const lunchStart = new Date(
             segStart.getFullYear(),

@@ -286,6 +286,7 @@ export async function createWorkLog(
                 expense_type: expense.type,
                 detail: expense.detail,
                 amount: expense.amount,
+                currency: expense.currency || "원",
             }));
 
             const { error: expensesError } = await supabase
@@ -538,6 +539,7 @@ export async function getWorkLogById(
             type: exp.expense_type,
             detail: exp.detail,
             amount: exp.amount,
+            currency: (exp as any).currency || "원",
         })) || [];
 
     // 5. 소모품 조회
