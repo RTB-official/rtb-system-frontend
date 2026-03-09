@@ -330,35 +330,16 @@ export default function CopyPreviousWorkInfoSection() {
         }));
     }, [reportOptions]);
 
-    if (loading) {
-        return (
-            <div className="flex flex-col gap-2 relative z-10">
-                <label className="font-medium text-[14px] md:text-[15px] text-[#101828] leading-[1.467]">
-                    이전 작업 기본정보 복사
-                </label>
-                <div className="h-12 border border-gray-200 rounded-xl px-4 flex items-center text-gray-400 bg-white">
-                    로딩 중...
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="flex flex-col gap-2 relative z-10">
             <Select
                 label="이전 작업 불러오기"
-                placeholder={
-                    loading 
-                        ? "로딩 중..." 
-                        : selectOptions.length === 0 
-                        ? "사용 가능한 보고서가 없습니다" 
-                        : "보고서 선택"
-                }
+                placeholder={loading ? "로딩 중..." : "보고서 선택"}
                 fullWidth
-                options={selectOptions.length > 0 ? selectOptions : [{ value: "", label: "사용 가능한 보고서가 없습니다" }]}
+                options={selectOptions}
                 value={selectedReportId}
                 onChange={(value) => {
-                    if (value && value !== "" && selectOptions.length > 0) {
+                    if (value && selectOptions.length > 0) {
                         handleCopy(value);
                         // 복사 후 선택 초기화
                         setTimeout(() => {
@@ -366,13 +347,8 @@ export default function CopyPreviousWorkInfoSection() {
                         }, 100);
                     }
                 }}
-                disabled={loading}
+                disabled={loading || selectOptions.length === 0}
             />
-            {!loading && selectOptions.length === 0 && (
-                <p className="text-xs text-gray-500 mt-1">
-                    콘솔(F12)에서 로그를 확인해주세요. (전체 보고서 수, 제출된 보고서 수 확인)
-                </p>
-            )}
         </div>
     );
 }
