@@ -258,6 +258,7 @@ export default function CreationPage() {
                     type: exp.type,
                     detail: exp.detail,
                     amount: exp.amount,
+                    currency: exp.currency || "원",
                 }));
                 setExpenses(expenseEntries);
 
@@ -349,6 +350,7 @@ export default function CreationPage() {
                     type: exp.type,
                     detail: exp.detail,
                     amount: exp.amount,
+                    currency: exp.currency || "원",
                 })),
                 materials: materials.map((mat) => ({
                     name: mat.name,

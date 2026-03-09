@@ -67,6 +67,24 @@ function toKoreanTime(time?: string) {
     if (!mm || mm === "00") return `${Number(hh)}시`;
     return `${Number(hh)}시 ${mm}분`;
 }
+
+// ✅ 날짜에 요일 추가 (YYYY-MM-DD(요일) 형식)
+function formatDateWithDay(dateString: string): string {
+    if (!dateString) return dateString;
+    try {
+        const date = new Date(`${dateString}T00:00:00`);
+        if (isNaN(date.getTime())) return dateString;
+        
+        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+        const dayIndex = date.getDay();
+        const dayName = dayNames[dayIndex];
+        
+        return `${dateString}(${dayName})`;
+    } catch {
+        return dateString;
+    }
+}
+
 // ✅ 작업 시간(분) 계산: 점심(12:00~13:00) 제외 옵션 포함 (WorkLogSection과 동일 로직)
 function calcWorkMinutesWithLunchRule(params: {
     dateFrom: string;
@@ -92,11 +110,16 @@ function calcWorkMinutesWithLunchRule(params: {
 
     const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
 
-    // ✅ 작업이 아니면 점심 규칙 적용 X
-    if (descType !== "작업") return totalMinutes;
+    // ✅ 작업과 대기가 아니면 점심 규칙 적용 X
+    if (descType !== "작업" && descType !== "대기") return totalMinutes;
 
-    // ✅ "점심 안 먹음"이면 전체 시간 카운트
-    if (noLunch) return totalMinutes;
+    // ✅ 대기는 무조건 점심시간 차감
+    if (descType === "대기") {
+        // 점심시간 차감 로직으로 진행
+    } else if (descType === "작업") {
+        // ✅ "점심 안 먹음"이면 전체 시간 카운트
+        if (noLunch) return totalMinutes;
+    }
 
     // ✅ 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
     let lunchOverlapMinutes = 0;
@@ -666,11 +689,11 @@ export default function ReportViewPage() {
                                                                             <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                                         </svg>
                                                                         <span className="shrink-0">
-                                                                            {e.dateFrom} {toKoreanTime(e.timeFrom)}
+                                                                            {formatDateWithDay(e.dateFrom)} {toKoreanTime(e.timeFrom)}
                                                                         </span>
                                                                         <span className="text-gray-400 shrink-0">→</span>
                                                                         <span className="shrink-0">
-                                                                            {e.dateTo} {toKoreanTime(e.timeTo)}
+                                                                            {formatDateWithDay(e.dateTo)} {toKoreanTime(e.timeTo)}
                                                                         </span>
                                                                     </div>
 

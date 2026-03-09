@@ -483,8 +483,6 @@ export default function WorkloadPage() {
                     profiles = profilesResult.value;
                 }
 
-                const summaries = aggregatePersonWorkload(entries.value, profiles);
-
                 const getTeamText = (p: any) =>
                     String(
                         p?.team ??
@@ -496,6 +494,7 @@ export default function WorkloadPage() {
                         ""
                     );
 
+                // ✅ 차트용: 공사팀만 (공무팀 제외)
                 const chartProfiles = profiles.filter((p: any) => {
                     const team = getTeamText(p);
                     const isCivil = team.includes("공무");
@@ -506,8 +505,58 @@ export default function WorkloadPage() {
                 const chartSummaries = aggregatePersonWorkload(entries.value, chartProfiles);
                 const newChartData = generateChartData(chartSummaries);
                 // ✅ 테스트 계정 "공사팀" 그래프에서 제외
-const filteredChartData = newChartData.filter((d) => d.name !== "공사팀");
-                const newTableData = generateTableData(summaries);
+                // ✅ 3월부터 "손재진" 그래프에서 제외
+                const filteredChartData = newChartData.filter((d) => {
+                    if (d.name === "공사팀") return false;
+                    if (monthNum >= 3 && d.name === "손재진") return false;
+                    return true;
+                });
+
+                // ✅ 테이블용: 공사팀 + 공무팀 (공무팀은 1시간 이상인 경우만)
+                // 공무팀 프로필만 별도로 집계 (aggregatePersonWorkload는 공무팀을 제외하므로 별도 처리)
+                const civilProfiles = profiles.filter((p: any) => {
+                    const team = getTeamText(p);
+                    return team.includes("공무") && !team.includes("공사");
+                });
+                
+                // 공무팀 summaries를 별도로 생성 (profiles 없이 모든 인원 집계 후 필터링)
+                const allSummaries = aggregatePersonWorkload(entries.value, undefined);
+                const civilSummaries = allSummaries.filter((summary) => {
+                    const profile = profiles.find((p: any) => p.name === summary.personName);
+                    if (!profile) return false;
+                    const team = getTeamText(profile);
+                    return team.includes("공무") && !team.includes("공사");
+                });
+                
+                // 공사팀 summaries와 공무팀 summaries 합치기
+                const allTableSummaries = [...chartSummaries, ...civilSummaries];
+                
+                // ✅ 필터링: 공사팀은 모두 표시 (테스트 계정 제외), 공무팀은 1시간 이상만
+                const getPersonDepartment = (name: string) => {
+                    const profile = profiles.find((p: any) => p.name === name);
+                    if (!profile) return null;
+                    const team = getTeamText(profile);
+                    if (team.includes("공무") && !team.includes("공사")) return "공무팀";
+                    if (team.includes("공사")) return "공사팀";
+                    return null;
+                };
+                
+                const filteredTableSummaries = allTableSummaries.filter((summary) => {
+                    const dept = getPersonDepartment(summary.personName);
+                    // 공사팀: 모두 표시 (테스트 계정 제외)
+                    if (dept === "공사팀") {
+                        return summary.personName !== "공사팀";
+                    }
+                    // 공무팀: 1시간 이상인 경우만 표시
+                    if (dept === "공무팀") {
+                        const totalHours = summary.workHours + summary.travelHours + summary.waitHours;
+                        return totalHours >= 1;
+                    }
+                    // 기타: 모두 표시
+                    return true;
+                });
+                
+                const newTableData = generateTableData(filteredTableSummaries);
 
                 if (cancelled || loadRequestIdRef.current !== requestId) return;
 

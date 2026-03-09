@@ -339,21 +339,25 @@ export default function ReportPdfPage() {
             const descType = String(e.desc_type ?? "").trim();
             const note = String(e.note ?? "");
 
-            if (descType !== "작업") {
+            // ✅ 작업과 대기가 아니면 점심 규칙 적용 X
+            if (descType !== "작업" && descType !== "대기") {
                 const h = Math.floor(totalMins / 60);
                 const m = totalMins % 60;
                 return `${h}${m >= 30 ? ".5" : ""}`;
             }
 
-            if (
-                note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
-                note.includes("점심 안먹고 작업진행(12:00~13:00)")
-            ) {
-                const h = Math.floor(totalMins / 60);
-                const m = totalMins % 60;
-                return `${h}${m >= 30 ? ".5" : ""}`;
+            // ✅ 작업: "점심 안 먹음"이면 점심시간 차감 안함
+            if (descType === "작업") {
+                if (
+                    note.includes("점심 안 먹고 작업진행(12:00~13:00)") ||
+                    note.includes("점심 안먹고 작업진행(12:00~13:00)")
+                ) {
+                    const h = Math.floor(totalMins / 60);
+                    const m = totalMins % 60;
+                    return `${h}${m >= 30 ? ".5" : ""}`;
+                }
             }
-            
+            // ✅ 대기는 무조건 점심시간 차감
 
             // 동일 일자만 점심 차감
             const sameDay = df && dt && df === dt;

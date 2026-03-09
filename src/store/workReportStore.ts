@@ -24,6 +24,7 @@ export interface ExpenseEntry {
   type: string;
   detail: string;
   amount: number;
+  currency?: string; // 화폐 단위 (원, 엔, 달러, 유로)
 }
 
 export interface MaterialEntry {

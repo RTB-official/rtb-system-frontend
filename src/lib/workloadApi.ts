@@ -412,8 +412,10 @@ export function aggregatePersonWorkload(
                 continue;
             }
 
-            // ✅ 공무팀: 워크로드에서 제외
+            // ✅ 공무팀: includeCivil 옵션이 있으면 포함, 없으면 제외
             if (dept === "공무팀") {
+                // includeCivil 옵션은 함수 시그니처에 추가하지 않고, 
+                // 테이블용 summaries는 별도로 처리 (WorkloadPage에서)
                 continue;
             }
         }
