@@ -321,6 +321,9 @@ export default function CopyPreviousWorkInfoSection() {
         } catch (error) {
             console.error("인원 정보 로드 실패:", error);
         }
+        
+        // 복사 완료
+        return Promise.resolve();
     };
 
     const selectOptions = useMemo(() => {
@@ -340,11 +343,15 @@ export default function CopyPreviousWorkInfoSection() {
                 value={selectedReportId}
                 onChange={(value) => {
                     if (value && selectOptions.length > 0) {
-                        handleCopy(value);
-                        // 복사 후 선택 초기화
-                        setTimeout(() => {
-                            setSelectedReportId("");
-                        }, 100);
+                        // 선택된 값 즉시 설정 (모바일에서도 선택이 유지되도록)
+                        setSelectedReportId(value);
+                        // 복사 실행 (비동기로 실행하되 초기화는 하지 않음)
+                        handleCopy(value).then(() => {
+                            // 복사 완료 후 선택 초기화 (모바일 터치 이벤트가 완전히 끝난 후)
+                            setTimeout(() => {
+                                setSelectedReportId("");
+                            }, 800);
+                        });
                     }
                 }}
                 disabled={loading || selectOptions.length === 0}
