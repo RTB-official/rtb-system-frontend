@@ -542,6 +542,9 @@ export default function WorkloadPage() {
                 };
                 
                 const filteredTableSummaries = allTableSummaries.filter((summary) => {
+                    // ✅ "손재진" 계정 제외
+                    if (summary.personName === "손재진") return false;
+                    
                     const dept = getPersonDepartment(summary.personName);
                     // 공사팀: 모두 표시 (테스트 계정 제외)
                     if (dept === "공사팀") {
