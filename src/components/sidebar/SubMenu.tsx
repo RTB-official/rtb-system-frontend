@@ -120,7 +120,7 @@ export default function SubMenu({
         }
       }}
     >
-      <div ref={contentRef} className="flex flex-col gap-1 py-1">
+      <div ref={contentRef} className="flex flex-col gap-0.5 md:gap-1 py-0.5 md:py-1">
       {renderItems.map((item) => (
           <SubLink
             key={item.to}

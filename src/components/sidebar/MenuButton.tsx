@@ -21,7 +21,7 @@ export default function MenuButton({
       type="button"
       onClick={onClick}
       className={[
-        "w-full flex gap-6 items-center p-3 rounded-xl relative",
+        "w-full flex gap-4 md:gap-6 items-center p-2 md:p-3 rounded-xl relative",
         "transition-all duration-300",
         "active:scale-[0.99]",
         isActive
@@ -32,12 +32,14 @@ export default function MenuButton({
         transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
-      <div className="flex gap-3 items-center w-[162px] relative">
-        {icon}
-        <p className="font-medium text-[16px] relative">
+      <div className="flex gap-2 md:gap-3 items-center flex-1 min-w-0 relative">
+        <div className="shrink-0 w-5 h-5 md:w-6 md:h-6 flex items-center justify-center">
+          {icon}
+        </div>
+        <p className="font-medium text-[13px] md:text-[16px] relative truncate">
           {label}
           {showDot && (
-            <span className="absolute -right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
+            <span className="absolute -right-2 md:-right-2.5 w-1 h-1 md:w-1.5 md:h-1.5 bg-red-500 rounded-full" />
           )}
         </p>
       </div>

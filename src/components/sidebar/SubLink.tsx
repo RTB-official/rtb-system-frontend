@@ -26,7 +26,7 @@ export default function SubLink({
         onClose?.();
       }}
       className={({ isActive }) =>
-        `flex items-center py-2 transition-all duration-300 ${isActive
+        `flex items-center py-1.5 md:py-2 transition-all duration-300 ${isActive
           ? "text-gray-800 font-semibold"
           : "text-gray-500 hover:text-gray-600 hover:font-semibold"
         }`
@@ -35,7 +35,7 @@ export default function SubLink({
         transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
-      <p className="text-[14px]">ㄴ {label}</p>
+      <p className="text-[12px] md:text-[14px]">ㄴ {label}</p>
     </NavLink>
   );
 }

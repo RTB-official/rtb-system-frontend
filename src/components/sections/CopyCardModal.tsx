@@ -5,6 +5,7 @@ import DatePicker from "../ui/DatePicker";
 import Button from "../common/Button";
 import WorkLogEntryCard from "./WorkLogEntryCard";
 import { useWorkReportStore, toKoreanTime } from "../../store/workReportStore";
+import { IconPlus } from "../icons/Icons";
 
 interface CopyCardModalProps {
     isOpen: boolean;
@@ -465,7 +466,7 @@ export default function CopyCardModal({
         return groups;
     }, [displayEntries]);
 
-    // 시간 계산 (카드 뷰용)
+    // 시간 계산 (카드 뷰용) - 점심시간 자동차감 포함
     const calcHours = (entry: any) => {
         if (!entry.timeFrom || !entry.timeTo) return "0시간";
         
@@ -481,10 +482,58 @@ export default function CopyCardModal({
         const start = toDateSafe(entry.dateFrom, entry.timeFrom);
         const end = toDateSafe(entry.dateTo, entry.timeTo);
         if (isNaN(start.getTime()) || isNaN(end.getTime())) return "0시간";
-        
-        const diff = (end.getTime() - start.getTime()) / (1000 * 60);
-        const hours = Math.floor(diff / 60);
-        const minutes = diff % 60;
+        if (end <= start) return "0시간";
+
+        const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
+
+        // 작업과 대기가 아니면 점심 규칙 적용 X
+        if (entry.descType !== "작업" && entry.descType !== "대기") {
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            if (minutes === 0) return `${hours}시간`;
+            return `${hours}시간 ${minutes}분`;
+        }
+
+        // 대기는 무조건 점심시간 차감
+        // 작업은 "점심 안 먹음"이면 전체 시간 카운트
+        if (entry.descType === "작업" && entry.noLunch) {
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            if (minutes === 0) return `${hours}시간`;
+            return `${hours}시간 ${minutes}분`;
+        }
+
+        // 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
+        let lunchOverlapMinutes = 0;
+
+        const cur = new Date(`${entry.dateFrom}T00:00:00`);
+        const last = new Date(`${entry.dateTo}T00:00:00`);
+
+        while (cur <= last) {
+            const yyyy = cur.getFullYear();
+            const mm = String(cur.getMonth() + 1).padStart(2, "0");
+            const dd = String(cur.getDate()).padStart(2, "0");
+            const d = `${yyyy}-${mm}-${dd}`;
+
+            const lunchStart = new Date(`${d}T12:00:00`);
+            const lunchEnd = new Date(`${d}T13:00:00`);
+
+            const overlapStart = start > lunchStart ? start : lunchStart;
+            const overlapEnd = end < lunchEnd ? end : lunchEnd;
+
+            if (overlapEnd > overlapStart) {
+                lunchOverlapMinutes += Math.floor(
+                    (overlapEnd.getTime() - overlapStart.getTime()) / 60000
+                );
+            }
+
+            cur.setDate(cur.getDate() + 1);
+        }
+
+        const result = totalMinutes - lunchOverlapMinutes;
+        const finalMinutes = result < 0 ? 0 : result;
+        const hours = Math.floor(finalMinutes / 60);
+        const minutes = finalMinutes % 60;
         if (minutes === 0) return `${hours}시간`;
         return `${hours}시간 ${minutes}분`;
     };
@@ -622,7 +671,33 @@ export default function CopyCardModal({
 
     return (
         <BaseModal isOpen={isOpen} onClose={onClose} title="카드 복사" maxWidth="max-w-6xl">
-            <div className="flex flex-col gap-6">
+            <style>{`
+                .copy-card-modal-card [class*="text-[14px]"] {
+                    font-size: 12px !important;
+                }
+                @media (min-width: 768px) {
+                    .copy-card-modal-card [class*="text-[14px]"] {
+                        font-size: 14px !important;
+                    }
+                }
+                .copy-card-modal-card [class*="text-[13px]"] {
+                    font-size: 11px !important;
+                }
+                @media (min-width: 768px) {
+                    .copy-card-modal-card [class*="text-[13px]"] {
+                        font-size: 13px !important;
+                    }
+                }
+                .copy-card-modal-card [class*="text-[15px]"] {
+                    font-size: 12px !important;
+                }
+                @media (min-width: 768px) {
+                    .copy-card-modal-card [class*="text-[15px]"] {
+                        font-size: 15px !important;
+                    }
+                }
+            `}</style>
+            <div className="relative flex flex-col gap-6">
                 {/* 날짜 선택 */}
                 <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium text-gray-700">
@@ -691,53 +766,57 @@ export default function CopyCardModal({
                                                     }`}
                                                     onClick={() => handleToggleCard(entry.__segId)}
                                                 >
-                                                    <WorkLogEntryCard
-                                                        descType={entry.descType as any}
-                                                        hoursLabel={hoursLabel}
-                                                        title={entry.details || entry.title || ""}
-                                                        meta={
-                                                            <div className="space-y-1.5 md:space-y-2">
-                                                                <div className="flex items-center gap-1.5 md:gap-2 text-[11px] md:text-[13px] text-gray-600">
-                                                                    <svg
-                                                                        width="14"
-                                                                        height="14"
-                                                                        viewBox="0 0 24 24"
-                                                                        fill="currentColor"
-                                                                        className="text-gray-400 shrink-0 md:w-4 md:h-4"
-                                                                    >
-                                                                        <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-                                                                    </svg>
-                                                                    <span className="shrink-0 min-w-0 truncate">
-                                                                        {formatDateWithDayForCard(entry.dateFrom)} {toKoreanTime(entry.timeFrom)}
-                                                                    </span>
-                                                                    <span className="text-gray-400 shrink-0">→</span>
-                                                                    <span className="shrink-0 min-w-0 truncate">
-                                                                        {formatDateWithDayForCard(entry.dateTo)} {toKoreanTime(entry.timeTo)}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex items-center gap-1.5 md:gap-2 text-[11px] md:text-[13px] text-gray-600">
-                                                                    <svg
-                                                                        width="14"
-                                                                        height="14"
-                                                                        viewBox="0 0 24 24"
-                                                                        fill="currentColor"
-                                                                        className="text-gray-400 shrink-0 md:w-4 md:h-4"
-                                                                    >
-                                                                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                                                                    </svg>
-                                                                    <span className="font-medium shrink-0">{entry.persons?.length || 0}명</span>
-                                                                    <span className="text-gray-400 shrink-0">|</span>
-                                                                    <div className="flex-1 min-w-0 text-gray-600 text-[11px] md:text-[13px] leading-4 md:leading-5 break-words">
-                                                                        {Array.isArray(entry.persons) && entry.persons.length > 0
-                                                                            ? entry.persons.join(", ")
-                                                                            : "—"}
+                                                    <div className="copy-card-modal-card [&_button[aria-label='toggle']]:hidden [&_div.text-\\[14px\\]]:!text-[12px] md:[&_div.text-\\[14px\\]]:!text-[14px] [&_span.text-\\[13px\\]]:!text-[11px] md:[&_span.text-\\[13px\\]]:!text-[13px] [&_span.text-\\[15px\\]]:!text-[12px] md:[&_span.text-\\[15px\\]]:!text-[15px]">
+                                                        <WorkLogEntryCard
+                                                            descType={entry.descType as any}
+                                                            hoursLabel={hoursLabel}
+                                                            title={entry.details || entry.title || ""}
+                                                            meta={
+                                                                <div className="space-y-1.5 md:space-y-2">
+                                                                    <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-[13px] text-gray-600">
+                                                                        <svg
+                                                                            width="12"
+                                                                            height="12"
+                                                                            viewBox="0 0 24 24"
+                                                                            fill="currentColor"
+                                                                            className="text-gray-400 shrink-0 w-3 h-3 md:w-4 md:h-4"
+                                                                        >
+                                                                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                                                                        </svg>
+                                                                        <span className="shrink-0 min-w-0 truncate">
+                                                                            {formatDateWithDayForCard(entry.dateFrom)} {toKoreanTime(entry.timeFrom)}
+                                                                        </span>
+                                                                        <span className="text-gray-400 shrink-0">→</span>
+                                                                        <span className="shrink-0 min-w-0 truncate">
+                                                                            {formatDateWithDayForCard(entry.dateTo)} {toKoreanTime(entry.timeTo)}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 md:gap-2 text-[10px] md:text-[13px] text-gray-600">
+                                                                        <svg
+                                                                            width="12"
+                                                                            height="12"
+                                                                            viewBox="0 0 24 24"
+                                                                            fill="currentColor"
+                                                                            className="text-gray-400 shrink-0 w-3 h-3 md:w-4 md:h-4"
+                                                                        >
+                                                                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                                                                        </svg>
+                                                                        <span className="font-medium shrink-0">{entry.persons?.length || 0}명</span>
+                                                                        <span className="text-gray-400 shrink-0">|</span>
+                                                                        <div className="flex-1 min-w-0 text-gray-600 text-[10px] md:text-[13px] leading-3.5 md:leading-5 break-words">
+                                                                            {Array.isArray(entry.persons) && entry.persons.length > 0
+                                                                                ? entry.persons.join(", ")
+                                                                                : "—"}
+                                                                        </div>
                                                                     </div>
                                                                 </div>
-                                                            </div>
-                                                        }
-                                                        isExpanded={false}
-                                                        onToggle={() => {}}
-                                                    />
+                                                            }
+                                                            isExpanded={false}
+                                                            onToggle={() => {}}
+                                                            showNoLunch={entry.noLunch}
+                                                            noLunchText={entry.noLunch ? "점심 안 먹고 작업 진행" : undefined}
+                                                        />
+                                                    </div>
                                                 </div>
                                             );
                                         })}
@@ -903,15 +982,15 @@ export default function CopyCardModal({
                     </div>
                 )}
 
-                {/* 버튼 */}
-                <div className="flex gap-3 justify-end">
-                    <Button variant="outline" onClick={onClose}>
-                        취소
-                    </Button>
+                {/* Floating Action Button: 복사 버튼 */}
+                <div className="fixed bottom-6 right-6 z-[10001]">
                     <Button
                         variant="primary"
+                        size="lg"
                         onClick={handleCopy}
                         disabled={!targetDate || selectedCount === 0}
+                        icon={<IconPlus />}
+                        className="shadow-lg rounded-full h-14 px-5"
                     >
                         복사 ({selectedCount})
                     </Button>
