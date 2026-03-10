@@ -88,7 +88,7 @@ export default function BaseModal({
                     </div>
 
                     {/* Body */}
-                    <div className="pb-4 flex-1 overflow-y-auto">
+                    <div className="pb-4 flex-1 overflow-y-auto relative">
                         {children}
                     </div>
 

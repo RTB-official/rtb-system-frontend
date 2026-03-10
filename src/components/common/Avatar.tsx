@@ -5,6 +5,7 @@ import { supabase } from "../../lib/supabase";
 type Props = {
     email?: string | null;
     size?: number; // px
+    sizeFromMd?: number; // md 이상에서 사용할 크기
     position?: string | null; // 직급
 };
 
@@ -114,7 +115,7 @@ async function fetchPositionFromDB(email: string): Promise<string | null> {
     return queryPromise;
 }
 
-export default function Avatar({ email, size = 32, position }: Props) {
+export default function Avatar({ email, size = 32, sizeFromMd, position }: Props) {
     // 초기 렌더링 시점에 동기적으로 캐시에서 직급 정보를 읽어옴 (깜빡임 방지)
     const initialPosition = getInitialPosition(email, position);
     const [cachedPosition, setCachedPosition] = useState<string | null>(initialPosition);

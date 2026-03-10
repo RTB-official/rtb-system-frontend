@@ -234,21 +234,21 @@ export default function Sidebar({ onClose }: SidebarProps) {
     };
 
     return (
-        <aside className="w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col shadow-xl lg:shadow-none">
-            <div className="flex flex-col gap-6 px-4 py-5 flex-1 min-h-0">
+        <aside className="w-[220px] md:w-[240px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col shadow-xl lg:shadow-none">
+            <div className="flex flex-col gap-4 md:gap-6 px-3 md:px-4 py-3 md:py-5 flex-1 min-h-0">
                 {/* Logo & Close Button */}
-                <div className="flex gap-2 items-center justify-between p-2">
+                <div className="flex gap-1.5 md:gap-2 items-center justify-between p-1.5 md:p-2">
                     <button
                         type="button"
                         onClick={() => navigate("/")}
-                        className="flex gap-2.5 items-center text-left hover:opacity-80 transition-opacity"
+                        className="flex gap-2 md:gap-2.5 items-center text-left hover:opacity-80 transition-opacity"
                     >
                         <img
                             src="/images/RTBlogo.png"
                             alt="RTB 로고"
-                            className="h-9 w-auto object-contain shrink-0"
+                            className="h-7 md:h-9 w-auto object-contain shrink-0"
                         />
-                        <p className="font-medium text-[14px] text-gray-900 whitespace-nowrap">
+                        <p className="font-medium text-[11px] md:text-[14px] text-gray-900 whitespace-nowrap">
                             RTB 통합 관리 시스템
                         </p>
                     </button>
@@ -256,22 +256,24 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         onClick={onClose}
                         className="lg:hidden p-1 hover:bg-gray-200 rounded-lg transition-colors text-gray-900"
                     >
-                        <IconClose />
+                        <IconClose className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                 </div>
 
                 {/* User Section */}
-                <div className="flex flex-col gap-3 flex-1 min-h-0">
+                <div className="flex flex-col gap-2 md:gap-3 flex-1 min-h-0">
                     <div
                         ref={usernameRef}
-                        className="flex gap-3 items-center p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
+                        className="flex gap-2 md:gap-3 items-center p-1.5 md:p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
                         onClick={() => {
                             setUserMenuOpen(!userMenuOpen);
                             setShowNotifications(false);
                         }}
                     >
-                        <Avatar email={currentUser?.email} size={28} position={currentUser?.position} />
-                        <p className="font-semibold text-[16px] text-gray-900">
+                        <div className="w-6 h-6 md:w-7 md:h-7 shrink-0">
+                            <Avatar email={currentUser?.email} size={24} position={currentUser?.position} />
+                        </div>
+                        <p className="font-semibold text-[13px] md:text-[16px] text-gray-900">
                             {sidebarLoginId || currentUser?.email?.split("@")[0] || ""}
                         </p>
                     </div>
@@ -366,17 +368,17 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 setUserMenuOpen(false);
                             }}
 
-                            className={`flex gap-6 items-center p-3 rounded-xl transition-colors w-full text-left ${showNotifications ? "bg-gray-100" : "text-gray-900 hover:bg-gray-200"
+                            className={`flex gap-4 md:gap-6 items-center p-2 md:p-3 rounded-xl transition-colors w-full text-left ${showNotifications ? "bg-gray-100" : "text-gray-900 hover:bg-gray-200"
                                 }`}
                         >
 
-                            <div className="flex gap-3 items-center w-[162px]">
-                                <IconNotifications />
-                                <p className="font-medium text-[16px]">알림</p>
+                            <div className="flex gap-2 md:gap-3 items-center flex-1 min-w-0">
+                                <IconNotifications className="w-5 h-5 md:w-6 md:h-6 shrink-0" />
+                                <p className="font-medium text-[13px] md:text-[16px]">알림</p>
                             </div>
                             {unreadCount > 0 && (
-                                <div className="ml-auto">
-                                    <span className="inline-flex items-center justify-center bg-red-500 text-white text-[12px] w-6 h-6 rounded-full font-bold">
+                                <div className="ml-auto shrink-0">
+                                    <span className="inline-flex items-center justify-center bg-red-500 text-white text-[10px] md:text-[12px] w-5 h-5 md:w-6 md:h-6 rounded-full font-bold">
                                         {unreadCount > 99 ? "99+" : unreadCount}
                                     </span>
                                 </div>
@@ -416,21 +418,21 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     </div>
 
                     <MenuButton
-                        icon={<IconBoard />}
+                        icon={<IconBoard className="w-5 h-5 md:w-6 md:h-6" />}
                         label="게시판"
                         isActive={routeLocation.pathname.startsWith("/board") && !menuFocus}
                         onClick={() => go(PATHS.board, null)}
                     />
 
-                    <div className="h-px bg-gray-200 rounded-full" />
+                    <div className="h-px bg-gray-200 rounded-full my-1 md:my-0" />
 
                     <nav
-                        className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0
+                        className="flex flex-col gap-1.5 md:gap-2 flex-1 overflow-y-auto min-h-0
                         [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
                     >
                         {canShowHome && (
                             <MenuButton
-                                icon={<IconHome />}
+                                icon={<IconHome className="w-5 h-5 md:w-6 md:h-6" />}
                                 label="홈"
                                 isActive={routeLocation.pathname === PATHS.dashboard && !menuFocus}
                                 onClick={() => go(PATHS.dashboard, null)}
@@ -442,7 +444,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
                         <div className="-pb-1">
                             <MenuButton
-                                icon={<IconReport />}
+                                icon={<IconReport className="w-5 h-5 md:w-6 md:h-6" />}
                                 label="보고서"
                                 isActive={reportActive}
                                 onClick={() => {
@@ -475,7 +477,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                                 : undefined
                                         }
                                     >
-                                        <IconShieldCheck />
+                                        <IconShieldCheck className="w-5 h-5 md:w-6 md:h-6" />
                                     </span>
                                 }
                                 label="TBM"
@@ -500,7 +502,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         </div>
 
                         <MenuButton
-                            icon={<IconWorkload />}
+                            icon={<IconWorkload className="w-5 h-5 md:w-6 md:h-6" />}
                             label="워크로드"
                             isActive={routeLocation.pathname.startsWith(PATHS.workload) && !menuFocus}
                             onClick={() =>
@@ -516,7 +518,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         <div className="-pb-1">
 
                             <MenuButton
-                                icon={<IconCard />}
+                                icon={<IconCard className="w-5 h-5 md:w-6 md:h-6" />}
                                 label="지출 관리"
                                 isActive={expenseActive}
                                 onClick={() => {
@@ -544,7 +546,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         </div>
                         {canShowVehicles && (
                             <MenuButton
-                                icon={<IconCar />}
+                                icon={<IconCar className="w-5 h-5 md:w-6 md:h-6" />}
                                 label="차량 관리"
                                 isActive={routeLocation.pathname.startsWith(PATHS.vehicles) && !menuFocus}
                                 onClick={() => {
@@ -556,7 +558,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                         )}
                         {canShowVacation && (
                             <MenuButton
-                                icon={<IconVacation />}
+                                icon={<IconVacation className="w-5 h-5 md:w-6 md:h-6" />}
                                 label="휴가 관리"
                                 isActive={routeLocation.pathname.startsWith(PATHS.vacation) && !menuFocus}
                                 onClick={() => {
@@ -567,7 +569,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             />
                         )}
                         <MenuButton
-                            icon={<IconMembers />}
+                            icon={<IconMembers className="w-5 h-5 md:w-6 md:h-6" />}
                             label="구성원 관리"
                             isActive={routeLocation.pathname.startsWith(PATHS.members) && !menuFocus}
                             onClick={() => {
@@ -579,10 +581,10 @@ export default function Sidebar({ onClose }: SidebarProps) {
                     </nav>
 
                     <div className="flex-none mt-auto">
-                        <div className="h-px bg-gray-200 rounded-full mt-2 mb-3" />
+                        <div className="h-px bg-gray-200 rounded-full mt-1.5 md:mt-2 mb-2 md:mb-3" />
                         <div className={isAdmin ? "" : "invisible pointer-events-none"}>
                             <MenuButton
-                                icon={<IconSettings />}
+                                icon={<IconSettings className="w-5 h-5 md:w-6 md:h-6" />}
                                 label="설정"
                                 isActive={settingsActive}
                                 onClick={() => {
