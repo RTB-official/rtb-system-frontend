@@ -961,7 +961,7 @@ if (!(Number.isFinite(a) && a > 0)) {
         const gongmuUserIds = await getGongmuTeamUserIds();
         const creatorId = prevCreatedBy || data.created_by || null;
         const targetUserIds = creatorId ? gongmuUserIds.filter((id) => id !== creatorId) : gongmuUserIds;
-  
+
         if (targetUserIds.length > 0) {
           await createNotificationsForUsers(
             targetUserIds,
@@ -975,7 +975,10 @@ if (!(Number.isFinite(a) && a > 0)) {
         console.error("알림 생성 실패:", notificationError?.message || notificationError);
       }
     }
-  
+
+    // ✅ 수정 후 조회 시 투입 인원 등이 최신으로 보이도록 캐시 무효화
+    workLogCache.delete(workLogId);
+
     return workLog;
   }
   

@@ -162,6 +162,9 @@ export default function ReportEditPage() {
         makeSnapshotRef.current = makeSnapshot;
     }, [makeSnapshot]);
 
+    // ✅ 로드 요청 순서 추적 (Strict Mode/중복 호출 시 오래된 응답이 workers 덮어쓰는 것 방지)
+    const loadIdRef = useRef(0);
+
     // 전체 직원 데이터 로드
     useEffect(() => {
         fetchAllStaff();
@@ -176,6 +179,9 @@ export default function ReportEditPage() {
                 return;
             }
 
+            loadIdRef.current += 1;
+            const thisLoadId = loadIdRef.current;
+
             try {
                 setLoading(true);
 
@@ -183,6 +189,9 @@ export default function ReportEditPage() {
                 resetForm();
 
                 const data = await getWorkLogById(workLogId);
+
+                // 오래된 로드 응답이면 무시 (투입 인원 등이 빈 상태로 덮어쓰이지 않도록)
+                if (thisLoadId !== loadIdRef.current) return;
 
                 if (!data) {
                     showError("보고서를 찾을 수 없습니다.");
@@ -267,6 +276,7 @@ export default function ReportEditPage() {
                 }));
                 setMaterials(materialEntries);
             } catch (error: any) {
+                if (thisLoadId !== loadIdRef.current) return;
                 console.error("Error loading work log:", error);
                 showError(
                     `보고서 로드 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
@@ -274,7 +284,8 @@ export default function ReportEditPage() {
                 );
                 navigate("/report");
             } finally {
-                // ✅ 로드 완료 시점을 초기 스냅샷으로 고정
+                // ✅ 이번 로드가 최신일 때만 완료 처리 (오래된 응답이 loading을 풀지 않도록)
+                if (thisLoadId !== loadIdRef.current) return;
                 setTimeout(() => {
                     initialSnapshotRef.current = makeSnapshotRef.current();
                     setIsDirty(false);
