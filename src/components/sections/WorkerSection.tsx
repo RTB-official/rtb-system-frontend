@@ -133,7 +133,7 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                                 <p className="font-semibold text-[15px] text-gray-800">
                                     {rank}
                                 </p>
-                                <div className="flex gap-2 flex-wrap">
+                                <div className="grid grid-cols-4 md:flex md:flex-wrap gap-2">
                                     {names.map((name) => (
                                         <Button
                                             key={name}
@@ -148,6 +148,7 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                                                     ? removeWorker(name)
                                                     : addWorker(name)
                                             }
+                                            className="w-full md:w-auto text-[13px] md:text-[14px]"
                                         >
                                             {name}
                                         </Button>
@@ -175,7 +176,7 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                                 {/* 인원 목록 */}
                                 {adminTeamOpen && (
                                     <div
-                                        className="flex gap-2 flex-wrap mt-1"
+                                        className="grid grid-cols-4 md:flex md:flex-wrap gap-2 mt-1"
                                         onClick={(e) => e.stopPropagation()} // 👈 버튼 클릭 시 토글 방지
                                     >
                                             {sortedAdminTeamMembers.map((member) => (
@@ -192,6 +193,7 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                                                         ? removeWorker(member.name)
                                                         : addWorker(member.name)
                                                 }
+                                                className="w-full md:w-auto text-[13px] md:text-[14px]"
                                             >
                                                 {member.name}
                                             </Button>
@@ -253,9 +255,9 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                             총 {workers.length}명
                         </p>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
+                    <div className="grid grid-cols-4 md:flex md:flex-wrap gap-2">
                         {workers.length === 0 ? (
-                            <p className="text-[#99a1af] text-sm">
+                            <p className="text-[#99a1af] text-sm col-span-4 md:col-span-1">
                                 위에서 작업자를 선택해주세요
                             </p>
                         ) : (
@@ -265,9 +267,10 @@ export default function WorkerSection({ title = "전체 인원" }: WorkerSection
                                     variant="secondary"
                                     size="md"
                                     onClick={() => removeWorker(worker)}
+                                    className="w-full md:w-auto text-[11px] md:text-[13px] px-2 md:px-3 py-1.5 md:py-2"
                                 >
                                     {worker}
-                                    <IconClose className="ml-1 w-4 h-4" />
+                                    <IconClose className="ml-1 w-3 h-3 md:w-3.5 md:h-3.5" />
                                 </Button>
                             ))
                         )}

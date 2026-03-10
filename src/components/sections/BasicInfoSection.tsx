@@ -185,17 +185,18 @@ export default function BasicInfoSection() {
                         </label>
                         <RequiredIndicator />
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid grid-cols-4 md:flex md:flex-wrap gap-2">
                         {VEHICLES.map((vehicle) => (
                             <Button
                                 key={vehicle}
-                                size="lg"
+                                size="md"
                                 variant={
                                     vehicles.includes(vehicle)
                                         ? "primary"
                                         : "outline"
                                 }
                                 onClick={() => toggleVehicle(vehicle)}
+                                className="w-full md:w-auto text-[13px] md:text-[16px]"
                             >
                                 {vehicle}
                             </Button>

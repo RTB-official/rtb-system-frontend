@@ -586,12 +586,12 @@ const personChunks = useMemo(() => {
                                     return (
                                         <div
                                             key={`${groupIdx}-${dateKey}`}
-                                            className="flex items-center gap-4"
+                                            className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4"
                                             style={{ width: "100%" }}
                                         >
-                                            {/* 날짜 */}
+                                            {/* 날짜 - 데스크톱에서는 왼쪽, 모바일에서는 숨김 (타임라인 내부에 표시) */}
                                             <div
-                                                className={`mt-2.5 text-[14px] font-medium ${
+                                                className={`hidden md:block mt-2.5 text-[14px] font-medium ${
                                                     isSunday
                                                         ? "text-rose-500"
                                                         : isSaturday
@@ -603,9 +603,22 @@ const personChunks = useMemo(() => {
                                             </div>
 
                                             {/* 트랙 */}
-                                            <div className="flex-1" style={{ minWidth: 0, width: "100%" }}>
+                                            <div className="flex-1 relative" style={{ minWidth: 0, width: "100%" }}>
+                                                {/* 모바일: 날짜를 이름과 타임라인 시간 라벨 사이에 표시 */}
                                                 <div
-                                                    className="relative border border-gray-300 rounded-lg overflow-visible w-full mt-3 bg-gray-50"
+                                                    className={`md:hidden absolute -top-4 left-0 z-10 text-[10px] font-medium px-1.5 py-0.5 ${
+                                                        isSunday
+                                                            ? "text-rose-500"
+                                                            : isSaturday
+                                                            ? "text-blue-500"
+                                                            : "text-slate-700"
+                                                    }`}
+                                                    style={{ lineHeight: "1.2" }}
+                                                >
+                                                    {formatKoreanDateLabel(dateKey).replace(/\s+/g, "")}
+                                                </div>
+                                                <div
+                                                    className="relative border border-gray-300 rounded-lg overflow-visible w-full mt-3 md:mt-3 bg-gray-50"
                                                     style={{
                                                         width: "100%",
                                                         height: `${trackHeight}px`,

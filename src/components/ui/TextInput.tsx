@@ -10,6 +10,8 @@ interface TextInputProps {
   value?: string;
   onChange?: (value: string) => void;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
   type?: 'text' | 'date' | 'number' | 'time';
   disabled?: boolean;
   uppercase?: boolean;
@@ -22,10 +24,12 @@ export default function TextInput({
   placeholder, 
   required = false, 
   icon, 
-  className = '',
+  className = '', 
   value,
   onChange,
   onKeyDown,
+  onBlur,
+  onFocus,
   type = 'text',
   disabled = false,
   uppercase = false,
@@ -57,6 +61,8 @@ export default function TextInput({
             value={value}
             onChange={handleChange}
             onKeyDown={onKeyDown}
+            onBlur={onBlur}
+            onFocus={onFocus}
             disabled={disabled}
             className="flex-1 font-normal text-[16px] text-[#101828] leading-[1.5] placeholder:text-[#99a1af] outline-none disabled:bg-transparent disabled:text-gray-400"
           />

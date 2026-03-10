@@ -884,6 +884,7 @@ if (!(Number.isFinite(a) && a > 0)) {
           expense_type: exp.type,
           detail: exp.detail,
           amount: exp.amount,
+          currency: exp.currency || "원",
         };
         const id = Number(exp.id);
   

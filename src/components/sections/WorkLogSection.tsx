@@ -13,6 +13,7 @@ import {
 import { IconEdit, IconTrash, IconClose } from "../icons/Icons";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import { useToast } from "../ui/ToastProvider";
+import CopyCardModal from "./CopyCardModal";
 
 // ✅ 작업 시간(분) 계산: 점심(12:00~13:00) 제외 옵션 포함
 function calcWorkMinutesWithLunchRule(params: {
@@ -495,6 +496,9 @@ export default function WorkLogSection() {
         setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }));
     };
 
+    // 카드 복사 모달 상태
+    const [copyModalOpen, setCopyModalOpen] = useState(false);
+
     // 엔트리를 시작 시간 기준으로 정렬
     const sortedEntries = useMemo(() => {
         return [...workLogEntries].sort((a, b) => {
@@ -676,8 +680,45 @@ export default function WorkLogSection() {
         }
     };
 
+    // 카드 복사 핸들러
+    const handleCopyCards = (selectedEntries: any[], targetDate: string) => {
+        const { setWorkLogEntries, workLogEntries } = useWorkReportStore.getState();
+        
+        const newEntries = selectedEntries.map((entry) => {
+            // 날짜를 타겟 날짜로 변경
+            return {
+                id: Date.now() + Math.random(), // 고유 ID 생성
+                dateFrom: targetDate,
+                timeFrom: entry.timeFrom,
+                dateTo: targetDate,
+                timeTo: entry.timeTo,
+                descType: entry.descType,
+                details: entry.details || "",
+                persons: [...(entry.persons || [])],
+                note: entry.note || "",
+                moveFrom: entry.moveFrom || "",
+                moveTo: entry.moveTo || "",
+                noLunch: entry.noLunch || false,
+            } as any;
+        });
+
+        setWorkLogEntries([...workLogEntries, ...newEntries]);
+        showSuccess(`${selectedEntries.length}개의 카드가 복사되었습니다.`);
+    };
+
     return (
-        <SectionCard title={reportType === "education" ? "교육 일지" : "출장 업무 일지"}>
+        <SectionCard
+            title={reportType === "education" ? "교육 일지" : "출장 업무 일지"}
+            headerContent={
+                <button
+                    type="button"
+                    onClick={() => setCopyModalOpen(true)}
+                    className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                    카드 복사
+                </button>
+            }
+        >
             <div className="flex flex-col gap-5">
                 {/* 입력 폼 */}
                 <div ref={formRef} className="flex flex-col gap-5 scroll-mt-20">
@@ -1065,9 +1106,9 @@ export default function WorkLogSection() {
                             <p className="text-[13px] text-[#6a7282] mb-2">
                                 작업자 클릭하여 추가
                             </p>
-                            <div className="flex flex-wrap gap-2 min-h-[36px]">
+                            <div className="grid grid-cols-4 md:flex md:flex-wrap gap-2 min-h-[36px]">
                                 {availableWorkers.length === 0 ? (
-                                    <p className="text-[#99a1af] text-sm">
+                                    <p className="text-[#99a1af] text-sm col-span-4 md:col-span-1">
                                         모든 작업자가 추가됨
                                     </p>
                                 ) : (
@@ -1082,6 +1123,7 @@ export default function WorkLogSection() {
                                                 e.stopPropagation();
                                                 addCurrentEntryPerson(worker);
                                             }}
+                                            className="w-full md:w-auto text-[13px] md:text-[14px]"
                                         >
                                             {worker}
                                         </Button>
@@ -1148,9 +1190,9 @@ export default function WorkLogSection() {
                                     {currentEntryPersons.length}명
                                 </span>
                             </div>
-                            <div className="flex flex-wrap gap-2 min-h-[36px]">
+                            <div className="grid grid-cols-4 md:flex md:flex-wrap gap-2 min-h-[36px]">
                                 {currentEntryPersons.length === 0 ? (
-                                    <p className="text-[#99a1af] text-sm">
+                                    <p className="text-[#99a1af] text-sm col-span-4 md:col-span-1">
                                         인원을 선택해주세요
                                     </p>
 
@@ -1163,9 +1205,10 @@ export default function WorkLogSection() {
                                             onClick={() =>
                                                 removeCurrentEntryPerson(person)
                                             }
+                                            className="w-full md:w-auto text-[11px] md:text-[13px] px-2 md:px-3 py-1.5 md:py-2"
                                         >
                                             {person}
-                                            <IconClose className="ml-1 w-4 h-4" />
+                                            <IconClose className="ml-1 w-3 h-3 md:w-3.5 md:h-3.5" />
                                         </Button>
                                     ))
                                 )}
@@ -1367,38 +1410,38 @@ export default function WorkLogSection() {
                                         hoursLabel={hoursLabel}
                                         title={entry.title}
                                         meta={
-                                            <div className="space-y-2">
-                                                <div className="flex items-center gap-2 text-[13px] text-gray-600 whitespace-nowrap">
+                                            <div className="space-y-1.5 md:space-y-2">
+                                                <div className="flex items-center gap-1.5 md:gap-2 text-[11px] md:text-[13px] text-gray-600">
                                                     <svg
-                                                        width="16"
-                                                        height="16"
+                                                        width="14"
+                                                        height="14"
                                                         viewBox="0 0 24 24"
                                                         fill="currentColor"
-                                                        className="text-gray-400 shrink-0"
+                                                        className="text-gray-400 shrink-0 md:w-4 md:h-4"
                                                     >
                                                         <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                     </svg>
-                                                    <span className="shrink-0">
+                                                    <span className="shrink-0 min-w-0 truncate">
                                                         {formatDateWithDay(entry.dateFrom)} {toKoreanTime(entry.timeFrom)}
                                                     </span>
                                                     <span className="text-gray-400 shrink-0">→</span>
-                                                    <span className="shrink-0">
+                                                    <span className="shrink-0 min-w-0 truncate">
                                                         {formatDateWithDay(entry.dateTo)} {toKoreanTime(entry.timeTo)}
                                                     </span>
                                                 </div>
-                                                <div className="flex items-center gap-2 text-[13px] text-gray-600">
+                                                <div className="flex items-center gap-1.5 md:gap-2 text-[11px] md:text-[13px] text-gray-600">
                                                     <svg
-                                                        width="16"
-                                                        height="16"
+                                                        width="14"
+                                                        height="14"
                                                         viewBox="0 0 24 24"
                                                         fill="currentColor"
-                                                        className="text-gray-400"
+                                                        className="text-gray-400 shrink-0 md:w-4 md:h-4"
                                                     >
                                                         <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
                                                     </svg>
-                                                    <span className="font-medium">{entry.persons.length}명</span>
-                                                    <span className="text-gray-400">|</span>
-                                                    <div className="flex-1 min-w-0 text-gray-600 text-[13px] leading-5 break-words">
+                                                    <span className="font-medium shrink-0">{entry.persons.length}명</span>
+                                                    <span className="text-gray-400 shrink-0">|</span>
+                                                    <div className="flex-1 min-w-0 text-gray-600 text-[11px] md:text-[13px] leading-4 md:leading-5 break-words">
                                                         {Array.isArray(entry.persons) && entry.persons.length > 0
                                                             ? entry.persons.join(", ")
                                                             : "—"}
@@ -1490,6 +1533,13 @@ export default function WorkLogSection() {
                 confirmText="삭제"
                 cancelText="취소"
                 confirmVariant="danger"
+            />
+
+            {/* 카드 복사 모달 */}
+            <CopyCardModal
+                isOpen={copyModalOpen}
+                onClose={() => setCopyModalOpen(false)}
+                onCopy={handleCopyCards}
             />
         </SectionCard>
     );
