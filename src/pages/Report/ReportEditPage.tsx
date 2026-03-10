@@ -113,6 +113,7 @@ export default function ReportEditPage() {
         setMaterials,
         setWorkLogEntries,
         setInstructor,
+        fetchAllStaff,
     } = useWorkReportStore();
 
     // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
@@ -160,6 +161,11 @@ export default function ReportEditPage() {
     useEffect(() => {
         makeSnapshotRef.current = makeSnapshot;
     }, [makeSnapshot]);
+
+    // 전체 직원 데이터 로드
+    useEffect(() => {
+        fetchAllStaff();
+    }, [fetchAllStaff]);
 
     // 기존 데이터 로드
     useEffect(() => {
