@@ -21,11 +21,15 @@ export default function SectionCard({
             className={`bg-white border border-gray-200 rounded-2xl p-4 md:p-7 overflow-hidden flex flex-col gap-4 ${className}`}
         >
             {hasHeader && (
-                <div className="flex flex-col sm:flex-row items-start justify-between gap-2">
-                    <h2 className="text-[18px] md:text-[22px] font-semibold text-gray-700 leading-[1.364] tracking-[-0.43px]">
+                <div className="flex flex-row items-start justify-between gap-2">
+                    <h2 className="text-[18px] md:text-[22px] font-semibold text-gray-700 leading-[1.364] tracking-[-0.43px] flex-1 min-w-0">
                         {title}
                     </h2>
-                    {headerContent}
+                    {headerContent && (
+                        <div className="shrink-0">
+                            {headerContent}
+                        </div>
+                    )}
                 </div>
             )}
             {children}

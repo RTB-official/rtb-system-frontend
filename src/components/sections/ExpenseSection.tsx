@@ -6,6 +6,7 @@ import Button from "../common/Button";
 import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
 import RequiredIndicator from "../ui/RequiredIndicator";
+import useIsMobile from "../../hooks/useIsMobile";
 import {
     useWorkReportStore,
     formatCurrency,
@@ -26,6 +27,8 @@ export default function ExpenseSection() {
         workers,
         workLogEntries,
     } = useWorkReportStore();
+    
+    const isMobile = useIsMobile();
 
     // 입력 상태
     const [date, setDate] = useState("");
@@ -33,6 +36,7 @@ export default function ExpenseSection() {
     const [typeCustom, setTypeCustom] = useState("");
     const [detail, setDetail] = useState("");
     const [amount, setAmount] = useState("");
+    const [isAmountFocused, setIsAmountFocused] = useState(false);
     const [currency, setCurrency] = useState<string>("원");
 
     // 에러 상태
@@ -67,8 +71,9 @@ export default function ExpenseSection() {
     };
 
     const handleAmountChange = (value: string) => {
-        const num = parseCurrency(value);
-        setAmount(num > 0 ? formatCurrency(num) : "");
+        // 숫자만 추출하여 저장
+        const cleaned = value.replace(/[^\d]/g, '');
+        setAmount(cleaned);
     };
 
     const handleAddExpense = () => {
@@ -137,7 +142,8 @@ export default function ExpenseSection() {
         setType(isInExpenseTypes ? expense.type : "OTHER");
         setTypeCustom(isInExpenseTypes ? "" : expense.type);
         setDetail(expense.detail);
-        setAmount(formatCurrency(expense.amount));
+        // 수정 모드에서는 포맷팅하지 않은 숫자만 저장 (입력 중 포맷팅 방지)
+        setAmount(String(expense.amount));
         setCurrency(expense.currency || "원");
     };
 
@@ -156,12 +162,15 @@ export default function ExpenseSection() {
         setDetail(workers.join(", "));
     };
 
-    // 날짜 포맷팅 함수 (YYYY-MM-DD -> M월 D일)
-    const formatDate = (dateString: string) => {
+    // 날짜 포맷팅 함수 (YYYY-MM-DD -> M월 D일 또는 M/D)
+    const formatDate = (dateString: string, isMobile: boolean = false) => {
         if (!dateString) return "";
         const date = new Date(dateString);
         const month = date.getMonth() + 1;
         const day = date.getDate();
+        if (isMobile) {
+            return `${month}/${day}`;
+        }
         return `${month}월 ${day}일`;
     };
 
@@ -287,10 +296,10 @@ export default function ExpenseSection() {
                             <RequiredIndicator />
                         </label>
                         <div className="flex gap-2">
-                            <div className="flex-1">
+                            <div className="flex-[2] md:flex-1 min-w-0">
                                 <TextInput
                                     placeholder="0"
-                                    value={amount}
+                                    value={isAmountFocused ? amount : (amount ? formatCurrency(parseCurrency(amount)) : '')}
                                     onChange={(val) => {
                                         handleAmountChange(val);
                                         if (errors.amount) {
@@ -300,11 +309,29 @@ export default function ExpenseSection() {
                                             }));
                                         }
                                     }}
+                                    onFocus={(e) => {
+                                        // 포커스를 받을 때 포맷팅 제거 (숫자만 표시)
+                                        setIsAmountFocused(true);
+                                        const num = parseCurrency(e.target.value);
+                                        if (num > 0) {
+                                            setAmount(String(num));
+                                        }
+                                    }}
+                                    onBlur={(e) => {
+                                        // 포커스를 잃을 때 포맷팅 적용
+                                        setIsAmountFocused(false);
+                                        const num = parseCurrency(e.target.value);
+                                        if (num > 0) {
+                                            setAmount(formatCurrency(num));
+                                        } else {
+                                            setAmount("");
+                                        }
+                                    }}
                                     onKeyDown={handleKeyDown}
                                     error={errors.amount}
                                 />
                             </div>
-                            <div className="w-24">
+                            <div className="w-20 md:w-24 shrink-0">
                                 <Select
                                     options={[
                                         { value: "원", label: "원" },
@@ -365,16 +392,16 @@ export default function ExpenseSection() {
                         <table className="w-full border-collapse">
                             <thead>
                                 <tr className="bg-gray-100">
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                    <th className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px] font-semibold">
                                         날짜
                                     </th>
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                    <th className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px] font-semibold">
                                         분류
                                     </th>
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                    <th className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px] font-semibold">
                                         상세내용
                                     </th>
-                                    <th className="border border-gray-200 px-3 py-2 text-[13px] font-semibold">
+                                    <th className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px] font-semibold">
                                         금액
                                     </th>
                                 </tr>
@@ -394,17 +421,17 @@ export default function ExpenseSection() {
                                                     : ""
                                             }`}
                                         >
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
-                                                {formatDate(expense.date)}
+                                            <td className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px] text-center">
+                                                {formatDate(expense.date, isMobile)}
                                             </td>
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center">
+                                            <td className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px] text-center">
                                                 {expense.type}
                                             </td>
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px]">
+                                            <td className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px]">
                                                 {expense.detail}
                                             </td>
-                                            <td className="border border-gray-200 px-3 py-2 text-[13px] text-center relative">
-                                                {formatCurrency(expense.amount)}{expense.currency || "원"}
+                                            <td className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-[11px] md:text-[13px] text-center relative">
+                                                <span className="whitespace-nowrap">{formatCurrency(expense.amount)}{expense.currency || "원"}</span>
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
@@ -434,12 +461,12 @@ export default function ExpenseSection() {
                                 <tr>
                                     <td
                                         colSpan={3}
-                                        className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
+                                        className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-right font-semibold text-[11px] md:text-[13px]"
                                     >
                                         합계
                                     </td>
-                                    <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px]">
-                                        {formatCurrency(total)}원
+                                    <td className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-center font-bold text-[12px] md:text-[14px]">
+                                        <span className="whitespace-nowrap">{formatCurrency(total)}원</span>
                                     </td>
                                 </tr>
                             </tfoot>

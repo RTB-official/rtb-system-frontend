@@ -70,11 +70,11 @@ export default function WorkLogEntryCard({
             <div className="relative p-4 cursor-pointer" onClick={onToggle}>
                 <div className="flex items-stretch justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2.5 mb-2">
-                            <Chip color={style.chipColor} variant="filled" size="lg">
+                        <div className="flex items-center gap-2 md:gap-2.5 mb-2">
+                            <Chip color={style.chipColor} variant="filled" size="md" sizeFromMd="lg">
                                 {descType || "—"}
                             </Chip>
-                            <span className={`text-[15px] font-bold ${style.text}`}>
+                            <span className={`text-[13px] md:text-[15px] font-bold ${style.text}`}>
                                 {hoursLabel}
                             </span>
                         </div>
@@ -109,11 +109,11 @@ export default function WorkLogEntryCard({
                                 e.stopPropagation();
                                 onToggle();
                             }}
-                            className="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-gray-500 hover:bg-gray-50"
+                            className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-white shadow flex items-center justify-center text-gray-500 hover:bg-gray-50"
                             aria-label="toggle"
                         >
                             <IconChevronRight
-                                className={`w-5 h-5 transition-transform duration-200 ${
+                                className={`w-4 h-4 md:w-5 md:h-5 transition-transform duration-200 ${
                                     isExpanded ? "-rotate-90" : "rotate-90"
                                 }`}
                             />
