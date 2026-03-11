@@ -402,8 +402,10 @@ export async function uploadReceiptFile(
     };
     const categoryEn = categoryMap[category] || "other";
     
-    // 파일명에 특수문자 제거 및 URL 안전한 문자만 사용
-    const safeFileName = `${workLogId}_${categoryEn}_${Date.now()}.${fileExt}`;
+    // 고유한 파일명 생성: 타임스탬프 + 랜덤 문자열로 중복 방지
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 15); // 13자리 랜덤 문자열
+    const safeFileName = `${workLogId}_${categoryEn}_${timestamp}_${randomStr}.${fileExt}`;
     const filePath = `receipts/${safeFileName}`;
 
     const { error: uploadError } = await supabase.storage
@@ -997,6 +999,7 @@ export async function getWorkLogReceipts(
         mime_type: string | null;
         file_size: number | null;
         file_url?: string;
+        created_at?: string;
     }>
 > {
     const { data, error } = await supabase
@@ -1012,8 +1015,19 @@ export async function getWorkLogReceipts(
 
     // Storage에서 공개 URL 생성
     const receiptsWithUrl = await Promise.all(
-        (data || []).map(async (receipt) => {
+        (data || []).map(async (receipt, index) => {
             let fileUrl: string | undefined;
+            
+            // 디버깅: 각 영수증의 정보 로그
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`getWorkLogReceipts - Receipt ${index + 1}:`, {
+                    id: receipt.id,
+                    storage_path: receipt.storage_path,
+                    original_name: receipt.original_name,
+                    category: receipt.category,
+                });
+            }
+            
             try {
                 // 버킷이 private이므로 signed URL 생성
                 const bucketName = receipt.storage_bucket || "work-log-recipts";
@@ -1031,6 +1045,15 @@ export async function getWorkLogReceipts(
                 } else {
                     fileUrl = signedUrlData?.signedUrl;
                 }
+                
+                // 디버깅: 생성된 URL 로그
+                if (process.env.NODE_ENV === 'development') {
+                    console.log(`getWorkLogReceipts - Receipt ${index + 1} URL:`, {
+                        id: receipt.id,
+                        storage_path: receipt.storage_path,
+                        file_url: fileUrl,
+                    });
+                }
             } catch (err) {
                 console.error("Error getting URL:", err);
             }
@@ -1043,6 +1066,7 @@ export async function getWorkLogReceipts(
                 mime_type: receipt.mime_type,
                 file_size: receipt.file_size,
                 file_url: fileUrl,
+                created_at: receipt.created_at,
             };
         })
     );
@@ -1129,7 +1153,34 @@ export async function deleteWorkLog(workLogId: number): Promise<void> {
             .delete()
             .eq("work_log_id", workLogId);
 
-        // work_log_receipts
+        // work_log_receipts - Storage 파일도 함께 삭제
+        const { data: receiptsData } = await supabase
+            .from("work_log_receipt")
+            .select("id, storage_path, storage_bucket")
+            .eq("work_log_id", workLogId);
+
+        if (receiptsData && receiptsData.length > 0) {
+            // Storage에서 파일 삭제
+            const storagePaths = receiptsData
+                .map((r) => r.storage_path)
+                .filter((path): path is string => Boolean(path));
+            
+            if (storagePaths.length > 0) {
+                // 버킷 이름 확인 (기본값: work-log-recipts)
+                const bucketName = receiptsData[0]?.storage_bucket || "work-log-recipts";
+                
+                const { error: storageError } = await supabase.storage
+                    .from(bucketName)
+                    .remove(storagePaths);
+
+                if (storageError) {
+                    console.error("Error deleting receipt files from storage:", storageError);
+                    // Storage 삭제 실패해도 DB는 삭제 시도
+                }
+            }
+        }
+
+        // DB에서 영수증 레코드 삭제
         await supabase
             .from("work_log_receipt")
             .delete()

@@ -299,6 +299,7 @@ export default function ExpenseSection() {
                             <div className="flex-[2] md:flex-1 min-w-0">
                                 <TextInput
                                     placeholder="0"
+                                    inputMode="numeric"
                                     value={isAmountFocused ? amount : (amount ? formatCurrency(parseCurrency(amount)) : '')}
                                     onChange={(val) => {
                                         handleAmountChange(val);

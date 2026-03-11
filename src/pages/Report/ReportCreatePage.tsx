@@ -421,9 +421,9 @@ export default function ReportCreatePage() {
                                 <BasicInfoSection />
                                 <WorkerSection title="투입 인원" />
                                 <WorkLogSection />
-                                <ExpenseSection />
                                 <ConsumablesSection />
                                 <FileUploadSection />
+                                <ExpenseSection />
                                 <SectionCard
                                     title="타임라인"
                                     headerContent={

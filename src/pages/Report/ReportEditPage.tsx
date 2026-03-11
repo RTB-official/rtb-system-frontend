@@ -850,14 +850,14 @@ if (newFiles.length > 0) {
                             {/* 출장 업무 일지 */}
                             <WorkLogSection />
 
-                            {/* 경비 내역 */}
-                            <ExpenseSection />
-
                             {/* 소모품 사용량 */}
                             <ConsumablesSection />
 
                             {/* 첨부파일 업로드 */}
                             <FileUploadSection workLogId={workLogId} />
+
+                            {/* 경비 내역 */}
+                            <ExpenseSection />
 
                             {/* 타임라인 요약 */}
                             {reportType === "work" && (

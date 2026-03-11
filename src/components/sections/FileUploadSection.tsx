@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useWorkReportStore, FileCategory, UploadedFile } from "../../store/workReportStore";
 import Button from "../common/Button";
 import { getWorkLogReceipts, deleteWorkLogReceipt } from "../../lib/workLogApi";
 import { useToast } from "../ui/ToastProvider";
+import ReceiptExpenseModal from "./ReceiptExpenseModal";
 
 // 아이콘들
 const IconBed = () => (
@@ -154,6 +155,7 @@ function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps
                             originalName: receipt.original_name,
                             fileUrl: receipt.file_url,
                             mimeType: receipt.mime_type,
+                            createdAt: receipt.created_at,
                         });
                         setLoadedReceiptIds((prev) => new Set(prev).add(receipt.id));
                     }
@@ -352,12 +354,13 @@ interface FileUploadSectionProps {
 }
 
 export default function FileUploadSection({ workLogId }: FileUploadSectionProps) {
-    const { reportType } = useWorkReportStore();
+    const { reportType, uploadedFiles } = useWorkReportStore();
     const [previewFile, setPreviewFile] = useState<{
         url: string;
         name: string;
         type: string;
     } | null>(null);
+    const [modalOpen, setModalOpen] = useState(false);
 
     const openPreview = (url: string, name: string, type: string) => {
         setPreviewFile({ url, name, type });
@@ -366,6 +369,42 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
     const closePreview = () => {
         setPreviewFile(null);
     };
+
+    // 출장 보고서일 때만 표시할 영수증 카테고리
+    const receiptCategories: FileCategory[] = useMemo(() => {
+        if (reportType === "education") return [];
+        return ["숙박영수증", "자재구매영수증", "식비및유대영수증"];
+    }, [reportType]);
+
+    // 각 카테고리별 영수증 필터링
+    const receiptsByCategory = useMemo(() => {
+        const result: Record<FileCategory, UploadedFile[]> = {
+            숙박영수증: [],
+            자재구매영수증: [],
+            식비및유대영수증: [],
+            기타: [],
+        };
+
+        receiptCategories.forEach((category) => {
+            result[category] = uploadedFiles.filter(
+                (file) => file.category === category
+            );
+        });
+        
+        // "기타" 카테고리도 항상 포함
+        result.기타 = uploadedFiles.filter(
+            (file) => file.category === "기타"
+        );
+
+        return result;
+    }, [uploadedFiles, receiptCategories]);
+
+    // 모든 영수증이 있는지 확인
+    const hasReceipts = useMemo(() => {
+        return receiptCategories.some(
+            (category) => receiptsByCategory[category].length > 0
+        );
+    }, [receiptCategories, receiptsByCategory]);
 
     return (
         <div className="bg-white border border-[#e5e7eb] rounded-2xl p-4 md:p-7 overflow-hidden flex flex-col gap-4 md:gap-5">
@@ -414,6 +453,20 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                     workLogId={workLogId}
                 />
             </div>
+
+            {/* 영수증으로 지출내역 추가 버튼 */}
+            {reportType === "work" && hasReceipts && (
+                <div className="pt-2">
+                    <Button
+                        onClick={() => setModalOpen(true)}
+                        variant="primary"
+                        size="lg"
+                        fullWidth
+                    >
+                        영수증 보면서 지출내역 추가
+                    </Button>
+                </div>
+            )}
 
             {/* 미리보기 모달 */}
             {previewFile && (
@@ -464,6 +517,13 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                     </div>
                 </div>
             )}
+
+            {/* 영수증으로 지출내역 추가 모달 */}
+            <ReceiptExpenseModal
+                isOpen={modalOpen}
+                onClose={() => setModalOpen(false)}
+                receiptsByCategory={receiptsByCategory}
+            />
         </div>
     );
 }

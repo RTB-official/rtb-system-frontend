@@ -152,9 +152,19 @@ export async function getReportPdfData(workLogId: number) {
 
     // Storage에서 URL 생성 (signed URL 우선, 실패 시 public URL)
     const receipts = await Promise.all(
-        (receiptsRows ?? []).map(async (r: any) => {
+        (receiptsRows ?? []).map(async (r: any, index: number) => {
             let fileUrl: string | null = null;
             const storagePath = r.storage_path ?? r.path;
+            
+            // 디버깅: 각 영수증의 정보 로그
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`Receipt ${index + 1}:`, {
+                    id: r.id,
+                    storage_path: storagePath,
+                    original_name: r.original_name ?? r.file_name ?? r.name,
+                    category: r.category,
+                });
+            }
             
             // storage_path가 없으면 URL 생성 불가
             if (!storagePath) {
@@ -187,6 +197,15 @@ export async function getReportPdfData(workLogId: number) {
                     fileUrl = urlData?.publicUrl || null;
                 } else {
                     fileUrl = signedUrlData?.signedUrl || null;
+                }
+                
+                // 디버깅: 생성된 URL 로그
+                if (process.env.NODE_ENV === 'development') {
+                    console.log(`Receipt ${index + 1} URL:`, {
+                        id: r.id,
+                        storage_path: storagePath,
+                        file_url: fileUrl,
+                    });
                 }
             } catch (err) {
                 console.error("Error getting receipt URL:", err);

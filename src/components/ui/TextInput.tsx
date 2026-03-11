@@ -13,6 +13,7 @@ interface TextInputProps {
   onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
   onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
   type?: 'text' | 'date' | 'number' | 'time';
+  inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'search' | 'email' | 'url';
   disabled?: boolean;
   uppercase?: boolean;
   inputRef?: React.Ref<HTMLInputElement>;
@@ -31,6 +32,7 @@ export default function TextInput({
   onBlur,
   onFocus,
   type = 'text',
+  inputMode,
   disabled = false,
   uppercase = false,
   inputRef,
@@ -57,6 +59,7 @@ export default function TextInput({
           <input
             ref={inputRef}
             type={type}
+            inputMode={inputMode}
             placeholder={placeholder}
             value={value}
             onChange={handleChange}
