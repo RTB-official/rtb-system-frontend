@@ -8,6 +8,7 @@ import ActionMenu from "../../components/common/ActionMenu";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { IconPlus, IconMoreVertical } from "../../components/icons/Icons";
 import { BoardPostCard } from "../../components/board/BoardPostCards";
+import BoardCommentSection from "../../components/board/BoardCommentSection";
 import BoardListSkeleton from "../../components/board/BoardListSkeleton";
 import {
     getBoardPosts,
@@ -50,6 +51,8 @@ export default function BoardListPage() {
     const { currentUserId } = useUser();
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
+    const profileName =
+        typeof localStorage !== "undefined" ? localStorage.getItem("profile_name") ?? null : null;
 
     const loadPosts = async () => {
         if (!currentUserId) return;
@@ -223,49 +226,69 @@ export default function BoardListPage() {
                                         const allowMultiple = !!parsed.allowMultiple;
                                         const selectedIndices = myVotes[row.id] ?? [];
                                         const counts = voteCounts[row.id] ?? {};
-                                        return (
-                                            <BoardPostCard
-                                                key={row.id}
-                                                title={row.title || "—"}
-                                                description={description}
-                                                headerRight={headerRight}
-                                                authorName={row.author_name || "—"}
-                                                authorEmail={row.author_email ?? null}
-                                                createdAtLabel={formatBoardDateTimeKo(row.created_at)}
-                                                chip={{ label: "투표", color: "blue-500", variant: "solid", size: "lg" }}
-                                                vote={{
-                                                    options,
-                                                    optionImages,
-                                                    allowMultiple,
-                                                    selectedIndices,
-                                                    counts,
-                                                    voteDisabled: votingPostId === row.id,
-                                                    onVote: (optionIndex, allowMulti, current) =>
-                                                        handleVote(row.id, optionIndex, allowMulti, current),
-                                                }}
-                                                className=""
+                                        const commentFooter = (
+                                            <BoardCommentSection
+                                                post={row}
+                                                currentUserId={currentUserId}
+                                                authorName={profileName}
+                                                embedded
                                             />
+                                        );
+                                        return (
+                                            <div key={row.id}>
+                                                <BoardPostCard
+                                                    title={row.title || "—"}
+                                                    description={description}
+                                                    headerRight={headerRight}
+                                                    authorName={row.author_name || "—"}
+                                                    authorEmail={row.author_email ?? null}
+                                                    createdAtLabel={formatBoardDateTimeKo(row.created_at)}
+                                                    chip={{ label: "투표", color: "blue-500", variant: "solid", size: "lg" }}
+                                                    vote={{
+                                                        options,
+                                                        optionImages,
+                                                        allowMultiple,
+                                                        selectedIndices,
+                                                        counts,
+                                                        voteDisabled: votingPostId === row.id,
+                                                        onVote: (optionIndex, allowMulti, current) =>
+                                                            handleVote(row.id, optionIndex, allowMulti, current),
+                                                    }}
+                                                    footer={commentFooter}
+                                                    className=""
+                                                />
+                                            </div>
                                         );
                                     } catch {
                                         // JSON 파싱 실패 시 일반 게시물로 표시
                                     }
                                 }
 
-                                return (
-                                    <BoardPostCard
-                                        key={row.id}
-                                        title={row.title || "—"}
-                                        body={row.body?.trim() || "—"}
-                                        headerRight={headerRight}
-                                        authorName={row.author_name || "—"}
-                                        authorEmail={row.author_email ?? null}
-                                        createdAtLabel={formatBoardDateTimeKo(row.created_at)}
-                                        chip={
-                                            row.type === "notice"
-                                                ? { label: "공지사항", color: "red-500", variant: "solid", size: "lg" }
-                                                : undefined
-                                        }
+                                const commentFooter = (
+                                    <BoardCommentSection
+                                        post={row}
+                                        currentUserId={currentUserId}
+                                        authorName={profileName}
+                                        embedded
                                     />
+                                );
+                                return (
+                                    <div key={row.id}>
+                                        <BoardPostCard
+                                            title={row.title || "—"}
+                                            body={row.body?.trim() || "—"}
+                                            headerRight={headerRight}
+                                            authorName={row.author_name || "—"}
+                                            authorEmail={row.author_email ?? null}
+                                            createdAtLabel={formatBoardDateTimeKo(row.created_at)}
+                                            chip={
+                                                row.type === "notice"
+                                                    ? { label: "공지사항", color: "red-500", variant: "solid", size: "lg" }
+                                                    : undefined
+                                            }
+                                            footer={commentFooter}
+                                        />
+                                    </div>
                                 );
                             })
                         )}

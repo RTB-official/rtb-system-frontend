@@ -13,6 +13,8 @@ export interface BoardPost {
     body: string | null;
     type: BoardPostType;
     visibility: BoardVisibility;
+    /** 게시글 작성 시 설정. true면 댓글을 익명/실명 선택 가능, false면 실명만 */
+    allow_anonymous_comments?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -26,6 +28,8 @@ export interface CreateBoardPostInput {
     body?: string;
     type: BoardPostType;
     visibility: BoardVisibility;
+    /** 댓글 익명 허용 여부. true면 익명/실명 선택 가능, false면 실명만 */
+    allow_anonymous_comments?: boolean;
     voteOptions?: string[];
     /** 투표 시 여러 항목 선택 가능 여부 */
     voteAllowMultiple?: boolean;
@@ -37,7 +41,7 @@ export interface CreateBoardPostInput {
 export async function getBoardPosts(userId: string): Promise<BoardPostRow[]> {
     const { data: posts, error: postsError } = await supabase
         .from("board_posts")
-        .select("id, author_id, author_name, title, body, type, visibility, created_at, updated_at")
+        .select("id, author_id, author_name, title, body, type, visibility, allow_anonymous_comments, created_at, updated_at")
         .order("created_at", { ascending: false });
 
     if (postsError) throw postsError;
@@ -117,6 +121,7 @@ export async function createBoardPost(
             body,
             type: input.type,
             visibility: input.visibility,
+            allow_anonymous_comments: input.allow_anonymous_comments ?? true,
         })
         .select()
         .single();
@@ -157,6 +162,7 @@ export async function updateBoardPost(
         body?: string;
         type: BoardPostType;
         visibility: BoardVisibility;
+        allow_anonymous_comments?: boolean;
         voteOptions?: string[];
         voteAllowMultiple?: boolean;
         voteOptionImages?: string[];
@@ -178,6 +184,7 @@ export async function updateBoardPost(
             body,
             type: input.type,
             visibility: input.visibility,
+            allow_anonymous_comments: input.allow_anonymous_comments ?? true,
             updated_at: new Date().toISOString(),
         })
         .eq("id", postId)
@@ -272,4 +279,103 @@ export async function submitVote(postId: string, userId: string, optionIndices: 
     }));
     const { error: insError } = await supabase.from("board_votes").insert(rows);
     if (insError) throw insError;
+}
+
+// ==================== 댓글 ====================
+
+export interface BoardComment {
+    id: string;
+    post_id: string;
+    parent_id: string | null;
+    author_id: string;
+    author_name: string | null;
+    body: string;
+    is_anonymous: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+/** 댓글 목록 조회 (대댓글 포함) */
+export async function getBoardComments(postId: string): Promise<BoardComment[]> {
+    const { data, error } = await supabase
+        .from("board_comments")
+        .select("*")
+        .eq("post_id", postId)
+        .order("created_at", { ascending: true });
+    if (error) throw error;
+    return (data ?? []) as BoardComment[];
+}
+
+/** 게시물별 댓글 수 (목록용) */
+export async function getBoardCommentCounts(postIds: string[]): Promise<Record<string, number>> {
+    if (!postIds.length) return {};
+    const { data, error } = await supabase
+        .from("board_comments")
+        .select("post_id")
+        .in("post_id", postIds);
+    if (error) throw error;
+    const counts: Record<string, number> = {};
+    (data ?? []).forEach((r) => {
+        counts[r.post_id] = (counts[r.post_id] ?? 0) + 1;
+    });
+    return counts;
+}
+
+/** 댓글 작성 */
+export async function createBoardComment(
+    postId: string,
+    authorId: string,
+    authorName: string | null,
+    body: string,
+    isAnonymous: boolean,
+    parentId?: string | null
+): Promise<BoardComment> {
+    const trimmed = body.trim();
+    if (!trimmed) throw new Error("댓글 내용을 입력해 주세요.");
+    const { data, error } = await supabase
+        .from("board_comments")
+        .insert({
+            post_id: postId,
+            parent_id: parentId ?? null,
+            author_id: authorId,
+            author_name: isAnonymous ? null : (authorName ?? null),
+            body: trimmed,
+            is_anonymous: isAnonymous,
+        })
+        .select()
+        .single();
+    if (error) throw error;
+    return data as BoardComment;
+}
+
+/** 댓글 삭제 (RLS와 동일한 auth.uid() 사용) */
+export async function deleteBoardComment(commentId: string, _userId: string): Promise<void> {
+    const {
+        data: { user },
+        error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error("로그인이 필요합니다.");
+    const { error } = await supabase
+        .from("board_comments")
+        .delete()
+        .eq("id", commentId)
+        .eq("author_id", user.id);
+    if (error) throw error;
+}
+
+/** 댓글 수정 (DB RPC 사용, auth.uid()로 본인 검사) */
+export async function updateBoardComment(
+    commentId: string,
+    _userId: string,
+    body: string
+): Promise<void> {
+    const trimmed = body.trim();
+    if (!trimmed) throw new Error("댓글 내용을 입력해 주세요.");
+    const { error } = await supabase.rpc("update_board_comment_body", {
+        p_comment_id: commentId,
+        p_body: trimmed,
+    });
+    if (error) {
+        throw new Error(error.message || "댓글을 수정할 수 없습니다. 본인이 작성한 댓글인지 확인해 주세요.");
+    }
 }

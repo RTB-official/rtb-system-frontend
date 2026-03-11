@@ -19,7 +19,7 @@ function BoardAuthorMeta({
     authorClassName?: string;
 }) {
     return (
-        <div className="flex items-center justify-start gap-3 border-t border-gray-100 mt-4 pt-4">
+        <div className="flex items-center justify-start gap-3 mt-4 pt-4">
             {authorEmail ? (
                 <Avatar email={authorEmail} size={32} />
             ) : (
@@ -56,6 +56,8 @@ interface BoardPostCardProps {
         voteDisabled?: boolean;
         onVote: (optionIndex: number, allowMultiple: boolean, currentIndices: number[]) => void;
     };
+    /** 작성자 바로 밑에 표시 (예: 댓글 영역) */
+    footer?: ReactNode;
     className?: string;
 }
 
@@ -69,6 +71,7 @@ export function BoardPostCard({
     createdAtLabel,
     chip,
     vote,
+    footer,
     className = "",
 }: BoardPostCardProps) {
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -126,7 +129,8 @@ export function BoardPostCard({
                                 <button
                                     key={i}
                                     type="button"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                        e.stopPropagation();
                                         if (isVoting) return;
                                         vote.onVote(i, vote.allowMultiple, vote.selectedIndices);
                                     }}
@@ -187,6 +191,7 @@ export function BoardPostCard({
                     createdAtLabel={createdAtLabel}
                     authorClassName="text-gray-700"
                 />
+                {footer ? <div className="border-t border-gray-100 mt-4 pt-4">{footer}</div> : null}
             </div>
             <ImagePreviewModal
                 isOpen={!!previewImageUrl}

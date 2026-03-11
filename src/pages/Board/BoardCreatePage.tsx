@@ -32,10 +32,16 @@ const VISIBILITY_OPTIONS: { value: BoardVisibility; label: string }[] = [
     { value: "admin", label: "공무팀에만 보이기" },
 ];
 
+const COMMENT_MODE_OPTIONS: { value: string; label: string }[] = [
+    { value: "anonymous", label: "익명" },
+    { value: "real", label: "실명" },
+];
+
 export default function BoardCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [type, setType] = useState<BoardPostType>("post");
     const [visibility, setVisibility] = useState<BoardVisibility>("all");
+    const [allowAnonymousComments, setAllowAnonymousComments] = useState(true);
     const [title, setTitle] = useState("");
     const [body, setBody] = useState("");
     const [voteOptions, setVoteOptions] = useState<string[]>(["", ""]);
@@ -107,6 +113,7 @@ export default function BoardCreatePage() {
                 body: body.trim() || undefined,
                 type,
                 visibility,
+                allow_anonymous_comments: allowAnonymousComments,
                 ...(type === "vote" && {
                     voteOptions: options,
                     voteAllowMultiple: voteAllowMultiple,
@@ -156,7 +163,7 @@ export default function BoardCreatePage() {
                     <PageContainer className="pt-2">
                         <SectionCard title="글쓰기">
                             <div className="flex flex-col gap-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <Select
                                         label="유형"
                                         options={TYPE_OPTIONS}
@@ -168,6 +175,12 @@ export default function BoardCreatePage() {
                                         options={VISIBILITY_OPTIONS}
                                         value={visibility}
                                         onChange={(v) => setVisibility(v as BoardVisibility)}
+                                    />
+                                    <Select
+                                        label="댓글 작성 방식"
+                                        options={COMMENT_MODE_OPTIONS}
+                                        value={allowAnonymousComments ? "anonymous" : "real"}
+                                        onChange={(v) => setAllowAnonymousComments(v === "anonymous")}
                                     />
                                 </div>
                                 <Input

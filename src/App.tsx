@@ -87,6 +87,7 @@ function App() {
                 <Route path="/board" element={<BoardListPage />} />
                 <Route path="/board/create" element={<BoardCreatePage />} />
                 <Route path="/board/:id/edit" element={<BoardEditPage />} />
+                <Route path="/board/:id" element={<Navigate to="/board" replace />} />
 
                 <Route path="/members" element={<MembersPage />} />
                 <Route path="/vehicles" element={<VehiclesPage />} />
