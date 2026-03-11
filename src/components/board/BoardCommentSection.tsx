@@ -243,6 +243,13 @@ export default function BoardCommentSection({
     /** 글쓴이가 선택한 방식: true=익명, false=실명 (댓글 작성자는 선택 불가) */
     const commentAsAnonymous = post.allow_anonymous_comments ?? true;
 
+    /** 댓글/답글 입력 placeholder: 익명·실명·비밀댓글 중 어떻게 작성되는지 안내 */
+    const commentPlaceholder = post.secret_comments_only
+        ? "비밀댓글"
+        : commentAsAnonymous
+          ? "익명"
+          : "실명";
+
     const loadComments = useCallback(async () => {
         try {
             const list = await getBoardComments(post.id);
@@ -400,7 +407,7 @@ export default function BoardCommentSection({
                                 if (body.trim()) handleSubmit();
                             }
                         }}
-                        placeholder="댓글을 입력하세요"
+                        placeholder={`댓글을 입력하세요 (${commentPlaceholder})`}
                         rows={3}
                         className="w-full resize-none border border-gray-200 rounded-xl px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
@@ -477,7 +484,7 @@ export default function BoardCommentSection({
                                                     if (replyBody.trim()) handleReplySubmit();
                                                 }
                                             }}
-                                            placeholder="답글을 입력하세요"
+                                            placeholder={`답글을 입력하세요 (${commentPlaceholder})`}
                                             rows={2}
                                             className="w-full resize-none border border-gray-200 rounded-xl px-3 py-2 text-[14px]"
                                         />
