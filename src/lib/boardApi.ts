@@ -15,6 +15,8 @@ export interface BoardPost {
     visibility: BoardVisibility;
     /** 게시글 작성 시 설정. true면 댓글을 익명/실명 선택 가능, false면 실명만 */
     allow_anonymous_comments?: boolean;
+    /** true면 이 글의 모든 댓글이 비밀댓글(타인에게는 "비밀댓글입니다"만 표시) */
+    secret_comments_only?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -30,6 +32,8 @@ export interface CreateBoardPostInput {
     visibility: BoardVisibility;
     /** 댓글 익명 허용 여부. true면 익명/실명 선택 가능, false면 실명만 */
     allow_anonymous_comments?: boolean;
+    /** 비밀댓글만 허용. true면 모든 댓글이 비밀댓글(타인에게 비밀댓글입니다 표시) */
+    secret_comments_only?: boolean;
     voteOptions?: string[];
     /** 투표 시 여러 항목 선택 가능 여부 */
     voteAllowMultiple?: boolean;
@@ -41,7 +45,7 @@ export interface CreateBoardPostInput {
 export async function getBoardPosts(userId: string): Promise<BoardPostRow[]> {
     const { data: posts, error: postsError } = await supabase
         .from("board_posts")
-        .select("id, author_id, author_name, title, body, type, visibility, allow_anonymous_comments, created_at, updated_at")
+        .select("id, author_id, author_name, title, body, type, visibility, allow_anonymous_comments, secret_comments_only, created_at, updated_at")
         .order("created_at", { ascending: false });
 
     if (postsError) throw postsError;
@@ -122,6 +126,7 @@ export async function createBoardPost(
             type: input.type,
             visibility: input.visibility,
             allow_anonymous_comments: input.allow_anonymous_comments ?? true,
+            secret_comments_only: input.secret_comments_only ?? false,
         })
         .select()
         .single();
@@ -163,6 +168,7 @@ export async function updateBoardPost(
         type: BoardPostType;
         visibility: BoardVisibility;
         allow_anonymous_comments?: boolean;
+        secret_comments_only?: boolean;
         voteOptions?: string[];
         voteAllowMultiple?: boolean;
         voteOptionImages?: string[];
@@ -185,6 +191,7 @@ export async function updateBoardPost(
             type: input.type,
             visibility: input.visibility,
             allow_anonymous_comments: input.allow_anonymous_comments ?? true,
+            secret_comments_only: input.secret_comments_only ?? false,
             updated_at: new Date().toISOString(),
         })
         .eq("id", postId)
@@ -338,7 +345,7 @@ export async function createBoardComment(
             post_id: postId,
             parent_id: parentId ?? null,
             author_id: authorId,
-            author_name: isAnonymous ? null : (authorName ?? null),
+            author_name: authorName ?? null,
             body: trimmed,
             is_anonymous: isAnonymous,
         })

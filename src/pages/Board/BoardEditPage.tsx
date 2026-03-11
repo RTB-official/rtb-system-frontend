@@ -37,6 +37,7 @@ const VISIBILITY_OPTIONS: { value: BoardVisibility; label: string }[] = [
 const COMMENT_MODE_OPTIONS: { value: string; label: string }[] = [
     { value: "anonymous", label: "익명" },
     { value: "real", label: "실명" },
+    { value: "secret", label: '비밀 댓글' },
 ];
 
 export default function BoardEditPage() {
@@ -44,7 +45,7 @@ export default function BoardEditPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [type, setType] = useState<BoardPostType>("post");
     const [visibility, setVisibility] = useState<BoardVisibility>("all");
-    const [allowAnonymousComments, setAllowAnonymousComments] = useState(true);
+    const [commentMode, setCommentMode] = useState<"anonymous" | "real" | "secret">("anonymous");
     const [title, setTitle] = useState("");
     const [body, setBody] = useState("");
     const [voteOptions, setVoteOptions] = useState<string[]>(["", ""]);
@@ -102,7 +103,9 @@ export default function BoardEditPage() {
                 setTitle(post.title);
                 setType(post.type as BoardPostType);
                 setVisibility(post.visibility as BoardVisibility);
-                setAllowAnonymousComments(post.allow_anonymous_comments ?? true);
+                setCommentMode(
+                    post.secret_comments_only ? "secret" : post.allow_anonymous_comments !== false ? "anonymous" : "real"
+                );
                 if (post.type === "vote" && post.body?.trim().startsWith("{")) {
                     try {
                         const parsed = JSON.parse(post.body) as {
@@ -161,7 +164,8 @@ export default function BoardEditPage() {
                 body: body.trim() || undefined,
                 type,
                 visibility,
-                allow_anonymous_comments: allowAnonymousComments,
+                allow_anonymous_comments: commentMode !== "real",
+                secret_comments_only: commentMode === "secret",
                 ...(type === "vote" && {
                     voteOptions: options,
                     voteAllowMultiple: voteAllowMultiple,
@@ -235,8 +239,8 @@ export default function BoardEditPage() {
                                         <Select
                                             label="댓글 작성 방식"
                                             options={COMMENT_MODE_OPTIONS}
-                                            value={allowAnonymousComments ? "anonymous" : "real"}
-                                            onChange={(v) => setAllowAnonymousComments(v === "anonymous")}
+                                            value={commentMode}
+                                            onChange={(v) => setCommentMode(v as "anonymous" | "real" | "secret")}
                                         />
                                     </div>
                                     <Input

@@ -39,6 +39,10 @@ function CommentItem({
     anonymousIndex,
     showSuccess,
     showError,
+    /** true면 내용 대신 "비밀댓글입니다" 표시 (글 작성자·댓글 작성자 외) */
+    isSecretHidden,
+    /** 비밀댓글 글에서 이 댓글을 볼 수 있는 사람(글쓴이·댓글작성자)에게는 무조건 실명 표시 */
+    forceShowRealName,
 }: {
     comment: BoardComment;
     currentUserId: string | null;
@@ -50,6 +54,8 @@ function CommentItem({
     anonymousIndex?: number;
     showSuccess?: (msg: string) => void;
     showError?: (msg: string) => void;
+    isSecretHidden?: boolean;
+    forceShowRealName?: boolean;
 }) {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -58,9 +64,13 @@ function CommentItem({
     const [saving, setSaving] = useState(false);
     const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
     const isOwner = !!currentUserId && String(comment.author_id) === String(currentUserId);
-    const displayName = comment.is_anonymous
-        ? (anonymousIndex != null ? `익명${anonymousIndex}` : "익명")
-        : (comment.author_name || "—");
+    const displayName = isSecretHidden
+        ? "비밀댓글"
+        : forceShowRealName
+          ? (comment.author_name || "—")
+          : comment.is_anonymous
+            ? (anonymousIndex != null ? `익명${anonymousIndex}` : "익명")
+            : (comment.author_name || "—");
 
     const handleDelete = async () => {
         if (!currentUserId) return;
@@ -169,7 +179,9 @@ function CommentItem({
                     </div>
                 ) : (
                     <>
-                        <p className="text-[15px] text-gray-700 whitespace-pre-wrap break-words mb-0">{comment.body}</p>
+                        <p className="text-[15px] text-gray-700 whitespace-pre-wrap break-words mb-0">
+                            {isSecretHidden ? "비밀댓글입니다" : comment.body}
+                        </p>
                         {depth === 0 && (
                             <Button
                                 variant="ghost"
@@ -352,6 +364,20 @@ export default function BoardCommentSection({
         return map;
     })();
 
+    /** 비밀댓글 모드: 글쓴이는 모든 댓글 조회, 그 외에는 본인 댓글만 조회 가능 / 나머지는 "비밀댓글입니다" */
+    const isSecretHiddenFor = (comment: BoardComment) => {
+        if (post.secret_comments_only !== true) return false;
+        const uid = currentUserId == null ? "" : String(currentUserId);
+        const postAuthorId = String(post.author_id ?? "");
+        const commentAuthorId = String(comment.author_id ?? "");
+        if (uid === postAuthorId) return false; // 글쓴이는 다 보임
+        if (uid === commentAuthorId) return false; // 본인 댓글은 보임
+        return true; // 그 외 비밀댓글 표시
+    };
+    /** 비밀댓글 글에서 이 댓글을 볼 수 있는 사람(글쓴이·댓글작성자)에게는 실명 표시, 그 외는 "비밀댓글" */
+    const forceShowRealNameFor = (comment: BoardComment) =>
+        post.secret_comments_only === true && !isSecretHiddenFor(comment);
+
     const content = (
         <>
             <div className="flex items-center justify-between gap-3 mb-3">
@@ -420,6 +446,8 @@ export default function BoardCommentSection({
                                     anonymousIndex={c.is_anonymous ? anonymousOrderMap.get(c.author_id) : undefined}
                                     showSuccess={showSuccess}
                                     showError={showError}
+                                    isSecretHidden={isSecretHiddenFor(c)}
+                                    forceShowRealName={forceShowRealNameFor(c)}
                                 />
                                 {visibleChildren.map((child) => (
                                     <div key={child.id} className="mt-1">
@@ -433,6 +461,8 @@ export default function BoardCommentSection({
                                             anonymousIndex={child.is_anonymous ? anonymousOrderMap.get(child.author_id) : undefined}
                                             showSuccess={showSuccess}
                                             showError={showError}
+                                            isSecretHidden={isSecretHiddenFor(child)}
+                                            forceShowRealName={forceShowRealNameFor(child)}
                                         />
                                     </div>
                                 ))}
