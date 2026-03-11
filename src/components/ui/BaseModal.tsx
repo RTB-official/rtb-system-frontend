@@ -10,6 +10,7 @@ interface BaseModalProps {
     maxWidth?: string;
     className?: string;
     showCloseButton?: boolean;
+    compactHeader?: boolean;
 }
 
 function IconClose() {
@@ -32,6 +33,7 @@ export default function BaseModal({
     maxWidth = "max-w-[440px]",
     className = "",
     showCloseButton = true,
+    compactHeader = false,
 }: BaseModalProps) {
     // 모달 열릴 때 바디 스크롤 잠금
     useEffect(() => {
@@ -67,22 +69,36 @@ export default function BaseModal({
             <div className="absolute inset-0 bg-black/35" onClick={onClose} />
 
             {/* Modal - 모바일에서 좌우 16px 패딩 */}
-            <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-0">
+            <div className={`absolute inset-0 flex ${compactHeader ? 'items-start md:items-center' : 'items-center'} justify-center ${compactHeader ? 'pt-2 md:pt-0' : ''} p-4 sm:p-0`}>
                 <div
-                    className={`w-full ${maxWidth} bg-white p-5 gap-3 rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh] sm:max-h-none ${className}`}
+                    className={`w-full ${maxWidth} bg-white ${compactHeader ? 'pt-2.5 md:pt-5 pb-5 px-5' : 'p-5'} ${compactHeader ? 'gap-1 md:gap-3' : 'gap-3'} rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh] sm:max-h-none ${className}`}
                 >
                     {/* Header */}
-                    <div className={`flex items-center ${showCloseButton ? 'justify-between' : 'justify-start'}`}>
-                        <h2 className="text-[22px] font-semibold text-gray-900">
+                    <div className={`flex items-center ${showCloseButton ? 'justify-between' : 'justify-start'} ${compactHeader ? 'py-0 md:py-0 mb-0 md:mb-0' : ''}`}>
+                        <h2 className={`${compactHeader ? 'text-[11px] md:text-[22px]' : 'text-[22px]'} font-semibold text-gray-900`}>
                             {title}
                         </h2>
                         {showCloseButton && (
                             <button
                                 onClick={onClose}
-                                className="w-9 h-9 rounded-full hover:bg-gray-100 text-gray-700 flex items-center justify-center transition-colors"
+                                className={`${compactHeader ? 'w-[18px] h-[18px] md:w-9 md:h-9' : 'w-9 h-9'} rounded-full hover:bg-gray-100 text-gray-700 flex items-center justify-center transition-colors`}
                                 aria-label="close"
                             >
-                                <IconClose />
+                                {compactHeader ? (
+                                    <>
+                                        <svg className="md:hidden" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                            <path
+                                                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"
+                                                fill="currentColor"
+                                            />
+                                        </svg>
+                                        <span className="hidden md:block">
+                                            <IconClose />
+                                        </span>
+                                    </>
+                                ) : (
+                                    <IconClose />
+                                )}
                             </button>
                         )}
                     </div>

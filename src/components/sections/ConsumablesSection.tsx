@@ -189,6 +189,7 @@ export default function ConsumablesSection() {
                     <div className="relative">
                         <input
                             type="text"
+                            inputMode="numeric"
                             value={quantity}
                             placeholder="예: 1, 0.5, 50ml, 1/3"
                             onChange={(e) => {

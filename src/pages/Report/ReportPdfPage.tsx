@@ -489,13 +489,31 @@ export default function ReportPdfPage() {
 
     // 영수증 URL 결정(테이블에 file_url이 있으면 그걸 우선 사용)
     const receiptImgs = (receipts ?? [])
-        .map((r) => ({
-            id: r.id ?? 0,
-            url: (r.file_url ?? "").trim(),
-            name: (r.file_name ?? "").trim(),
-            storagePath: r.storage_path ?? r.path ?? "",
-            category: r.category ?? "",
-        }))
+        .map((r, index) => {
+            // 각 영수증이 고유한 id를 가지도록 보장
+            const uniqueId = r.id ?? (index + 1000000); // id가 없으면 큰 숫자로 고유값 생성
+            const fileUrl = (r.file_url ?? "").trim();
+            const storagePath = r.storage_path ?? r.path ?? "";
+            
+            // 디버깅: 같은 URL이 여러 영수증에 할당되는지 확인
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`Receipt ${uniqueId}:`, {
+                    id: r.id,
+                    uniqueId,
+                    fileUrl,
+                    storagePath,
+                    fileName: r.file_name,
+                });
+            }
+            
+            return {
+                id: uniqueId,
+                url: fileUrl,
+                name: (r.file_name ?? "").trim(),
+                storagePath: storagePath,
+                category: r.category ?? "",
+            };
+        })
         .filter((x) => Boolean(x.url));
 
     // 이미지 로드 에러 핸들러
@@ -1434,6 +1452,7 @@ export default function ReportPdfPage() {
                                                                                     </div>
                                                                                 ) : (
                                                                                     <img
+                                                                                        key={`receipt-${a.id}-${a.storagePath}`}
                                                                                         className="receipt-img"
                                                                                         src={(isPreparingPrint && printReceiptSrcMap[a.id]) ? printReceiptSrcMap[a.id] : a.url}
                                                                                         alt={a.name || "receipt"}
@@ -1483,6 +1502,7 @@ export default function ReportPdfPage() {
                                                                                     </div>
                                                                                 ) : (
                                                                                     <img
+                                                                                        key={`receipt-${b.id}-${b.storagePath}`}
                                                                                         className="receipt-img"
                                                                                         src={(isPreparingPrint && printReceiptSrcMap[b.id]) ? printReceiptSrcMap[b.id] : b.url}
                                                                                         alt={b.name || "receipt"}

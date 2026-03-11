@@ -1,6 +1,7 @@
 //ToastProvider.tsx
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import Toast, { ToastItem, ToastType } from "./Toast";
+import useIsMobile from "../../hooks/useIsMobile";
 
 type ToastInput =
   | string
@@ -49,6 +50,7 @@ interface ToastProviderProps {
 
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const isMobile = useIsMobile();
 
   const showToast = useCallback(
     (input: ToastInput, type: ToastType = "info", defaultDuration = 3000) => {
@@ -99,8 +101,11 @@ export function ToastProvider({ children }: ToastProviderProps) {
           toast={toast}
           onClose={removeToast}
           offset={toasts.slice(0, index).reduce((acc, t) => {
-            const estimatedHeight = t.imageUrl ? 200 : 80; // ✅ 더 타이트
-            const gap = 12;                                 // ✅ 간격 축소
+            // 모바일에서는 더 작은 간격, 데스크톱에서는 기존 간격 유지
+            const estimatedHeight = isMobile 
+              ? (t.imageUrl ? 120 : 60)
+              : (t.imageUrl ? 200 : 80);
+            const gap = isMobile ? 8 : 12;
             return acc + estimatedHeight + gap;
           }, 0)}
         />

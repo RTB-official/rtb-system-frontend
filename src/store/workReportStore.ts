@@ -48,6 +48,7 @@ export interface UploadedFile {
   fileUrl?: string; // Storage 공개 URL
   mimeType?: string;
   isExisting?: boolean; // 기존 영수증인지 여부
+  createdAt?: string; // DB에 저장된 시간
 }
 
 export interface StaffProfile {
@@ -205,6 +206,7 @@ interface WorkReportState {
     originalName: string | null;
     fileUrl?: string;
     mimeType?: string | null;
+    createdAt?: string;
   }) => void;
   removeFile: (id: number) => void;
   
@@ -499,6 +501,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       mimeType: receipt.mimeType || undefined,
       preview: receipt.fileUrl && (receipt.mimeType?.startsWith('image/') || !receipt.mimeType) ? receipt.fileUrl : undefined,
       isExisting: true,
+      createdAt: receipt.createdAt,
     };
     return { uploadedFiles: [...state.uploadedFiles, newReceipt] };
   }),

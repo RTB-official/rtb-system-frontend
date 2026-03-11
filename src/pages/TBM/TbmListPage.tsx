@@ -238,9 +238,7 @@ export default function TbmListPage() {
                                                 >
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className="text-[16px] font-semibold text-gray-900 truncate">
-                                                                {row.work_name || "-"}
-                                                            </span>
+                                                            {/* 진행 상태 배지 → 제목 바로 앞 */}
                                                             <Chip
                                                                 color={isComplete ? "blue-500" : "gray-400"}
                                                                 variant="solid"
@@ -248,6 +246,10 @@ export default function TbmListPage() {
                                                             >
                                                                 {isComplete ? "완료" : "진행중"}
                                                             </Chip>
+                                                            {/* 제목: 출장보고서 목록과 동일하게 폰트 크기 줄이고 두 줄까지 표시 */}
+                                                            <span className="text-[13px] md:text-[16px] font-semibold text-gray-900 line-clamp-2 break-words">
+                                                                {row.work_name || "-"}
+                                                            </span>
                                                         </div>
                                                         <div className="flex items-center gap-2 mt-1.5 text-[13px] text-gray-500">
                                                             <span>{hasLine ? `호선 ${row.line_name}` : dateText}</span>
