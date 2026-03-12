@@ -111,6 +111,14 @@ export default function NotificationPopup({
             return "/vehicles";
         }
 
+        // 📌 새 게시글 알림 → 게시판으로 이동 (postId 있으면 해당 글 상세/목록)
+        if (meta?.kind === "board_post" && meta?.postId) {
+            return "/board";
+        }
+        if (meta?.postId && item.title === "새 게시글") {
+            return "/board";
+        }
+
         const title = `${item.title ?? ""} ${item.message ?? ""}`;
         if (/tbm/i.test(title)) return "/tbm";
         if (/여권|passport/i.test(title)) return "/members";

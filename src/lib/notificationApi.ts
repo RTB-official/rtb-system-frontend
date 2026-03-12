@@ -267,6 +267,20 @@ export async function getGongmuTeamUserIds(): Promise<string[]> {
 // ==================== 대표님 사용자 ID 조회 ====================
 
 /**
+ * 전체 사용자(프로필 등록된 사용자) ID 목록 조회 (게시판 알림 등용)
+ */
+export async function getAllProfileIds(): Promise<string[]> {
+    const { data, error } = await supabase.from("profiles").select("id");
+
+    if (error) {
+        console.error("Error fetching all profile ids:", error);
+        throw new Error(`사용자 목록 조회 실패: ${error.message}`);
+    }
+
+    return data?.map((p) => p.id) || [];
+}
+
+/**
  * 대표님(admin) 사용자 ID 조회
  */
 export async function getAdminUserIds(): Promise<string[]> {

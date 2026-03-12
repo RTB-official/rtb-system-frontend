@@ -21,6 +21,7 @@ import { useToast } from "../../components/ui/ToastProvider";
 import { PATHS } from "../../utils/paths";
 import PageContainer from "../../components/common/PageContainer";
 import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
+import { createNotificationsForUsers, getAllProfileIds } from "../../lib/notificationApi";
 
 const TYPE_OPTIONS: { value: BoardPostType; label: string }[] = [
     { value: "notice", label: "공지" },
@@ -250,6 +251,23 @@ export default function BoardCreatePage() {
             // 3) 업로드된 첨부를 DB에 연결
             if (uploadedItems.length > 0) {
                 await insertBoardAttachments(post.id, uploadedItems);
+            }
+            // 4) 전체 사용자에게 새 게시글 알림 (실패해도 글 등록은 완료된 상태로 둠)
+            try {
+                const allIds = await getAllProfileIds();
+                const recipientIds = allIds.filter((id) => id !== currentUserId);
+                if (recipientIds.length > 0) {
+                    const authorLabel = profileName?.trim() || "누군가";
+                    await createNotificationsForUsers(
+                        recipientIds,
+                        "새 게시글",
+                        `${authorLabel}님이 새 글을 올렸습니다: ${t}`,
+                        "other",
+                        JSON.stringify({ kind: "board_post", postId: post.id })
+                    );
+                }
+            } catch (notifyErr) {
+                console.error("게시글 알림 발송 실패:", notifyErr);
             }
             showSuccess("글이 등록되었습니다.");
             navigate(PATHS.board);

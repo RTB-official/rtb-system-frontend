@@ -13,7 +13,7 @@ serve(async (req) => {
       return new Response("ok", { headers: corsHeaders });
     }
 
-    const { userIds, title, message, type } = await req.json();
+    const { userIds, title, message, type, meta } = await req.json();
 
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return new Response("userIds is required", { status: 400, headers: corsHeaders });
@@ -32,11 +32,18 @@ serve(async (req) => {
       auth: { persistSession: false },
     });
 
-    const rows = userIds.map((user_id: string) => ({
-      user_id,
+    const rowPayload: Record<string, unknown> = {
       title,
       message,
       type,
+    };
+    if (meta !== undefined && meta !== null) {
+      rowPayload.meta = meta;
+    }
+
+    const rows = userIds.map((user_id: string) => ({
+      user_id,
+      ...rowPayload,
     }));
 
     const { data, error } = await admin
