@@ -51,6 +51,11 @@ export interface UploadedFile {
   createdAt?: string; // DB에 저장된 시간
 }
 
+export interface PendingDeletedReceipt {
+  receiptId: number;
+  storagePath: string;
+}
+
 export interface StaffProfile {
   id: string;
   name: string;
@@ -140,6 +145,7 @@ interface WorkReportState {
   
   // 첨부파일
   uploadedFiles: UploadedFile[];
+  pendingDeletedReceipts: PendingDeletedReceipt[];
   
   // 전체 직원 데이터 (DB에서 로드됨)
   allStaff: StaffProfile[];
@@ -209,6 +215,7 @@ interface WorkReportState {
     createdAt?: string;
   }) => void;
   removeFile: (id: number) => void;
+  clearPendingDeletedReceipts: () => void;
   
   // Actions - 전체
   resetForm: () => void;
@@ -226,6 +233,13 @@ const initialCurrentEntry: Partial<WorkLogEntry> = {
   noLunch: false,
   moveFrom: '',
   moveTo: '',
+};
+
+let uploadedFileIdSequence = 0;
+
+const getNextUploadedFileId = () => {
+  uploadedFileIdSequence += 1;
+  return Date.now() * 1000 + uploadedFileIdSequence;
 };
 
 export const useWorkReportStore = create<WorkReportState>((set, get) => ({
@@ -250,6 +264,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   editingExpenseId: null,
   materials: [],
   uploadedFiles: [],
+  pendingDeletedReceipts: [],
   allStaff: [],
   staffLoading: false,
   
@@ -472,8 +487,8 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   
   // 첨부파일 Actions
   addFiles: (files, category) => set((state) => {
-    const newFiles = files.map((file, index) => ({
-      id: Date.now() + index,
+    const newFiles = files.map((file) => ({
+      id: getNextUploadedFileId(),
       file,
       preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
       category,
@@ -492,7 +507,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     }
     
     const newReceipt: UploadedFile = {
-      id: Date.now(),
+      id: getNextUploadedFileId(),
       category: receipt.category,
       receiptId: receipt.receiptId,
       storagePath: receipt.storagePath,
@@ -508,8 +523,22 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   removeFile: (id) => set((state) => {
     const file = state.uploadedFiles.find((f) => f.id === id);
     if (file?.preview && !file.isExisting) URL.revokeObjectURL(file.preview);
-    return { uploadedFiles: state.uploadedFiles.filter((f) => f.id !== id) };
+    const nextPendingDeletedReceipts =
+      file?.isExisting && file.receiptId && file.storagePath
+        ? state.pendingDeletedReceipts.some((receipt) => receipt.receiptId === file.receiptId)
+          ? state.pendingDeletedReceipts
+          : [
+              ...state.pendingDeletedReceipts,
+              { receiptId: file.receiptId, storagePath: file.storagePath },
+            ]
+        : state.pendingDeletedReceipts;
+
+    return {
+      uploadedFiles: state.uploadedFiles.filter((f) => f.id !== id),
+      pendingDeletedReceipts: nextPendingDeletedReceipts,
+    };
   }),
+  clearPendingDeletedReceipts: () => set({ pendingDeletedReceipts: [] }),
   
   // 전체 Actions
   resetForm: () => set({
@@ -533,6 +562,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     editingExpenseId: null,
     materials: [],
     uploadedFiles: [],
+    pendingDeletedReceipts: [],
   }),
   getExpenseTotal: () => get().expenses.reduce((sum, e) => sum + e.amount, 0),
 }));
