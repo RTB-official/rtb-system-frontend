@@ -165,6 +165,89 @@ export interface WorkLogFullData {
     }>;
 }
 
+// ==================== 유틸리티 함수 ====================
+
+/**
+ * 날짜가 넘어가는 entry를 분할 (24시(00시) 기준으로 나눔)
+ * 예: 2월 28일 18시 ~ 3월 1일 06시
+ * → [2월 28일 18시 ~ 2월 28일 24:00, 3월 1일 00:00 ~ 3월 1일 06시]
+ */
+function splitEntryByDate(entry: {
+    id?: number;
+    dateFrom: string;
+    timeFrom?: string;
+    dateTo: string;
+    timeTo?: string;
+    descType: string;
+    details?: string;
+    persons?: string[];
+    note?: string;
+    moveFrom?: string;
+    moveTo?: string;
+    lunch_worked?: boolean;
+}): {
+    segments: Array<{
+        id?: number;
+        dateFrom: string;
+        timeFrom?: string;
+        dateTo: string;
+        timeTo?: string;
+        descType: string;
+        details?: string;
+        persons?: string[];
+        note?: string;
+        moveFrom?: string;
+        moveTo?: string;
+        lunch_worked?: boolean;
+    }>;
+    originalId?: number; // 분할된 경우 원본 id (삭제용)
+} {
+    // 날짜가 같으면 분할하지 않음
+    if (entry.dateFrom === entry.dateTo) {
+        return { segments: [entry] };
+    }
+
+    const segments: Array<typeof entry> = [];
+    const originalId = entry.id;
+
+    // 첫 번째 세그먼트: dateFrom ~ dateFrom의 24:00
+    segments.push({
+        ...entry,
+        id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
+        dateTo: entry.dateFrom,
+        timeTo: "24:00",
+    });
+
+    // 중간 날짜들 (있는 경우): 각 날짜의 00:00 ~ 24:00
+    const startDate = new Date(`${entry.dateFrom}T00:00:00`);
+    const endDate = new Date(`${entry.dateTo}T00:00:00`);
+    let currentDate = new Date(startDate);
+    currentDate.setDate(currentDate.getDate() + 1); // 다음날부터
+
+    while (currentDate < endDate) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        segments.push({
+            ...entry,
+            id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
+            dateFrom: dateStr,
+            timeFrom: "00:00",
+            dateTo: dateStr,
+            timeTo: "24:00",
+        });
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // 마지막 세그먼트: dateTo의 00:00 ~ dateTo의 timeTo
+    segments.push({
+        ...entry,
+        id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
+        dateFrom: entry.dateTo,
+        timeFrom: "00:00",
+    });
+
+    return { segments, originalId };
+}
+
 // ==================== CRUD 함수 ====================
 
 /**
@@ -227,52 +310,57 @@ export async function createWorkLog(
         // 3. 업무 일지 저장 (work_log_entries + work_log_entry_persons)
         if (data.entries && data.entries.length > 0) {
             for (const entry of data.entries) {
-                const { data: entryData, error: entryError } = await supabase
-                    .from("work_log_entries")
-                    .insert([
-                        {
-                            work_log_id: workLogId,
-                            date_from: entry.dateFrom || null,
-                            time_from: entry.timeFrom || null,
-                            date_to: entry.dateTo || null,
-                            time_to: entry.timeTo || null,
-                            desc_type: entry.descType,
-                            details: entry.details || null,
-                            note: entry.note || null,
-                            move_from: entry.moveFrom || null,
-                            move_to: entry.moveTo || null,
-                            lunch_worked: entry.lunch_worked ?? false,
-                        },
-                    ])
-                    .select()
-                    .single();
+                // ✅ 날짜가 넘어가는 경우 분할
+                const { segments } = splitEntryByDate(entry);
 
-                if (entryError) {
-                    console.error("Error creating work log entry:", entryError);
-                    throw new Error(
-                        `업무 일지 저장 실패: ${entryError.message}`
-                    );
-                }
+                for (const segment of segments) {
+                    const { data: entryData, error: entryError } = await supabase
+                        .from("work_log_entries")
+                        .insert([
+                            {
+                                work_log_id: workLogId,
+                                date_from: segment.dateFrom || null,
+                                time_from: segment.timeFrom || null,
+                                date_to: segment.dateTo || null,
+                                time_to: segment.timeTo || null,
+                                desc_type: segment.descType,
+                                details: segment.details || null,
+                                note: segment.note || null,
+                                move_from: segment.moveFrom || null,
+                                move_to: segment.moveTo || null,
+                                lunch_worked: segment.lunch_worked ?? false,
+                            },
+                        ])
+                        .select()
+                        .single();
 
-                // 각 entry의 참여자 저장
-                if (entry.persons && entry.persons.length > 0 && entryData) {
-                    const entryPersonsData = entry.persons.map((name) => ({
-                        entry_id: entryData.id,
-                        person_name: name,
-                    }));
-
-                    const { error: entryPersonsError } = await supabase
-                        .from("work_log_entry_persons")
-                        .insert(entryPersonsData);
-
-                    if (entryPersonsError) {
-                        console.error(
-                            "Error creating work log entry persons:",
-                            entryPersonsError
-                        );
+                    if (entryError) {
+                        console.error("Error creating work log entry:", entryError);
                         throw new Error(
-                            `참여자 목록 저장 실패: ${entryPersonsError.message}`
+                            `업무 일지 저장 실패: ${entryError.message}`
                         );
+                    }
+
+                    // 각 entry의 참여자 저장
+                    if (segment.persons && segment.persons.length > 0 && entryData) {
+                        const entryPersonsData = segment.persons.map((name) => ({
+                            entry_id: entryData.id,
+                            person_name: name,
+                        }));
+
+                        const { error: entryPersonsError } = await supabase
+                            .from("work_log_entry_persons")
+                            .insert(entryPersonsData);
+
+                        if (entryPersonsError) {
+                            console.error(
+                                "Error creating work log entry persons:",
+                                entryPersonsError
+                            );
+                            throw new Error(
+                                `참여자 목록 저장 실패: ${entryPersonsError.message}`
+                            );
+                        }
                     }
                 }
             }
@@ -790,68 +878,109 @@ for (const r of curRows ?? []) {
       }
     }
   
-    // upsert via update/insert
+    // ✅ 날짜가 넘어가는 entry의 원본 id를 수집 (삭제용)
+    const idsToDeleteFromSplit = new Set<number>();
+    const expandedEntries: Array<typeof incoming[0]> = [];
+    
     for (const e of incoming) {
-      const payload = {
-        work_log_id: workLogId,
-        date_from: e.dateFrom || null,
-        time_from: e.timeFrom || null,
-        date_to: e.dateTo || null,
-        time_to: e.timeTo || null,
-        desc_type: e.descType,
-        details: e.details || null,
-        note: e.note || null,
-        move_from: e.moveFrom || null,
-        move_to: e.moveTo || null,
-        lunch_worked: e.lunch_worked ?? false,
-      };
-  
-      const incomingId = Number((e as any).id);
-  
-// UPDATE 시도 → 반드시 업데이트된 row를 select로 회수
-let rowKey: { id: number } | null = null;
-  
-if (Number.isFinite(incomingId) && incomingId > 0) {
-    const { data: updRow, error: updErr } = await supabase
-      .from("work_log_entries")
-      .update(payload)
-      .eq("work_log_id", workLogId)
-      .eq("id", incomingId)
-      .select("id")
-      .maybeSingle();
-  
-    if (updErr) throw new Error(`업무 일지 업데이트 실패: ${updErr.message}`);
-  
-    if (updRow) {
-        const id = Number((updRow as any).id);
-        if (!Number.isFinite(id) || id <= 0) {
-          throw new Error(`업무 일지 업데이트 실패: 반환된 id가 없음 (row=${JSON.stringify(updRow)})`);
-        }
-        rowKey = { id };
+      const { segments, originalId } = splitEntryByDate(e);
+      
+      // 분할된 경우 원본 id를 삭제 대상에 추가
+      if (originalId && segments.length > 1) {
+        idsToDeleteFromSplit.add(originalId);
       }
-  }
-  
-  
-      // UPDATE가 안 됐으면 INSERT
-      if (!rowKey) {
-        const { data: insRow, error: insErr } = await supabase
-          .from("work_log_entries")
-          .insert([payload])
-          .select("id")
-          .single();
-  
-        if (insErr) throw new Error(`업무 일지 생성 실패: ${insErr.message}`);
-  
-        rowKey = { id: (insRow as any).id };
-  
-// 안전 확인
-const a = Number(rowKey.id);
-if (!(Number.isFinite(a) && a > 0)) {
-  throw new Error(`업무 일지 생성 실패: 반환된 id가 없음 (row=${JSON.stringify(insRow)})`);
-}
-      }
-      await syncEntryPersons(rowKey.id, e.persons ?? []);
+      
+      // 분할된 segments를 expandedEntries에 추가
+      expandedEntries.push(...segments);
     }
+    
+    // ✅ 분할로 인해 삭제해야 할 entry들 삭제
+    if (idsToDeleteFromSplit.size > 0) {
+      const idsToDelete = Array.from(idsToDeleteFromSplit);
+      // entry_persons 먼저 삭제
+      const { error: delPersonsErr } = await supabase
+        .from("work_log_entry_persons")
+        .delete()
+        .in("entry_id", idsToDelete);
+      
+      if (delPersonsErr) throw new Error(`참여자 삭제 실패: ${delPersonsErr.message}`);
+      
+      const { error: delErr } = await supabase
+        .from("work_log_entries")
+        .delete()
+        .eq("work_log_id", workLogId)
+        .in("id", idsToDelete);
+      
+      if (delErr) throw new Error(`업무 일지 삭제 실패: ${delErr.message}`);
+      
+      // 삭제된 id들을 currentIdSet에서도 제거
+      for (const id of idsToDelete) {
+        currentIdSet.delete(id);
+      }
+    }
+
+    // upsert via update/insert
+    for (const e of expandedEntries) {
+        const payload = {
+          work_log_id: workLogId,
+          date_from: e.dateFrom || null,
+          time_from: e.timeFrom || null,
+          date_to: e.dateTo || null,
+          time_to: e.timeTo || null,
+          desc_type: e.descType,
+          details: e.details || null,
+          note: e.note || null,
+          move_from: e.moveFrom || null,
+          move_to: e.moveTo || null,
+          lunch_worked: e.lunch_worked ?? false,
+        };
+    
+        const incomingId = Number((e as any).id);
+    
+    // UPDATE 시도 → 반드시 업데이트된 row를 select로 회수
+    let rowKey: { id: number } | null = null;
+    
+    if (Number.isFinite(incomingId) && incomingId > 0) {
+        const { data: updRow, error: updErr } = await supabase
+          .from("work_log_entries")
+          .update(payload)
+          .eq("work_log_id", workLogId)
+          .eq("id", incomingId)
+          .select("id")
+          .maybeSingle();
+    
+        if (updErr) throw new Error(`업무 일지 업데이트 실패: ${updErr.message}`);
+    
+        if (updRow) {
+            const id = Number((updRow as any).id);
+            if (!Number.isFinite(id) || id <= 0) {
+              throw new Error(`업무 일지 업데이트 실패: 반환된 id가 없음 (row=${JSON.stringify(updRow)})`);
+            }
+            rowKey = { id };
+          }
+      }
+    
+    
+        // UPDATE가 안 됐으면 INSERT
+        if (!rowKey) {
+          const { data: insRow, error: insErr } = await supabase
+            .from("work_log_entries")
+            .insert([payload])
+            .select("id")
+            .single();
+    
+          if (insErr) throw new Error(`업무 일지 생성 실패: ${insErr.message}`);
+    
+          rowKey = { id: (insRow as any).id };
+    
+    // 안전 확인
+    const a = Number(rowKey.id);
+    if (!(Number.isFinite(a) && a > 0)) {
+      throw new Error(`업무 일지 생성 실패: 반환된 id가 없음 (row=${JSON.stringify(insRow)})`);
+    }
+        }
+        await syncEntryPersons(rowKey.id, e.persons ?? []);
+      }
   };
   
   

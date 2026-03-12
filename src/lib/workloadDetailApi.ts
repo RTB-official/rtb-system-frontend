@@ -36,12 +36,17 @@ function splitEntryByDate(entry: WorkloadEntry): Array<{
     const tt = normalizeTimeHHMM(entry.time_to);
     if (!tf || !tt) return [];
 
+    const descType = entry.desc_type;
+    const noLunch = entry.lunch_worked ?? false;
+
     if (entry.date_from === entry.date_to) {
         const hours = calculateHours(
             entry.date_from,
             tf,
             entry.date_to,
-            tt
+            tt,
+            descType,
+            noLunch
         );
         if (hours <= 0) return [];
         return [
@@ -62,37 +67,60 @@ function splitEntryByDate(entry: WorkloadEntry): Array<{
     }> = [];
 
     // first day: time_from ~ 24:00
-    const fromMinutes = timeToMinutes(tf);
-    const minutesToEnd = 24 * 60 - fromMinutes;
-    if (minutesToEnd > 0) {
+    const firstDayHours = calculateHours(
+        entry.date_from,
+        tf,
+        entry.date_from,
+        "24:00",
+        descType,
+        noLunch
+    );
+    if (firstDayHours > 0) {
         segments.push({
             date: entry.date_from,
             timeFrom: tf,
             timeTo: "24:00",
-            hours: minutesToEnd / 60,
+            hours: firstDayHours,
         });
     }
 
     // middle full days
     let cursor = addDays(entry.date_from, 1);
     while (cursor < entry.date_to) {
-        segments.push({
-            date: cursor,
-            timeFrom: "00:00",
-            timeTo: "24:00",
-            hours: 24,
-        });
+        const fullDayHours = calculateHours(
+            cursor,
+            "00:00",
+            cursor,
+            "24:00",
+            descType,
+            noLunch
+        );
+        if (fullDayHours > 0) {
+            segments.push({
+                date: cursor,
+                timeFrom: "00:00",
+                timeTo: "24:00",
+                hours: fullDayHours,
+            });
+        }
         cursor = addDays(cursor, 1);
     }
 
     // last day: 00:00 ~ time_to
-    const toMinutes = timeToMinutes(tt);
-    if (toMinutes > 0) {
+    const lastDayHours = calculateHours(
+        entry.date_to,
+        "00:00",
+        entry.date_to,
+        tt,
+        descType,
+        noLunch
+    );
+    if (lastDayHours > 0) {
         segments.push({
             date: entry.date_to,
             timeFrom: "00:00",
             timeTo: tt,
-            hours: toMinutes / 60,
+            hours: lastDayHours,
         });
     }
 
@@ -150,35 +178,89 @@ function assignSegmentToWorkIndex(
 }
 
 /**
- * 두 시간 사이의 차이를 시간 단위로 계산
+ * "24:00" 같은 시간을 Date로 안전하게 변환(24시는 다음날 00시로 처리)
+ */
+function toDateSafe(date: string, time: string): Date {
+    if (!date || !time) return new Date("Invalid");
+    const [hhStr, mmStr] = time.split(":");
+    const hh = Number(hhStr);
+    const mm = Number(mmStr ?? "0");
+
+    // 24:00 → 다음날 00:00
+    if (hh === 24) {
+        const d = new Date(`${date}T00:00:00`);
+        d.setDate(d.getDate() + 1);
+        d.setHours(0, mm, 0, 0);
+        return d;
+    }
+
+    return new Date(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`);
+}
+
+/**
+ * 두 시간 사이의 차이를 시간 단위로 계산 (점심시간 차감 포함)
  */
 function calculateHours(
     dateFrom: string | null,
     timeFrom: string | null,
     dateTo: string | null,
-    timeTo: string | null
+    timeTo: string | null,
+    descType?: string,
+    noLunch?: boolean
 ): number {
     if (!dateFrom || !dateTo) return 0;
     if (!timeFrom || !timeTo) return 0;
 
-    const fromMinutes = timeToMinutes(timeFrom);
-    const toMinutes = timeToMinutes(timeTo);
+    const start = toDateSafe(dateFrom, timeFrom);
+    const end = toDateSafe(dateTo, timeTo);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    if (end <= start) return 0;
 
-    // 날짜가 같은 경우
-    if (dateFrom === dateTo) {
-        const diffMinutes = toMinutes - fromMinutes;
-        return diffMinutes / 60;
+    const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
+
+    // ✅ 작업과 대기가 아니면 점심 규칙 적용 X
+    if (descType !== "작업" && descType !== "대기") {
+        return totalMinutes / 60;
     }
 
-    // 날짜가 다른 경우 (다음 날로 넘어가는 경우)
-    const tf = normalizeTimeHHMM(timeFrom);
-    const tt = normalizeTimeHHMM(timeTo);
-    if (!tf || !tt) return 0;
-    
-    const fromDate = new Date(`${dateFrom}T${tf}:00`);
-    const toDate = new Date(`${dateTo}T${tt}:00`);
-    const diffMs = toDate.getTime() - fromDate.getTime();
-    return diffMs / (1000 * 60 * 60);
+    // ✅ 대기는 무조건 점심시간 차감
+    // ✅ 작업: "점심 안 먹음"이면 전체 시간 카운트
+    if (descType === "작업" && noLunch) {
+        return totalMinutes / 60;
+    }
+
+    // ✅ 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
+    let lunchOverlapMinutes = 0;
+
+    // 시작 날짜 00:00 기준으로 day loop
+    const cur = new Date(`${dateFrom}T00:00:00`);
+    const last = new Date(`${dateTo}T00:00:00`);
+
+    while (cur <= last) {
+        const yyyy = cur.getFullYear();
+        const mm = String(cur.getMonth() + 1).padStart(2, "0");
+        const dd = String(cur.getDate()).padStart(2, "0");
+        const d = `${yyyy}-${mm}-${dd}`;
+
+        const lunchStart = new Date(`${d}T12:00:00`);
+        const lunchEnd = new Date(`${d}T13:00:00`);
+
+        // 겹침 계산: [start, end] ∩ [lunchStart, lunchEnd]
+        const overlapStart = start > lunchStart ? start : lunchStart;
+        const overlapEnd = end < lunchEnd ? end : lunchEnd;
+
+        if (overlapEnd > overlapStart) {
+            lunchOverlapMinutes += Math.floor(
+                (overlapEnd.getTime() - overlapStart.getTime()) / 60000
+            );
+        }
+
+        // 다음날
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    const result = totalMinutes - lunchOverlapMinutes;
+    return (result < 0 ? 0 : result) / 60;
 }
 
 /**

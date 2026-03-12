@@ -61,6 +61,7 @@ export interface WorkloadEntry {
     vessel: string | null;
     subject: string | null;
     work_hours: number | null;
+    lunch_worked?: boolean; // 점심 안 먹고 작업진행 여부
 }
 
 export interface PersonWorkloadSummary {
@@ -108,40 +109,96 @@ function timeToMinutes(timeStr: string | null | undefined): number {
 }
 
 /**
- * 두 시간 사이의 차이를 시간 단위로 계산
+ * "24:00" 같은 시간을 Date로 안전하게 변환(24시는 다음날 00시로 처리)
+ */
+function toDateSafe(date: string, time: string): Date {
+    if (!date || !time) return new Date("Invalid");
+    const [hhStr, mmStr] = time.split(":");
+    const hh = Number(hhStr);
+    const mm = Number(mmStr ?? "0");
+
+    // 24:00 → 다음날 00:00
+    if (hh === 24) {
+        const d = new Date(`${date}T00:00:00`);
+        d.setDate(d.getDate() + 1);
+        d.setHours(0, mm, 0, 0);
+        return d;
+    }
+
+    return new Date(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`);
+}
+
+/**
+ * 두 시간 사이의 차이를 시간 단위로 계산 (점심시간 차감 포함)
  * @param dateFrom 시작 날짜 (YYYY-MM-DD)
  * @param timeFrom 시작 시간 (HH:mm)
  * @param dateTo 종료 날짜 (YYYY-MM-DD)
  * @param timeTo 종료 시간 (HH:mm)
+ * @param descType 작업 유형 ("작업" | "이동" | "대기")
+ * @param noLunch 점심 안 먹고 작업진행 여부
  * @returns 시간 단위 (소수점 포함)
  */
 function calculateHours(
     dateFrom: string | null,
     timeFrom: string | null,
     dateTo: string | null,
-    timeTo: string | null
+    timeTo: string | null,
+    descType?: string,
+    noLunch?: boolean
 ): number {
     if (!dateFrom || !dateTo) return 0;
     if (!timeFrom || !timeTo) return 0;
 
-    const fromMinutes = timeToMinutes(timeFrom);
-    const toMinutes = timeToMinutes(timeTo);
+    const start = toDateSafe(dateFrom, timeFrom);
+    const end = toDateSafe(dateTo, timeTo);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    if (end <= start) return 0;
 
-    // 날짜가 같은 경우
-    if (dateFrom === dateTo) {
-        const diffMinutes = toMinutes - fromMinutes;
-        return diffMinutes / 60;
+    const totalMinutes = Math.floor((end.getTime() - start.getTime()) / 60000);
+
+    // ✅ 작업과 대기가 아니면 점심 규칙 적용 X
+    if (descType !== "작업" && descType !== "대기") {
+        return totalMinutes / 60;
     }
 
-    // 날짜가 다른 경우 (다음 날로 넘어가는 경우)
-    const tf = normalizeTimeHHMM(timeFrom);
-    const tt = normalizeTimeHHMM(timeTo);
-    if (!tf || !tt) return 0;
-    
-    const fromDate = new Date(`${dateFrom}T${tf}:00`);
-    const toDate = new Date(`${dateTo}T${tt}:00`);
-    const diffMs = toDate.getTime() - fromDate.getTime();
-    return diffMs / (1000 * 60 * 60);
+    // ✅ 대기는 무조건 점심시간 차감
+    // ✅ 작업: "점심 안 먹음"이면 전체 시간 카운트
+    if (descType === "작업" && noLunch) {
+        return totalMinutes / 60;
+    }
+
+    // ✅ 점심시간(12:00~13:00) 겹치는 분만큼 제외 (날짜跨越 대응)
+    let lunchOverlapMinutes = 0;
+
+    // 시작 날짜 00:00 기준으로 day loop
+    const cur = new Date(`${dateFrom}T00:00:00`);
+    const last = new Date(`${dateTo}T00:00:00`);
+
+    while (cur <= last) {
+        const yyyy = cur.getFullYear();
+        const mm = String(cur.getMonth() + 1).padStart(2, "0");
+        const dd = String(cur.getDate()).padStart(2, "0");
+        const d = `${yyyy}-${mm}-${dd}`;
+
+        const lunchStart = new Date(`${d}T12:00:00`);
+        const lunchEnd = new Date(`${d}T13:00:00`);
+
+        // 겹침 계산: [start, end] ∩ [lunchStart, lunchEnd]
+        const overlapStart = start > lunchStart ? start : lunchStart;
+        const overlapEnd = end < lunchEnd ? end : lunchEnd;
+
+        if (overlapEnd > overlapStart) {
+            lunchOverlapMinutes += Math.floor(
+                (overlapEnd.getTime() - overlapStart.getTime()) / 60000
+            );
+        }
+
+        // 다음날
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    const result = totalMinutes - lunchOverlapMinutes;
+    return (result < 0 ? 0 : result) / 60;
 }
 
 /**
@@ -203,7 +260,7 @@ export async function getWorkloadData(filters?: {
         // 2. 업무 일지 조회 (모든 entry 조회 후 필터링)
         const { data: entries, error: entriesError } = await supabase
         .from("work_log_entries_with_hours")
-        .select("id, work_log_id, date_from, time_from, date_to, time_to, desc_type, work_hours")
+        .select("id, work_log_id, date_from, time_from, date_to, time_to, desc_type, work_hours, lunch_worked")
         .in("work_log_id", workLogIds)
         .order("date_from", { ascending: true })
         .order("time_from", { ascending: true });
@@ -292,6 +349,7 @@ export async function getWorkloadData(filters?: {
                     vessel: workLogInfo?.vessel || null,
                     subject: workLogInfo?.subject || null,
                     work_hours: (entry as any).work_hours ?? null,
+                    lunch_worked: (entry as any).lunch_worked ?? false,
                 });
                 
             }
@@ -328,10 +386,16 @@ export function aggregatePersonWorkload(
         }
 
         const summary = personMap.get(personName)!;
-        const hours =
-        (entry.work_hours ?? 0) ||
-        calculateHours(entry.date_from, entry.time_from, entry.date_to, entry.time_to);
-    
+        // ✅ 점심시간 차감을 확실히 적용하기 위해 항상 calculateHours로 계산
+        // (work_hours는 DB 뷰에서 계산된 값이라 점심시간 차감이 안 되어 있을 수 있음)
+        const hours = calculateHours(
+            entry.date_from,
+            entry.time_from,
+            entry.date_to,
+            entry.time_to,
+            entry.desc_type,
+            entry.lunch_worked ?? false
+        );
 
         // desc_type에 따라 분류
         if (entry.desc_type === "작업") {
