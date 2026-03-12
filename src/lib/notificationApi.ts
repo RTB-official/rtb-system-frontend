@@ -245,7 +245,7 @@ export async function markAllNotificationsAsRead(
     }
 }
 
-// ==================== 공무팀 사용자 조회 ====================
+// ==================== 공무팀 / 공사팀 사용자 조회 ====================
 
 /**
  * 공무팀 소속 사용자 ID 목록 조회
@@ -259,6 +259,23 @@ export async function getGongmuTeamUserIds(): Promise<string[]> {
     if (error) {
         console.error("Error fetching Gongmu team users:", error);
         throw new Error(`공무팀 사용자 조회 실패: ${error.message}`);
+    }
+
+    return data?.map((p) => p.id) || [];
+}
+
+/**
+ * 공사팀 소속 사용자 ID 목록 조회 (게시판 공개범위 '공사팀에만' 알림용)
+ */
+export async function getGongsaTeamUserIds(): Promise<string[]> {
+    const { data, error } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("department", "공사팀");
+
+    if (error) {
+        console.error("Error fetching Gongsa team users:", error);
+        throw new Error(`공사팀 사용자 조회 실패: ${error.message}`);
     }
 
     return data?.map((p) => p.id) || [];

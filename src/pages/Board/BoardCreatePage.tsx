@@ -21,7 +21,12 @@ import { useToast } from "../../components/ui/ToastProvider";
 import { PATHS } from "../../utils/paths";
 import PageContainer from "../../components/common/PageContainer";
 import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
-import { createNotificationsForUsers, getAllProfileIds } from "../../lib/notificationApi";
+import {
+    createNotificationsForUsers,
+    getAllProfileIds,
+    getGongmuTeamUserIds,
+    getGongsaTeamUserIds,
+} from "../../lib/notificationApi";
 
 const TYPE_OPTIONS: { value: BoardPostType; label: string }[] = [
     { value: "notice", label: "공지" },
@@ -252,10 +257,17 @@ export default function BoardCreatePage() {
             if (uploadedItems.length > 0) {
                 await insertBoardAttachments(post.id, uploadedItems);
             }
-            // 4) 전체 사용자에게 새 게시글 알림 (실패해도 글 등록은 완료된 상태로 둠)
+            // 4) 공개범위에 맞는 사용자에게만 새 게시글 알림 (실패해도 글 등록은 완료된 상태로 둠)
             try {
-                const allIds = await getAllProfileIds();
-                const recipientIds = allIds.filter((id) => id !== currentUserId);
+                let recipientIds: string[];
+                if (visibility === "admin") {
+                    recipientIds = await getGongmuTeamUserIds();
+                } else if (visibility === "staff") {
+                    recipientIds = await getGongsaTeamUserIds();
+                } else {
+                    recipientIds = await getAllProfileIds();
+                }
+                recipientIds = recipientIds.filter((id) => id !== currentUserId);
                 if (recipientIds.length > 0) {
                     const authorLabel = profileName?.trim() || "누군가";
                     await createNotificationsForUsers(
