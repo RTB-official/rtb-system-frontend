@@ -111,15 +111,19 @@ export default function NotificationPopup({
             return "/vehicles";
         }
 
-        // 📌 새 게시글 알림 → 게시판으로 이동 (postId 있으면 해당 글 상세/목록)
+        // 📌 새 게시글 알림 → 게시판으로 이동 (meta 있으면 meta 기준, 없으면 제목/메시지로 판별)
         if (meta?.kind === "board_post" && meta?.postId) {
             return "/board";
         }
         if (meta?.postId && item.title === "새 게시글") {
             return "/board";
         }
+        const titleAndMessage = `${item.title ?? ""} ${item.message ?? ""}`;
+        if (item.title === "새 게시글" || /새 글을 올렸습니다/.test(titleAndMessage)) {
+            return "/board";
+        }
 
-        const title = `${item.title ?? ""} ${item.message ?? ""}`;
+        const title = titleAndMessage;
         if (/tbm/i.test(title)) return "/tbm";
         if (/여권|passport/i.test(title)) return "/members";
 
