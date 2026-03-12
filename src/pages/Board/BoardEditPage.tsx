@@ -60,9 +60,9 @@ function AttachmentList({
     const fileFiles = attachmentFiles.filter((f) => !f.type.startsWith("image/"));
 
     return (
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="2">
             {imageFiles.length > 0 && (
-                <div className="flex flex-wrap gap-4">
+                <div className="flex flex-wrap gap-3">
                     {imageFiles.map((file, idx) => (
                         <ImageThumbnailWithRemove
                             key={`img-${file.name}-${file.size}-${idx}`}
@@ -122,7 +122,7 @@ function ImageThumbnailWithRemove({
             <button
                 type="button"
                 onClick={onPreview}
-                className="block h-40 w-40 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="block h-52 w-52 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400"
                 aria-label="이미지 크게 보기"
             >
                 <img src={previewUrl} alt="" className="h-full w-full object-cover" />
@@ -433,7 +433,7 @@ export default function BoardEditPage() {
                                                 {existingAttachments
                                                     .filter((a) => !attachmentIdsToRemove.includes(a.id) && isImageContentType(a.content_type) && a.url)
                                                     .length > 0 && (
-                                                    <div className="flex flex-wrap gap-4">
+                                                    <div className="flex flex-wrap gap-3">
                                                         {existingAttachments
                                                             .filter((a) => !attachmentIdsToRemove.includes(a.id) && isImageContentType(a.content_type) && a.url)
                                                             .map((a) => (
@@ -453,7 +453,7 @@ export default function BoardEditPage() {
                                                                             const idx = existingImages.findIndex((x) => x.id === a.id);
                                                                             setAttachmentPreview({ images, index: idx, blobUrlsToRevoke: blobUrls });
                                                                         }}
-                                                                        className="block h-40 w-40 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                                        className="block h-52 w-52 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400"
                                                                         aria-label="이미지 크게 보기"
                                                                     >
                                                                         <img src={a.url!} alt="" className="h-full w-full object-cover" />

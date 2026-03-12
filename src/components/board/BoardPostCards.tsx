@@ -162,7 +162,7 @@ export function BoardPostCard({
                     return (
                         <div className="mt-3 flex flex-col gap-3">
                             {imageAttachments.length > 0 && (
-                                <div className="flex flex-wrap gap-4">
+                                <div className="flex flex-wrap gap-[10px]">
                                     {imageAttachments.map((a, idx) => (
                                         <button
                                             key={a.id}
@@ -174,7 +174,7 @@ export function BoardPostCard({
                                                     index: idx,
                                                 });
                                             }}
-                                            className="block h-40 w-40 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400 shrink-0"
+                                            className="block h-52 w-52 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400 shrink-0"
                                             aria-label="이미지 크게 보기"
                                         >
                                             <img src={a.url!} alt="" className="h-full w-full object-cover" />
@@ -224,7 +224,7 @@ export function BoardPostCard({
                     );
                 })()}
                 {hasVote && (
-                    <div className="mt-3 flex flex-col gap-2">
+                    <div className="mt-3 flex flex-col gap-3">
                         {vote.options.map((opt, i) => {
                             const selected = vote.selectedIndices.includes(i);
                             const count = vote.counts[i] ?? 0;
@@ -309,7 +309,11 @@ export function BoardPostCard({
             <ImagePreviewModal
                 isOpen={!!attachmentPreview}
                 onClose={() => setAttachmentPreview(null)}
-                imageSrc={attachmentPreview ? attachmentPreview.images[attachmentPreview.index]?.src ?? null : null}
+                imageSrc={
+                    attachmentPreview
+                        ? attachmentPreview.images[attachmentPreview.index]?.url ?? null
+                        : null
+                }
                 imageAlt="첨부 이미지"
                 fileName={attachmentPreview?.images[attachmentPreview.index]?.fileName}
                 images={attachmentPreview ? attachmentPreview.images.map((i) => ({ src: i.url, fileName: i.fileName })) : undefined}

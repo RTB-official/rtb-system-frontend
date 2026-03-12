@@ -72,7 +72,7 @@ function AttachmentList({
     return (
         <div className="mt-3 flex flex-col gap-3">
             {imageFiles.length > 0 && (
-                <div className="flex flex-wrap gap-4">
+                <div className="flex flex-wrap gap-[10px]">
                     {imageFiles.map((file, idx) => (
                         <ImageThumbnailWithRemove
                             key={`img-${file.name}-${file.size}-${idx}`}
@@ -132,7 +132,7 @@ function ImageThumbnailWithRemove({
             <button
                 type="button"
                 onClick={onPreview}
-                className="block h-40 w-40 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="block h-52 w-52 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400"
                 aria-label="이미지 크게 보기"
             >
                 <img src={previewUrl} alt="" className="h-full w-full object-cover" />

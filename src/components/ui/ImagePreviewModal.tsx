@@ -96,10 +96,10 @@ export default function ImagePreviewModal({
 
             {/* 컨텐츠: 갤러리일 때 [이전] [이미지] [다음], 아니면 이미지만 */}
             <div
-                className="max-w-[95vw] max-h-[90vh] flex flex-col items-center relative"
+                className="w-full max-w-[95vw] max-h-[90vh] flex flex-col items-center justify-center relative min-h-0"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center gap-2 sm:gap-3">
+                <div className="flex items-center justify-center gap-2 sm:gap-3 w-full min-w-0 flex-1">
                     {isGallery && onPrev && (
                         <button
                             type="button"
@@ -119,15 +119,17 @@ export default function ImagePreviewModal({
                         <iframe
                             src={currentSrc}
                             title={currentFileName || imageAlt}
-                            className="w-[85vw] h-[85vh] bg-white rounded-xl shadow-2xl max-w-[80vw]"
+                            className="w-[85vw] h-[85vh] bg-white rounded-xl shadow-2xl max-w-[80vw] min-h-0"
                         />
                     ) : (
-                        <img
-                            key={currentSrc}
-                            src={currentSrc}
-                            alt={imageAlt}
-                            className="max-w-full max-h-[85vh] rounded-xl shadow-2xl bg-white object-contain"
-                        />
+                        <div className="flex-1 min-w-0 min-h-0 flex items-center justify-center">
+                            <img
+                                key={currentSrc}
+                                src={currentSrc}
+                                alt={imageAlt}
+                                className="max-w-full max-h-[75vh] sm:max-h-[85vh] w-auto h-auto rounded-xl shadow-2xl bg-black/20 object-contain"
+                            />
+                        </div>
                     )}
                     {isGallery && onNext && (
                         <button
