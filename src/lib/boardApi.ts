@@ -288,6 +288,142 @@ export async function submitVote(postId: string, userId: string, optionIndices: 
     if (insError) throw insError;
 }
 
+// ==================== 첨부파일 ====================
+
+export interface BoardAttachment {
+    id: string;
+    post_id: string;
+    storage_path: string;
+    file_name: string;
+    content_type: string | null;
+    file_size: number | null;
+    created_at: string;
+    /** 공개 URL (조회 시 채움) */
+    url?: string;
+}
+
+const BOARD_ATTACHMENTS_BUCKET = "board-attachments";
+
+/** 첨부파일 업로드 → storage 경로 및 메타 반환 (DB 저장은 호출 측에서) */
+export async function uploadBoardAttachment(
+    userId: string,
+    file: File
+): Promise<{ storage_path: string; file_name: string; content_type: string; file_size: number }> {
+    const safeName = `${userId}/${Date.now()}_${Math.random().toString(36).slice(2, 10)}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const { error } = await supabase.storage
+        .from(BOARD_ATTACHMENTS_BUCKET)
+        .upload(safeName, file, { contentType: file.type || "application/octet-stream", upsert: false });
+    if (error) {
+        const msg = error.message || String(error);
+        if (msg.includes("Bucket") || msg.includes("bucket") || msg.includes("not found")) {
+            throw new Error(`첨부파일 업로드 실패: 'board-attachments' 버킷이 없습니다. Supabase 대시보드에서 Storage 버킷을 생성하거나, 마이그레이션(20250310300000_board_post_attachments.sql)을 적용해 주세요.`);
+        }
+        throw new Error(`첨부파일 업로드 실패: ${msg}`);
+    }
+    return {
+        storage_path: safeName,
+        file_name: file.name,
+        content_type: file.type || "application/octet-stream",
+        file_size: file.size,
+    };
+}
+
+/** 게시글에 첨부 레코드 일괄 저장 */
+export async function insertBoardAttachments(
+    postId: string,
+    items: { storage_path: string; file_name: string; content_type?: string; file_size?: number }[]
+): Promise<void> {
+    if (!items.length) return;
+    const rows = items.map((item) => ({
+        post_id: postId,
+        storage_path: item.storage_path,
+        file_name: item.file_name,
+        content_type: item.content_type ?? null,
+        file_size: item.file_size ?? null,
+    }));
+    const { error } = await supabase.from("board_post_attachments").insert(rows);
+    if (error) {
+        const msg = error.message || String(error);
+        if (msg.includes("relation") && msg.includes("does not exist")) {
+            throw new Error(`첨부파일 저장 실패: 'board_post_attachments' 테이블이 없습니다. Supabase에 마이그레이션(20250310300000_board_post_attachments.sql)을 적용해 주세요.`);
+        }
+        throw new Error(`첨부파일 저장 실패: ${msg}`);
+    }
+}
+
+const ATTACHMENT_URL_EXPIRES_IN = 60 * 60; // 1시간 (Signed URL 사용 시)
+
+/** 한 게시글의 첨부 목록 (url 포함, 비공개 버킷은 Signed URL 사용) */
+export async function getBoardAttachments(postId: string): Promise<BoardAttachment[]> {
+    const { data, error } = await supabase
+        .from("board_post_attachments")
+        .select("id, post_id, storage_path, file_name, content_type, file_size, created_at")
+        .eq("post_id", postId)
+        .order("created_at", { ascending: true });
+    if (error) throw error;
+    const list = (data ?? []) as BoardAttachment[];
+    if (list.length === 0) return list;
+    const paths = list.map((a) => a.storage_path);
+    const { data: signedData, error: signedError } = await supabase.storage
+        .from(BOARD_ATTACHMENTS_BUCKET)
+        .createSignedUrls(paths, ATTACHMENT_URL_EXPIRES_IN);
+    if (!signedError && signedData?.length) {
+        const urlByPath = new Map(signedData.map((d) => [d.path, d.signedUrl ?? ""]));
+        list.forEach((a) => {
+            a.url = urlByPath.get(a.storage_path) || supabase.storage.from(BOARD_ATTACHMENTS_BUCKET).getPublicUrl(a.storage_path).data.publicUrl;
+        });
+    } else {
+        list.forEach((a) => {
+            a.url = supabase.storage.from(BOARD_ATTACHMENTS_BUCKET).getPublicUrl(a.storage_path).data.publicUrl;
+        });
+    }
+    return list;
+}
+
+/** 여러 게시글의 첨부 목록 (postId -> BoardAttachment[], 비공개 버킷은 Signed URL 사용) */
+export async function getBoardAttachmentsByPostIds(postIds: string[]): Promise<Record<string, BoardAttachment[]>> {
+    if (!postIds.length) return {};
+    const { data, error } = await supabase
+        .from("board_post_attachments")
+        .select("id, post_id, storage_path, file_name, content_type, file_size, created_at")
+        .in("post_id", postIds)
+        .order("created_at", { ascending: true });
+    if (error) throw error;
+    const list = (data ?? []) as BoardAttachment[];
+    const result: Record<string, BoardAttachment[]> = {};
+    list.forEach((a) => {
+        if (!result[a.post_id]) result[a.post_id] = [];
+        result[a.post_id].push(a as BoardAttachment);
+    });
+    if (list.length === 0) return result;
+    const paths = list.map((a) => a.storage_path);
+    const { data: signedData, error: signedError } = await supabase.storage
+        .from(BOARD_ATTACHMENTS_BUCKET)
+        .createSignedUrls(paths, ATTACHMENT_URL_EXPIRES_IN);
+    if (!signedError && signedData?.length) {
+        const urlByPath = new Map(signedData.map((d) => [d.path, d.signedUrl ?? ""]));
+        list.forEach((a) => {
+            (a as BoardAttachment).url = urlByPath.get(a.storage_path) || supabase.storage.from(BOARD_ATTACHMENTS_BUCKET).getPublicUrl(a.storage_path).data.publicUrl;
+        });
+    } else {
+        list.forEach((a) => {
+            (a as BoardAttachment).url = supabase.storage.from(BOARD_ATTACHMENTS_BUCKET).getPublicUrl(a.storage_path).data.publicUrl;
+        });
+    }
+    return result;
+}
+
+/** 첨부 삭제 (DB만, 스토리지 객체는 유지) */
+export async function deleteBoardAttachment(attachmentId: string): Promise<void> {
+    const { error } = await supabase.from("board_post_attachments").delete().eq("id", attachmentId);
+    if (error) throw error;
+}
+
+/** 스토리지에서 첨부 파일 삭제 (선택적 정리용) */
+export async function removeBoardAttachmentFromStorage(storagePath: string): Promise<void> {
+    await supabase.storage.from(BOARD_ATTACHMENTS_BUCKET).remove([storagePath]);
+}
+
 // ==================== 댓글 ====================
 
 export interface BoardComment {

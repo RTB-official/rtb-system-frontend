@@ -16,7 +16,9 @@ import {
     getMyVotesForPosts,
     getVoteCountsForPosts,
     submitVote,
+    getBoardAttachmentsByPostIds,
     type BoardPostRow,
+    type BoardAttachment,
 } from "../../lib/boardApi";
 import { useUser } from "../../hooks/useUser";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -40,6 +42,7 @@ function formatBoardDateTimeKo(iso: string) {
 export default function BoardListPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [posts, setPosts] = useState<BoardPostRow[]>([]);
+    const [attachmentsByPostId, setAttachmentsByPostId] = useState<Record<string, BoardAttachment[]>>({});
     const [myVotes, setMyVotes] = useState<Record<string, number[]>>({});
     const [voteCounts, setVoteCounts] = useState<Record<string, Record<number, number>>>({});
     const [loading, setLoading] = useState(true);
@@ -60,6 +63,7 @@ export default function BoardListPage() {
         try {
             const list = await getBoardPosts(currentUserId);
             setPosts(list);
+            const postIds = list.map((p) => p.id);
             const votePostIds = list.filter((p) => p.type === "vote").map((p) => p.id);
             const [votes, counts] = await Promise.all([
                 getMyVotesForPosts(votePostIds, currentUserId),
@@ -67,8 +71,17 @@ export default function BoardListPage() {
             ]);
             setMyVotes(votes);
             setVoteCounts(counts);
+            if (postIds.length > 0) {
+                try {
+                    const attachmentsMap = await getBoardAttachmentsByPostIds(postIds);
+                    setAttachmentsByPostId(attachmentsMap);
+                } catch (attErr) {
+                    console.error("첨부파일 목록 조회 실패:", attErr);
+                }
+            }
         } catch (e) {
             console.error(e);
+            showError("게시글 목록을 불러오지 못했습니다.");
         } finally {
             setLoading(false);
         }
@@ -255,6 +268,7 @@ export default function BoardListPage() {
                                                             handleVote(row.id, optionIndex, allowMulti, current),
                                                     }}
                                                     footer={commentFooter}
+                                                    attachments={attachmentsByPostId[row.id]}
                                                     className=""
                                                 />
                                             </div>
@@ -287,6 +301,7 @@ export default function BoardListPage() {
                                                     : undefined
                                             }
                                             footer={commentFooter}
+                                            attachments={attachmentsByPostId[row.id]}
                                         />
                                     </div>
                                 );

@@ -1,5 +1,5 @@
 // src/pages/Board/BoardCreatePage.tsx
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -7,10 +7,12 @@ import Button from "../../components/common/Button";
 import Input from "../../components/common/Input";
 import Select from "../../components/common/Select";
 import SectionCard from "../../components/ui/SectionCard";
-import { IconArrowBack, IconPlus, IconTrash, IconImage, IconClose } from "../../components/icons/Icons";
+import { IconArrowBack, IconPlus, IconTrash, IconImage, IconClose, IconUpload } from "../../components/icons/Icons";
 import {
     createBoardPost,
     uploadBoardOptionImage,
+    uploadBoardAttachment,
+    insertBoardAttachments,
     type BoardPostType,
     type BoardVisibility,
 } from "../../lib/boardApi";
@@ -38,6 +40,117 @@ const COMMENT_MODE_OPTIONS: { value: string; label: string }[] = [
     { value: "secret", label: '비밀 댓글' },
 ];
 
+/** 이미지 파일이면 썸네일 URL 생성, 언마운트 시 revoke */
+function useImagePreviewUrl(file: File | null): string | null {
+    const [url, setUrl] = useState<string | null>(null);
+    useEffect(() => {
+        if (!file || !file.type.startsWith("image/")) {
+            setUrl(null);
+            return;
+        }
+        const u = URL.createObjectURL(file);
+        setUrl(u);
+        return () => URL.revokeObjectURL(u);
+    }, [file?.name, file?.size, file?.lastModified]);
+    return url;
+}
+
+/** 목록 페이지와 동일: 이미지는 썸네일만, 파일은 카드 한 줄 + X 버튼 */
+function AttachmentList({
+    attachmentFiles,
+    onRemove,
+    onPreviewImage,
+}: {
+    attachmentFiles: File[];
+    onRemove: (index: number) => void;
+    onPreviewImage: (imageFiles: File[], clickedIndex: number) => void;
+}) {
+    const imageFiles = attachmentFiles.filter((f) => f.type.startsWith("image/"));
+    const fileFiles = attachmentFiles.filter((f) => !f.type.startsWith("image/"));
+
+    return (
+        <div className="mt-3 flex flex-col gap-3">
+            {imageFiles.length > 0 && (
+                <div className="flex flex-wrap gap-4">
+                    {imageFiles.map((file, idx) => (
+                        <ImageThumbnailWithRemove
+                            key={`img-${file.name}-${file.size}-${idx}`}
+                            file={file}
+                            onPreview={() => onPreviewImage(imageFiles, idx)}
+                            onRemove={() => {
+                                const globalIndex = attachmentFiles.indexOf(file);
+                                if (globalIndex !== -1) onRemove(globalIndex);
+                            }}
+                        />
+                    ))}
+                </div>
+            )}
+            {fileFiles.length > 0 && (
+                <div className="flex flex-col gap-2">
+                    {fileFiles.map((file, idx) => {
+                        const globalIndex = attachmentFiles.indexOf(file);
+                        return (
+                            <div
+                                key={`file-${file.name}-${file.size}-${idx}`}
+                                className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 min-w-0"
+                            >
+                                <span className="h-10 w-10 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0 text-gray-400 text-xs">
+                                    파일
+                                </span>
+                                <span className="min-w-0 truncate text-sm text-gray-700 flex-1">{file.name}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => onRemove(globalIndex)}
+                                    className="shrink-0 p-2 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                    aria-label="첨부 제거"
+                                >
+                                    <IconClose className="w-5 h-5" />
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ImageThumbnailWithRemove({
+    file,
+    onPreview,
+    onRemove,
+}: {
+    file: File;
+    onPreview: () => void;
+    onRemove: () => void;
+}) {
+    const previewUrl = useImagePreviewUrl(file);
+    if (!previewUrl) return null;
+    return (
+        <div className="relative shrink-0 group">
+            <button
+                type="button"
+                onClick={onPreview}
+                className="block h-40 w-40 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                aria-label="이미지 크게 보기"
+            >
+                <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+            </button>
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove();
+                }}
+                className="absolute top-1 right-1 w-7 h-7 rounded-full bg-black/50 hover:bg-red-500 flex items-center justify-center text-white transition-colors"
+                aria-label="첨부 제거"
+            >
+                <IconClose className="w-4 h-4" />
+            </button>
+        </div>
+    );
+}
+
 export default function BoardCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [type, setType] = useState<BoardPostType>("post");
@@ -48,10 +161,13 @@ export default function BoardCreatePage() {
     const [voteOptions, setVoteOptions] = useState<string[]>(["", ""]);
     const [voteOptionImages, setVoteOptionImages] = useState<string[]>(["", ""]);
     const [voteAllowMultiple, setVoteAllowMultiple] = useState(false);
+    const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const attachmentInputRef = useRef<HTMLInputElement>(null);
     const uploadForIndexRef = useRef<number>(0);
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [attachmentPreview, setAttachmentPreview] = useState<{ images: { url: string; fileName: string }[]; index: number } | null>(null);
     const { currentUserId } = useUser();
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
@@ -101,6 +217,15 @@ export default function BoardCreatePage() {
         }
         setSubmitting(true);
         try {
+            // 1) 첨부파일이 있으면 먼저 스토리지에 업로드 (실패 시 글 생성 전에 에러 표시)
+            const uploadedItems: { storage_path: string; file_name: string; content_type: string; file_size: number }[] = [];
+            if (attachmentFiles.length > 0) {
+                for (const file of attachmentFiles) {
+                    const meta = await uploadBoardAttachment(currentUserId, file);
+                    uploadedItems.push(meta);
+                }
+            }
+            // 2) 글 생성
             const profileName =
                 typeof localStorage !== "undefined"
                     ? localStorage.getItem("profile_name") ?? null
@@ -109,7 +234,7 @@ export default function BoardCreatePage() {
             const optionImages = voteOptions
                 .map((o, i) => (o.trim() ? (voteOptionImages[i] ?? "") : ""))
                 .filter((_, i) => voteOptions[i]?.trim());
-            await createBoardPost(currentUserId, profileName, {
+            const post = await createBoardPost(currentUserId, profileName, {
                 title: t,
                 body: body.trim() || undefined,
                 type,
@@ -122,11 +247,16 @@ export default function BoardCreatePage() {
                     voteOptionImages: optionImages.length === options.length ? optionImages : options.map(() => ""),
                 }),
             });
+            // 3) 업로드된 첨부를 DB에 연결
+            if (uploadedItems.length > 0) {
+                await insertBoardAttachments(post.id, uploadedItems);
+            }
             showSuccess("글이 등록되었습니다.");
             navigate(PATHS.board);
         } catch (e: any) {
             console.error(e);
-            showError(e?.message ?? "글 등록에 실패했습니다.");
+            const message = e?.message ?? (e?.error_description ?? "글 등록에 실패했습니다.");
+            showError(message);
         } finally {
             setSubmitting(false);
         }
@@ -202,6 +332,78 @@ export default function BoardCreatePage() {
                                         placeholder={type === "vote" ? "투표 설명을 입력하세요" : "내용을 입력하세요"}
                                         rows={type === "vote" ? 6 : 8}
                                         className="w-full border border-gray-200 rounded-xl px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-sm font-medium text-gray-700">첨부파일</label>
+                                        <label className="inline-flex items-center justify-center h-[30px] px-2 text-[13px] rounded-[8px] border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 cursor-pointer focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500">
+                                            <IconUpload className="w-4 h-4 mr-1" />
+                                            <span>파일 추가</span>
+                                            <input
+                                                ref={attachmentInputRef}
+                                                type="file"
+                                                multiple
+                                                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+                                                className="sr-only"
+                                                onChange={(e) => {
+                                                    const input = e.target;
+                                                    const fileList = input.files;
+                                                    if (!fileList?.length) return;
+                                                    const newFiles = Array.from(fileList);
+                                                    setAttachmentFiles((prev) => [...prev, ...newFiles]);
+                                                    input.value = "";
+                                                }}
+                                            />
+                                        </label>
+                                    </div>
+                                    {attachmentFiles.length > 0 ? (
+                                        <AttachmentList
+                                            attachmentFiles={attachmentFiles}
+                                            onRemove={(i) => setAttachmentFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                                            onPreviewImage={(imageFiles, clickedIndex) => {
+                                                const images = imageFiles.map((f) => ({
+                                                    url: URL.createObjectURL(f),
+                                                    fileName: f.name,
+                                                }));
+                                                setAttachmentPreview({ images, index: clickedIndex });
+                                            }}
+                                        />
+                                    ) : (
+                                        <p className="text-sm text-gray-500 mt-1">사진, PDF 등 파일을 첨부할 수 있습니다.</p>
+                                    )}
+                                    <ImagePreviewModal
+                                        isOpen={!!attachmentPreview}
+                                        onClose={() => {
+                                            attachmentPreview?.images.forEach((i) => URL.revokeObjectURL(i.url));
+                                            setAttachmentPreview(null);
+                                        }}
+                                        imageSrc={attachmentPreview?.images[attachmentPreview.index]?.url ?? null}
+                                        imageAlt="첨부 이미지"
+                                        fileName={attachmentPreview?.images[attachmentPreview.index]?.fileName}
+                                        images={attachmentPreview?.images.map((i) => ({ src: i.url, fileName: i.fileName }))}
+                                        currentIndex={attachmentPreview?.index ?? 0}
+                                        onPrev={
+                                            attachmentPreview && attachmentPreview.images.length > 1
+                                                ? () =>
+                                                      setAttachmentPreview((prev) =>
+                                                          prev
+                                                              ? {
+                                                                    ...prev,
+                                                                    index: (prev.index - 1 + prev.images.length) % prev.images.length,
+                                                                }
+                                                              : null
+                                                      )
+                                                : undefined
+                                        }
+                                        onNext={
+                                            attachmentPreview && attachmentPreview.images.length > 1
+                                                ? () =>
+                                                      setAttachmentPreview((prev) =>
+                                                          prev ? { ...prev, index: (prev.index + 1) % prev.images.length } : null
+                                                      )
+                                                : undefined
+                                        }
                                     />
                                 </div>
                                 {type === "vote" && (

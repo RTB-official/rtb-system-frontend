@@ -4,8 +4,25 @@ import type { ReactNode } from "react";
 import SectionCard from "../ui/SectionCard";
 import Chip from "../ui/Chip";
 import Avatar from "../common/Avatar";
-import { IconCheck } from "../icons/Icons";
+import { IconCheck, IconDownload } from "../icons/Icons";
 import ImagePreviewModal from "../ui/ImagePreviewModal";
+import type { BoardAttachment } from "../../lib/boardApi";
+
+/** URL을 fetch해서 파일로 저장 (cross-origin에서 download 속성 동작 안 함 대응) */
+async function downloadFileFromUrl(url: string, fileName: string) {
+    const res = await fetch(url, { mode: "cors" });
+    if (!res.ok) throw new Error("다운로드에 실패했습니다.");
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = fileName || "download";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+}
 
 function BoardAuthorMeta({
     authorName,
@@ -58,7 +75,14 @@ interface BoardPostCardProps {
     };
     /** 작성자 바로 밑에 표시 (예: 댓글 영역) */
     footer?: ReactNode;
+    /** 첨부파일 목록 (있으면 본문 아래에 표시) */
+    attachments?: BoardAttachment[];
     className?: string;
+}
+
+function isImageContentType(ct: string | null): boolean {
+    if (!ct) return false;
+    return ct.startsWith("image/");
 }
 
 export function BoardPostCard({
@@ -72,10 +96,26 @@ export function BoardPostCard({
     chip,
     vote,
     footer,
+    attachments,
     className = "",
 }: BoardPostCardProps) {
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [attachmentPreview, setAttachmentPreview] = useState<{ images: { url: string; fileName: string }[]; index: number } | null>(null);
+    const [downloadingId, setDownloadingId] = useState<string | null>(null);
     const hasVote = !!vote && vote.options.length > 0;
+
+    const handleFileDownload = async (url: string, fileName: string, id: string) => {
+        if (downloadingId) return;
+        setDownloadingId(id);
+        try {
+            await downloadFileFromUrl(url, fileName);
+        } catch (e) {
+            console.error(e);
+            window.open(url, "_blank");
+        } finally {
+            setDownloadingId(null);
+        }
+    };
     const totalVotes = hasVote
         ? Object.values(vote.counts).reduce((a, b) => a + b, 0)
         : 0;
@@ -116,6 +156,73 @@ export function BoardPostCard({
                     ) : null;
                 })()}
                 </div>
+                {attachments && attachments.length > 0 && (() => {
+                    const imageAttachments = attachments.filter((a) => isImageContentType(a.content_type) && a.url);
+                    const fileAttachments = attachments.filter((a) => !isImageContentType(a.content_type) || !a.url);
+                    return (
+                        <div className="mt-3 flex flex-col gap-3">
+                            {imageAttachments.length > 0 && (
+                                <div className="flex flex-wrap gap-4">
+                                    {imageAttachments.map((a, idx) => (
+                                        <button
+                                            key={a.id}
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setAttachmentPreview({
+                                                    images: imageAttachments.map((x) => ({ url: x.url!, fileName: x.file_name })),
+                                                    index: idx,
+                                                });
+                                            }}
+                                            className="block h-40 w-40 rounded-xl overflow-hidden border border-gray-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400 shrink-0"
+                                            aria-label="이미지 크게 보기"
+                                        >
+                                            <img src={a.url!} alt="" className="h-full w-full object-cover" />
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {fileAttachments.length > 0 && (
+                                <div className="flex flex-col gap-2">
+                                    {fileAttachments.map((a) => (
+                                        <div
+                                            key={a.id}
+                                            className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 min-w-0"
+                                        >
+                                            <span className="h-10 w-10 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0 text-gray-400 text-xs">
+                                                파일
+                                            </span>
+                                            <a
+                                                href={a.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="min-w-0 truncate text-sm text-gray-700 flex-1 hover:text-blue-600"
+                                            >
+                                                {a.file_name}
+                                            </a>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    handleFileDownload(a.url ?? "", a.file_name, a.id);
+                                                }}
+                                                disabled={!!downloadingId}
+                                                className="shrink-0 p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50"
+                                                aria-label="다운로드"
+                                            >
+                                                {downloadingId === a.id ? (
+                                                    <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                                                ) : (
+                                                    <IconDownload className="w-5 h-5" />
+                                                )}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
                 {hasVote && (
                     <div className="mt-3 flex flex-col gap-2">
                         {vote.options.map((opt, i) => {
@@ -198,6 +305,41 @@ export function BoardPostCard({
                 onClose={() => setPreviewImageUrl(null)}
                 imageSrc={previewImageUrl}
                 imageAlt="투표 항목 이미지"
+            />
+            <ImagePreviewModal
+                isOpen={!!attachmentPreview}
+                onClose={() => setAttachmentPreview(null)}
+                imageSrc={attachmentPreview ? attachmentPreview.images[attachmentPreview.index]?.src ?? null : null}
+                imageAlt="첨부 이미지"
+                fileName={attachmentPreview?.images[attachmentPreview.index]?.fileName}
+                images={attachmentPreview ? attachmentPreview.images.map((i) => ({ src: i.url, fileName: i.fileName })) : undefined}
+                currentIndex={attachmentPreview?.index ?? 0}
+                onPrev={
+                    attachmentPreview && attachmentPreview.images.length > 1
+                        ? () =>
+                              setAttachmentPreview((prev) =>
+                                  prev
+                                      ? {
+                                            ...prev,
+                                            index: (prev.index - 1 + prev.images.length) % prev.images.length,
+                                        }
+                                      : null
+                              )
+                        : undefined
+                }
+                onNext={
+                    attachmentPreview && attachmentPreview.images.length > 1
+                        ? () =>
+                              setAttachmentPreview((prev) =>
+                                  prev
+                                      ? {
+                                            ...prev,
+                                            index: (prev.index + 1) % prev.images.length,
+                                        }
+                                      : null
+                              )
+                        : undefined
+                }
             />
         </SectionCard>
     );

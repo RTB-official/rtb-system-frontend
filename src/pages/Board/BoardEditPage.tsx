@@ -1,5 +1,42 @@
 // src/pages/Board/BoardEditPage.tsx
 import { useState, useEffect, useRef } from "react";
+
+function isImageContentType(ct: string | null): boolean {
+    return !!ct && ct.startsWith("image/");
+}
+
+/** 이미지 파일이면 썸네일 URL 생성, 언마운트 시 revoke */
+function useImagePreviewUrl(file: File | null): string | null {
+    const [url, setUrl] = useState<string | null>(null);
+    useEffect(() => {
+        if (!file || !file.type.startsWith("image/")) {
+            setUrl(null);
+            return;
+        }
+        const u = URL.createObjectURL(file);
+        setUrl(u);
+        return () => URL.revokeObjectURL(u);
+    }, [file?.name, file?.size, file?.lastModified]);
+    return url;
+}
+
+function NewFileRow({ file, onRemove }: { file: File; onRemove: () => void }) {
+    const previewUrl = useImagePreviewUrl(file);
+    const isImage = file.type.startsWith("image/");
+    return (
+        <li className="flex items-center gap-2 text-sm text-gray-700">
+            {isImage && previewUrl ? (
+                <img src={previewUrl} alt="" className="h-12 w-12 rounded-lg object-cover border border-gray-200 shrink-0" />
+            ) : (
+                <span className="h-12 w-12 rounded-lg border border-gray-200 bg-gray-100 flex items-center justify-center shrink-0 text-gray-400 text-xs">파일</span>
+            )}
+            <span className="min-w-0 truncate flex-1">{file.name}</span>
+            <button type="button" onClick={onRemove} className="shrink-0 p-1 text-gray-500 hover:text-red-600 rounded" aria-label="첨부 제거">
+                <IconClose className="w-4 h-4" />
+            </button>
+        </li>
+    );
+}
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -7,13 +44,18 @@ import Button from "../../components/common/Button";
 import Input from "../../components/common/Input";
 import Select from "../../components/common/Select";
 import SectionCard from "../../components/ui/SectionCard";
-import { IconArrowBack, IconPlus, IconTrash, IconImage, IconClose } from "../../components/icons/Icons";
+import { IconArrowBack, IconPlus, IconTrash, IconImage, IconClose, IconUpload } from "../../components/icons/Icons";
 import {
     getBoardPostById,
     updateBoardPost,
     uploadBoardOptionImage,
+    getBoardAttachments,
+    uploadBoardAttachment,
+    insertBoardAttachments,
+    deleteBoardAttachment,
     type BoardPostType,
     type BoardVisibility,
+    type BoardAttachment,
 } from "../../lib/boardApi";
 import { useUser } from "../../hooks/useUser";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -53,6 +95,10 @@ export default function BoardEditPage() {
     const [voteAllowMultiple, setVoteAllowMultiple] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [existingAttachments, setExistingAttachments] = useState<BoardAttachment[]>([]);
+    const [newAttachmentFiles, setNewAttachmentFiles] = useState<File[]>([]);
+    const [attachmentIdsToRemove, setAttachmentIdsToRemove] = useState<string[]>([]);
+    const attachmentInputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uploadForIndexRef = useRef<number>(0);
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -130,6 +176,8 @@ export default function BoardEditPage() {
                 } else {
                     setBody(post.body ?? "");
                 }
+                const attachments = await getBoardAttachments(id);
+                setExistingAttachments(attachments);
             } catch (e) {
                 console.error(e);
                 navigate(PATHS.board);
@@ -175,6 +223,17 @@ export default function BoardEditPage() {
                             : options.map(() => ""),
                 }),
             });
+            for (const attId of attachmentIdsToRemove) {
+                await deleteBoardAttachment(attId);
+            }
+            if (newAttachmentFiles.length > 0) {
+                const items: { storage_path: string; file_name: string; content_type: string; file_size: number }[] = [];
+                for (const file of newAttachmentFiles) {
+                    const meta = await uploadBoardAttachment(currentUserId, file);
+                    items.push(meta);
+                }
+                await insertBoardAttachments(id, items);
+            }
             showSuccess("글이 수정되었습니다.");
             navigate(PATHS.board);
         } catch (e: any) {
@@ -261,6 +320,67 @@ export default function BoardEditPage() {
                                             rows={type === "vote" ? 6 : 8}
                                             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                                         />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-sm font-medium text-gray-700">첨부파일</label>
+                                            <label className="inline-flex items-center justify-center h-[30px] px-2 text-[13px] rounded-[8px] border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 cursor-pointer focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500">
+                                                <IconUpload className="w-4 h-4 mr-1" />
+                                                <span>파일 추가</span>
+                                                <input
+                                                    ref={attachmentInputRef}
+                                                    type="file"
+                                                    multiple
+                                                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+                                                    className="sr-only"
+                                                    onChange={(e) => {
+                                                        const input = e.target;
+                                                        const fileList = input.files;
+                                                        if (!fileList?.length) return;
+                                                        const newFiles = Array.from(fileList);
+                                                        setNewAttachmentFiles((prev) => [...prev, ...newFiles]);
+                                                        input.value = "";
+                                                    }}
+                                                />
+                                            </label>
+                                        </div>
+                                        {(existingAttachments.filter((a) => !attachmentIdsToRemove.includes(a.id)).length > 0 || newAttachmentFiles.length > 0) ? (
+                                            <ul className="mt-2 space-y-2 rounded-xl border border-gray-200 bg-gray-50/50 px-3 py-2">
+                                                {existingAttachments
+                                                    .filter((a) => !attachmentIdsToRemove.includes(a.id))
+                                                    .map((a) => (
+                                                        <li key={a.id} className="flex items-center gap-2 text-sm text-gray-700">
+                                                            {isImageContentType(a.content_type) && a.url ? (
+                                                                <a href={a.url} target="_blank" rel="noopener noreferrer" className="shrink-0 h-12 w-12 rounded-lg overflow-hidden border border-gray-200">
+                                                                    <img src={a.url} alt="" className="h-full w-full object-cover" />
+                                                                </a>
+                                                            ) : (
+                                                                <span className="h-12 w-12 rounded-lg border border-gray-200 bg-gray-100 flex items-center justify-center shrink-0 text-gray-400 text-xs">파일</span>
+                                                            )}
+                                                            <a href={a.url} target="_blank" rel="noopener noreferrer" className="min-w-0 truncate flex-1 text-blue-600 hover:underline">
+                                                                {a.file_name}
+                                                            </a>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setAttachmentIdsToRemove((prev) => [...prev, a.id])}
+                                                                className="shrink-0 p-1 text-gray-500 hover:text-red-600 rounded"
+                                                                aria-label="첨부 제거"
+                                                            >
+                                                                <IconClose className="w-4 h-4" />
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                {newAttachmentFiles.map((f, i) => (
+                                                    <NewFileRow
+                                                        key={`new-${f.name}-${f.size}-${i}`}
+                                                        file={f}
+                                                        onRemove={() => setNewAttachmentFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                                                    />
+                                                ))}
+                                            </ul>
+                                        ) : (
+                                            <p className="text-sm text-gray-500 mt-1">사진, PDF 등 파일을 첨부할 수 있습니다.</p>
+                                        )}
                                     </div>
                                     {type === "vote" && (
                                         <div>

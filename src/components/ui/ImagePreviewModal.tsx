@@ -1,5 +1,10 @@
 import { useEffect } from "react";
 
+export interface ImagePreviewItem {
+    src: string;
+    fileName?: string;
+}
+
 interface ImagePreviewModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -7,6 +12,11 @@ interface ImagePreviewModalProps {
     imageAlt?: string;
     fileName?: string;
     fileType?: string; // e.g. "image/jpeg", "application/pdf"
+    /** 여러 장일 때 갤러리 모드: 이미지 목록과 현재 인덱스 */
+    images?: ImagePreviewItem[];
+    currentIndex?: number;
+    onPrev?: () => void;
+    onNext?: () => void;
 }
 
 export default function ImagePreviewModal({
@@ -16,6 +26,10 @@ export default function ImagePreviewModal({
     imageAlt = "Preview",
     fileName,
     fileType,
+    images,
+    currentIndex = 0,
+    onPrev,
+    onNext,
 }: ImagePreviewModalProps) {
     useEffect(() => {
         if (isOpen) {
@@ -28,9 +42,32 @@ export default function ImagePreviewModal({
         };
     }, [isOpen]);
 
-    if (!isOpen || !imageSrc) return null;
+    const isGallery = images && images.length > 1;
 
-    const isPdf = fileType === "application/pdf" || imageSrc.toLowerCase().endsWith(".pdf");
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+            if (!isGallery) return;
+            if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                onPrev?.();
+            }
+            if (e.key === "ArrowRight") {
+                e.preventDefault();
+                onNext?.();
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [isOpen, isGallery, onClose, onPrev, onNext]);
+
+    const currentSrc = isGallery && images[currentIndex] ? images[currentIndex].src : imageSrc;
+    const currentFileName = isGallery && images[currentIndex] ? images[currentIndex].fileName : fileName;
+
+    if (!isOpen || !currentSrc) return null;
+
+    const isPdf = fileType === "application/pdf" || currentSrc.toLowerCase().endsWith(".pdf");
 
     return (
         <div
@@ -40,7 +77,7 @@ export default function ImagePreviewModal({
             {/* 닫기 버튼 */}
             <button
                 onClick={onClose}
-                className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors"
+                className="absolute top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition-colors z-10"
                 aria-label="닫기"
             >
                 <svg
@@ -57,28 +94,66 @@ export default function ImagePreviewModal({
                 </svg>
             </button>
 
-            {/* 컨텐츠 (클릭해도 닫히지 않음) */}
+            {/* 컨텐츠: 갤러리일 때 [이전] [이미지] [다음], 아니면 이미지만 */}
             <div
-                className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+                className="max-w-[95vw] max-h-[90vh] flex flex-col items-center relative"
                 onClick={(e) => e.stopPropagation()}
             >
-                {isPdf ? (
-                    <iframe
-                        src={imageSrc}
-                        title={fileName || imageAlt}
-                        className="w-[85vw] h-[85vh] bg-white rounded-xl shadow-2xl"
-                    />
-                ) : (
-                    <img
-                        src={imageSrc}
-                        alt={imageAlt}
-                        className="max-w-full max-h-[85vh] rounded-xl shadow-2xl bg-white object-contain"
-                    />
-                )}
+                <div className="flex items-center gap-2 sm:gap-3">
+                    {isGallery && onPrev && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onPrev();
+                            }}
+                            className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+                            aria-label="이전 이미지"
+                        >
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor" />
+                            </svg>
+                        </button>
+                    )}
+                    {isPdf ? (
+                        <iframe
+                            src={currentSrc}
+                            title={currentFileName || imageAlt}
+                            className="w-[85vw] h-[85vh] bg-white rounded-xl shadow-2xl max-w-[80vw]"
+                        />
+                    ) : (
+                        <img
+                            key={currentSrc}
+                            src={currentSrc}
+                            alt={imageAlt}
+                            className="max-w-full max-h-[85vh] rounded-xl shadow-2xl bg-white object-contain"
+                        />
+                    )}
+                    {isGallery && onNext && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onNext();
+                            }}
+                            className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+                            aria-label="다음 이미지"
+                        >
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" fill="currentColor" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
 
-                {fileName && (
+                {(currentFileName || (isGallery && images && images.length > 0)) && (
                     <p className="text-white text-center mt-3 text-[14px] truncate max-w-full">
-                        {fileName}
+                        {currentFileName && <span>{currentFileName}</span>}
+                        {isGallery && images && images.length > 0 && (
+                            <span className={currentFileName ? "ml-1.5 text-white/70" : "text-white/70"}>
+                                ({currentIndex + 1} / {images.length})
+                            </span>
+                        )}
                     </p>
                 )}
             </div>
