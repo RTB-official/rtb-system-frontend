@@ -20,7 +20,7 @@ export default function ReceiptExpenseModal({
     onClose,
     receiptsByCategory,
 }: ReceiptExpenseModalProps) {
-    const { workers, workLogEntries, addExpense, expenses, deleteExpense, updateExpense, editingExpenseId, editExpense, cancelEditExpense } = useWorkReportStore();
+    const { workers, vehicles, workLogEntries, addExpense, expenses, deleteExpense, updateExpense, editingExpenseId, editExpense, cancelEditExpense } = useWorkReportStore();
 
     const [currentReceiptIndex, setCurrentReceiptIndex] = useState(0);
     const [sortOrder, setSortOrder] = useState<'category' | 'time'>('category');
@@ -828,27 +828,46 @@ export default function ReceiptExpenseModal({
                                 )}
                             </div>
 
-                            {/* 상세내용 */}
-                            <div className="flex flex-col gap-2 md:col-span-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="font-medium text-[14px] text-gray-900">
-                                        상세내용
-                                        <RequiredIndicator />
-                                    </label>
-                                    <Button
-                                        onClick={handleAddAllPersons}
-                                        variant="outline"
-                                        size="sm"
-                                    >
-                                        인원 모두 추가
-                                    </Button>
-                                </div>
-                                <TextInput
-                                    placeholder="상세내용 입력"
-                                    value={detail}
-                                    onChange={setDetail}
-                                />
-                            </div>
+{/* 상세내용 */}
+<div className="flex flex-col gap-2 md:col-span-2">
+    <div className="flex items-center justify-between">
+        <label className="font-medium text-[14px] text-gray-900">
+            상세내용
+            <RequiredIndicator />
+        </label>
+        {type !== "유대" && (
+            <Button
+                onClick={handleAddAllPersons}
+                variant="outline"
+                size="sm"
+            >
+                인원 모두 추가
+            </Button>
+        )}
+    </div>
+
+    {type === "유대" && vehicles.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+            {vehicles.map((vehicle) => (
+                <Button
+                    key={vehicle}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDetail(`${vehicle} 주유`)}
+                >
+                    {vehicle}
+                </Button>
+            ))}
+        </div>
+    )}
+
+    <TextInput
+        placeholder="상세내용 입력"
+        value={detail}
+        onChange={setDetail}
+    />
+</div>
 
                             {/* 금액 */}
                             <div className="flex flex-col gap-2 md:col-span-2">

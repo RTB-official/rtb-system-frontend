@@ -21,6 +21,7 @@ import {
     uploadReceiptFile,
     updateWorkLog,
     getWorkLogById,
+    deleteWorkLogReceipt,
 } from "../../lib/workLogApi";
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
@@ -98,6 +99,8 @@ export default function ReportEditPage() {
         expenses,
         materials,
         uploadedFiles,
+        pendingDeletedReceipts,
+        clearPendingDeletedReceipts,
         resetForm,
         setReportType: setReportTypeInStore,
         setVessel,
@@ -115,6 +118,16 @@ export default function ReportEditPage() {
         setInstructor,
         fetchAllStaff,
     } = useWorkReportStore();
+
+    const flushPendingDeletedReceipts = useCallback(async () => {
+        if (pendingDeletedReceipts.length === 0) return;
+
+        for (const receipt of pendingDeletedReceipts) {
+            await deleteWorkLogReceipt(receipt.receiptId, receipt.storagePath);
+        }
+
+        clearPendingDeletedReceipts();
+    }, [pendingDeletedReceipts, clearPendingDeletedReceipts]);
 
     // ✅ 변경 감지(dirty)용 스냅샷 (store 값 선언 이후에 있어야 함)
     const initialSnapshotRef = useRef<string>("");
@@ -375,7 +388,7 @@ export default function ReportEditPage() {
 // ✅ 수정 화면에서 isExisting 플래그가 꼬일 수 있으므로 "실제 File 객체 존재"로 판별
 const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
 
-if (newFiles.length > 0) {
+            if (newFiles.length > 0) {
 
                 const receipts: Array<{
                     category: ReceiptCategoryEnum;
@@ -446,6 +459,8 @@ if (newFiles.length > 0) {
                 }
                 }
             }
+
+            await flushPendingDeletedReceipts();
 
 
             showSuccess("수정이 완료되었습니다!");
@@ -648,6 +663,8 @@ if (newFiles.length > 0) {
     }
 }
 
+                await flushPendingDeletedReceipts();
+
 
 
                 setLastSavedAt(new Date());
@@ -684,9 +701,11 @@ if (newFiles.length > 0) {
             expenses,
             materials,
             uploadedFiles, // ✅ 추가
+            pendingDeletedReceipts,
             user?.id,
             savingDraft,
             isSubmittedWorkLog,
+            flushPendingDeletedReceipts,
         ]
     );
     

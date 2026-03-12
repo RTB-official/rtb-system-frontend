@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useWorkReportStore, FileCategory, UploadedFile } from "../../store/workReportStore";
 import Button from "../common/Button";
-import { getWorkLogReceipts, deleteWorkLogReceipt } from "../../lib/workLogApi";
-import { useToast } from "../ui/ToastProvider";
+import { getWorkLogReceipts } from "../../lib/workLogApi";
 import ReceiptExpenseModal from "./ReceiptExpenseModal";
 
 // 아이콘들
@@ -122,8 +121,6 @@ interface FileCardProps {
 function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps) {
     const { uploadedFiles, addFiles, removeFile, addExistingReceipt } = useWorkReportStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { showError, showSuccess } = useToast();
-    const [deletingId, setDeletingId] = useState<number | null>(null);
     const [loadedReceiptIds, setLoadedReceiptIds] = useState<Set<number>>(new Set());
 
     const categoryFiles = uploadedFiles.filter((f) => f.category === category);
@@ -181,29 +178,9 @@ function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps
         }
     };
 
-    const handleDelete = async (e: React.MouseEvent, id: number) => {
+    const handleDelete = (e: React.MouseEvent, id: number) => {
         e.stopPropagation();
-        
-        const file = uploadedFiles.find((f) => f.id === id);
-        if (!file) return;
-
-        // 기존 영수증인 경우 DB와 Storage에서 삭제
-        if (file.isExisting && file.receiptId && file.storagePath) {
-            setDeletingId(id);
-            try {
-                await deleteWorkLogReceipt(file.receiptId, file.storagePath);
-                removeFile(id);
-                showSuccess("영수증이 삭제되었습니다.");
-            } catch (error: any) {
-                console.error("Error deleting receipt:", error);
-                showError(`영수증 삭제 실패: ${error.message || "알 수 없는 오류"}`);
-            } finally {
-                setDeletingId(null);
-            }
-        } else {
-            // 새로 추가한 파일인 경우 로컬에서만 삭제
-            removeFile(id);
-        }
+        removeFile(id);
     };
 
     const handleThumbnailClick = (item: UploadedFile) => {
@@ -309,33 +286,9 @@ function FileCard({ icon, title, category, onPreview, workLogId }: FileCardProps
                             {/* 삭제 버튼 */}
                             <button
                                 onClick={(e) => handleDelete(e, item.id)}
-                                disabled={deletingId === item.id}
-                                className="w-6 h-6 flex items-center justify-center text-[#9ca3af] hover:text-[#ef4444] transition-colors disabled:opacity-50"
+                                className="w-6 h-6 flex items-center justify-center text-[#9ca3af] hover:text-[#ef4444] transition-colors"
                             >
-                                {deletingId === item.id ? (
-                                    <svg
-                                        className="animate-spin h-4 w-4"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <circle
-                                            className="opacity-25"
-                                            cx="12"
-                                            cy="12"
-                                            r="10"
-                                            stroke="currentColor"
-                                            strokeWidth="4"
-                                        ></circle>
-                                        <path
-                                            className="opacity-75"
-                                            fill="currentColor"
-                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                        ></path>
-                                    </svg>
-                                ) : (
-                                    <IconClose />
-                                )}
+                                <IconClose />
                             </button>
                         </div>
                     ))}
