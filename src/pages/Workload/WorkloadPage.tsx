@@ -555,8 +555,9 @@ export default function WorkloadPage() {
                         const totalHours = summary.workHours + summary.travelHours + summary.waitHours;
                         return totalHours >= 1;
                     }
-                    // 기타: 모두 표시
-                    return true;
+                    // 기타(삭제된 계정 포함): 작업/이동/대기 시간 합계가 1시간 이상인 경우만 표시
+                    const totalHours = summary.workHours + summary.travelHours + summary.waitHours;
+                    return totalHours >= 1;
                 });
                 
                 const newTableData = generateTableData(filteredTableSummaries);

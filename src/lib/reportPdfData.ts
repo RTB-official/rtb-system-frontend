@@ -25,6 +25,7 @@ export type PdfExpense = {
     expense_type: string | null;
     detail: string | null;
     amount: number | null;
+    currency?: string;
 };
 
 export type PdfReceipt = {
@@ -123,7 +124,7 @@ export async function getReportPdfData(workLogId: number) {
     // ✅ expenses
     const { data: expensesRows, error: expensesError } = await supabase
         .from("work_log_expenses")
-        .select("expense_date, expense_type, detail, amount, id")
+        .select("expense_date, expense_type, detail, amount, currency, id")
         .eq("work_log_id", workLogId)
         .order("id", { ascending: true });
 
@@ -136,6 +137,7 @@ export async function getReportPdfData(workLogId: number) {
         expense_type: r.expense_type ?? null,
         detail: r.detail ?? null,
         amount: typeof r.amount === "number" ? r.amount : Number(r.amount ?? 0),
+        currency: r.currency || "원",
     })) as PdfExpense[];
 
     // ✅ receipts

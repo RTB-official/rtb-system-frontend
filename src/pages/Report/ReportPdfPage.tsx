@@ -464,8 +464,15 @@ export default function ReportPdfPage() {
         return { workPeriodText, rows: filtered, holidaysByYear };
     }, [entries, entryPersonsMap, persons]);
 
-    const expenseSum = useMemo(() => {
-        return expenses.reduce((acc, x) => acc + (Number(x.amount ?? 0) || 0), 0);
+    // 통화별 합계 계산
+    const expenseSumsByCurrency = useMemo(() => {
+        const totals: Record<string, number> = {};
+        expenses.forEach((x: any) => {
+            const currency = x.currency || "원";
+            const amount = Number(x.amount ?? 0) || 0;
+            totals[currency] = (totals[currency] || 0) + amount;
+        });
+        return totals;
     }, [expenses]);
 
     // ✅ 웹페이지 제목을 PDF 파일명 규칙과 동일하게 설정
@@ -1330,37 +1337,43 @@ export default function ReportPdfPage() {
                                         <th>날짜</th>
                                         <th>분류</th>
                                         <th>상세내용</th>
-                                        <th className="right">금액(￦)</th>
+                                        <th className="right">금액</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {expenses.map((x, idx) => (
-                                        <tr key={idx}>
-                                            <td>{x.expense_date ?? ""}</td>
-                                            <td>{x.expense_type ?? ""}</td>
-                                            <td>{x.detail ?? ""}</td>
-                                            <td className="right">
-                                                {formatWon(Number(x.amount ?? 0))}
+                                    {expenses.map((x: any, idx) => {
+                                        const currency = x.currency || "원";
+                                        const amount = Number(x.amount ?? 0) || 0;
+                                        return (
+                                            <tr key={idx}>
+                                                <td>{x.expense_date ?? ""}</td>
+                                                <td>{x.expense_type ?? ""}</td>
+                                                <td>{x.detail ?? ""}</td>
+                                                <td className="right">
+                                                    {`${amount.toLocaleString("ko-KR")}${currency}`}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                                <tfoot>
+                                    {Object.entries(expenseSumsByCurrency).map(([currency, total], index) => (
+                                        <tr key={currency}>
+                                            <td
+                                                colSpan={3}
+                                                className="right"
+                                                style={{ fontWeight: 700 }}
+                                            >
+                                                {index === 0 ? "합계" : ""}
+                                            </td>
+                                            <td
+                                                className="right"
+                                                style={{ fontWeight: 700 }}
+                                            >
+                                                {`${total.toLocaleString("ko-KR")}${currency}`}
                                             </td>
                                         </tr>
                                     ))}
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td
-                                            colSpan={3}
-                                            className="right"
-                                            style={{ fontWeight: 700 }}
-                                        >
-                                            합계
-                                        </td>
-                                        <td
-                                            className="right"
-                                            style={{ fontWeight: 700 }}
-                                        >
-                                            {formatWon(expenseSum)}
-                                        </td>
-                                    </tr>
                                 </tfoot>
                             </table>
                         )}

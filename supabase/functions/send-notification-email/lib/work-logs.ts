@@ -520,16 +520,16 @@ export async function buildBatchedReportEmail(
   const typeOrder = (a: DetailLineWithType, b: DetailLineWithType) =>
     ({ delete: 0, add: 1, update: 2 }[a.type] - { delete: 0, add: 1, update: 2 }[b.type]);
 
-  const subject = isCreate
-    ? hasDraftSubmitEvent
-      ? `${SUBJECT_PREFIX} ${author}님이 출장보고서를 제출했습니다.`
-      : `${SUBJECT_PREFIX} ${author}님이 출장보고서를 작성했습니다.`
+  const subject = hasDraftSubmitEvent
+    ? `${SUBJECT_PREFIX} ${author}님이 출장보고서를 제출했습니다.`
+    : isCreate
+    ? `${SUBJECT_PREFIX} ${author}님이 출장보고서를 작성했습니다.`
     : `${SUBJECT_PREFIX} ${author}님이 출장보고서를 수정했습니다.`;
 
-  const summary = isCreate
-    ? hasDraftSubmitEvent
-      ? `${author}님이 출장보고서를 제출했습니다.`
-      : `${author}님이 출장보고서를 작성했습니다.`
+  const summary = hasDraftSubmitEvent
+    ? `${author}님이 출장보고서를 제출했습니다.`
+    : isCreate
+    ? `${author}님이 출장보고서를 작성했습니다.`
     : `${author}님이 출장보고서를 수정했습니다.`;
 
   const headerLines = [
@@ -669,28 +669,30 @@ export async function buildWorkLogContent(
 
     const changeDetails: string[] = isUpdate ? buildChangeLines(changes, workLogChangeLabels, defaultSkipChangeKeys) : [];
 
+    const beforeDraft = changes?.is_draft?.before;
+    const afterDraft = changes?.is_draft?.after;
     const draftSubmit =
       op === "UPDATE" &&
-      changes?.is_draft?.before === true &&
-      (changes?.is_draft?.after === false || changes?.is_draft?.after === 0 || changes?.is_draft?.after === "false");
+      (beforeDraft === true || beforeDraft === 1 || beforeDraft === "true") &&
+      (afterDraft === false || afterDraft === 0 || afterDraft === "false");
 
     if (isUpdate && changeDetails.length === 0 && !draftSubmit) return { subject: "", text: "", html: "", skip: true };
 
     const subject = draftSubmit
       ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 제출했습니다.`
       : isInsert
-      ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 등록했습니다.`
+      ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 작성했습니다.`
       : isUpdate
       ? `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 수정했습니다.`
-      : `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 등록했습니다.`;
+      : `${SUBJECT_PREFIX} ${actorName}님이 출장보고서를 작성했습니다.`;
 
     const summary = draftSubmit
       ? `${actorName}님이 출장보고서를 제출했습니다.`
       : isInsert
-      ? `${actorName}님이 출장보고서를 등록했습니다.`
+      ? `${actorName}님이 출장보고서를 작성했습니다.`
       : isUpdate
       ? `${actorName}님이 출장보고서를 수정했습니다.`
-      : `${actorName}님이 출장보고서를 등록했습니다.`;
+      : `${actorName}님이 출장보고서를 작성했습니다.`;
 
     const title = normalize(record.subject) || "출장보고서";
     const vessel = normalize(record.vessel);

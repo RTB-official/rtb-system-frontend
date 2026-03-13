@@ -57,9 +57,14 @@ export default function ExpenseSection() {
         return Array.from(dates).sort();
     }, [workLogEntries]);
 
-    // 합계
-    const total = useMemo(() => {
-        return expenses.reduce((sum, e) => sum + e.amount, 0);
+    // 통화별 합계
+    const totalsByCurrency = useMemo(() => {
+        const totals: Record<string, number> = {};
+        expenses.forEach((e) => {
+            const currency = e.currency || "원";
+            totals[currency] = (totals[currency] || 0) + e.amount;
+        });
+        return totals;
     }, [expenses]);
 
     // 분류별 색상
@@ -459,17 +464,19 @@ export default function ExpenseSection() {
                                 })}
                             </tbody>
                             <tfoot>
-                                <tr>
-                                    <td
-                                        colSpan={3}
-                                        className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-right font-semibold text-[11px] md:text-[13px]"
-                                    >
-                                        합계
-                                    </td>
-                                    <td className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-center font-bold text-[12px] md:text-[14px]">
-                                        <span className="whitespace-nowrap">{formatCurrency(total)}원</span>
-                                    </td>
-                                </tr>
+                                {Object.entries(totalsByCurrency).map(([currency, total], index) => (
+                                    <tr key={currency}>
+                                        <td
+                                            colSpan={3}
+                                            className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-right font-semibold text-[11px] md:text-[13px]"
+                                        >
+                                            {index === 0 ? "합계" : ""}
+                                        </td>
+                                        <td className="border border-gray-200 px-2 md:px-3 py-1.5 md:py-2 text-center font-bold text-[12px] md:text-[14px]">
+                                            <span className="whitespace-nowrap">{formatCurrency(total)}{currency}</span>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tfoot>
                         </table>
                     </div>

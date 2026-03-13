@@ -453,8 +453,9 @@ export function aggregatePersonWorkload(
     // ✅ profiles(공사팀/공무팀) 기준으로 워크로드 표시 대상 결정
     if (profiles && profiles.length) {
         const resultMap = new Map<string, PersonWorkloadSummary>();
+        const profileNameSet = new Set(profiles.map(p => p.name));
 
-        // 이름별 기존 집계 맵(personMap)을 조회해서 규칙 적용
+        // 1. profiles에 있는 인원 처리 (공사팀/공무팀 규칙 적용)
         for (const p of profiles) {
             const name = p.name;
             const dept = p.department;
@@ -484,17 +485,33 @@ export function aggregatePersonWorkload(
             }
         }
 
+        // 2. ✅ profiles에 없지만 실제 워크로드 데이터에 있는 인원도 포함 (삭제된 계정 포함)
+        // 이렇게 하면 계정을 삭제해도 워크로드에 기록이 남아있으면 표시됨
+        // 단, 작업/이동/대기 시간 합계가 1시간 이상인 경우만 표시 (0시간인 달은 제외)
+        for (const [personName, summary] of personMap.entries()) {
+            if (!profileNameSet.has(personName)) {
+                // 삭제된 계정: 작업/이동/대기 시간 합계가 1시간 이상인 경우만 표시
+                const totalHours = summary.workHours + summary.travelHours + summary.waitHours;
+                if (totalHours >= 1) {
+                    resultMap.set(personName, summary);
+                }
+            }
+        }
+
         // ✅ 작업시간(workHours) 내림차순 정렬
         return Array.from(resultMap.values()).sort(
             (a, b) => b.workHours - a.workHours
         );
     }
 
-    // profiles 미사용 시 기존 동작 유지
+    // profiles 미사용 시: 작업/이동/대기 시간 합계가 1시간 이상인 인원만 표시
     // ✅ 작업시간 기준 내림차순 정렬
-    return Array.from(personMap.values()).sort(
-        (a, b) => b.workHours - a.workHours
-    );
+    return Array.from(personMap.values())
+        .filter((summary) => {
+            const totalHours = summary.workHours + summary.travelHours + summary.waitHours;
+            return totalHours >= 1;
+        })
+        .sort((a, b) => b.workHours - a.workHours);
 
 }
 
