@@ -1,5 +1,5 @@
 // src/pages/Report/ReportViewPage.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -310,13 +310,20 @@ export default function ReportViewPage() {
     const expenseRows = (data?.expenses ?? [])
         .slice()
         .sort((a: any, b: any) => (a.date || "").localeCompare(b.date || ""));
-    const expenseTotal = expenseRows.reduce((sum: number, ex: any) => {
-        const n =
-            typeof ex.amount === "number"
-                ? ex.amount
-                : Number(String(ex.amount || "0").replace(/,/g, "")) || 0;
-        return sum + n;
-    }, 0);
+    
+    // 통화별 합계 계산
+    const expenseTotalsByCurrency = useMemo(() => {
+        const totals: Record<string, number> = {};
+        expenseRows.forEach((ex: any) => {
+            const currency = ex.currency || "원";
+            const n =
+                typeof ex.amount === "number"
+                    ? ex.amount
+                    : Number(String(ex.amount || "0").replace(/,/g, "")) || 0;
+            totals[currency] = (totals[currency] || 0) + n;
+        });
+        return totals;
+    }, [expenseRows]);
 
     useEffect(() => {
         const load = async () => {
@@ -797,12 +804,13 @@ export default function ReportViewPage() {
                                                     "border border-gray-200 px-3 py-2 text-[13px] font-semibold text-center",
                                                 cellClassName:
                                                     "border border-gray-200 px-3 py-2 text-[13px] text-center whitespace-nowrap font-semibold",
-                                                render: (value) => {
+                                                render: (value, row: any) => {
                                                     const amountNum =
                                                         typeof value === "number"
                                                             ? value
                                                             : Number(String(value || "0").replace(/,/g, "")) || 0;
-                                                    return `${amountNum.toLocaleString()}원`;
+                                                    const currency = row.currency || "원";
+                                                    return `${amountNum.toLocaleString()}${currency}`;
                                                 },
                                             },
                                         ]}
@@ -815,17 +823,21 @@ export default function ReportViewPage() {
                                         outerBorder={false}
                                         emptyText="등록된 경비 내역이 없습니다."
                                         footer={
-                                            <tr>
-                                                <td
-                                                    colSpan={3}
-                                                    className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
-                                                >
-                                                    합계
-                                                </td>
-                                                <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px] whitespace-nowrap">
-                                                    {expenseTotal.toLocaleString()}원
-                                                </td>
-                                            </tr>
+                                            <>
+                                                {Object.entries(expenseTotalsByCurrency).map(([currency, total], index) => (
+                                                    <tr key={currency}>
+                                                        <td
+                                                            colSpan={3}
+                                                            className="border border-gray-200 px-3 py-2 text-right font-semibold text-[13px]"
+                                                        >
+                                                            {index === 0 ? "합계" : ""}
+                                                        </td>
+                                                        <td className="border border-gray-200 px-3 py-2 text-center font-bold text-[14px] whitespace-nowrap">
+                                                            {total.toLocaleString()}{currency}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </>
                                         }
                                     />
                                 </div>
