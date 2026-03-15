@@ -38,6 +38,8 @@ const WebNotificationSettingsPage = lazy(() => import("./pages/Settings/WebNotif
 const BoardListPage = lazy(() => import("./pages/Board/BoardListPage"));
 const BoardCreatePage = lazy(() => import("./pages/Board/BoardCreatePage"));
 const BoardEditPage = lazy(() => import("./pages/Board/BoardEditPage"));
+const InvoicePage = lazy(() => import("./pages/Invoice/InvoicePage"));
+const InvoiceCreatePage = lazy(() => import("./pages/Invoice/InvoiceCreatePage"));
 
 
 function RoleLanding() {
@@ -91,6 +93,8 @@ function App() {
 
                 <Route path="/members" element={<MembersPage />} />
                 <Route path="/vehicles" element={<VehiclesPage />} />
+                <Route path="/invoice" element={<InvoicePage />} />
+                <Route path="/invoice/create" element={<InvoiceCreatePage />} />
 
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/email" element={<EmailSettingsPage />} />

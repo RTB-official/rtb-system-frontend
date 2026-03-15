@@ -24,6 +24,7 @@ import {
     IconClose,
     IconSettings,
     IconBoard,
+    IconInvoice,
 } from "./icons/Icons";
 import { useUser } from "../hooks/useUser";
 import { useNotifications } from "../hooks/useNotifications";
@@ -39,6 +40,8 @@ import { useMenuNotifications } from "../hooks/useMenuNotifications";
 
 interface SidebarProps {
     onClose?: () => void;
+    /** 데스크탑에서도 닫기 버튼 표시 여부 */
+    showCloseOnDesktop?: boolean;
 }
 
 type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | null;
@@ -48,7 +51,7 @@ type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | null;
 
 
 
-export default function Sidebar({ onClose }: SidebarProps) {
+export default function Sidebar({ onClose, showCloseOnDesktop = false }: SidebarProps) {
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
 
@@ -252,12 +255,14 @@ export default function Sidebar({ onClose }: SidebarProps) {
                             RTB 통합 관리 시스템
                         </p>
                     </button>
-                    <button
-                        onClick={onClose}
-                        className="lg:hidden p-1 hover:bg-gray-200 rounded-lg transition-colors text-gray-900"
-                    >
-                        <IconClose className="w-4 h-4 md:w-5 md:h-5" />
-                    </button>
+                    {onClose && (
+                        <button
+                            onClick={onClose}
+                            className={showCloseOnDesktop ? "p-1 hover:bg-gray-200 rounded-lg transition-colors text-gray-900" : "lg:hidden p-1 hover:bg-gray-200 rounded-lg transition-colors text-gray-900"}
+                        >
+                            <IconClose className="w-4 h-4 md:w-5 md:h-5" />
+                        </button>
+                    )}
                 </div>
 
                 {/* User Section */}
@@ -466,6 +471,15 @@ export default function Sidebar({ onClose }: SidebarProps) {
                                 onMenuClick={handleMenuClick}
                             />
                         </div>
+
+                        {isAdmin && (
+                            <MenuButton
+                                icon={<IconInvoice className="w-5 h-5 md:w-6 md:h-6" />}
+                                label="인보이스"
+                                isActive={routeLocation.pathname.startsWith(PATHS.invoice) && !menuFocus}
+                                onClick={() => go(PATHS.invoice, null)}
+                            />
+                        )}
 
                         <div className="-pb-1">
                             <MenuButton

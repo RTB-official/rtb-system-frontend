@@ -251,6 +251,7 @@ export default function WorkloadPage() {
     const [profileMap, setProfileMap] = useState<
         Map<string, { email: string | null; position: string | null }>
     >(new Map());
+    const [allProfilesForAverage, setAllProfilesForAverage] = useState<Awaited<ReturnType<typeof getWorkloadTargetProfiles>>>([]);
     const [lastMonthChartData, setLastMonthChartData] = useState<WorkloadChartData[]>([]);
     const [showLastMonth, setShowLastMonth] = useState(false);
     const [showLastMonthAverage, setShowLastMonthAverage] = useState(false);
@@ -506,9 +507,11 @@ export default function WorkloadPage() {
                 const newChartData = generateChartData(chartSummaries);
                 // ✅ 테스트 계정 "공사팀" 그래프에서 제외
                 // ✅ 3월부터 "손재진" 그래프에서 제외
+                // ✅ "(프리)"가 포함된 이름 그래프에서 제외
                 const filteredChartData = newChartData.filter((d) => {
                     if (d.name === "공사팀") return false;
                     if (monthNum >= 3 && d.name === "손재진") return false;
+                    if (d.name.includes("(프리)")) return false;
                     return true;
                 });
 
@@ -528,10 +531,7 @@ export default function WorkloadPage() {
                     return team.includes("공무") && !team.includes("공사");
                 });
                 
-                // 공사팀 summaries와 공무팀 summaries 합치기
-                const allTableSummaries = [...chartSummaries, ...civilSummaries];
-                
-                // ✅ 필터링: 공사팀은 모두 표시 (테스트 계정 제외), 공무팀은 1시간 이상만
+                // ✅ chartSummaries에서 공무팀 제외 (중복 방지)
                 const getPersonDepartment = (name: string) => {
                     const profile = profiles.find((p: any) => p.name === name);
                     if (!profile) return null;
@@ -540,6 +540,16 @@ export default function WorkloadPage() {
                     if (team.includes("공사")) return "공사팀";
                     return null;
                 };
+                
+                const chartSummariesFiltered = chartSummaries.filter((summary) => {
+                    const dept = getPersonDepartment(summary.personName);
+                    return dept !== "공무팀"; // 공무팀 제외
+                });
+                
+                // 공사팀 summaries와 공무팀 summaries 합치기
+                const allTableSummaries = [...chartSummariesFiltered, ...civilSummaries];
+                
+                // ✅ 필터링: 공사팀은 모두 표시 (테스트 계정 제외), 공무팀은 1시간 이상만
                 
                 const filteredTableSummaries = allTableSummaries.filter((summary) => {
                     // ✅ "손재진" 계정 제외
@@ -566,6 +576,7 @@ export default function WorkloadPage() {
 
                 setChartData(filteredChartData);
                 setTableData(newTableData);
+                setAllProfilesForAverage(profiles);
                 setCurrentPage(1);
                 setLoading(false);
 
@@ -656,12 +667,43 @@ export default function WorkloadPage() {
     }, [tableData, currentPage, itemsPerPage]);
 
 
-    // 순수 작업시간 평균 계산 (이번 달)
+    // 순수 작업시간 평균 계산 (이번 달) - "(프리)"와 공무팀 제외, 작업시간만 계산
     const averageWorkTime = useMemo(() => {
         if (chartData.length === 0) return 0;
-        const total = chartData.reduce((sum, d) => sum + d.작업, 0);
-        return Math.round(total / chartData.length);
-    }, [chartData]);
+        
+        const getTeamText = (p: any) =>
+            String(
+                p?.team ??
+                p?.team_name ??
+                p?.department ??
+                p?.dept ??
+                p?.group ??
+                p?.group_name ??
+                ""
+            );
+        
+        const getPersonDepartment = (name: string) => {
+            const profile = allProfilesForAverage.find((p: any) => p.name === name);
+            if (!profile) return null;
+            const team = getTeamText(profile);
+            if (team.includes("공무") && !team.includes("공사")) return "공무팀";
+            if (team.includes("공사")) return "공사팀";
+            return null;
+        };
+        
+        // "(프리)"와 공무팀 제외한 데이터만 사용
+        const filteredForAverage = chartData.filter((d) => {
+            if (d.name.includes("(프리)")) return false;
+            const dept = getPersonDepartment(d.name);
+            if (dept === "공무팀") return false;
+            return true;
+        });
+        
+        if (filteredForAverage.length === 0) return 0;
+        // ✅ 작업시간만 평균 계산 (이동, 대기 시간 제외)
+        const total = filteredForAverage.reduce((sum, d) => sum + d.작업, 0);
+        return Math.round(total / filteredForAverage.length);
+    }, [chartData, allProfilesForAverage]);
 
     // 지난달 작업시간 평균
     const lastMonthAverageWorkTime = useMemo(() => {

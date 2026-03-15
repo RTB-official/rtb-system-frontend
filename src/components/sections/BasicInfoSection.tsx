@@ -39,6 +39,7 @@ export default function BasicInfoSection() {
     const orderGroupOptions = [
         { value: "ELU", label: "Everllence-ELU" },
         { value: "PRIME", label: "Everllence-Prime" },
+        { value: "MITSUI", label: "Mitsui" },
         { value: "OTHER", label: "기타 (직접입력)" },
     ];
 
@@ -49,7 +50,7 @@ export default function BasicInfoSection() {
     const isAddingLocationRef = useRef(false);
 
     const orderPersonOptions = useMemo(() => {
-        if (!orderGroup || orderGroup === "OTHER") return [];
+        if (!orderGroup || orderGroup === "OTHER" || orderGroup === "MITSUI") return [];
         const baseOptions = (ORDER_PERSONS[orderGroup] || []).map((name) => ({
             value: name,
             label: name,
@@ -63,13 +64,14 @@ export default function BasicInfoSection() {
     const isCustomSelected =
         !!orderGroup &&
         orderGroup !== "OTHER" &&
+        orderGroup !== "MITSUI" &&
         orderPerson &&
         !orderPersonOptions.some((opt) => opt.value === orderPerson);
 
     const selectOrderPersonValue = selectedOrderPerson || (isCustomSelected ? customValue : orderPerson);
 
     useEffect(() => {
-        if (!orderGroup || orderGroup === "OTHER") return;
+        if (!orderGroup || orderGroup === "OTHER" || orderGroup === "MITSUI") return;
         if (isCustomSelected) {
             setSelectedOrderPerson(customValue);
             setCustomOrderPerson(orderPerson);
@@ -136,7 +138,7 @@ export default function BasicInfoSection() {
                             value={orderGroup}
                             onChange={setOrderGroup}
                         />
-                        {orderGroup === "OTHER" ? (
+                        {orderGroup === "OTHER" || orderGroup === "MITSUI" ? (
                             <TextInput
                                 placeholder="직급 없이 이름만 기입해 주세요"
                                 value={orderPerson}
@@ -162,7 +164,7 @@ export default function BasicInfoSection() {
                                 }}
                             />
                         ) : null}
-                        {(orderGroup && orderGroup !== "OTHER") &&
+                        {(orderGroup && orderGroup !== "OTHER" && orderGroup !== "MITSUI") &&
                             (selectOrderPersonValue === customValue || isCustomSelected) && (
                                 <TextInput
                                     placeholder="직급 없이 이름만 기입해 주세요"
