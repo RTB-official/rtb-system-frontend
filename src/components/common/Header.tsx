@@ -8,6 +8,8 @@ interface HeaderProps {
     leftContent?: React.ReactNode;
     rightContent?: React.ReactNode;
     bottomContent?: React.ReactNode;
+    /** 데스크탑에서도 메뉴 버튼 표시 여부 */
+    showMenuOnDesktop?: boolean;
 }
 
 export default function Header({
@@ -16,6 +18,7 @@ export default function Header({
     leftContent,
     rightContent,
     bottomContent,
+    showMenuOnDesktop = false,
 }: HeaderProps) {
     return (
         <div className="sticky top-0 z-10 shrink-0 bg-white border-b border-gray-200 flex flex-col">
@@ -24,7 +27,7 @@ export default function Header({
                     {onMenuClick && (
                         <button
                             onClick={onMenuClick}
-                            className="lg:hidden p-1.5 md:p-2 rounded-lg hover:bg-gray-100 text-gray-700 shrink-0"
+                            className={showMenuOnDesktop ? "p-1.5 md:p-2 rounded-lg hover:bg-gray-100 text-gray-700 shrink-0" : "lg:hidden p-1.5 md:p-2 rounded-lg hover:bg-gray-100 text-gray-700 shrink-0"}
                             aria-label="메뉴 열기"
                         >
                             <IconMenu />

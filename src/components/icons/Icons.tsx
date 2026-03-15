@@ -104,6 +104,44 @@ export const IconCard = (props: { className?: string }) => (
     </svg>
 );
 
+export const IconInvoice = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-6 h-6"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+    >
+        <rect
+            x="4"
+            y="3"
+            width="16"
+            height="18"
+            rx="2"
+            stroke="currentColor"
+            strokeWidth="1.4"
+        />
+        <path
+            d="M8 8H16"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+        />
+        <path
+            d="M8 12H14"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+        />
+        <path
+            d="M9 16H15"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+        />
+    </svg>
+);
+
 export const IconCar = (props: { className?: string }) => (
     <svg
         className={props.className || "w-6 h-6"}

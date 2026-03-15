@@ -313,7 +313,7 @@ export default function WorkloadChartSection({
                                                 />
                                                 <ReferenceLine y={averageWorkTime} stroke="transparent">
                                                     <Label
-                                                        value={`평균 ${averageWorkTime}`}
+                                                        value={`공사팀 평균 ${averageWorkTime}`}
                                                         position="insideRight"
                                                         offset={10}
                                                         dy={-8}

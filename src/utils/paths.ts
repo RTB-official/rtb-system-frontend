@@ -6,6 +6,8 @@ export const PATHS = {
     boardEdit: (id: string) => `/board/${id}/edit`,
     reportList: "/report",
     reportCreate: "/reportcreate",
+    invoice: "/invoice",
+    invoiceCreate: "/invoice/create",
     tbmList: "/tbm",
     tbmCreate: "/tbm/create",
     workload: "/workload",
