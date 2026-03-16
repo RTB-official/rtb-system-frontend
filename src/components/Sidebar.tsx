@@ -475,7 +475,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         {isAdmin && (
                             <MenuButton
                                 icon={<IconInvoice className="w-5 h-5 md:w-6 md:h-6" />}
-                                label="인보이스"
+                                label="인보이스(작업중)"
                                 isActive={routeLocation.pathname.startsWith(PATHS.invoice) && !menuFocus}
                                 onClick={() => go(PATHS.invoice, null)}
                             />
