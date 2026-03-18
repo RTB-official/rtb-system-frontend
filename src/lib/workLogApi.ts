@@ -107,11 +107,12 @@ export interface CreateWorkLogInput {
         type: string;
         detail: string;
         amount: number;
+        currency?: string;
     }>;
     materials?: Array<{
         id?: number;
         name: string;
-        qty: number;
+        qty: number | string;
         unit?: string;
     }>;
     receipts?: Array<{
@@ -148,6 +149,7 @@ export interface WorkLogFullData {
         type: string;
         detail: string;
         amount: number;
+        currency?: string;
     }>;
     materials: Array<{
         id: number;

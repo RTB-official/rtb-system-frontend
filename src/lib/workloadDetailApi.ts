@@ -290,6 +290,7 @@ export interface WorkloadDetailEntry {
     travelTime: number; // 시간 단위
     waitTime: number; // 시간 단위
     workLogId: number;
+    isDraft: boolean;
 }
 
 export interface WorkerWorkloadSummary {
@@ -341,6 +342,7 @@ export async function getWorkerWorkloadDetail(
             hours: number;
         }>;
         workLogId: number;
+        isDraft: boolean;
     }>();
 
     for (const entry of workerEntries) {
@@ -357,6 +359,7 @@ export async function getWorkerWorkloadDetail(
                 travelSegments: [],
                 waitSegments: [],
                 workLogId: entry.work_log_id,
+                isDraft: !!entry.is_draft,
             });
         }
 
@@ -376,6 +379,7 @@ export async function getWorkerWorkloadDetail(
                     travelSegments: [],
                     waitSegments: [],
                     workLogId: entry.work_log_id,
+                    isDraft: !!entry.is_draft,
                 });
             }
 
@@ -430,6 +434,7 @@ export async function getWorkerWorkloadDetail(
                         travelTime: travelTotal,
                         waitTime: waitTotal,
                         workLogId: data.workLogId,
+                        isDraft: data.isDraft,
                     },
                 ];
             }
@@ -456,6 +461,7 @@ export async function getWorkerWorkloadDetail(
                 travelTime: travelByIndex[index] || 0,
                 waitTime: waitByIndex[index] || 0,
                 workLogId: data.workLogId,
+                isDraft: data.isDraft,
             }));
         })
         .sort((a, b) => {

@@ -16,7 +16,7 @@ import CreationSkeleton from "../../components/common/CreationSkeleton";
 import SectionCard from "../../components/ui/SectionCard";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
 import { useWorkReportStore } from "../../store/workReportStore";
-import { IconArrowBack, IconReport } from "../../components/icons/Icons";
+import { IconArrowBack } from "../../components/icons/Icons";
 import {
     uploadReceiptFile,
     updateWorkLog,
@@ -111,7 +111,6 @@ export default function ReportEditPage() {
         setOrderGroup,
         setOrderPerson,
         setLocations,
-        setLocationCustom,
         setVehicles,
         setWorkers,
         setExpenses,
@@ -523,14 +522,14 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
             await flushPendingDeletedReceipts();
 
 
-            showSuccess("수정이 완료되었습니다!");
+            showSuccess("보고서가 제출되었습니다!");
             resetForm();
             setLastSavedAt(null);
             navigate("/report");
         } catch (error: any) {
             console.error("Error updating work log:", error);
             showError(
-                `수정 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
+                `제출 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
                 }`
             );
         } finally {
@@ -972,9 +971,9 @@ if (newFiles.length > 0) {
                     setSubmitConfirmOpen(false);
                     await performSubmit();
                 }}
-                title="수정 확인"
-                message="수정 내용을 저장하시겠습니까?"
-                confirmText="저장"
+                title="제출 확인"
+                message="제출하시겠습니까?"
+                confirmText="제출"
                 cancelText="취소"
                 confirmVariant="primary"
                 isLoading={submitting}

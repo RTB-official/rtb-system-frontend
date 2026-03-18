@@ -199,11 +199,6 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
         return `${date.getMonth() + 1}월 ${date.getDate()}일`;
     };
 
-    const formatDateTime = (dateStr: string): string => {
-        const date = new Date(dateStr);
-        return `${date.getMonth() + 1}월 ${date.getDate()}일`;
-    };
-
     // 상태 태그 텍스트
     const getStatusText = (status: string) => {
         const statusMap: Record<string, string> = {
@@ -338,7 +333,11 @@ const EventDetailMenu: React.FC<EventDetailMenuProps> = ({
                             onClick={(e) => {
                                 e.stopPropagation();
                                 const workLogId = event.id.replace("worklog-", "");
-                                navigate(`/report/${workLogId}`);
+                                navigate(`/report/${workLogId}`, {
+                                    state: {
+                                        isDraft: !!workLogData?.workLog?.is_draft,
+                                    },
+                                });
                                 onClose();
                             }}
                         >

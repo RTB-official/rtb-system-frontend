@@ -1,6 +1,6 @@
 // src/pages/Report/ReportViewPage.tsx
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import CreationSkeleton from "../../components/common/CreationSkeleton";
@@ -8,14 +8,14 @@ import SectionCard from "../../components/ui/SectionCard";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
 import { IconArrowBack, IconDownload, IconEdit, IconSend } from "../../components/icons/Icons";
-import { getWorkLogById } from "../../lib/workLogApi";
-import { getWorkLogReceipts } from "../../lib/workLogApi";
+import { getWorkLogById, getWorkLogReceipts, updateWorkLog } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import { useUser } from "../../hooks/useUser";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
 import WorkLogEntryCard from "../../components/sections/WorkLogEntryCard";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 
 type ViewData = {
     workLog: any;
@@ -32,6 +32,31 @@ type ReceiptItem = {
     original_name?: string;
     mime_type?: string;
 };
+
+const REPORT_DRAFT_HINT_STORAGE_KEY = "rtb:reportViewDraftHint";
+
+function readDraftHint(reportId?: string): boolean | null {
+    if (!reportId) return null;
+    try {
+        const raw = sessionStorage.getItem(REPORT_DRAFT_HINT_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as Record<string, boolean>;
+        return typeof parsed?.[reportId] === "boolean" ? parsed[reportId] : null;
+    } catch {
+        return null;
+    }
+}
+
+function writeDraftHint(reportId: string, isDraft: boolean) {
+    try {
+        const raw = sessionStorage.getItem(REPORT_DRAFT_HINT_STORAGE_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+        parsed[reportId] = isDraft;
+        sessionStorage.setItem(REPORT_DRAFT_HINT_STORAGE_KEY, JSON.stringify(parsed));
+    } catch {
+        // sessionStorage 접근 실패 시 무시
+    }
+}
 
 function normalizeTime(time?: string) {
     if (!time) return "";
@@ -278,15 +303,21 @@ function formatMDFromYMD(ymd?: string) {
 
 export default function ReportViewPage() {
     const { id } = useParams();
+    const location = useLocation();
     const navigate = useNavigate();
-    const { showError } = useToast();
+    const { showError, showSuccess } = useToast();
     const { currentUserId, userPermissions } = useUser();
     const { setWorkLogEntries } = useWorkReportStore();
+    const initialDraftHint =
+        typeof (location.state as { isDraft?: boolean } | null)?.isDraft === "boolean"
+            ? !!(location.state as { isDraft?: boolean }).isDraft
+            : readDraftHint(id);
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ViewData | null>(null);
     const [reportType, setReportType] = useState<"work" | "education">("work");
+    const [draftStatusHint, setDraftStatusHint] = useState<boolean | null>(initialDraftHint);
 
     const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
     const [receiptLoading, setReceiptLoading] = useState(false);
@@ -296,6 +327,8 @@ export default function ReportViewPage() {
         name: string;
         type: string;
     } | null>(null);
+    const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
     const openPreview = (url: string, name: string, type: string) => {
         setPreviewFile({ url, name, type });
@@ -342,6 +375,8 @@ export default function ReportViewPage() {
                     return;
                 }
                 setData(res as ViewData);
+                setDraftStatusHint(!!res.workLog.is_draft);
+                writeDraftHint(String(id), !!res.workLog.is_draft);
 
                 // 리포트 타입 판별
                 const isEducation = res.workLog.subject?.includes("[교육]");
@@ -410,8 +445,7 @@ export default function ReportViewPage() {
 
     const workLog = data?.workLog;
     const isEducationReport = reportType === "education";
-    // 로딩 중에는 임시저장 보고서라고 가정하여 버튼 레이아웃이 뒤늦게 바뀌지 않도록 처리
-    const isDraftReport = workLog ? !!workLog.is_draft : true;
+    const isDraftReport = workLog ? !!workLog.is_draft : !!draftStatusHint;
 
     // 스태프는 본인이 작성한 보고서만 수정 가능 (타인/작성자 없음은 숨김)
     const canShowEditButton = !userPermissions.isStaff
@@ -438,6 +472,91 @@ export default function ReportViewPage() {
                 "noreferrer=yes",
             ].join(",")
         );
+    };
+
+    const handleSubmitClick = () => {
+        if (!workLog) return;
+
+        if (reportType === "work") {
+            if (!workLog.vessel?.trim() || !workLog.engine?.trim() || !workLog.subject?.trim()) {
+                showError("기본정보(호선/엔진/목적)는 필수입니다.");
+                return;
+            }
+        } else {
+            if (!workLog.order_person?.trim() || !workLog.subject?.trim()) {
+                showError("기본정보(강사/내용)는 필수입니다.");
+                return;
+            }
+        }
+
+        if ((data?.workers?.length ?? 0) === 0) {
+            showError("인원을 선택해주세요.");
+            return;
+        }
+
+        if ((data?.entries?.length ?? 0) === 0) {
+            showError("출장 업무 일지를 1개 이상 작성해주세요.");
+            return;
+        }
+
+        setSubmitConfirmOpen(true);
+    };
+
+    const performSubmit = async () => {
+        if (!id || !workLog || !data) return;
+
+        setSubmitting(true);
+        try {
+            await updateWorkLog(Number(id), {
+                author: workLog.author || undefined,
+                vessel: reportType === "work" ? workLog.vessel || undefined : undefined,
+                engine: reportType === "work" ? workLog.engine || undefined : undefined,
+                order_group: reportType === "work" ? workLog.order_group || undefined : undefined,
+                order_person: workLog.order_person || undefined,
+                location: workLog.location || undefined,
+                vehicle: reportType === "work" ? workLog.vehicle || undefined : undefined,
+                subject: workLog.subject || undefined,
+                workers: data.workers || [],
+                entries: (data.entries || []).map((entry: any) => ({
+                    id: entry.id,
+                    dateFrom: entry.dateFrom,
+                    timeFrom: entry.timeFrom ? String(entry.timeFrom).slice(0, 5) : undefined,
+                    dateTo: entry.dateTo,
+                    timeTo: entry.timeTo ? String(entry.timeTo).slice(0, 5) : undefined,
+                    descType: entry.descType,
+                    details: entry.details || undefined,
+                    persons: entry.persons || [],
+                    note: entry.note || undefined,
+                    moveFrom: entry.moveFrom || undefined,
+                    moveTo: entry.moveTo || undefined,
+                    lunch_worked: !!entry.lunch_worked,
+                })),
+                expenses: (data.expenses || []).map((expense: any) => ({
+                    id: expense.id,
+                    date: expense.date,
+                    type: expense.type,
+                    detail: expense.detail,
+                    amount: expense.amount,
+                    currency: expense.currency || "원",
+                })),
+                materials: (data.materials || []).map((material: any) => ({
+                    id: material.id,
+                    name: material.name,
+                    qty: material.qty,
+                    unit: material.unit || undefined,
+                })),
+                is_draft: false,
+                created_by: workLog.created_by || undefined,
+            });
+
+            showSuccess("보고서가 제출되었습니다!");
+            navigate("/report");
+        } catch (e: any) {
+            console.error("Error submitting report from view page:", e);
+            showError(`제출 실패: ${e?.message || "알 수 없는 오류가 발생했습니다."}`);
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -494,7 +613,8 @@ export default function ReportViewPage() {
                                         variant="primary"
                                         size="lg"
                                         icon={<IconSend />}
-                                        onClick={() => navigate(`/report/${id}/edit?submit=1`)}
+                                        onClick={handleSubmitClick}
+                                        disabled={submitting}
                                         className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base! shrink-0"
                                     >
                                         <span className="hidden sm:inline">제출하기</span>
@@ -1109,6 +1229,20 @@ export default function ReportViewPage() {
                     </div>
                 )}
             </div>
+            <ConfirmDialog
+                isOpen={submitConfirmOpen}
+                onClose={() => setSubmitConfirmOpen(false)}
+                onConfirm={async () => {
+                    setSubmitConfirmOpen(false);
+                    await performSubmit();
+                }}
+                title="제출 확인"
+                message="제출하시겠습니까?"
+                confirmText="제출"
+                cancelText="취소"
+                confirmVariant="primary"
+                isLoading={submitting}
+            />
         </div>
     );
 }
