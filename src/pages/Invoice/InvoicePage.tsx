@@ -295,7 +295,14 @@ export default function InvoicePage() {
                                 size="lg"
                                 icon={<IconInvoice />}
                                 onClick={() => {
-                                    navigate(PATHS.invoiceCreate);
+                                    // 선택된 모든 보고서 ID를 쉼표로 구분하여 전달
+                                    const selectedIdsArray = Array.from(selectedIds);
+                                    if (selectedIdsArray.length > 0) {
+                                        const idsParam = selectedIdsArray.join(",");
+                                        navigate(`${PATHS.invoiceCreate}?workLogIds=${idsParam}`);
+                                    } else {
+                                        navigate(PATHS.invoiceCreate);
+                                    }
                                 }}
                             >
                                 인보이스 생성

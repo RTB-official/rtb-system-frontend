@@ -1,6 +1,6 @@
 // src/pages/Report/ReportEditPage.tsx
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
@@ -82,6 +82,8 @@ export default function ReportEditPage() {
     const [originalCreatedBy, setOriginalCreatedBy] = useState<string | null>(null);
 
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const submitIntentHandledRef = useRef(false);
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
     const isMobile = useIsMobile();
@@ -182,6 +184,64 @@ export default function ReportEditPage() {
     useEffect(() => {
         fetchAllStaff();
     }, [fetchAllStaff]);
+
+    useEffect(() => {
+        submitIntentHandledRef.current = false;
+    }, [workLogId]);
+
+    // 보기 페이지에서 ?submit=1 로 진입 시 제출 확인 다이얼로그 자동 오픈
+    useEffect(() => {
+        if (loading || !workLogId) return;
+        if (searchParams.get("submit") !== "1") return;
+        if (submitIntentHandledRef.current) return;
+        submitIntentHandledRef.current = true;
+
+        const stripSubmitQuery = () =>
+            navigate(`/report/${workLogId}/edit`, { replace: true });
+
+        if (isSubmittedWorkLog) {
+            stripSubmitQuery();
+            return;
+        }
+
+        const s = useWorkReportStore.getState();
+        const isEducation = !!s.subject?.includes("[교육]");
+
+        if (isEducation) {
+            const instructor = s.instructor?.trim();
+            if (!instructor || !s.subject?.trim()) {
+                showError("기본정보(강사/내용)는 필수입니다.");
+                stripSubmitQuery();
+                return;
+            }
+        } else {
+            if (!s.vessel?.trim() || !s.engine?.trim() || !s.subject?.trim()) {
+                showError("기본정보(호선/엔진/목적)는 필수입니다.");
+                stripSubmitQuery();
+                return;
+            }
+        }
+        if (s.workers.length === 0) {
+            showError("인원을 선택해주세요.");
+            stripSubmitQuery();
+            return;
+        }
+        if (s.workLogEntries.length === 0) {
+            showError("출장 업무 일지를 1개 이상 작성해주세요.");
+            stripSubmitQuery();
+            return;
+        }
+
+        stripSubmitQuery();
+        setSubmitConfirmOpen(true);
+    }, [
+        loading,
+        isSubmittedWorkLog,
+        workLogId,
+        navigate,
+        searchParams,
+        showError,
+    ]);
 
     // 기존 데이터 로드
     useEffect(() => {
