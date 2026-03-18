@@ -95,15 +95,13 @@ export default function WorkloadDetailPage() {
 
 
     const personName = id ? decodeURIComponent(id) : "";
-    const [currentPersonName, setCurrentPersonName] = useState<string | null>(
-        null
-    );
-
 
     // 날짜별 내역 클릭 → 해당 출장보고서(ReportViewPage)로 이동
     const handleRowClick = (row: WorkloadDetailEntry) => {
         if (!row?.workLogId) return;
-        navigate(`/report/${row.workLogId}`);
+        navigate(`/report/${row.workLogId}`, {
+            state: { isDraft: row.isDraft },
+        });
     };
 
     // 데이터 로드
@@ -123,7 +121,6 @@ export default function WorkloadDetailPage() {
                     .eq("id", currentUserId)
                     .single();
                 if (!error && data?.name) {
-                    setCurrentPersonName(data.name);
                     if (data.name !== personName) {
                         navigate("/workload", { replace: true });
                         return false;

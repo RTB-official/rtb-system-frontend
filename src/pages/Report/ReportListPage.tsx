@@ -109,6 +109,12 @@ export default function ReportListPage() {
     const safetyToastOnceRef = useRef(false);
     const isMobile = useIsMobile();
 
+    const navigateToReportView = (row: ReportItem) => {
+        navigate(`/report/${row.id}`, {
+            state: { isDraft: row.status === "pending" },
+        });
+    };
+
     // ✅ 안전문구/슬로건 토스트 (세션당 1회)
     useEffect(() => {
         if (safetyToastOnceRef.current) return;
@@ -118,10 +124,6 @@ export default function ReportListPage() {
         if (sessionStorage.getItem("rtb:safety_toast_pending") !== "1") return;
 
         const run = async () => {
-            let resolvedUserId: string | null = null;
-            let isStaffMember = false;
-            let staffName = "";
-
             try {
                 // ✅ 여기서 바로 소비
                 sessionStorage.setItem("rtb:safety_toast_pending", "0");
@@ -767,11 +769,11 @@ export default function ReportListPage() {
                                                     className="rounded-xl border border-gray-200 bg-white p-4 active:bg-gray-50 transition-colors flex items-start gap-3"
                                                     role="button"
                                                     tabIndex={0}
-                                                    onClick={() => navigate(`/report/${row.id}`)}
+                                                    onClick={() => navigateToReportView(row)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === "Enter" || e.key === " ") {
                                                             e.preventDefault();
-                                                            navigate(`/report/${row.id}`);
+                                                            navigateToReportView(row);
                                                         }
                                                     }}
                                                 >
@@ -856,7 +858,7 @@ export default function ReportListPage() {
                                                         className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            navigate(`/report/${row.id}`);
+                                                            navigateToReportView(row);
                                                         }}
                                                     >
                                                         <div className="w-5 flex justify-center text-gray-500">
@@ -1129,7 +1131,7 @@ export default function ReportListPage() {
                                                             className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                navigate(`/report/${row.id}`);
+                                                                navigateToReportView(row);
                                                             }}
                                                         >
                                                             <div className="w-5 flex justify-center text-gray-500">
@@ -1148,7 +1150,7 @@ export default function ReportListPage() {
                                 data={currentData}
                                 rowKey="id"
                                 onRowClick={(row: ReportItem) => {
-                                    navigate(`/report/${row.id}`);
+                                    navigateToReportView(row);
                                 }}
                                 pagination={{
                                     currentPage,

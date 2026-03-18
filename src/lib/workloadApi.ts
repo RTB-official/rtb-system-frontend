@@ -60,6 +60,7 @@ export interface WorkloadEntry {
     person_name: string;
     vessel: string | null;
     subject: string | null;
+    is_draft?: boolean;
     work_hours: number | null;
     lunch_worked?: boolean; // 점심 안 먹고 작업진행 여부
 }
@@ -236,7 +237,7 @@ export async function getWorkloadData(filters?: {
         // 필터링은 작업 일정(date_from, date_to) 기준으로 하므로 모든 제출된 보고서 조회
         let workLogsQuery = supabase
             .from("work_logs")
-            .select("id, vessel, subject");
+            .select("id, vessel, subject, is_draft");
         if (!filters?.includeDrafts) {
             workLogsQuery = workLogsQuery.eq("is_draft", false);
         }
@@ -254,7 +255,14 @@ export async function getWorkloadData(filters?: {
 
         const workLogIds = workLogs.map((log) => log.id);
         const workLogMap = new Map(
-            workLogs.map((log) => [log.id, { vessel: log.vessel, subject: log.subject }])
+            workLogs.map((log) => [
+                log.id,
+                {
+                    vessel: log.vessel,
+                    subject: log.subject,
+                    isDraft: !!log.is_draft,
+                },
+            ])
         );
 
         // 2. 업무 일지 조회 (모든 entry 조회 후 필터링)
@@ -348,6 +356,7 @@ export async function getWorkloadData(filters?: {
                     person_name: personName,
                     vessel: workLogInfo?.vessel || null,
                     subject: workLogInfo?.subject || null,
+                    is_draft: workLogInfo?.isDraft ?? false,
                     work_hours: (entry as any).work_hours ?? null,
                     lunch_worked: (entry as any).lunch_worked ?? false,
                 });
