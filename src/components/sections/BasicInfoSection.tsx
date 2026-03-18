@@ -14,6 +14,35 @@ import {
 } from "../../store/workReportStore";
 import CopyPreviousWorkInfoSection from "./CopyPreviousWorkInfoSection";
 
+// 출장 목적 자동완성 단어 목록
+const PURPOSE_OPTIONS = [
+    "Replacement",
+    "R&D",
+    "FBIV-A",
+    "Atomizer",
+    "Spindle Guide",
+    "Support",
+    "valve",
+    "Cylinder",
+    "Installation",
+    "cover",
+    "Inspection",
+    "Leakage",
+    "Update",
+    "Top Cover",
+    "Exhasut valve",
+    "Introduction",
+    "Gasket",
+    "Piston",
+    "FBIV-M",
+    "Conponent",
+    "Recovery",
+    "Modification",
+    "Cyl' #",
+    "platform",
+    "Troubleshooting",
+];
+
 export default function BasicInfoSection() {
     const {
         vessel,
@@ -48,6 +77,7 @@ export default function BasicInfoSection() {
     const customValue = "__CUSTOM__";
     const [isAddingLocation, setIsAddingLocation] = useState(false);
     const isAddingLocationRef = useRef(false);
+    const purposeInputRef = useRef<HTMLInputElement>(null);
 
     const orderPersonOptions = useMemo(() => {
         if (!orderGroup || orderGroup === "OTHER" || orderGroup === "MITSUI") return [];
@@ -116,6 +146,39 @@ export default function BasicInfoSection() {
             handleAddCustomLocation();
         }
     };
+
+    const handlePurposeClick = (purpose: string) => {
+        // 공백이 있으면 마지막 단어만 교체, 없으면 전체 교체
+        if (subject && subject.trim().includes(" ")) {
+            const parts = subject.trim().split(/\s+/);
+            parts[parts.length - 1] = purpose;
+            setSubject(parts.join(" "));
+        } else {
+            setSubject(purpose);
+        }
+        // 모바일에서 키보드가 사라지지 않도록 포커스 유지
+        setTimeout(() => {
+            purposeInputRef.current?.focus();
+        }, 0);
+    };
+
+    // 입력한 텍스트와 일치하는 목적 옵션 필터링
+    const filteredPurposeOptions = useMemo(() => {
+        if (!subject || subject.trim() === "") {
+            return [];
+        }
+        // 공백이 있으면 마지막 단어만 사용, 없으면 전체 텍스트 사용
+        const parts = subject.trim().split(/\s+/);
+        const searchText = parts[parts.length - 1].toLowerCase();
+        
+        if (searchText === "") {
+            return [];
+        }
+        
+        return PURPOSE_OPTIONS.filter((option) =>
+            option.toLowerCase().startsWith(searchText)
+        );
+    }, [subject]);
 
     return (
         <SectionCard title="기본 정보">
@@ -267,15 +330,6 @@ export default function BasicInfoSection() {
                     />
                 </div>
 
-                {/* 출장목적 */}
-                <TextInput
-                    label="출장 목적"
-                    placeholder="선박 점검 및 정비"
-                    required
-                    value={subject}
-                    onChange={setSubject}
-                />
-
                 {/* 엔진타입 */}
                 <TextInput
                     label="엔진 타입"
@@ -285,6 +339,39 @@ export default function BasicInfoSection() {
                     onChange={setEngine}
                     uppercase
                 />
+
+                {/* 출장목적 */}
+                <div className="flex flex-col gap-2">
+                    <TextInput
+                        label="출장 목적"
+                        placeholder="선박 점검 및 정비"
+                        required
+                        value={subject}
+                        onChange={setSubject}
+                        autoComplete="off"
+                        inputRef={purposeInputRef}
+                    />
+                    {/* 자동완성 버튼 영역 */}
+                    <div className="min-h-[60px] flex flex-wrap gap-2 py-2">
+                        {filteredPurposeOptions.map((purpose) => (
+                            <button
+                                key={purpose}
+                                type="button"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    handlePurposeClick(purpose);
+                                }}
+                                onMouseDown={(e) => {
+                                    // 모바일에서 포커스가 벗어나지 않도록 방지
+                                    e.preventDefault();
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-sky-100 text-blue-700 font-medium text-sm hover:bg-sky-200 transition-colors"
+                            >
+                                {purpose}
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </div>
         </SectionCard>
     );

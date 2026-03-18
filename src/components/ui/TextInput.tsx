@@ -18,6 +18,8 @@ interface TextInputProps {
   uppercase?: boolean;
   inputRef?: React.Ref<HTMLInputElement>;
   error?: string;
+  list?: string;
+  autoComplete?: string;
 }
 
 export default function TextInput({ 
@@ -37,6 +39,8 @@ export default function TextInput({
   uppercase = false,
   inputRef,
   error,
+  list,
+  autoComplete,
 }: TextInputProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value;
@@ -67,6 +71,8 @@ export default function TextInput({
             onBlur={onBlur}
             onFocus={onFocus}
             disabled={disabled}
+            list={list}
+            autoComplete={autoComplete}
             className="flex-1 font-normal text-[16px] text-[#101828] leading-[1.5] placeholder:text-[#99a1af] outline-none disabled:bg-transparent disabled:text-gray-400"
           />
           {icon}

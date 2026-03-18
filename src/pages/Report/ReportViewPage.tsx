@@ -7,7 +7,7 @@ import CreationSkeleton from "../../components/common/CreationSkeleton";
 import SectionCard from "../../components/ui/SectionCard";
 import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
-import { IconArrowBack, IconDownload, IconEdit } from "../../components/icons/Icons";
+import { IconArrowBack, IconDownload, IconEdit, IconSend } from "../../components/icons/Icons";
 import { getWorkLogById } from "../../lib/workLogApi";
 import { getWorkLogReceipts } from "../../lib/workLogApi";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -410,11 +410,35 @@ export default function ReportViewPage() {
 
     const workLog = data?.workLog;
     const isEducationReport = reportType === "education";
+    // 로딩 중에는 임시저장 보고서라고 가정하여 버튼 레이아웃이 뒤늦게 바뀌지 않도록 처리
+    const isDraftReport = workLog ? !!workLog.is_draft : true;
 
     // 스태프는 본인이 작성한 보고서만 수정 가능 (타인/작성자 없음은 숨김)
     const canShowEditButton = !userPermissions.isStaff
         ? true
         : !!workLog?.created_by && workLog.created_by === currentUserId;
+
+    const openReportPdfWindow = () => {
+        const url = `/report/pdf?id=${id}&autoPrint=1`;
+        window.open(
+            url,
+            "report_pdf_window",
+            [
+                "width=980",
+                "height=820",
+                "left=120",
+                "top=60",
+                "scrollbars=yes",
+                "resizable=yes",
+                "toolbar=yes",
+                "menubar=yes",
+                "location=yes",
+                "status=no",
+                "noopener=yes",
+                "noreferrer=yes",
+            ].join(",")
+        );
+    };
 
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
@@ -453,44 +477,65 @@ export default function ReportViewPage() {
                         </div>
                     }
                     rightContent={
-                        <div className="flex items-center gap-2 md:gap-3">
-                            {canShowEditButton && (
-                                <Button
-                                    variant="outline"
-                                    size="lg"
-                                    icon={<IconEdit />}
-                                    onClick={() => navigate(`/report/${id}/edit`)}
-                                    className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
-                                >
-                                    수정하기
-                                </Button>
+                        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-3 flex-wrap justify-end max-w-[min(100%,520px)] sm:max-w-none">
+                            {isDraftReport && canShowEditButton ? (
+                                <>
+                                    <Button
+                                        variant="outline"
+                                        size="lg"
+                                        icon={<IconEdit />}
+                                        onClick={() => navigate(`/report/${id}/edit`)}
+                                        className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base! shrink-0"
+                                    >
+                                        <span className="hidden sm:inline">수정하기</span>
+                                        <span className="sm:hidden">수정</span>
+                                    </Button>
+                                    <Button
+                                        variant="primary"
+                                        size="lg"
+                                        icon={<IconSend />}
+                                        onClick={() => navigate(`/report/${id}/edit?submit=1`)}
+                                        className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base! shrink-0"
+                                    >
+                                        <span className="hidden sm:inline">제출하기</span>
+                                        <span className="sm:hidden">제출</span>
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="lg"
+                                        icon={<IconDownload />}
+                                        onClick={openReportPdfWindow}
+                                        className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base! shrink-0"
+                                    >
+                                        <span className="hidden sm:inline">PDF저장</span>
+                                        <span className="sm:hidden">PDF</span>
+                                    </Button>
+                                </>
+                            ) : (
+                                <>
+                                    {canShowEditButton && (
+                                        <Button
+                                            variant="outline"
+                                            size="lg"
+                                            icon={<IconEdit />}
+                                            onClick={() => navigate(`/report/${id}/edit`)}
+                                            className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
+                                        >
+                                            수정하기
+                                        </Button>
+                                    )}
+                                    <Button
+                                        variant="primary"
+                                        size="lg"
+                                        icon={<IconDownload />}
+                                        onClick={openReportPdfWindow}
+                                        className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
+                                    >
+                                        <span className="hidden sm:inline">PDF 저장</span>
+                                        <span className="sm:hidden">PDF</span>
+                                    </Button>
+                                </>
                             )}
-                            <Button
-                                variant="primary"
-                                size="lg"
-                                icon={<IconDownload />}
-                                onClick={() => {
-                                    const url = `/report/pdf?id=${id}&autoPrint=1`;
-                                    window.open(url, "report_pdf_window", [
-                                        "width=980",
-                                        "height=820",
-                                        "left=120",
-                                        "top=60",
-                                        "scrollbars=yes",
-                                        "resizable=yes",
-                                        "toolbar=yes",
-                                        "menubar=yes",
-                                        "location=yes",
-                                        "status=no",
-                                        "noopener=yes",
-                                        "noreferrer=yes",
-                                    ].join(","));
-                                }}
-                                className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base!"
-                            >
-                                <span className="hidden sm:inline">PDF 저장</span>
-                                <span className="sm:hidden">PDF</span>
-                            </Button>
                         </div>
                     }
 
