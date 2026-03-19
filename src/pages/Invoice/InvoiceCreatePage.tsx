@@ -21,6 +21,8 @@ interface TimesheetRow {
     weekendAfter: number;
     travelWeekday: number;
     travelWeekend: number;
+    travelWeekdayDisplay?: string;
+    travelWeekendDisplay?: string;
     description: string;
     hideDayDate?: boolean;
 }
@@ -110,9 +112,16 @@ export default function InvoiceCreatePage() {
         return null;
     };
 
-    const getAdjustedTravelTimes = (
+    const formatDateKey = (date: Date): string => {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+            2,
+            "0"
+        )}-${String(date.getDate()).padStart(2, "0")}`;
+    };
+
+    const getAdjustedTravelDateTimes = (
         entry: InvoiceTimesheetEntry
-    ): Pick<InvoiceTimesheetEntry, "timeFrom" | "timeTo"> => {
+    ): Pick<InvoiceTimesheetEntry, "dateFrom" | "dateTo" | "timeFrom" | "timeTo"> => {
         const originalTimeFrom = entry.timeFrom || "";
         const originalTimeTo = entry.timeTo || "";
 
@@ -123,12 +132,22 @@ export default function InvoiceCreatePage() {
             !originalTimeFrom ||
             !originalTimeTo
         ) {
-            return { timeFrom: entry.timeFrom, timeTo: entry.timeTo };
+            return {
+                dateFrom: entry.dateFrom,
+                dateTo: entry.dateTo,
+                timeFrom: entry.timeFrom,
+                timeTo: entry.timeTo,
+            };
         }
 
         const fixedHours = getHomeTravelHours(entry.location);
         if (!fixedHours) {
-            return { timeFrom: entry.timeFrom, timeTo: entry.timeTo };
+            return {
+                dateFrom: entry.dateFrom,
+                dateTo: entry.dateTo,
+                timeFrom: entry.timeFrom,
+                timeTo: entry.timeTo,
+            };
         }
 
         const details = entry.details ?? "";
@@ -138,7 +157,28 @@ export default function InvoiceCreatePage() {
             entry.moveTo === "자택";
 
         if (!containsHome) {
-            return { timeFrom: entry.timeFrom, timeTo: entry.timeTo };
+            return {
+                dateFrom: entry.dateFrom,
+                dateTo: entry.dateTo,
+                timeFrom: entry.timeFrom,
+                timeTo: entry.timeTo,
+            };
+        }
+
+        const originalStart = toDateSafe(entry.dateFrom, originalTimeFrom);
+        const originalEnd = toDateSafe(entry.dateTo, originalTimeTo);
+
+        if (
+            Number.isNaN(originalStart.getTime()) ||
+            Number.isNaN(originalEnd.getTime()) ||
+            originalEnd <= originalStart
+        ) {
+            return {
+                dateFrom: entry.dateFrom,
+                dateTo: entry.dateTo,
+                timeFrom: entry.timeFrom,
+                timeTo: entry.timeTo,
+            };
         }
 
         const fromHome =
@@ -149,23 +189,95 @@ export default function InvoiceCreatePage() {
             details.endsWith("→자택");
 
         if (fromHome) {
+            const adjustedStart = new Date(
+                originalEnd.getTime() - fixedHours * 60 * 60 * 1000
+            );
             return {
-                timeFrom: shiftTimeByHours(entry.dateTo, originalTimeTo, -fixedHours),
-                timeTo: originalTimeTo,
+                dateFrom: formatDateKey(adjustedStart),
+                dateTo: formatDateKey(originalEnd),
+                timeFrom: formatTimeHHMM(adjustedStart),
+                timeTo: formatTimeHHMM(originalEnd),
             };
         }
 
+        const adjustedEnd = new Date(
+            originalStart.getTime() + fixedHours * 60 * 60 * 1000
+        );
+
         if (toHome) {
             return {
-                timeFrom: originalTimeFrom,
-                timeTo: shiftTimeByHours(entry.dateFrom, originalTimeFrom, fixedHours),
+                dateFrom: formatDateKey(originalStart),
+                dateTo: formatDateKey(adjustedEnd),
+                timeFrom: formatTimeHHMM(originalStart),
+                timeTo: formatTimeHHMM(adjustedEnd),
             };
         }
 
         return {
-            timeFrom: originalTimeFrom,
-            timeTo: shiftTimeByHours(entry.dateFrom, originalTimeFrom, fixedHours),
+            dateFrom: formatDateKey(originalStart),
+            dateTo: formatDateKey(adjustedEnd),
+            timeFrom: formatTimeHHMM(originalStart),
+            timeTo: formatTimeHHMM(adjustedEnd),
         };
+    };
+
+    const getTravelMergeKey = (entry: InvoiceTimesheetEntry): string => {
+        return [
+            entry.workLogId,
+            entry.descType,
+            entry.moveFrom ?? "",
+            entry.moveTo ?? "",
+            (entry.details ?? "").trim(),
+            normalizeLocationName(entry.location),
+            [...(entry.persons ?? [])].sort().join("|"),
+        ].join("::");
+    };
+
+    const mergeContinuousTravelEntries = (
+        entries: InvoiceTimesheetEntry[]
+    ): InvoiceTimesheetEntry[] => {
+        const sortedEntries = [...entries].sort((a, b) => {
+            const aStart = getEntryStartTime(a) ?? Number.MAX_SAFE_INTEGER;
+            const bStart = getEntryStartTime(b) ?? Number.MAX_SAFE_INTEGER;
+
+            if (aStart !== bStart) {
+                return aStart - bStart;
+            }
+
+            const aEnd = getEntryEndTime(a) ?? Number.MAX_SAFE_INTEGER;
+            const bEnd = getEntryEndTime(b) ?? Number.MAX_SAFE_INTEGER;
+            return aEnd - bEnd;
+        });
+
+        const merged: InvoiceTimesheetEntry[] = [];
+        const latestMergedIndexByKey = new Map<string, number>();
+
+        sortedEntries.forEach((entry) => {
+            const mergeKey = getTravelMergeKey(entry);
+            const lastMergedIndex = latestMergedIndexByKey.get(mergeKey);
+            const lastEntry =
+                lastMergedIndex !== undefined ? merged[lastMergedIndex] : null;
+            const lastEnd = lastEntry ? getEntryEndTime(lastEntry) : null;
+            const currentStart = getEntryStartTime(entry);
+
+            if (
+                lastEntry &&
+                lastEntry.descType === "이동" &&
+                entry.descType === "이동" &&
+                lastEnd !== null &&
+                currentStart !== null &&
+                lastEnd === currentStart
+            ) {
+                lastEntry.dateTo = entry.dateTo;
+                lastEntry.timeTo = entry.timeTo;
+                return;
+            }
+
+            merged.push({ ...entry });
+            latestMergedIndexByKey.set(mergeKey, merged.length - 1);
+        });
+
+        return merged;
     };
 
     const hasHomeInTravel = (entry: InvoiceTimesheetEntry): boolean => {
@@ -177,40 +289,42 @@ export default function InvoiceCreatePage() {
         );
     };
 
-    const isFromHomeTravel = (entry: InvoiceTimesheetEntry): boolean => {
-        const details = entry.details ?? "";
-        return (
-            entry.moveFrom === "자택" || details.trim().startsWith("자택→")
-        );
+    const getFinalDestination = (entry: InvoiceTimesheetEntry): string => {
+        const moveTo = entry.moveTo?.trim();
+        if (moveTo) {
+            return moveTo;
+        }
+
+        const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
+        if (!details.includes("→")) {
+            return details;
+        }
+
+        return details.split("→").pop()?.trim() ?? "";
     };
 
-    const isFromAccommodationTravel = (
-        entry: InvoiceTimesheetEntry
-    ): boolean => {
-        const details = entry.details ?? "";
-        const moveFrom = entry.moveFrom ?? "";
+    const normalizeLocationName = (value: string | null | undefined): string => {
+        if (!value) return "";
 
-        return (
-            entry.descType === "이동" &&
-            !isFromHomeTravel(entry) &&
-            (moveFrom.includes("숙소") ||
-                details.trim().startsWith("숙소→") ||
-                details.includes("숙소→"))
-        );
+        const normalized = value.trim();
+        if (!normalized) return "";
+
+        if (normalized === "HHI") return "HD중공업(해양)";
+        if (normalized === "HMD") return "HD미포";
+        if (normalized === "HSHI") return "HD삼호";
+
+        return normalized;
     };
 
-    const getEntryKey = (entry: InvoiceTimesheetEntry): string => {
-        return [
-            entry.workLogId,
-            entry.id ?? "",
-            entry.dateFrom,
-            entry.dateTo,
-            entry.timeFrom ?? "",
-            entry.timeTo ?? "",
-            entry.descType,
-            entry.details ?? "",
-            (entry.persons ?? []).join(","),
-        ].join("|");
+    const isDestinationWorkPlace = (entry: InvoiceTimesheetEntry): boolean => {
+        const destination = normalizeLocationName(getFinalDestination(entry));
+        const workPlace = normalizeLocationName(getPrimaryLocation(entry.location));
+
+        if (!destination || !workPlace) {
+            return false;
+        }
+
+        return destination === workPlace;
     };
 
     const getEntryStartTime = (entry: InvoiceTimesheetEntry): number | null => {
@@ -399,6 +513,17 @@ export default function InvoiceCreatePage() {
         return dates;
     };
 
+    const shiftDateByDays = (dateString: string, days: number): string => {
+        const date = new Date(`${dateString}T00:00:00`);
+        date.setDate(date.getDate() + days);
+
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const dd = String(date.getDate()).padStart(2, "0");
+
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
     const fetchPublicHolidays = async (
         year: number,
         monthZeroBased: number
@@ -524,13 +649,14 @@ export default function InvoiceCreatePage() {
                 setWorkLogDataList(validData);
 
                 // 타임시트 데이터 계산
-                const allEntries: InvoiceTimesheetEntry[] = validData.flatMap(data =>
+                const rawEntries: InvoiceTimesheetEntry[] = validData.flatMap(data =>
                     data.entries.map(entry => ({
                         ...entry,
                         workLogId: data.workLog.id,
                         location: data.workLog.location,
                     }))
                 );
+                const allEntries = mergeContinuousTravelEntries(rawEntries);
 
                 await loadHolidayDates(
                     allEntries.flatMap((entry) =>
@@ -542,57 +668,85 @@ export default function InvoiceCreatePage() {
                 const entriesByDate = new Map<string, InvoiceTimesheetEntry[]>();
                 allEntries.forEach(entry => {
                     if (!entry.dateFrom) return;
+                    const adjustedEntry = {
+                        ...entry,
+                        ...getAdjustedTravelDateTimes(entry),
+                    };
+                    if (!adjustedEntry.dateFrom || !adjustedEntry.dateTo) return;
                     
                     // 날짜가 넘어가는 경우 분할
-                    if (entry.dateFrom === entry.dateTo) {
-                        const date = entry.dateFrom;
+                    if (adjustedEntry.dateFrom === adjustedEntry.dateTo) {
+                        const startTime = getEntryStartTime(adjustedEntry);
+                        const endTime = getEntryEndTime(adjustedEntry);
+                        if (
+                            startTime === null ||
+                            endTime === null ||
+                            endTime <= startTime
+                        ) {
+                            return;
+                        }
+
+                        const date = adjustedEntry.dateFrom;
                         if (!entriesByDate.has(date)) {
                             entriesByDate.set(date, []);
                         }
-                        const adjustedTimes = getAdjustedTravelTimes(entry);
                         entriesByDate.get(date)!.push({
-                            ...entry,
-                            ...adjustedTimes,
+                            ...adjustedEntry,
                         });
                     } else {
                         // 여러 날짜에 걸치는 경우 각 날짜별로 분할
-                        const startDate = new Date(`${entry.dateFrom}T00:00:00`);
-                        const endDate = new Date(`${entry.dateTo}T00:00:00`);
+                        const startDate = new Date(`${adjustedEntry.dateFrom}T00:00:00`);
+                        const endDate = new Date(`${adjustedEntry.dateTo}T00:00:00`);
                         let currentDate = new Date(startDate);
 
                         while (currentDate <= endDate) {
-                            const dateStr = currentDate.toISOString().split('T')[0];
+                            const dateStr = formatDateKey(currentDate);
                             if (!entriesByDate.has(dateStr)) {
                                 entriesByDate.set(dateStr, []);
                             }
 
-                            let timeFrom = entry.timeFrom || "00:00";
-                            let timeTo = entry.timeTo || "24:00";
+                            let timeFrom = adjustedEntry.timeFrom || "00:00";
+                            let timeTo = adjustedEntry.timeTo || "24:00";
 
-                            if (dateStr === entry.dateFrom && dateStr !== entry.dateTo) {
+                            if (
+                                dateStr === adjustedEntry.dateFrom &&
+                                dateStr !== adjustedEntry.dateTo
+                            ) {
                                 timeTo = "24:00";
-                            } else if (dateStr === entry.dateTo && dateStr !== entry.dateFrom) {
+                            } else if (
+                                dateStr === adjustedEntry.dateTo &&
+                                dateStr !== adjustedEntry.dateFrom
+                            ) {
                                 timeFrom = "00:00";
-                            } else if (dateStr !== entry.dateFrom && dateStr !== entry.dateTo) {
+                            } else if (
+                                dateStr !== adjustedEntry.dateFrom &&
+                                dateStr !== adjustedEntry.dateTo
+                            ) {
                                 timeFrom = "00:00";
                                 timeTo = "24:00";
                             }
 
                             const segmentedEntry: InvoiceTimesheetEntry = {
-                                ...entry,
+                                ...adjustedEntry,
                                 dateFrom: dateStr,
                                 dateTo: dateStr,
                                 timeFrom,
                                 timeTo,
                             };
+                            const segmentStart = getEntryStartTime(segmentedEntry);
+                            const segmentEnd = getEntryEndTime(segmentedEntry);
 
-                            const adjustedTimes = getAdjustedTravelTimes(
-                                segmentedEntry
-                            );
+                            if (
+                                segmentStart === null ||
+                                segmentEnd === null ||
+                                segmentEnd <= segmentStart
+                            ) {
+                                currentDate.setDate(currentDate.getDate() + 1);
+                                continue;
+                            }
 
                             entriesByDate.get(dateStr)!.push({
                                 ...segmentedEntry,
-                                ...adjustedTimes,
                             });
 
                             currentDate.setDate(currentDate.getDate() + 1);
@@ -603,674 +757,804 @@ export default function InvoiceCreatePage() {
                 // 날짜별로 타임시트 행 생성
                 const rows: TimesheetRow[] = [];
                 const sortedDates = Array.from(entriesByDate.keys()).sort();
-                const chronologicalEntries = Array.from(
-                    entriesByDate.values()
-                )
+                const chronologicalEntries = Array.from(entriesByDate.values())
                     .flat()
                     .sort((a, b) => {
-                        const aStart = getEntryStartTime(a) ?? Number.MAX_SAFE_INTEGER;
-                        const bStart = getEntryStartTime(b) ?? Number.MAX_SAFE_INTEGER;
+                        const aStart =
+                            getEntryStartTime(a) ?? Number.MAX_SAFE_INTEGER;
+                        const bStart =
+                            getEntryStartTime(b) ?? Number.MAX_SAFE_INTEGER;
                         if (aStart !== bStart) return aStart - bStart;
-                        const aEnd = getEntryEndTime(a) ?? Number.MAX_SAFE_INTEGER;
-                        const bEnd = getEntryEndTime(b) ?? Number.MAX_SAFE_INTEGER;
+                        const aEnd =
+                            getEntryEndTime(a) ?? Number.MAX_SAFE_INTEGER;
+                        const bEnd =
+                            getEntryEndTime(b) ?? Number.MAX_SAFE_INTEGER;
                         return aEnd - bEnd;
                     });
-                const chronologicalIndexByKey = new Map<string, number>();
-                chronologicalEntries.forEach((entry, index) => {
-                    chronologicalIndexByKey.set(getEntryKey(entry), index);
+                const workEntries = chronologicalEntries.filter(
+                    (entry) => entry.descType === "작업"
+                );
+                const workDates = Array.from(
+                    new Set(workEntries.map((entry) => entry.dateFrom))
+                ).sort();
+                const workPersonsByDate = new Map<string, Set<string>>();
+                workDates.forEach((date) => {
+                    const persons = new Set<string>();
+                    (entriesByDate.get(date) ?? []).forEach((entry) => {
+                        if (entry.descType !== "작업") return;
+                        entry.persons?.forEach((person) => persons.add(person));
+                    });
+                    workPersonsByDate.set(date, persons);
                 });
+                const roundHours = (value: number): number =>
+                    Math.round(value * 10) / 10;
+                const formatHoursValue = (value: number): string => {
+                    const rounded = roundHours(value);
+                    return Number.isInteger(rounded)
+                        ? String(rounded)
+                        : String(rounded);
+                };
+                const buildTravelDisplay = (
+                    moveHours: number,
+                    waitingHours: number
+                ): string => {
+                    const roundedMove = roundHours(moveHours);
+                    const roundedWaiting = roundHours(waitingHours);
 
-                sortedDates.forEach(date => {
+                    if (roundedMove > 0 && roundedWaiting > 0) {
+                        return `${formatHoursValue(roundedMove)}+${formatHoursValue(roundedWaiting)}`;
+                    }
+
+                    if (roundedMove > 0) {
+                        return formatHoursValue(roundedMove);
+                    }
+
+                    if (roundedWaiting > 0) {
+                        return formatHoursValue(roundedWaiting);
+                    }
+
+                    return "";
+                };
+
+                sortedDates.forEach((date) => {
                     const dayEntries = entriesByDate.get(date)!;
                     if (dayEntries.length === 0) return;
-                    const supplementalRows: TimesheetRow[] = [];
 
-                    // 가장 이른 시작 시간과 가장 늦은 종료 시간 찾기
-                    let earliestTime = "24:00";
-                    let latestTime = "00:00";
-
-                    dayEntries.forEach(entry => {
-                        if (entry.timeFrom && entry.timeFrom < earliestTime) {
-                            earliestTime = entry.timeFrom;
-                        }
-                        if (entry.timeTo && entry.timeTo > latestTime) {
-                            latestTime = entry.timeTo;
-                        }
-                    });
-
-                    const timeFromHour = earliestTime.split(":")[0];
-                    const timeToHour = latestTime.split(":")[0];
-
-                    // 시간 분류 계산
-                    let weekdayNormal = 0;
-                    let weekdayAfter = 0;
-                    let weekendNormal = 0;
-                    let weekendAfter = 0;
-                    let travelWeekday = 0;
-                    let travelWeekend = 0;
-                    let totalHours = 0;
-
-                    const isWeekendDay = isHoliday(date);
                     const sortedDayEntries = [...dayEntries].sort((a, b) => {
-                        const aStart = a.timeFrom
-                            ? toDateSafe(a.dateFrom, a.timeFrom).getTime()
-                            : Number.MAX_SAFE_INTEGER;
-                        const bStart = b.timeFrom
-                            ? toDateSafe(b.dateFrom, b.timeFrom).getTime()
-                            : Number.MAX_SAFE_INTEGER;
-                        return aStart - bStart;
+                        const aStart =
+                            getEntryStartTime(a) ?? Number.MAX_SAFE_INTEGER;
+                        const bStart =
+                            getEntryStartTime(b) ?? Number.MAX_SAFE_INTEGER;
+                        if (aStart !== bStart) return aStart - bStart;
+                        const aEnd =
+                            getEntryEndTime(a) ?? Number.MAX_SAFE_INTEGER;
+                        const bEnd =
+                            getEntryEndTime(b) ?? Number.MAX_SAFE_INTEGER;
+                        return aEnd - bEnd;
                     });
-
-                    const firstWorkEntry = sortedDayEntries.find(
+                    const dayWorkEntries = sortedDayEntries.filter(
                         (entry) => entry.descType === "작업"
                     );
-                    const firstWorkStartTime = firstWorkEntry?.timeFrom
-                        ? toDateSafe(firstWorkEntry.dateFrom, firstWorkEntry.timeFrom).getTime()
-                        : null;
-                    const firstWorkPersons = new Set(firstWorkEntry?.persons ?? []);
+                    const isWeekendDay = isHoliday(date);
 
-                    const entriesBeforeFirstWork =
-                        firstWorkStartTime === null
-                            ? []
-                            : sortedDayEntries.filter((entry) => {
-                                  const entryStartTime = getEntryStartTime(entry);
-                                  return (
-                                      entryStartTime !== null &&
-                                      entryStartTime < firstWorkStartTime
-                                  );
-                              });
+                    const buildSimpleRow = (): TimesheetRow => {
+                        let weekdayNormal = 0;
+                        let weekdayAfter = 0;
+                        let weekendNormal = 0;
+                        let weekendAfter = 0;
+                        let travelWeekday = 0;
+                        let travelWeekend = 0;
+                        let moveTravelWeekday = 0;
+                        let moveTravelWeekend = 0;
+                        let waitingWeekday = 0;
+                        let waitingWeekend = 0;
+                        let totalHours = 0;
+                        let earliest = "24:00";
+                        let latest = "00:00";
+                        const workers = new Set<string>();
 
-                    const homeTravelBeforeFirstWork = entriesBeforeFirstWork.filter(
-                        (entry) =>
-                            entry.descType === "이동" &&
-                            isFromHomeTravel(entry) &&
-                            getHomeTravelHours(entry.location) !== null
-                    );
-                    const accommodationTravelBeforeFirstWork =
-                        entriesBeforeFirstWork.filter(isFromAccommodationTravel);
-
-                    const preWorkTravelPersons = new Set<string>();
-                    [
-                        ...homeTravelBeforeFirstWork,
-                        ...accommodationTravelBeforeFirstWork,
-                    ].forEach((entry) => {
-                        entry.persons?.forEach((person) =>
-                            preWorkTravelPersons.add(person)
-                        );
-                    });
-
-                    const mixedDepartureEntries = [
-                        ...homeTravelBeforeFirstWork,
-                        ...accommodationTravelBeforeFirstWork,
-                    ];
-                    const mixedDepartureStartTimes = mixedDepartureEntries
-                        .map((entry) => getEntryStartTime(entry))
-                        .filter((time): time is number => time !== null);
-                    const earliestMixedDepartureStart =
-                        mixedDepartureStartTimes.length > 0
-                            ? Math.min(...mixedDepartureStartTimes)
-                            : null;
-
-                    const involvedWorkLogIds = new Set(
-                        mixedDepartureEntries.map((entry) => entry.workLogId)
-                    );
-
-                    const isReportFirstStartedTravel =
-                        earliestMixedDepartureStart !== null &&
-                        involvedWorkLogIds.size > 0 &&
-                        Array.from(involvedWorkLogIds).every((workLogId) =>
-                            !allEntries.some((entry) => {
-                                if (entry.workLogId !== workLogId) return false;
-                                const entryStartTime = getEntryStartTime(entry);
-                                return (
-                                    entryStartTime !== null &&
-                                    entryStartTime < earliestMixedDepartureStart
-                                );
-                            })
-                        );
-
-                    const shouldSplitMixedDepartureRows =
-                        firstWorkEntry !== undefined &&
-                        firstWorkPersons.size > 0 &&
-                        homeTravelBeforeFirstWork.length > 0 &&
-                        accommodationTravelBeforeFirstWork.length > 0 &&
-                        preWorkTravelPersons.size > 0 &&
-                        Array.from(preWorkTravelPersons).every((person) =>
-                            firstWorkPersons.has(person)
-                        ) &&
-                        isReportFirstStartedTravel;
-
-                    const splitHomeTravelKeys = new Set(
-                        shouldSplitMixedDepartureRows
-                            ? homeTravelBeforeFirstWork.map((entry) =>
-                                  getEntryKey(entry)
-                              )
-                            : []
-                    );
-
-                    const splitAccommodationTravelKeys = new Set(
-                        shouldSplitMixedDepartureRows
-                            ? accommodationTravelBeforeFirstWork.map((entry) =>
-                                  getEntryKey(entry)
-                              )
-                            : []
-                    );
-
-                    const getSharedMorningTravelForPersons = (
-                        targetPersons: string[]
-                    ): {
-                        hours: number;
-                        earliest: string | null;
-                        latest: string | null;
-                    } => {
-                        const targetSet = new Set(targetPersons);
-                        let hours = 0;
-                        let earliest: string | null = null;
-                        let latest: string | null = null;
-
-                        entriesBeforeFirstWork.forEach((candidate) => {
-                            if (candidate.descType !== "이동") return;
-                            const hasIntersection = (candidate.persons ?? []).some(
-                                (person) => targetSet.has(person)
-                            );
-                            if (!hasIntersection) return;
-
-                            const candidateHours = calculateTravelHours(candidate);
-                            if (candidateHours <= 0) return;
-
-                            hours += candidateHours;
-                            if (
-                                candidate.timeFrom &&
-                                (!earliest || candidate.timeFrom < earliest)
-                            ) {
-                                earliest = candidate.timeFrom;
+                        sortedDayEntries.forEach((entry) => {
+                            if (entry.timeFrom && entry.timeFrom < earliest) {
+                                earliest = entry.timeFrom;
                             }
-                            if (
-                                candidate.timeTo &&
-                                (!latest || candidate.timeTo > latest)
-                            ) {
-                                latest = candidate.timeTo;
-                            }
-                        });
-
-                        return { hours, earliest, latest };
-                    };
-
-                    const getWorkingHoursForPersons = (
-                        targetPersons: string[]
-                    ): {
-                        normal: number;
-                        after: number;
-                        total: number;
-                        earliest: string | null;
-                        latest: string | null;
-                    } => {
-                        const targetSet = new Set(targetPersons);
-                        let normal = 0;
-                        let after = 0;
-                        let earliest: string | null = null;
-                        let latest: string | null = null;
-
-                        dayEntries.forEach((candidate) => {
-                            if (
-                                candidate.descType === "이동" ||
-                                !(candidate.persons ?? []).some((person) =>
-                                    targetSet.has(person)
-                                )
-                            ) {
-                                return;
+                            if (entry.timeTo && entry.timeTo > latest) {
+                                latest = entry.timeTo;
                             }
 
-                            const classified = classifyWorkingHours(candidate);
-                            normal += classified.normalHours;
-                            after += classified.afterHours;
-
-                            if (
-                                candidate.timeFrom &&
-                                (!earliest || candidate.timeFrom < earliest)
-                            ) {
-                                earliest = candidate.timeFrom;
+                            if (entry.descType === "이동" || entry.descType === "대기") {
+                                const travelHours =
+                                    entry.descType === "이동"
+                                        ? calculateTravelHours(entry)
+                                        : classifyWorkingHours(entry).totalHours;
+                                totalHours += travelHours;
+                                if (isWeekendDay) {
+                                    travelWeekend += travelHours;
+                                    if (entry.descType === "이동") {
+                                        moveTravelWeekend += travelHours;
+                                    } else {
+                                        waitingWeekend += travelHours;
+                                    }
+                                } else {
+                                    travelWeekday += travelHours;
+                                    if (entry.descType === "이동") {
+                                        moveTravelWeekday += travelHours;
+                                    } else {
+                                        waitingWeekday += travelHours;
+                                    }
+                                }
+                            } else {
+                                const classified = classifyWorkingHours(entry);
+                                totalHours += classified.totalHours;
+                                if (isWeekendDay) {
+                                    weekendNormal += classified.normalHours;
+                                    weekendAfter += classified.afterHours;
+                                } else {
+                                    weekdayNormal += classified.normalHours;
+                                    weekdayAfter += classified.afterHours;
+                                }
                             }
 
-                            if (
-                                candidate.timeTo &&
-                                (!latest || candidate.timeTo > latest)
-                            ) {
-                                latest = candidate.timeTo;
-                            }
+                            entry.persons?.forEach((person) => workers.add(person));
                         });
 
                         return {
-                            normal,
-                            after,
-                            total: normal + after,
-                            earliest,
-                            latest,
+                            rowId: `${date}-main`,
+                            date,
+                            day: getDayOfWeek(date),
+                            dateFormatted: formatDate(date),
+                            timeFrom: earliest.split(":")[0],
+                            timeTo: latest.split(":")[0],
+                            totalHours: roundHours(totalHours),
+                            weekdayNormal: roundHours(weekdayNormal),
+                            weekdayAfter: roundHours(weekdayAfter),
+                            weekendNormal: roundHours(weekendNormal),
+                            weekendAfter: roundHours(weekendAfter),
+                            travelWeekday: roundHours(travelWeekday),
+                            travelWeekend: roundHours(travelWeekend),
+                            travelWeekdayDisplay: buildTravelDisplay(
+                                moveTravelWeekday,
+                                waitingWeekday
+                            ),
+                            travelWeekendDisplay: buildTravelDisplay(
+                                moveTravelWeekend,
+                                waitingWeekend
+                            ),
+                            description: Array.from(workers).join(", "),
                         };
                     };
 
-                    const groupedHomeDepartureKeys = new Set<string>();
-                    if (
-                        firstWorkEntry &&
-                        firstWorkPersons.size > 0 &&
-                        !shouldSplitMixedDepartureRows
-                    ) {
-                        const homeDepartureCandidates = sortedDayEntries.filter((entry) => {
-                            if (
-                                entry.descType !== "이동" ||
-                                !entry.timeFrom ||
-                                !entry.timeTo ||
-                                !isFromHomeTravel(entry)
-                            ) {
-                                return false;
-                            }
-
-                            const fixedHours = getHomeTravelHours(entry.location);
-                            if (!fixedHours) {
-                                return false;
-                            }
-
-                            const entryStart = toDateSafe(
-                                entry.dateFrom,
-                                entry.timeFrom
-                            ).getTime();
-
-                            return (
-                                firstWorkStartTime !== null &&
-                                entryStart <= firstWorkStartTime
-                            );
-                        });
-
-                        const homeDeparturePersons = new Set<string>();
-                        homeDepartureCandidates.forEach((entry) => {
-                            entry.persons?.forEach((person) =>
-                                homeDeparturePersons.add(person)
-                            );
-                        });
-
-                        const shouldMergeHomeDeparture =
-                            homeDepartureCandidates.length > 1 &&
-                            homeDeparturePersons.size > 0 &&
-                            Array.from(homeDeparturePersons).every((person) =>
-                                firstWorkPersons.has(person)
-                            );
-
-                        if (shouldMergeHomeDeparture) {
-                            homeDepartureCandidates.forEach((entry) => {
-                                groupedHomeDepartureKeys.add(
-                                    [
-                                        entry.workLogId,
-                                        entry.dateFrom,
-                                        getPrimaryLocation(entry.location),
-                                    ].join("|")
-                                );
-                            });
-                        }
+                    if (dayWorkEntries.length === 0) {
+                        rows.push(buildSimpleRow());
+                        return;
                     }
 
-                    const countedHomeDepartureKeys = new Set<string>();
-                    let countedSplitHomeTravel = false;
-                    const countedContinuedTravelGroupKeys = new Set<string>();
-                    const mainRowOverridePersons = new Set<string>();
-                    const mainRowExcludedTravelKeys = new Set<string>();
+                    const firstWorkStart = Math.min(
+                        ...dayWorkEntries
+                            .map((entry) => getEntryStartTime(entry))
+                            .filter((value): value is number => value !== null)
+                    );
+                    const lastWorkEnd = Math.max(
+                        ...dayWorkEntries
+                            .map((entry) => getEntryEndTime(entry))
+                            .filter((value): value is number => value !== null)
+                    );
+                    const firstWorkTime = formatTimeHHMM(new Date(firstWorkStart));
+                    const lastWorkTime = formatTimeHHMM(new Date(lastWorkEnd));
 
-                    sortedDayEntries.forEach((entry, index) => {
-                        if (!entry.timeFrom || !entry.timeTo) return;
+                    const currentWorkPersons = Array.from(
+                        workPersonsByDate.get(date) ?? new Set<string>()
+                    ).sort();
+                    const previousDate = shiftDateByDays(date, -1);
+                    const nextDate = shiftDateByDays(date, 1);
+                    const previousWorkPersons =
+                        workPersonsByDate.get(previousDate) ?? new Set<string>();
+                    const nextWorkPersons =
+                        workPersonsByDate.get(nextDate) ?? new Set<string>();
+                    const hasNextCalendarWorkDate = workPersonsByDate.has(nextDate);
 
-                        if (entry.descType === "이동") {
-                            const entryKey = getEntryKey(entry);
+                    const getWorkingMetricsForEntries = (
+                        entries: InvoiceTimesheetEntry[]
+                    ) => {
+                        let normal = 0;
+                        let after = 0;
 
-                            if (splitAccommodationTravelKeys.has(entryKey)) {
+                        entries.forEach((entry) => {
+                            if (entry.descType !== "작업") {
                                 return;
                             }
 
-                            if (splitHomeTravelKeys.has(entryKey)) {
-                                if (!countedSplitHomeTravel) {
-                                    const fixedHours =
-                                        getHomeTravelHours(entry.location) ?? 0;
-
-                                    countedSplitHomeTravel = true;
-                                    totalHours += fixedHours;
-                                    if (isWeekendDay) {
-                                        travelWeekend += fixedHours;
-                                    } else {
-                                        travelWeekday += fixedHours;
-                                    }
-                                }
-                                return;
-                            }
-                            const chronologicalIndex =
-                                chronologicalIndexByKey.get(entryKey);
-
-                            const previousWorkEntry =
-                                chronologicalIndex === undefined
-                                    ? undefined
-                                    : [...chronologicalEntries.slice(0, chronologicalIndex)]
-                                          .reverse()
-                                          .find(
-                                              (candidate) =>
-                                                  candidate.descType === "작업"
-                                          );
-                            const nextWorkEntry =
-                                chronologicalIndex === undefined
-                                    ? undefined
-                                    : chronologicalEntries
-                                          .slice(chronologicalIndex + 1)
-                                          .find(
-                                              (candidate) =>
-                                                  candidate.descType === "작업"
-                                          );
-
-                            const previousWorkPersons = new Set(
-                                previousWorkEntry?.persons ?? []
-                            );
-                            const nextWorkPersons = new Set(
-                                nextWorkEntry?.persons ?? []
-                            );
-                            const continuedWorkGroup = Array.from(
-                                previousWorkPersons
-                            ).filter((person) => nextWorkPersons.has(person));
-                            const entryPersons = entry.persons ?? [];
-                            const continuingPersons = entryPersons.filter((person) =>
-                                continuedWorkGroup.includes(person)
-                            );
-                            const separatedPersons = entryPersons.filter(
-                                (person) => !continuedWorkGroup.includes(person)
-                            );
-                            const fixedHomeHours =
-                                getHomeTravelHours(entry.location) ?? 0;
-                            const continuedGroupKey =
-                                previousWorkEntry && nextWorkEntry && continuedWorkGroup.length > 0
-                                    ? [
-                                          date,
-                                          getEntryKey(previousWorkEntry),
-                                          getEntryKey(nextWorkEntry),
-                                          [...continuedWorkGroup].sort().join(","),
-                                      ].join("|")
-                                    : null;
-                            const canSplitContinuedTravel =
-                                continuingPersons.length > 0 &&
-                                (separatedPersons.length === 0 ||
-                                    (hasHomeInTravel(entry) && fixedHomeHours > 0));
-
-                            if (canSplitContinuedTravel) {
-                                if (
-                                    continuedGroupKey &&
-                                    !countedContinuedTravelGroupKeys.has(
-                                        continuedGroupKey
-                                    )
-                                ) {
-                                    countedContinuedTravelGroupKeys.add(
-                                        continuedGroupKey
-                                    );
-                                    totalHours += 1;
-                                    if (isWeekendDay) {
-                                        travelWeekend += 1;
-                                    } else {
-                                        travelWeekday += 1;
-                                    }
-                                }
-
-                                continuingPersons.forEach((person) =>
-                                    mainRowOverridePersons.add(person)
-                                );
-                                mainRowExcludedTravelKeys.add(entryKey);
-
-                                if (
-                                    separatedPersons.length > 0 &&
-                                    hasHomeInTravel(entry) &&
-                                    fixedHomeHours > 0
-                                ) {
-                                    const sharedMorning =
-                                        getSharedMorningTravelForPersons(
-                                            separatedPersons
-                                        );
-                                    const separatedWorking =
-                                        getWorkingHoursForPersons(separatedPersons);
-                                    const fixedTravelEnd = shiftTimeByHours(
-                                        entry.dateFrom,
-                                        entry.timeFrom,
-                                        fixedHomeHours
-                                    );
-                                    const supplementalTimeFrom = [
-                                        sharedMorning.earliest,
-                                        separatedWorking.earliest,
-                                        entry.timeFrom,
-                                    ]
-                                        .filter((value): value is string => Boolean(value))
-                                        .sort()[0] ?? entry.timeFrom;
-                                    const supplementalTimeTo = [
-                                        separatedWorking.latest,
-                                        fixedTravelEnd,
-                                    ]
-                                        .filter((value): value is string => Boolean(value))
-                                        .sort()
-                                        .at(-1) ?? fixedTravelEnd;
-                                    const supplementalHours =
-                                        sharedMorning.hours +
-                                        fixedHomeHours +
-                                        separatedWorking.total;
-
-                                    supplementalRows.push({
-                                        rowId: `${date}-${entryKey}-continued-home`,
-                                        date,
-                                        day: getDayOfWeek(date),
-                                        dateFormatted: formatDate(date),
-                                        timeFrom: supplementalTimeFrom.split(":")[0],
-                                        timeTo: supplementalTimeTo.split(":")[0],
-                                        totalHours:
-                                            Math.round(supplementalHours * 10) / 10,
-                                        weekdayNormal: isWeekendDay
-                                            ? 0
-                                            : Math.round(
-                                                  separatedWorking.normal * 10
-                                              ) / 10,
-                                        weekdayAfter: isWeekendDay
-                                            ? 0
-                                            : Math.round(
-                                                  separatedWorking.after * 10
-                                              ) / 10,
-                                        weekendNormal: isWeekendDay
-                                            ? Math.round(
-                                                  separatedWorking.normal * 10
-                                              ) / 10
-                                            : 0,
-                                        weekendAfter: isWeekendDay
-                                            ? Math.round(
-                                                  separatedWorking.after * 10
-                                              ) / 10
-                                            : 0,
-                                        travelWeekday: isWeekendDay
-                                            ? 0
-                                            : Math.round(supplementalHours * 10) /
-                                                  10 -
-                                              Math.round(
-                                                  separatedWorking.total * 10
-                                              ) /
-                                                  10,
-                                        travelWeekend: isWeekendDay
-                                            ? Math.round(supplementalHours * 10) /
-                                                  10 -
-                                              Math.round(
-                                                  separatedWorking.total * 10
-                                              ) /
-                                                  10
-                                            : 0,
-                                        description: `${separatedPersons.join(", ")} (자택 이동)`,
-                                        hideDayDate: true,
-                                    });
-                                }
-
-                                return;
-                            }
-
-                            let travelHours = calculateTravelHours(entry);
-                            const groupKey = [
-                                entry.workLogId,
-                                entry.dateFrom,
-                                getPrimaryLocation(entry.location),
-                            ].join("|");
-
-                            if (
-                                travelHours > 0 &&
-                                isFromHomeTravel(entry) &&
-                                groupedHomeDepartureKeys.has(groupKey)
-                            ) {
-                                if (countedHomeDepartureKeys.has(groupKey)) {
-                                    travelHours = 0;
-                                } else {
-                                    countedHomeDepartureKeys.add(groupKey);
-                                }
-                            }
-
-                            totalHours += travelHours;
-                            if (isWeekendDay) {
-                                travelWeekend += travelHours;
-                            } else {
-                                travelWeekday += travelHours;
-                            }
-                        } else {
-                            const {
-                                totalHours: classifiedTotal,
-                                normalHours,
-                                afterHours,
-                            } = classifyWorkingHours(entry);
-
-                            totalHours += classifiedTotal;
-                            if (isWeekendDay) {
-                                weekendNormal += normalHours;
-                                weekendAfter += afterHours;
-                            } else {
-                                weekdayNormal += normalHours;
-                                weekdayAfter += afterHours;
-                            }
-                        }
-                    });
-
-                    // 설명 생성 (작업자 정보)
-                    const workers = new Set<string>();
-                    dayEntries.forEach(entry => {
-                        entry.persons?.forEach(person => workers.add(person));
-                    });
-                    const workerList = Array.from(workers);
-                    const description =
-                        mainRowOverridePersons.size > 0
-                            ? Array.from(mainRowOverridePersons).join(", ")
-                            : workerList.length > 0
-                              ? workerList.join(", ")
-                              : "";
-
-                    let mainRowTimeTo = timeToHour;
-                    if (mainRowExcludedTravelKeys.size > 0) {
-                        const mainLatestCandidates: string[] = [];
-
-                        sortedDayEntries.forEach((entry) => {
-                            if (!entry.timeFrom || !entry.timeTo) return;
-                            const entryKey = getEntryKey(entry);
-
-                            if (splitAccommodationTravelKeys.has(entryKey)) {
-                                return;
-                            }
-
-                            if (mainRowExcludedTravelKeys.has(entryKey)) {
-                                mainLatestCandidates.push(
-                                    shiftTimeByHours(
-                                        entry.dateFrom,
-                                        entry.timeFrom,
-                                        1
-                                    )
-                                );
-                                return;
-                            }
-
-                            mainLatestCandidates.push(entry.timeTo);
+                            const classified = classifyWorkingHours(entry);
+                            normal += classified.normalHours;
+                            after += classified.afterHours;
                         });
 
-                        const resolvedMainTimeTo =
-                            mainLatestCandidates.sort().at(-1) ?? latestTime;
-                        mainRowTimeTo = resolvedMainTimeTo.split(":")[0];
-                    }
+                        return {
+                            normal: roundHours(normal),
+                            after: roundHours(after),
+                            total: roundHours(normal + after),
+                        };
+                    };
 
-                    rows.push({
-                        rowId: `${date}-main`,
-                        date,
-                        day: getDayOfWeek(date),
-                        dateFormatted: formatDate(date),
-                        timeFrom: timeFromHour,
-                        timeTo: mainRowTimeTo,
-                        totalHours: Math.round(totalHours * 10) / 10,
-                        weekdayNormal: Math.round(weekdayNormal * 10) / 10,
-                        weekdayAfter: Math.round(weekdayAfter * 10) / 10,
-                        weekendNormal: Math.round(weekendNormal * 10) / 10,
-                        weekendAfter: Math.round(weekendAfter * 10) / 10,
-                        travelWeekday: Math.round(travelWeekday * 10) / 10,
-                        travelWeekend: Math.round(travelWeekend * 10) / 10,
-                        description,
-                    });
+                    const getWaitingHoursForEntries = (
+                        entries: InvoiceTimesheetEntry[]
+                    ) => {
+                        let total = 0;
 
-                    supplementalRows.forEach((row) => rows.push(row));
+                        entries.forEach((entry) => {
+                            if (entry.descType !== "대기") {
+                                return;
+                            }
 
-                    if (shouldSplitMixedDepartureRows) {
-                        let accommodationTravelHours = 0;
-                        let accommodationEarliest: string | null = null;
-                        let accommodationLatest: string | null = null;
-                        const accommodationPersons = new Set<string>();
+                            total += classifyWorkingHours(entry).totalHours;
+                        });
 
-                        accommodationTravelBeforeFirstWork.forEach((entry) => {
-                            const travelHours = calculateRawTravelHours(entry);
-                            if (travelHours <= 0) return;
+                        return roundHours(total);
+                    };
 
-                            accommodationTravelHours += travelHours;
+                    const getBlockSpanForEntries = (
+                        entries: InvoiceTimesheetEntry[]
+                    ) => {
+                        let earliest: string | null = null;
+                        let latest: string | null = null;
 
+                        entries.forEach((entry) => {
                             if (
                                 entry.timeFrom &&
-                                (!accommodationEarliest ||
-                                    entry.timeFrom < accommodationEarliest)
+                                (!earliest || entry.timeFrom < earliest)
                             ) {
-                                accommodationEarliest = entry.timeFrom;
+                                earliest = entry.timeFrom;
                             }
 
                             if (
                                 entry.timeTo &&
-                                (!accommodationLatest ||
-                                    entry.timeTo > accommodationLatest)
+                                (!latest || entry.timeTo > latest)
                             ) {
-                                accommodationLatest = entry.timeTo;
+                                latest = entry.timeTo;
                             }
-
-                            entry.persons?.forEach((person) =>
-                                accommodationPersons.add(person)
-                            );
                         });
 
-                        if (accommodationTravelHours > 0) {
-                            rows.push({
-                                rowId: `${date}-accommodation`,
-                                date,
-                                day: getDayOfWeek(date),
-                                dateFormatted: formatDate(date),
-                                timeFrom: (accommodationEarliest ?? "").split(":")[0],
-                                timeTo: (accommodationLatest ?? "").split(":")[0],
-                                totalHours:
-                                    Math.round(accommodationTravelHours * 10) / 10,
-                                weekdayNormal: 0,
-                                weekdayAfter: 0,
-                                weekendNormal: 0,
-                                weekendAfter: 0,
-                                travelWeekday: isWeekendDay
-                                    ? 0
-                                    : Math.round(accommodationTravelHours * 10) / 10,
-                                travelWeekend: isWeekendDay
-                                    ? Math.round(accommodationTravelHours * 10) / 10
-                                    : 0,
-                                description:
-                                    accommodationPersons.size > 0
-                                        ? `${Array.from(accommodationPersons).join(", ")} (숙소 출발 이동)`
-                                        : "숙소 출발 이동",
-                                hideDayDate: true,
+                        return {
+                            earliest: earliest ?? firstWorkTime,
+                            latest: latest ?? lastWorkTime,
+                        };
+                    };
+
+                    const summarizeTravelEntries = (
+                        entries: InvoiceTimesheetEntry[],
+                        fallbackLabel: string,
+                        useFixedHomeHours: boolean
+                    ) => {
+                        if (entries.length === 0) {
+                            return {
+                                kind: "none",
+                                hours: 0,
+                                start: null as string | null,
+                                end: null as string | null,
+                                label: "",
+                            };
+                        }
+
+                        const lastEntry = entries[entries.length - 1];
+                        const fixedHours =
+                            getHomeTravelHours(lastEntry.location) ?? 0;
+                        const hasHome = entries.some((entry) =>
+                            hasHomeInTravel(entry)
+                        );
+                        const earliest =
+                            entries
+                                .map((entry) => entry.timeFrom)
+                                .filter((value): value is string => Boolean(value))
+                                .sort()[0] ?? null;
+                        const latest =
+                            entries
+                                .map((entry) => entry.timeTo)
+                                .filter((value): value is string => Boolean(value))
+                                .sort();
+                        const latestValue =
+                            latest.length > 0 ? latest[latest.length - 1] : null;
+
+                        if (useFixedHomeHours && hasHome && fixedHours > 0) {
+                            return {
+                                kind: `${fallbackLabel}-home`,
+                                hours: fixedHours,
+                                start: earliest,
+                                end: latestValue,
+                                label: fallbackLabel,
+                            };
+                        }
+                        const hours = entries.reduce(
+                            (sum, entry) => sum + calculateRawTravelHours(entry),
+                            0
+                        );
+                        const destination = getFinalDestination(lastEntry);
+
+                        return {
+                            kind: fallbackLabel,
+                            hours: roundHours(hours),
+                            start: earliest,
+                            end: latestValue,
+                            label: destination || "최종 철수",
+                        };
+                    };
+
+                    const getPersonBlocks = (person: string) => {
+                        const personEntries = sortedDayEntries.filter((entry) =>
+                            (entry.persons ?? []).includes(person)
+                        );
+                        type PersonBlock = {
+                            workEntries: InvoiceTimesheetEntry[];
+                            beforeTravelEntries: InvoiceTimesheetEntry[];
+                            afterTravelEntries: InvoiceTimesheetEntry[];
+                        };
+                        const blocks: PersonBlock[] = [];
+
+                        let currentBlock: PersonBlock | null = null;
+                        let interBlockTravelEntries: InvoiceTimesheetEntry[] = [];
+
+                        personEntries.forEach((entry) => {
+                            if (entry.descType === "이동") {
+                                interBlockTravelEntries.push(entry);
+                                return;
+                            }
+
+                            if (
+                                currentBlock &&
+                                interBlockTravelEntries.length === 0
+                            ) {
+                                currentBlock.workEntries.push(entry);
+                                return;
+                            }
+
+                            let beforeTravelEntriesForNext =
+                                interBlockTravelEntries.filter((travelEntry) =>
+                                    isDestinationWorkPlace(travelEntry)
+                                );
+
+                            if (currentBlock) {
+                                beforeTravelEntriesForNext =
+                                    interBlockTravelEntries.filter((travelEntry) =>
+                                        isDestinationWorkPlace(travelEntry)
+                                    );
+                                const currentAfterTravelEntries =
+                                    interBlockTravelEntries.filter(
+                                        (travelEntry) =>
+                                            !isDestinationWorkPlace(travelEntry)
+                                    );
+
+                                currentBlock.afterTravelEntries =
+                                    currentAfterTravelEntries;
+                                blocks.push(currentBlock);
+                            }
+
+                            currentBlock = {
+                                workEntries: [entry],
+                                beforeTravelEntries: beforeTravelEntriesForNext,
+                                afterTravelEntries: [],
+                            };
+                            interBlockTravelEntries = [];
+                        });
+
+                        if (currentBlock) {
+                            const finalizedSource = currentBlock as PersonBlock;
+                            const finalizedBlock = {
+                                workEntries: finalizedSource.workEntries,
+                                beforeTravelEntries:
+                                    finalizedSource.beforeTravelEntries,
+                                afterTravelEntries:
+                                    interBlockTravelEntries.slice(),
+                            };
+                            blocks.push(finalizedBlock);
+                        }
+
+                        return blocks;
+                    };
+
+                    const getBeforeTravelSummary = (
+                        person: string,
+                        blockIndex: number,
+                        beforeTravelEntries: InvoiceTimesheetEntry[],
+                        blockStartTime: string
+                    ) => {
+                        if (beforeTravelEntries.length === 0) {
+                            return {
+                                kind: "none",
+                                hours: 0,
+                                start: null as string | null,
+                                end: null as string | null,
+                                label: "",
+                            };
+                        }
+
+                        if (blockIndex === 0) {
+                            if (!previousWorkPersons.has(person)) {
+                                const fixedHours =
+                                    getHomeTravelHours(
+                                        beforeTravelEntries[0].location
+                                    ) ?? 0;
+                                const hasHome = beforeTravelEntries.some((entry) =>
+                                    hasHomeInTravel(entry)
+                                );
+
+                                if (hasHome && fixedHours > 0) {
+                                    return {
+                                        kind: "initial-home",
+                                        hours: fixedHours,
+                                        start: shiftTimeByHours(
+                                            date,
+                                            blockStartTime,
+                                            -fixedHours
+                                        ),
+                                        end: blockStartTime,
+                                        label: "최초투입",
+                                    };
+                                }
+
+                                return summarizeTravelEntries(
+                                    beforeTravelEntries,
+                                    "최초투입",
+                                    false
+                                );
+                            }
+
+                            return {
+                                kind: "continued",
+                                hours: 1,
+                                start: shiftTimeByHours(date, blockStartTime, -1),
+                                end: blockStartTime,
+                                label: "작업지속",
+                            };
+                        }
+
+                        return summarizeTravelEntries(
+                            beforeTravelEntries,
+                            "이동",
+                            true
+                        );
+                    };
+
+                    const getAfterTravelSummary = (
+                        person: string,
+                        blockIndex: number,
+                        totalBlocks: number,
+                        afterTravelEntries: InvoiceTimesheetEntry[],
+                        blockEndTime: string
+                    ) => {
+                        if (afterTravelEntries.length === 0) {
+                            return {
+                                kind: "none",
+                                hours: 0,
+                                start: null as string | null,
+                                end: null as string | null,
+                                label: "",
+                            };
+                        }
+
+                        if (blockIndex < totalBlocks - 1) {
+                            return summarizeTravelEntries(
+                                afterTravelEntries,
+                                "이동",
+                                true
+                            );
+                        }
+
+                        if (hasNextCalendarWorkDate && nextWorkPersons.has(person)) {
+                            const start = afterTravelEntries[0].timeFrom ?? blockEndTime;
+                            return {
+                                kind: "continued",
+                                hours: 1,
+                                start,
+                                end: shiftTimeByHours(date, start, 1),
+                                label: "작업지속",
+                            };
+                        }
+
+                        return summarizeTravelEntries(
+                            afterTravelEntries,
+                            "최종 철수",
+                            true
+                        );
+                    };
+
+                    type PersonDayRow = {
+                        person: string;
+                        rowKey: string;
+                        priority: number;
+                        timeFrom: string;
+                        timeTo: string;
+                        totalHours: number;
+                        weekdayNormal: number;
+                        weekdayAfter: number;
+                        weekendNormal: number;
+                        weekendAfter: number;
+                        travelWeekday: number;
+                        travelWeekend: number;
+                        travelWeekdayDisplay: string;
+                        travelWeekendDisplay: string;
+                        label: string;
+                    };
+
+                    const buildTravelOnlyRow = (
+                        person: string,
+                        entries: InvoiceTimesheetEntry[]
+                    ): PersonDayRow | null => {
+                        const moveEntries = entries.filter(
+                            (entry) => entry.descType === "이동"
+                        );
+                        const travel = summarizeTravelEntries(
+                            moveEntries,
+                            "최종 철수",
+                            true
+                        );
+
+                        if (
+                            moveEntries.length === 0 ||
+                            travel.hours <= 0 ||
+                            !travel.start ||
+                            !travel.end
+                        ) {
+                            return null;
+                        }
+
+                        return {
+                            person,
+                            rowKey: [
+                                "travel-only",
+                                travel.kind,
+                                travel.hours,
+                                travel.start,
+                                travel.end,
+                            ].join("|"),
+                            priority: -1,
+                            timeFrom: travel.start.split(":")[0],
+                            timeTo: travel.end.split(":")[0],
+                            totalHours: roundHours(travel.hours),
+                            weekdayNormal: 0,
+                            weekdayAfter: 0,
+                            weekendNormal: 0,
+                            weekendAfter: 0,
+                            travelWeekday: isWeekendDay ? 0 : travel.hours,
+                            travelWeekend: isWeekendDay ? travel.hours : 0,
+                            travelWeekdayDisplay: isWeekendDay
+                                ? ""
+                                : buildTravelDisplay(travel.hours, 0),
+                            travelWeekendDisplay: isWeekendDay
+                                ? buildTravelDisplay(travel.hours, 0)
+                                : "",
+                            label: "",
+                        };
+                    };
+
+                    const currentWorkPersonSet = new Set(currentWorkPersons);
+                    const allDayPersons = Array.from(
+                        new Set(
+                            sortedDayEntries.flatMap((entry) => entry.persons ?? [])
+                        )
+                    ).sort();
+
+                    const travelOnlyRows: PersonDayRow[] = allDayPersons.flatMap(
+                        (person) => {
+                            const personEntries = sortedDayEntries.filter((entry) =>
+                                (entry.persons ?? []).includes(person)
+                            );
+
+                            if (!currentWorkPersonSet.has(person)) {
+                                const row = buildTravelOnlyRow(person, personEntries);
+                                return row ? [row] : [];
+                            }
+
+                            const firstNonMoveEntryStart = personEntries
+                                .filter((entry) => entry.descType !== "이동")
+                                .map((entry) => getEntryStartTime(entry))
+                                .filter((value): value is number => value !== null)
+                                .sort((a, b) => a - b)[0];
+
+                            if (firstNonMoveEntryStart === undefined) {
+                                return [];
+                            }
+
+                            const leadingTravelOnlyEntries = personEntries.filter(
+                                (entry) =>
+                                    entry.descType === "이동" &&
+                                    !isDestinationWorkPlace(entry) &&
+                                    (getEntryEndTime(entry) ?? Number.MAX_SAFE_INTEGER) <=
+                                        firstNonMoveEntryStart
+                            );
+
+                            const row = buildTravelOnlyRow(
+                                person,
+                                leadingTravelOnlyEntries
+                            );
+                            return row ? [row] : [];
+                        }
+                    );
+
+                    const personRows: PersonDayRow[] = [
+                        ...travelOnlyRows,
+                        ...currentWorkPersons.flatMap((person) => {
+                            const blocks = getPersonBlocks(person);
+
+                            return blocks.map((block, blockIndex) => {
+                                const working = getWorkingMetricsForEntries(
+                                    block.workEntries
+                                );
+                                const waitingHours = getWaitingHoursForEntries(
+                                    block.workEntries
+                                );
+                                const blockSpan = getBlockSpanForEntries(
+                                    block.workEntries
+                                );
+                                const beforeTravel = getBeforeTravelSummary(
+                                    person,
+                                    blockIndex,
+                                    block.beforeTravelEntries,
+                                    blockSpan.earliest
+                                );
+                                const afterTravel = getAfterTravelSummary(
+                                    person,
+                                    blockIndex,
+                                    blocks.length,
+                                    block.afterTravelEntries,
+                                    blockSpan.latest
+                                );
+                                const travelHours = roundHours(
+                                    beforeTravel.hours +
+                                        afterTravel.hours +
+                                        waitingHours
+                                );
+                                const moveTravelHours = roundHours(
+                                    beforeTravel.hours + afterTravel.hours
+                                );
+                                const timeFrom =
+                                    [
+                                        beforeTravel.start,
+                                        blockSpan.earliest,
+                                        afterTravel.start,
+                                    ]
+                                        .filter(
+                                            (value): value is string =>
+                                                Boolean(value)
+                                        )
+                                        .sort()[0] ?? blockSpan.earliest;
+                                const timeTo =
+                                    (() => {
+                                        const candidates = [
+                                            blockSpan.latest,
+                                            beforeTravel.end,
+                                            afterTravel.end,
+                                        ]
+                                            .filter(
+                                                (value): value is string =>
+                                                    Boolean(value)
+                                            )
+                                            .sort();
+
+                                        return candidates.length > 0
+                                            ? candidates[candidates.length - 1]
+                                            : blockSpan.latest;
+                                    })();
+                                const label =
+                                    afterTravel.kind.startsWith("final")
+                                        ? afterTravel.label
+                                        : beforeTravel.kind.startsWith("initial")
+                                          ? beforeTravel.label
+                                          : "";
+                                const priority =
+                                    blockIndex === 0
+                                        ? 0
+                                        : afterTravel.kind.startsWith("final")
+                                          ? 2
+                                          : 1;
+
+                                return {
+                                    person,
+                                    rowKey: [
+                                        blockIndex,
+                                        beforeTravel.kind,
+                                        beforeTravel.hours,
+                                        afterTravel.kind,
+                                        afterTravel.hours,
+                                        working.normal,
+                                        working.after,
+                                        timeFrom,
+                                        timeTo,
+                                    ].join("|"),
+                                    priority,
+                                    timeFrom: timeFrom.split(":")[0],
+                                    timeTo: timeTo.split(":")[0],
+                                    totalHours: roundHours(
+                                        working.total + travelHours
+                                    ),
+                                    weekdayNormal: isWeekendDay
+                                        ? 0
+                                        : working.normal,
+                                    weekdayAfter: isWeekendDay
+                                        ? 0
+                                        : working.after,
+                                    weekendNormal: isWeekendDay
+                                        ? working.normal
+                                        : 0,
+                                    weekendAfter: isWeekendDay
+                                        ? working.after
+                                        : 0,
+                                    travelWeekday: isWeekendDay ? 0 : travelHours,
+                                    travelWeekend: isWeekendDay ? travelHours : 0,
+                                    travelWeekdayDisplay: isWeekendDay
+                                        ? ""
+                                        : buildTravelDisplay(
+                                              moveTravelHours,
+                                              waitingHours
+                                          ),
+                                    travelWeekendDisplay: isWeekendDay
+                                        ? buildTravelDisplay(
+                                              moveTravelHours,
+                                              waitingHours
+                                          )
+                                        : "",
+                                    label,
+                                };
+                            });
+                        }),
+                    ];
+
+                    const groupedRows = new Map<
+                        string,
+                        {
+                            row: PersonDayRow;
+                            persons: string[];
+                        }
+                    >();
+                    personRows.forEach((personRow) => {
+                        if (!groupedRows.has(personRow.rowKey)) {
+                            groupedRows.set(personRow.rowKey, {
+                                row: personRow,
+                                persons: [],
                             });
                         }
-                    }
+                        groupedRows.get(personRow.rowKey)!.persons.push(
+                            personRow.person
+                        );
+                    });
+
+                    const orderedRows = Array.from(groupedRows.values()).sort(
+                        (a, b) => {
+                            if (a.row.timeFrom !== b.row.timeFrom) {
+                                return a.row.timeFrom.localeCompare(
+                                    b.row.timeFrom
+                                );
+                            }
+                            if (a.row.priority !== b.row.priority) {
+                                return a.row.priority - b.row.priority;
+                            }
+                            if (a.persons.length !== b.persons.length) {
+                                return b.persons.length - a.persons.length;
+                            }
+                            return a.row.timeTo.localeCompare(b.row.timeTo);
+                        }
+                    );
+
+                    orderedRows.forEach((group, index) => {
+                        const description = group.persons.join(", ");
+
+                        rows.push({
+                            rowId: `${date}-${index}`,
+                            date,
+                            day: getDayOfWeek(date),
+                            dateFormatted: formatDate(date),
+                            timeFrom: group.row.timeFrom,
+                            timeTo: group.row.timeTo,
+                            totalHours: group.row.totalHours,
+                            weekdayNormal: group.row.weekdayNormal,
+                            weekdayAfter: group.row.weekdayAfter,
+                            weekendNormal: group.row.weekendNormal,
+                            weekendAfter: group.row.weekendAfter,
+                            travelWeekday: group.row.travelWeekday,
+                            travelWeekend: group.row.travelWeekend,
+                            travelWeekdayDisplay: group.row.travelWeekdayDisplay,
+                            travelWeekendDisplay: group.row.travelWeekendDisplay,
+                            description,
+                            hideDayDate: index > 0,
+                        });
+                    });
                 });
 
                 setTimesheetRows(rows);
@@ -1528,10 +1812,16 @@ export default function InvoiceCreatePage() {
                                                                 {row.weekendAfter > 0 ? row.weekendAfter : ""}
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.travelWeekday > 0 ? row.travelWeekday : ""}
+                                                                {row.travelWeekdayDisplay ||
+                                                                    (row.travelWeekday > 0
+                                                                        ? row.travelWeekday
+                                                                        : "")}
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.travelWeekend > 0 ? row.travelWeekend : ""}
+                                                                {row.travelWeekendDisplay ||
+                                                                    (row.travelWeekend > 0
+                                                                        ? row.travelWeekend
+                                                                        : "")}
                                                             </td>
                                                             <td className="px-2 py-2 text-center"></td>
                                                         </tr>
@@ -1808,6 +2098,44 @@ export default function InvoiceCreatePage() {
                                 <div className="flex flex-col gap-6 bg-white border border-gray-200 rounded-xl p-6">
                                     {/* NORMAL TIMESHEET 제목 - 크고 굵게 */}
                                     <h2 className="text-3xl font-bold text-black mb-2">NORMAL TIMESHEET</h2>
+
+                                    {/* JOB DESCRIPTION 섹션 */}
+                                    <div className="flex flex-col gap-4 bg-white border border-gray-200 rounded-xl p-6">
+                                        <div className="grid grid-cols-4 gap-4">
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">SHIP NAME</div>
+                                                <div className="text-sm text-gray-900">SH8300</div>
+                                            </div>
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">Engineer Name and Title</div>
+                                                <div className="text-sm text-gray-900">KT On / Skilled fitter</div>
+                                            </div>
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">Work Order From</div>
+                                                <div className="text-sm text-gray-900">Everllence ELU KOREA</div>
+                                            </div>
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">Departure date &amp; time, from place</div>
+                                                <div className="text-sm text-gray-900">04.Feb.2026, 06:00 from Busan</div>
+                                            </div>
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">WORK PLACE</div>
+                                                <div className="text-sm text-gray-900">HHI</div>
+                                            </div>
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">Mechanic names and numbers</div>
+                                                <div className="text-sm text-gray-900">DM Kim and 1 fitter (Total 2 fitters)</div>
+                                            </div>
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">P.O No.</div>
+                                                <div className="text-sm text-gray-900"></div>
+                                            </div>
+                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
+                                                <div className="text-xs font-semibold text-gray-700 mb-2">Return date &amp; time, to place</div>
+                                                <div className="text-sm text-gray-900">04.Feb.2026, 19:00 to Busan</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     
                                     {/* Hours Logging Table */}
                                     <div className="flex flex-col gap-4">
@@ -1942,10 +2270,16 @@ export default function InvoiceCreatePage() {
                                                                     {row.weekendAfter > 0 ? row.weekendAfter : ""}
                                                                 </td>
                                                                 <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.travelWeekday > 0 ? row.travelWeekday : ""}
+                                                                    {row.travelWeekdayDisplay ||
+                                                                        (row.travelWeekday > 0
+                                                                            ? row.travelWeekday
+                                                                            : "")}
                                                                 </td>
                                                                 <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.travelWeekend > 0 ? row.travelWeekend : ""}
+                                                                    {row.travelWeekendDisplay ||
+                                                                        (row.travelWeekend > 0
+                                                                            ? row.travelWeekend
+                                                                            : "")}
                                                                 </td>
                                                                 <td className="px-2 py-3 text-center"></td>
                                                             </tr>

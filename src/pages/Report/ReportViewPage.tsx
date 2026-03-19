@@ -33,6 +33,14 @@ type ReceiptItem = {
     mime_type?: string;
 };
 
+type ReportListLocationState = {
+    isDraft?: boolean;
+    from?: {
+        pathname?: string;
+        search?: string;
+    };
+};
+
 const REPORT_DRAFT_HINT_STORAGE_KEY = "rtb:reportViewDraftHint";
 
 function readDraftHint(reportId?: string): boolean | null {
@@ -308,9 +316,10 @@ export default function ReportViewPage() {
     const { showError, showSuccess } = useToast();
     const { currentUserId, userPermissions } = useUser();
     const { setWorkLogEntries } = useWorkReportStore();
+    const locationState = location.state as ReportListLocationState | null;
     const initialDraftHint =
-        typeof (location.state as { isDraft?: boolean } | null)?.isDraft === "boolean"
-            ? !!(location.state as { isDraft?: boolean }).isDraft
+        typeof locationState?.isDraft === "boolean"
+            ? !!locationState.isDraft
             : readDraftHint(id);
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -452,6 +461,12 @@ export default function ReportViewPage() {
         ? true
         : !!workLog?.created_by && workLog.created_by === currentUserId;
 
+    const handleBackToList = () => {
+        const pathname = locationState?.from?.pathname || "/report";
+        const search = locationState?.from?.search || "";
+        navigate(`${pathname}${search}`);
+    };
+
     const openReportPdfWindow = () => {
         const url = `/report/pdf?id=${id}&autoPrint=1`;
         window.open(
@@ -587,7 +602,7 @@ export default function ReportViewPage() {
                     leftContent={
                         <div className="flex items-center gap-3">
                             <button
-                                onClick={() => navigate("/report")}
+                                onClick={handleBackToList}
                                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
                                 title="목록으로 돌아가기"
                             >
