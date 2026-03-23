@@ -476,12 +476,130 @@ export async function createWorkLog(
 /**
  * 파일을 Supabase Storage에 업로드
  */
+const IMAGE_COMPRESSION_THRESHOLD_BYTES = 1024 * 1024;
+const IMAGE_COMPRESSION_TARGET_BYTES = 600 * 1024;
+const IMAGE_COMPRESSION_MAX_DIMENSION = 1600;
+const IMAGE_COMPRESSION_INITIAL_QUALITY = 0.7;
+const IMAGE_COMPRESSION_MIN_QUALITY = 0.6;
+const IMAGE_COMPRESSION_SCALE_STEP = 0.85;
+const IMAGE_COMPRESSION_MAX_ATTEMPTS = 6;
+
+function replaceFileExtension(fileName: string, nextExt: string) {
+    const dotIndex = fileName.lastIndexOf(".");
+    const baseName = dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
+    return `${baseName}${nextExt}`;
+}
+
+function loadImageElement(objectUrl: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("이미지를 불러올 수 없습니다."));
+        image.src = objectUrl;
+    });
+}
+
+function canvasToBlob(
+    canvas: HTMLCanvasElement,
+    type: string,
+    quality?: number
+): Promise<Blob | null> {
+    return new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), type, quality);
+    });
+}
+
+async function compressReceiptImage(file: File): Promise<File> {
+    if (
+        typeof window === "undefined" ||
+        !file.type.startsWith("image/") ||
+        file.type === "image/gif" ||
+        file.type === "image/svg+xml" ||
+        file.size <= IMAGE_COMPRESSION_THRESHOLD_BYTES
+    ) {
+        return file;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+        const image = await loadImageElement(objectUrl);
+        const naturalWidth = image.naturalWidth || image.width;
+        const naturalHeight = image.naturalHeight || image.height;
+
+        if (!naturalWidth || !naturalHeight) {
+            return file;
+        }
+
+        const longestSide = Math.max(naturalWidth, naturalHeight);
+        let scale =
+            longestSide > IMAGE_COMPRESSION_MAX_DIMENSION
+                ? IMAGE_COMPRESSION_MAX_DIMENSION / longestSide
+                : 1;
+        let quality = IMAGE_COMPRESSION_INITIAL_QUALITY;
+        let bestFile = file;
+
+        for (let attempt = 0; attempt < IMAGE_COMPRESSION_MAX_ATTEMPTS; attempt += 1) {
+            const width = Math.max(1, Math.round(naturalWidth * scale));
+            const height = Math.max(1, Math.round(naturalHeight * scale));
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+
+            const context = canvas.getContext("2d");
+            if (!context) break;
+
+            // JPEG 변환 시 투명 배경이 검게 보이지 않도록 흰색 배경을 깔아둔다.
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, width, height);
+            context.drawImage(image, 0, 0, width, height);
+
+            const blob = await canvasToBlob(canvas, "image/jpeg", quality);
+            if (!blob) break;
+
+            const compressedFile = new File(
+                [blob],
+                replaceFileExtension(file.name, ".jpg"),
+                {
+                    type: "image/jpeg",
+                    lastModified: file.lastModified,
+                }
+            );
+
+            if (compressedFile.size < bestFile.size) {
+                bestFile = compressedFile;
+            }
+
+            if (compressedFile.size <= IMAGE_COMPRESSION_TARGET_BYTES) {
+                return compressedFile;
+            }
+
+            if (quality > IMAGE_COMPRESSION_MIN_QUALITY) {
+                quality = Math.max(
+                    IMAGE_COMPRESSION_MIN_QUALITY,
+                    quality - 0.1
+                );
+            } else {
+                scale *= IMAGE_COMPRESSION_SCALE_STEP;
+            }
+        }
+
+        return bestFile.size < file.size ? bestFile : file;
+    } catch (error) {
+        console.warn("영수증 이미지 압축 실패, 원본으로 업로드합니다.", error);
+        return file;
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
+}
+
 export async function uploadReceiptFile(
     file: File,
     workLogId: number,
     category: string
-): Promise<string> {
-    const fileExt = file.name.split(".").pop();
+): Promise<{ filePath: string; uploadedFile: File }> {
+    const uploadFile = await compressReceiptImage(file);
+    const fileExt = uploadFile.name.split(".").pop();
     
     // 카테고리를 영문으로 변환 (한글 경로 문제 방지)
     const categoryMap: Record<string, string> = {
@@ -500,7 +618,7 @@ export async function uploadReceiptFile(
 
     const { error: uploadError } = await supabase.storage
         .from("work-log-recipts")
-        .upload(filePath, file, {
+        .upload(filePath, uploadFile, {
             cacheControl: '3600',
             upsert: false
         });
@@ -509,7 +627,7 @@ export async function uploadReceiptFile(
         throw new Error(`파일 업로드 실패: ${uploadError.message || "알 수 없는 오류"}`);
     }
 
-    return filePath;
+    return { filePath, uploadedFile: uploadFile };
 }
 
 // ==================== 조회 함수 ====================

@@ -9,7 +9,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import { createWorkLog, uploadReceiptFile } from "../../lib/workLogApi";
 import { supabase } from "../../lib/supabase";
-import { IconArrowBack, IconReport } from "../../components/icons/Icons";
+import { IconArrowBack } from "../../components/icons/Icons";
 import useIsMobile from "../../hooks/useIsMobile";
 
 // Sections (Existing & New)
@@ -291,7 +291,11 @@ export default function ReportCreatePage() {
                 const uploaded = await Promise.all(newFiles.map(async (f) => {
                     if (!f.file) return null;
 
-                    const filePath = await uploadReceiptFile(f.file, newLog.id, f.category);
+                    const { filePath, uploadedFile } = await uploadReceiptFile(
+                        f.file,
+                        newLog.id,
+                        f.category
+                    );
 
                     // DB insert용 메타
                     return {
@@ -299,9 +303,9 @@ export default function ReportCreatePage() {
                         category: mapReceiptCategory(f.category),   // ✅ enum 정규화
                         storage_bucket: "work-log-recipts",
                         storage_path: filePath,
-                        original_name: f.file.name,
-                        mime_type: f.file.type || null,
-                        file_size: f.file.size || null,
+                        original_name: uploadedFile.name,
+                        mime_type: uploadedFile.type || null,
+                        file_size: uploadedFile.size || null,
                         created_by: user.id,                        // ✅ RLS 통과용
                     };
                 }));

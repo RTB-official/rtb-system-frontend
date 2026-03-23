@@ -69,9 +69,13 @@ export default function BaseModal({
             <div className="absolute inset-0 bg-black/35" onClick={onClose} />
 
             {/* Modal - 모바일에서 좌우 16px 패딩 */}
-            <div className={`absolute inset-0 flex ${compactHeader ? 'items-start md:items-center' : 'items-center'} justify-center ${compactHeader ? 'pt-2 md:pt-0' : ''} p-4 sm:p-0`}>
+            <div
+                className={`absolute inset-0 flex ${compactHeader ? 'items-start md:items-center' : 'items-center'} justify-center ${compactHeader ? 'pt-2 md:pt-0' : ''} p-4 sm:p-0`}
+                onClick={onClose}
+            >
                 <div
                     className={`w-full ${maxWidth} bg-white ${compactHeader ? 'pt-2.5 md:pt-5 pb-5 px-5' : 'p-5'} ${compactHeader ? 'gap-1 md:gap-3' : 'gap-3'} rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh] sm:max-h-none ${className}`}
+                    onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
                     <div className={`flex items-center ${showCloseButton ? 'justify-between' : 'justify-start'} ${compactHeader ? 'py-0 md:py-0 mb-0 md:mb-0' : ''}`}>
