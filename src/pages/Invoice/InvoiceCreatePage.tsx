@@ -124,6 +124,20 @@ const PERSON_MENTION_PRIORITY = [
 const PERSON_MENTION_PRIORITY_INDEX = new Map(
     PERSON_MENTION_PRIORITY.map((name, index) => [name, index] as const)
 );
+const MONTH_LABELS = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+];
 
 function PersonnelSelectionModal({
     isOpen,
@@ -1871,18 +1885,56 @@ export default function InvoiceCreatePage() {
     const shipNameDisplay = workLogDataList[0]?.workLog.vessel || "";
     const workPlaceDisplay = mapWorkPlace(workLogDataList[0]?.workLog.location || null);
     const workOrderFromDisplay = "Everlience ELU KOREA";
+    const engineTypeDisplay = workLogDataList[0]?.workLog.engine || "";
+    const workItemDisplay = workLogDataList[0]?.workLog.subject || "";
     const formatBoundaryTime = (value: string) => {
         if (!value) return "";
         return value.includes(":")
             ? value
             : `${String(value).padStart(2, "0")}:00`;
     };
-    const formatDateWithYear = (dateString: string) => {
+    const formatDateParts = (dateString: string) => {
         const date = new Date(`${dateString}T00:00:00`);
+        return {
+            day: String(date.getDate()).padStart(2, "0"),
+            month: MONTH_LABELS[date.getMonth()],
+            year: String(date.getFullYear()),
+        };
+    };
+    const formatDateWithYear = (dateString: string) => {
+        const { day, month, year } = formatDateParts(dateString);
+        return `${day}.${month}.${year}`;
+    };
+    const formatDateObjectWithYear = (date: Date) => {
         const day = String(date.getDate()).padStart(2, "0");
-        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        const month = months[date.getMonth()];
-        return `${day}.${month}.${date.getFullYear()}`;
+        const month = MONTH_LABELS[date.getMonth()];
+        const year = String(date.getFullYear());
+        return `${day}.${month}.${year}`;
+    };
+    const formatWorkPeriodAndPlace = (
+        startDate: string,
+        endDate: string,
+        place: string
+    ) => {
+        if (!startDate || !endDate) {
+            return place ? `at ${place}` : "";
+        }
+
+        const start = formatDateParts(startDate);
+        const end = formatDateParts(endDate);
+        let periodLabel = "";
+
+        if (startDate === endDate) {
+            periodLabel = `${start.day}.${start.month}.${start.year}`;
+        } else if (start.year === end.year && start.month === end.month) {
+            periodLabel = `${start.day}~${end.day}.${end.month}.${end.year}`;
+        } else if (start.year === end.year) {
+            periodLabel = `${start.day}.${start.month}~${end.day}.${end.month}.${end.year}`;
+        } else {
+            periodLabel = `${start.day}.${start.month}.${start.year}~${end.day}.${end.month}.${end.year}`;
+        }
+
+        return place ? `${periodLabel} at ${place}` : periodLabel;
     };
     const getInitialOrigin = (entry: TimesheetSourceEntryData): string => {
         const moveFrom = entry.moveFrom?.trim();
@@ -2049,6 +2101,50 @@ export default function InvoiceCreatePage() {
         "departure"
     );
     const jobDescriptionReturnDisplay = getBoundaryDisplay(timesheetRows, "return");
+    const invoiceDateDisplay = formatDateObjectWithYear(new Date());
+    const sortedTimesheetDates = Array.from(
+        new Set(timesheetRows.map((row) => row.date).filter(Boolean))
+    ).sort();
+    const invoiceWorkPeriodDisplay = formatWorkPeriodAndPlace(
+        sortedTimesheetDates[0] ?? "",
+        sortedTimesheetDates[sortedTimesheetDates.length - 1] ?? "",
+        workPlaceDisplay
+    );
+    const formatHourQuantity = (value: number) => {
+        const rounded = Math.round(value * 10) / 10;
+        return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+    };
+    const getInvoiceHourSummary = (people: string[]) => {
+        const targetPeople = new Set(people);
+
+        return timesheetRows.reduce(
+            (summary, row) => {
+                const matchedCount = getRowPersons(row).filter((person) =>
+                    targetPeople.has(person)
+                ).length;
+
+                if (matchedCount === 0) {
+                    return summary;
+                }
+
+                summary.weekdayNormal += row.weekdayNormal * matchedCount;
+                summary.weekdayAfter += row.weekdayAfter * matchedCount;
+                summary.weekendNormal += row.weekendNormal * matchedCount;
+                summary.weekendAfter += row.weekendAfter * matchedCount;
+                summary.travelWeekday += row.travelWeekday * matchedCount;
+                summary.travelWeekend += row.travelWeekend * matchedCount;
+                return summary;
+            },
+            {
+                weekdayNormal: 0,
+                weekdayAfter: 0,
+                weekendNormal: 0,
+                weekendAfter: 0,
+                travelWeekday: 0,
+                travelWeekend: 0,
+            }
+        );
+    };
 
     const renderSplitHoursCells = (
         row: TimesheetRow,
@@ -2438,6 +2534,12 @@ export default function InvoiceCreatePage() {
     const jobDescriptionPersonnel = getPersonnelDisplayData(
         "JOB_DESCRIPTION",
         allTimesheetPeople
+    );
+    const skilledFitterInvoiceSummary = getInvoiceHourSummary(
+        jobDescriptionPersonnel.engineerPeople
+    );
+    const fitterInvoiceSummary = getInvoiceHourSummary(
+        jobDescriptionPersonnel.mechanicPeople
     );
 
     useEffect(() => {
@@ -3348,7 +3450,7 @@ export default function InvoiceCreatePage() {
                                     <h2 className="text-3xl font-bold text-black mb-2">INVOICE</h2>
                                     
                                     {/* Top Information Sections - 3 columns */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="grid grid-cols-1 gap-6 md:grid-cols-[max-content_max-content_1fr]">
                                         {/* Invoice to (Left Column) */}
                                         <div className="flex flex-col gap-3">
                                             <h3 className="text-sm font-semibold text-gray-900">Invoice to</h3>
@@ -3363,35 +3465,35 @@ export default function InvoiceCreatePage() {
                                             <h3 className="text-sm font-semibold text-gray-900">Job information</h3>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Hull no.</span>
-                                                <span className="text-sm text-gray-900">SH8300</span>
+                                                <span className="text-sm text-gray-900">{shipNameDisplay}</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Engine type:</span>
-                                                <span className="text-sm text-gray-900">7G95ME-GI</span>
+                                                <span className="text-sm text-gray-900">{engineTypeDisplay}</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Work Period & Place:</span>
-                                                <span className="text-sm text-gray-900">04.Feb.2026 at HHI</span>
+                                                <span className="text-sm text-gray-900">{invoiceWorkPeriodDisplay}</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Work Item:</span>
-                                                <span className="text-sm text-gray-900">Replacement of PIV Atomizer</span>
+                                                <span className="text-sm text-gray-900">{workItemDisplay}</span>
                                             </div>
                                         </div>
 
                                         {/* Invoice Numbers & Dates (Right Column) */}
-                                        <div className="flex flex-col gap-3">
+                                        <div className="flex flex-col gap-3 md:justify-self-end">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">P.O No:</span>
                                                 <span className="text-sm text-gray-900"></span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">INVOICE No:</span>
-                                                <span className="text-sm text-gray-900">R12602061</span>
+                                                <span className="text-sm text-gray-900"></span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Date:</span>
-                                                <span className="text-sm text-gray-900">10.Feb.2026</span>
+                                                <span className="text-sm text-gray-900">{invoiceDateDisplay}</span>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Validity:</span>
@@ -3426,53 +3528,207 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
-                                                    {/* 1.1 Skilled Fitter (KT On) */}
+                                                    {/* 1.1 Skilled Fitter */}
                                                     <tr>
-                                                        <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">1.1 Skilled Fitter (KT On)</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">1</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">MAN</td>
+                                                        <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">
+                                                            {`1.1 ${
+                                                                jobDescriptionPersonnel.engineerPeople.length > 1
+                                                                    ? "Skilled Fitters"
+                                                                    : "Skilled Fitter"
+                                                            }${
+                                                                jobDescriptionPersonnel.engineerPeople.length > 0
+                                                                    ? ` (${jobDescriptionPersonnel.engineerPeople
+                                                                          .map((person) =>
+                                                                              getEnglishPersonName(person)
+                                                                          )
+                                                                          .join(", ")})`
+                                                                    : ""
+                                                            }`}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {jobDescriptionPersonnel.engineerPeople.length > 0
+                                                                ? jobDescriptionPersonnel.engineerPeople.length
+                                                                : ""}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {jobDescriptionPersonnel.engineerPeople.length > 1
+                                                                ? "MEN"
+                                                                : jobDescriptionPersonnel.engineerPeople.length ===
+                                                                    1
+                                                                  ? "MAN"
+                                                                  : ""}
+                                                        </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
                                                     {/* : Weekday/ Normal Working Hours */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Normal Working Hours</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">8</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                skilledFitterInvoiceSummary.weekdayNormal
+                                                            )}
+                                                        </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">55,200</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">441,600</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ After Normal Working Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                skilledFitterInvoiceSummary.weekdayAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Normal Working Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                skilledFitterInvoiceSummary.weekendNormal
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ After Normal Working Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                skilledFitterInvoiceSummary.weekendAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
                                                     {/* : Weekday/ Waiting & Travel Hours */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Waiting & Travel Hours</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">4</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                skilledFitterInvoiceSummary.travelWeekday
+                                                            )}
+                                                        </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">39,100</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">156,400</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
-                                                    {/* 1.2 Fitters (DM Kim, JH Lee) */}
                                                     <tr>
-                                                        <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">1.2 Fitters (DM Kim, JH Lee)</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">2</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">MEN</td>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Waiting &amp; Travel Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                skilledFitterInvoiceSummary.travelWeekend
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    {/* 1.2 Fitters */}
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">
+                                                            {`1.2 ${
+                                                                jobDescriptionPersonnel.mechanicPeople.length > 1
+                                                                    ? "Fitters"
+                                                                    : "Fitter"
+                                                            }${
+                                                                jobDescriptionPersonnel.mechanicPeople.length > 0
+                                                                    ? ` (${jobDescriptionPersonnel.mechanicPeople
+                                                                          .map((person) =>
+                                                                              getEnglishPersonName(person)
+                                                                          )
+                                                                          .join(", ")})`
+                                                                    : ""
+                                                            }`}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {jobDescriptionPersonnel.mechanicPeople.length > 0
+                                                                ? jobDescriptionPersonnel.mechanicPeople.length
+                                                                : ""}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {jobDescriptionPersonnel.mechanicPeople.length > 1
+                                                                ? "MEN"
+                                                                : jobDescriptionPersonnel.mechanicPeople.length ===
+                                                                    1
+                                                                  ? "MAN"
+                                                                  : ""}
+                                                        </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
                                                     {/* : Weekday/ Normal Working Hours */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Normal Working Hours</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">16</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                fitterInvoiceSummary.weekdayNormal
+                                                            )}
+                                                        </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">42,600</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">681,600</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ After Normal Working Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                fitterInvoiceSummary.weekdayAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Normal Working Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                fitterInvoiceSummary.weekendNormal
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ After Normal Working Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                fitterInvoiceSummary.weekendAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
                                                     {/* : Weekday/ Waiting & Travel Hours */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Waiting & Travel Hours</td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">8</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                fitterInvoiceSummary.travelWeekday
+                                                            )}
+                                                        </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">31,100</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">248,800</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Waiting &amp; Travel Hours</td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                            {formatHourQuantity(
+                                                                fitterInvoiceSummary.travelWeekend
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
                                                     {/* 2. Daily Allowance */}
                                                     <tr>
