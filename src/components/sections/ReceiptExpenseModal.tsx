@@ -91,6 +91,9 @@ export default function ReceiptExpenseModal({
 
     // 현재 영수증
     const currentReceipt = allReceipts[currentReceiptIndex];
+    const isVehicleManageSelected =
+        currentReceipt?.category === "기타" &&
+        (typeCustom || type) === "차량 정비";
 
     // 카테고리에 따른 분류 옵션 필터링
     const getTypeOptions = (category: FileCategory | undefined) => {
@@ -611,10 +614,6 @@ export default function ReceiptExpenseModal({
         return url;
     }, [currentReceipt?.file?.id, currentReceipt?.file?.preview, currentReceipt?.file?.fileUrl, currentReceipt?.file?.isExisting, currentReceipt?.file?.file]);
 
-    if (allReceipts.length === 0) {
-        return null;
-    }
-
     return (
         <BaseModal
             isOpen={isOpen}
@@ -624,6 +623,17 @@ export default function ReceiptExpenseModal({
             className="max-h-[85vh] md:max-h-none"
             compactHeader={true}
         >
+            {allReceipts.length === 0 ? (
+                <div className="py-8 md:py-10 flex flex-col items-center text-center gap-3">
+                    <p className="text-[16px] font-semibold text-gray-800">
+                        업로드된 영수증이 없습니다.
+                    </p>
+                    <p className="text-[14px] text-gray-500">
+                        첨부파일 업로드 섹션에서 영수증을 먼저 추가한 뒤 다시 시도해주세요.
+                    </p>
+                </div>
+            ) : (
+            <>
             <div className="flex flex-col md:flex-row gap-2 md:gap-6 md:min-h-[600px] md:max-h-[70vh] -mt-1 md:mt-0 touch-none md:touch-auto">
                 {/* 좌측: 영수증 이미지 */}
                 <div 
@@ -760,10 +770,31 @@ export default function ReceiptExpenseModal({
 
                             {/* 분류 */}
                             <div className="flex flex-col gap-2">
-                                <label className="font-medium text-[14px] text-gray-900">
-                                    분류
-                                    <RequiredIndicator />
-                                </label>
+                                <div className="flex items-center justify-between gap-2">
+                                    <label className="font-medium text-[14px] text-gray-900">
+                                        분류
+                                        <RequiredIndicator />
+                                    </label>
+                                    {currentReceipt?.category === "기타" && (
+                                        <Button
+                                            type="button"
+                                            size="xs"
+                                            variant={isVehicleManageSelected ? "primary" : "outline"}
+                                            className="shrink-0 px-2"
+                                            onClick={() => {
+                                                if (isVehicleManageSelected) {
+                                                    setType("");
+                                                    setTypeCustom("");
+                                                    return;
+                                                }
+                                                setType("차량 정비");
+                                                setTypeCustom("차량 정비");
+                                            }}
+                                        >
+                                            차량 정비
+                                        </Button>
+                                    )}
+                                </div>
                                 {currentReceipt?.category === "숙박영수증" ? (
                                     <Select
                                         placeholder=""
@@ -1024,6 +1055,8 @@ export default function ReceiptExpenseModal({
                         {currentReceiptIndex + 1} / {allReceipts.length}
                     </div>
                 </div>
+            )}
+            </>
             )}
         </BaseModal>
     );

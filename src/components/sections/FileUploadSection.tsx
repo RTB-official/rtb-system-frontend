@@ -352,13 +352,6 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
         return result;
     }, [uploadedFiles, receiptCategories]);
 
-    // 모든 영수증이 있는지 확인
-    const hasReceipts = useMemo(() => {
-        return receiptCategories.some(
-            (category) => receiptsByCategory[category].length > 0
-        );
-    }, [receiptCategories, receiptsByCategory]);
-
     return (
         <div className="bg-white border border-[#e5e7eb] rounded-2xl p-4 md:p-7 overflow-hidden flex flex-col gap-4 md:gap-5">
             {/* 헤더 */}
@@ -408,7 +401,7 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
             </div>
 
             {/* 영수증으로 지출내역 추가 버튼 */}
-            {reportType === "work" && hasReceipts && (
+            {reportType === "work" && (
                 <div className="pt-2">
                     <Button
                         onClick={() => setModalOpen(true)}

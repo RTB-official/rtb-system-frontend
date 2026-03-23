@@ -3,8 +3,13 @@ import React, { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
+import { IconEdit } from "../../components/icons/Icons";
+import BaseModal from "../../components/ui/BaseModal";
+import TimesheetDateGroupDetailSidePanel from "../../components/panels/TimesheetDateGroupDetailSidePanel";
+import TimesheetRowDetailSidePanel from "../../components/panels/TimesheetRowDetailSidePanel";
 import { getWorkLogById, type WorkLogFullData } from "../../lib/workLogApi";
 import { getCalendarEvents } from "../../lib/dashboardApi";
+import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 
 interface TimesheetRow {
@@ -25,6 +30,56 @@ interface TimesheetRow {
     travelWeekendDisplay?: string;
     description: string;
     hideDayDate?: boolean;
+    sourceEntries: TimesheetSourceEntryData[];
+}
+
+interface TimesheetSourceEntryData {
+    id: number;
+    workLogId: number;
+    dateFrom: string;
+    timeFrom: string;
+    dateTo: string;
+    timeTo: string;
+    descType: string;
+    details: string;
+    persons: string[];
+    note?: string;
+    moveFrom?: string;
+    moveTo?: string;
+    location?: string | null;
+    lunchWorked?: boolean;
+}
+
+interface TimesheetRowModalData {
+    rowKey: string;
+    sectionTitle: string;
+    selectedPersons: string[];
+    day: string;
+    dateFormatted: string;
+    timeFrom: string;
+    timeTo: string;
+    description: string;
+    sourceEntries: TimesheetSourceEntryData[];
+    groupSourceEntries: TimesheetSourceEntryData[];
+}
+
+interface TimesheetDateGroupPanelData {
+    blockKey: string;
+    sectionTitle: string;
+    fullGroupEntries: TimesheetSourceEntryData[];
+}
+
+interface PersonnelEditorState {
+    scopeKey: string;
+    scopeTitle: string;
+    mode: "engineer" | "mechanic";
+    people: string[];
+}
+
+interface PersonnelSelectionCandidate {
+    name: string;
+    displayName: string;
+    selected: boolean;
 }
 
 type WorkLogEntryItem = WorkLogFullData["entries"][number];
@@ -32,12 +87,102 @@ type WorkLogEntryItem = WorkLogFullData["entries"][number];
 type InvoiceTimesheetEntry = WorkLogEntryItem & {
     workLogId: number;
     location: string | null;
+    sourceEntryIds: number[];
 };
 
 const HOLIDAY_API_KEY =
     "cac7adf961a1b55472fa90319e4cb89dde6c04242edcb3d3970ae9e09c931e98";
 const HOLIDAY_API_ENDPOINT =
     "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
+const SKILLED_FITTER_PRIORITY = [
+    "김춘근",
+    "안재훈",
+    "온권태",
+    "이효익",
+    "정상민",
+];
+const SKILLED_FITTER_SET = new Set(SKILLED_FITTER_PRIORITY);
+const PERSON_MENTION_PRIORITY = [
+    "김춘근",
+    "안재훈",
+    "온권태",
+    "정영철",
+    "이효익",
+    "정상민",
+    "김동민",
+    "성기형",
+    "류성관",
+    "우상윤",
+    "김희규",
+    "이종훈",
+    "조용남",
+    "박영성",
+    "김민규",
+    "문채훈",
+    "김상민",
+];
+const PERSON_MENTION_PRIORITY_INDEX = new Map(
+    PERSON_MENTION_PRIORITY.map((name, index) => [name, index] as const)
+);
+
+function PersonnelSelectionModal({
+    isOpen,
+    onClose,
+    title,
+    scopeTitle,
+    candidates,
+    onCandidateClick,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    title: string;
+    scopeTitle: string;
+    candidates: PersonnelSelectionCandidate[];
+    onCandidateClick: (name: string) => void;
+}) {
+    return (
+        <BaseModal
+            isOpen={isOpen}
+            onClose={onClose}
+            title={title}
+            maxWidth="max-w-[720px]"
+        >
+            <div className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                    <div className="font-semibold text-gray-900">{scopeTitle}</div>
+                </div>
+
+                {candidates.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
+                        선택할 수 있는 인원이 없습니다.
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {candidates.map((candidate) => (
+                            <button
+                                key={candidate.name}
+                                type="button"
+                                className={`relative rounded-xl border px-4 py-4 text-left transition-colors ${
+                                    candidate.selected
+                                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                                        : "border-gray-200 bg-white text-gray-900 hover:border-blue-200 hover:bg-gray-50"
+                                }`}
+                                onClick={() => onCandidateClick(candidate.name)}
+                            >
+                                <div className="text-sm font-semibold">
+                                    {candidate.name}
+                                </div>
+                                <div className="mt-1 text-xs text-gray-500">
+                                    {candidate.displayName}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </BaseModal>
+    );
+}
 
 export default function InvoiceCreatePage() {
     const [searchParams] = useSearchParams();
@@ -46,8 +191,31 @@ export default function InvoiceCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [workLogDataList, setWorkLogDataList] = useState<WorkLogFullData[]>([]);
     const [timesheetRows, setTimesheetRows] = useState<TimesheetRow[]>([]);
+    const [profileUsernameMap, setProfileUsernameMap] = useState<
+        Record<string, string>
+    >({});
+    const [selectedSkilledFitters, setSelectedSkilledFitters] = useState<
+        string[]
+    >([]);
+    const [selectedFitterRepresentatives, setSelectedFitterRepresentatives] =
+        useState<Record<string, string>>({});
+    const [personnelEditor, setPersonnelEditor] =
+        useState<PersonnelEditorState | null>(null);
     const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
+    const [selectedTimesheetRow, setSelectedTimesheetRow] =
+        useState<TimesheetRowModalData | null>(null);
+    const [selectedTimesheetDateGroupKeys, setSelectedTimesheetDateGroupKeys] =
+        useState<string[]>([]);
+    const [selectedTimesheetDateGroupAnchorKey, setSelectedTimesheetDateGroupAnchorKey] =
+        useState<string | null>(null);
+    const [selectedTimesheetDateGroupPanel, setSelectedTimesheetDateGroupPanel] =
+        useState<TimesheetDateGroupPanelData | null>(null);
+    const [hoveredTimesheetRowKey, setHoveredTimesheetRowKey] = useState<
+        string | null
+    >(null);
+    const [hoveredTimesheetDateGroupKey, setHoveredTimesheetDateGroupKey] =
+        useState<string | null>(null);
     const { showError } = useToast();
 
     const toDateSafe = (date: string, time: string): Date => {
@@ -270,6 +438,9 @@ export default function InvoiceCreatePage() {
             ) {
                 lastEntry.dateTo = entry.dateTo;
                 lastEntry.timeTo = entry.timeTo;
+                lastEntry.sourceEntryIds = Array.from(
+                    new Set([...lastEntry.sourceEntryIds, ...entry.sourceEntryIds])
+                );
                 return;
             }
 
@@ -654,7 +825,11 @@ export default function InvoiceCreatePage() {
                         ...entry,
                         workLogId: data.workLog.id,
                         location: data.workLog.location,
+                        sourceEntryIds: [entry.id],
                     }))
+                );
+                const rawEntryById = new Map(
+                    rawEntries.map((entry) => [entry.id, entry] as const)
                 );
                 const allEntries = mergeContinuousTravelEntries(rawEntries);
 
@@ -920,6 +1095,46 @@ export default function InvoiceCreatePage() {
                                 waitingWeekend
                             ),
                             description: Array.from(workers).join(", "),
+                            sourceEntries: Array.from(
+                                new Set(
+                                    sortedDayEntries.flatMap(
+                                        (entry) => entry.sourceEntryIds
+                                    )
+                                )
+                            )
+                                .map((entryId) => rawEntryById.get(entryId))
+                                .filter(
+                                    (
+                                        entry
+                                    ): entry is InvoiceTimesheetEntry => Boolean(entry)
+                                )
+                                .sort((a, b) => {
+                                    const aStart =
+                                        new Date(
+                                            `${a.dateFrom}T${a.timeFrom ?? "00:00"}`
+                                        ).getTime();
+                                    const bStart =
+                                        new Date(
+                                            `${b.dateFrom}T${b.timeFrom ?? "00:00"}`
+                                        ).getTime();
+                                    return aStart - bStart;
+                                })
+                                .map((entry) => ({
+                                    id: entry.id,
+                                    workLogId: entry.workLogId,
+                                    dateFrom: entry.dateFrom,
+                                    timeFrom: entry.timeFrom ?? "",
+                                    dateTo: entry.dateTo,
+                                    timeTo: entry.timeTo ?? "",
+                                    descType: entry.descType,
+                                    details: entry.details,
+                                    persons: entry.persons,
+                                    note: entry.note,
+                                    moveFrom: entry.moveFrom,
+                                    moveTo: entry.moveTo,
+                                    location: entry.location,
+                                    lunchWorked: entry.lunch_worked,
+                                })),
                         };
                     };
 
@@ -1259,6 +1474,7 @@ export default function InvoiceCreatePage() {
                         person: string;
                         rowKey: string;
                         priority: number;
+                        sourceEntryIds: number[];
                         timeFrom: string;
                         timeTo: string;
                         totalHours: number;
@@ -1305,6 +1521,9 @@ export default function InvoiceCreatePage() {
                                 travel.end,
                             ].join("|"),
                             priority: -1,
+                            sourceEntryIds: Array.from(
+                                new Set(entries.flatMap((entry) => entry.sourceEntryIds))
+                            ),
                             timeFrom: travel.start.split(":")[0],
                             timeTo: travel.end.split(":")[0],
                             totalHours: roundHours(travel.hours),
@@ -1459,6 +1678,17 @@ export default function InvoiceCreatePage() {
                                         timeTo,
                                     ].join("|"),
                                     priority,
+                                    sourceEntryIds: Array.from(
+                                        new Set(
+                                            [
+                                                ...block.beforeTravelEntries,
+                                                ...block.workEntries,
+                                                ...block.afterTravelEntries,
+                                            ].flatMap(
+                                                (entry) => entry.sourceEntryIds
+                                            )
+                                        )
+                                    ),
                                     timeFrom: timeFrom.split(":")[0],
                                     timeTo: timeTo.split(":")[0],
                                     totalHours: roundHours(
@@ -1501,6 +1731,7 @@ export default function InvoiceCreatePage() {
                         {
                             row: PersonDayRow;
                             persons: string[];
+                            sourceEntryIds: Set<number>;
                         }
                     >();
                     personRows.forEach((personRow) => {
@@ -1508,11 +1739,17 @@ export default function InvoiceCreatePage() {
                             groupedRows.set(personRow.rowKey, {
                                 row: personRow,
                                 persons: [],
+                                sourceEntryIds: new Set<number>(),
                             });
                         }
                         groupedRows.get(personRow.rowKey)!.persons.push(
                             personRow.person
                         );
+                        personRow.sourceEntryIds.forEach((entryId) => {
+                            groupedRows.get(personRow.rowKey)!.sourceEntryIds.add(
+                                entryId
+                            );
+                        });
                     });
 
                     const orderedRows = Array.from(groupedRows.values()).sort(
@@ -1553,6 +1790,40 @@ export default function InvoiceCreatePage() {
                             travelWeekendDisplay: group.row.travelWeekendDisplay,
                             description,
                             hideDayDate: index > 0,
+                            sourceEntries: Array.from(group.sourceEntryIds)
+                                .map((entryId) => rawEntryById.get(entryId))
+                                .filter(
+                                    (
+                                        entry
+                                    ): entry is InvoiceTimesheetEntry => Boolean(entry)
+                                )
+                                .sort((a, b) => {
+                                    const aStart =
+                                        new Date(
+                                            `${a.dateFrom}T${a.timeFrom ?? "00:00"}`
+                                        ).getTime();
+                                    const bStart =
+                                        new Date(
+                                            `${b.dateFrom}T${b.timeFrom ?? "00:00"}`
+                                        ).getTime();
+                                    return aStart - bStart;
+                                })
+                                .map((entry) => ({
+                                    id: entry.id,
+                                    workLogId: entry.workLogId,
+                                    dateFrom: entry.dateFrom,
+                                    timeFrom: entry.timeFrom ?? "",
+                                    dateTo: entry.dateTo,
+                                    timeTo: entry.timeTo ?? "",
+                                    descType: entry.descType,
+                                    details: entry.details,
+                                    persons: entry.persons,
+                                    note: entry.note,
+                                    moveFrom: entry.moveFrom,
+                                    moveTo: entry.moveTo,
+                                    location: entry.location,
+                                    lunchWorked: entry.lunch_worked,
+                                })),
                         });
                     });
                 });
@@ -1596,6 +1867,1121 @@ export default function InvoiceCreatePage() {
         // 나머지는 원본 값 그대로 반환
         return firstLocation;
     };
+
+    const shipNameDisplay = workLogDataList[0]?.workLog.vessel || "";
+    const workPlaceDisplay = mapWorkPlace(workLogDataList[0]?.workLog.location || null);
+    const workOrderFromDisplay = "Everlience ELU KOREA";
+    const formatBoundaryTime = (value: string) => {
+        if (!value) return "";
+        return value.includes(":")
+            ? value
+            : `${String(value).padStart(2, "0")}:00`;
+    };
+    const formatDateWithYear = (dateString: string) => {
+        const date = new Date(`${dateString}T00:00:00`);
+        const day = String(date.getDate()).padStart(2, "0");
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const month = months[date.getMonth()];
+        return `${day}.${month}.${date.getFullYear()}`;
+    };
+    const getInitialOrigin = (entry: TimesheetSourceEntryData): string => {
+        const moveFrom = entry.moveFrom?.trim();
+        if (moveFrom) {
+            return moveFrom;
+        }
+
+        const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
+        if (!details.includes("→")) {
+            return details;
+        }
+
+        return details.split("→")[0]?.trim() ?? "";
+    };
+    const resolvePlaceToCity = (place: string, workLocation?: string | null) => {
+        const normalizedPlace = normalizeLocationName(place);
+        const resolvedPlace =
+            normalizedPlace === "숙소"
+                ? normalizeLocationName(getPrimaryLocation(workLocation ?? null))
+                : normalizedPlace;
+
+        if (
+            [
+                "자택",
+                "강동동 공장",
+                "PNC",
+                "PNIT",
+                "HPNT",
+                "BNCT",
+                "HJNC",
+            ].includes(resolvedPlace)
+        ) {
+            return "Busan";
+        }
+
+        if (
+            ["HD중공업(해양)", "HD미포", "HHI", "HMD"].includes(resolvedPlace)
+        ) {
+            return "Ulsan";
+        }
+
+        if (["HD삼호", "HSHI"].includes(resolvedPlace)) {
+            return "Mokpo";
+        }
+
+        if (["한화오션", "삼성중공업"].includes(resolvedPlace)) {
+            return "Geoje";
+        }
+
+        return "";
+    };
+    const pickPriorityCity = (cities: string[]) => {
+        const uniqueCities = Array.from(new Set(cities.filter(Boolean)));
+        if (uniqueCities.includes("Busan")) {
+            return "Busan";
+        }
+
+        return uniqueCities[0] ?? "";
+    };
+    const getRowBoundaryCity = (
+        row: TimesheetRow,
+        mode: "departure" | "return"
+    ) => {
+        if (row.sourceEntries.length === 0) {
+            return "";
+        }
+
+        const sourceEntriesWithAdjustedTimes = row.sourceEntries.map((entry) => {
+            const adjusted = getAdjustedTravelDateTimes(entry as InvoiceTimesheetEntry);
+            return {
+                entry,
+                start: adjusted.dateFrom && adjusted.timeFrom
+                    ? toDateSafe(adjusted.dateFrom, adjusted.timeFrom)
+                    : null,
+                end: adjusted.dateTo && adjusted.timeTo
+                    ? toDateSafe(adjusted.dateTo, adjusted.timeTo)
+                    : null,
+            };
+        });
+
+        const boundaryTime =
+            mode === "departure"
+                ? sourceEntriesWithAdjustedTimes
+                      .map((item) => item.start?.getTime() ?? Number.MAX_SAFE_INTEGER)
+                      .reduce((min, value) => Math.min(min, value), Number.MAX_SAFE_INTEGER)
+                : sourceEntriesWithAdjustedTimes
+                      .map((item) => item.end?.getTime() ?? 0)
+                      .reduce((max, value) => Math.max(max, value), 0);
+
+        const boundaryEntries = sourceEntriesWithAdjustedTimes
+            .filter((item) =>
+                mode === "departure"
+                    ? item.start?.getTime() === boundaryTime
+                    : item.end?.getTime() === boundaryTime
+            )
+            .map((item) => item.entry);
+
+        const cities = boundaryEntries
+            .map((entry) => {
+                const place =
+                    mode === "departure"
+                        ? entry.descType === "이동"
+                            ? getInitialOrigin(entry)
+                            : getPrimaryLocation(entry.location ?? null)
+                        : entry.descType === "이동"
+                          ? getFinalDestination(entry as InvoiceTimesheetEntry)
+                          : getPrimaryLocation(entry.location ?? null);
+
+                return resolvePlaceToCity(place, entry.location);
+            })
+            .filter(Boolean);
+
+        return pickPriorityCity(cities);
+    };
+    const getBoundaryDisplay = (
+        rows: TimesheetRow[],
+        mode: "departure" | "return"
+    ) => {
+        if (rows.length === 0) {
+            return "";
+        }
+
+        const sortedRows = [...rows].sort((a, b) => {
+            const aTime = toDateSafe(
+                a.date,
+                formatBoundaryTime(mode === "departure" ? a.timeFrom : a.timeTo)
+            ).getTime();
+            const bTime = toDateSafe(
+                b.date,
+                formatBoundaryTime(mode === "departure" ? b.timeFrom : b.timeTo)
+            ).getTime();
+            return mode === "departure" ? aTime - bTime : bTime - aTime;
+        });
+
+        const boundaryRow = sortedRows[0];
+        const boundaryTime = formatBoundaryTime(
+            mode === "departure" ? boundaryRow.timeFrom : boundaryRow.timeTo
+        );
+        const sameTimeRows = sortedRows.filter((row) => {
+            const rowTime = toDateSafe(
+                row.date,
+                formatBoundaryTime(mode === "departure" ? row.timeFrom : row.timeTo)
+            ).getTime();
+            const boundaryDateTime = toDateSafe(boundaryRow.date, boundaryTime).getTime();
+            return rowTime === boundaryDateTime;
+        });
+
+        const city = pickPriorityCity(
+            sameTimeRows
+                .map((row) => getRowBoundaryCity(row, mode))
+                .filter(Boolean)
+        );
+
+        if (!city) {
+            return "";
+        }
+
+        return `${formatDateWithYear(boundaryRow.date)}, ${boundaryTime} ${
+            mode === "departure" ? "from" : "to"
+        } ${city}`;
+    };
+    const jobDescriptionDepartureDisplay = getBoundaryDisplay(
+        timesheetRows,
+        "departure"
+    );
+    const jobDescriptionReturnDisplay = getBoundaryDisplay(timesheetRows, "return");
+
+    const renderSplitHoursCells = (
+        row: TimesheetRow,
+        sectionTitle: string,
+        sizeClassName: string
+    ) => {
+        const values = {
+            weekdayNormal:
+                row.weekdayNormal > 0 ? String(row.weekdayNormal) : "",
+            weekdayAfter: row.weekdayAfter > 0 ? String(row.weekdayAfter) : "",
+            weekendNormal:
+                row.weekendNormal > 0 ? String(row.weekendNormal) : "",
+            weekendAfter: row.weekendAfter > 0 ? String(row.weekendAfter) : "",
+            travelWeekday:
+                row.travelWeekdayDisplay ||
+                (row.travelWeekday > 0 ? String(row.travelWeekday) : ""),
+            travelWeekend:
+                row.travelWeekendDisplay ||
+                (row.travelWeekend > 0 ? String(row.travelWeekend) : ""),
+        };
+        const isInteractive = Object.values(values).some((value) => value !== "");
+        const baseClassName = `border-r border-gray-300 text-center ${sizeClassName}`;
+        const interactiveClassName = isInteractive ? "cursor-pointer" : "";
+        const stateClassName = isInteractive
+            ? getTimesheetRowStateClass(sectionTitle, row)
+            : "";
+
+        const getCellClassName = () =>
+            `${baseClassName} ${interactiveClassName} ${stateClassName}`;
+
+        const interactiveCellProps = isInteractive
+            ? getTimesheetInteractiveCellProps(sectionTitle, row)
+            : {};
+
+        return (
+            <>
+                <td
+                    className={getCellClassName()}
+                    {...interactiveCellProps}
+                >
+                    {values.weekdayNormal}
+                </td>
+                <td
+                    className={getCellClassName()}
+                    {...interactiveCellProps}
+                >
+                    {values.weekdayAfter}
+                </td>
+                <td
+                    className={getCellClassName()}
+                    {...interactiveCellProps}
+                >
+                    {values.weekendNormal}
+                </td>
+                <td
+                    className={getCellClassName()}
+                    {...interactiveCellProps}
+                >
+                    {values.weekendAfter}
+                </td>
+                <td
+                    className={getCellClassName()}
+                    {...interactiveCellProps}
+                >
+                    {values.travelWeekday}
+                </td>
+                <td
+                    className={getCellClassName()}
+                    {...interactiveCellProps}
+                >
+                    {values.travelWeekend}
+                </td>
+            </>
+        );
+    };
+
+    const getTimesheetRowModalValues = (row: TimesheetRow) => ({
+        weekdayNormal: row.weekdayNormal > 0 ? String(row.weekdayNormal) : "",
+        weekdayAfter: row.weekdayAfter > 0 ? String(row.weekdayAfter) : "",
+        weekendNormal: row.weekendNormal > 0 ? String(row.weekendNormal) : "",
+        weekendAfter: row.weekendAfter > 0 ? String(row.weekendAfter) : "",
+        travelWeekday:
+            row.travelWeekdayDisplay ||
+            (row.travelWeekday > 0 ? String(row.travelWeekday) : ""),
+        travelWeekend:
+            row.travelWeekendDisplay ||
+            (row.travelWeekend > 0 ? String(row.travelWeekend) : ""),
+    });
+
+    const getRowPersons = (row: TimesheetRow) =>
+        row.description
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+    const getUniquePersonsFromRows = (rows: TimesheetRow[]) =>
+        Array.from(
+            new Set(
+                rows.flatMap((row) => getRowPersons(row))
+            )
+        ).filter(Boolean);
+    const formatUsernameDisplay = (username: string) => {
+        const baseUsername = username.split("_")[0]?.trim() ?? "";
+        if (!baseUsername) return "";
+
+        return baseUsername
+            .split(".")
+            .filter(Boolean)
+            .map((part, index) =>
+                index === 0
+                    ? part.toUpperCase()
+                    : `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`
+            )
+            .join(" ");
+    };
+    const getEnglishPersonName = (personName: string) => {
+        const username = profileUsernameMap[personName];
+        return username ? formatUsernameDisplay(username) : personName;
+    };
+    const sortPeopleForMention = (people: string[]) => {
+        const uniquePeople = Array.from(new Set(people)).filter(Boolean);
+        const hasPriorityPerson = uniquePeople.some((person) =>
+            PERSON_MENTION_PRIORITY_INDEX.has(person)
+        );
+
+        return [...uniquePeople].sort((a, b) => {
+            if (!hasPriorityPerson) {
+                return a.localeCompare(b, "ko");
+            }
+
+            const aPriority =
+                PERSON_MENTION_PRIORITY_INDEX.get(a) ?? Number.MAX_SAFE_INTEGER;
+            const bPriority =
+                PERSON_MENTION_PRIORITY_INDEX.get(b) ?? Number.MAX_SAFE_INTEGER;
+
+            if (aPriority !== bPriority) {
+                return aPriority - bPriority;
+            }
+
+            return a.localeCompare(b, "ko");
+        });
+    };
+    const formatEngineerTitleDisplay = (people: string[]) => {
+        const sortedPeople = sortPeopleForMention(people);
+        if (sortedPeople.length === 0) {
+            return "";
+        }
+
+        return `${sortedPeople
+            .map((person) => getEnglishPersonName(person))
+            .join(", ")} / Skilled fitter`;
+    };
+    const formatMechanicSummaryDisplay = (
+        people: string[],
+        representative?: string
+    ) => {
+        const sortedPeople = sortPeopleForMention(people);
+        if (sortedPeople.length === 0) {
+            return "";
+        }
+
+        const leadPerson = representative && sortedPeople.includes(representative)
+            ? representative
+            : sortedPeople[0];
+        const leadName = getEnglishPersonName(leadPerson);
+        if (sortedPeople.length === 1) {
+            return `${leadName} (Total 1 fitter)`;
+        }
+
+        const remainingCount = sortedPeople.length - 1;
+        return `${leadName} and ${remainingCount} fitter${
+            remainingCount > 1 ? "s" : ""
+        } (Total ${sortedPeople.length} fitters)`;
+    };
+    const getTopSelectableSkilledFitters = (people: string[]) =>
+        SKILLED_FITTER_PRIORITY.filter((person) => people.includes(person)).slice(0, 3);
+    const getTopSelectableMechanics = (people: string[]) =>
+        sortPeopleForMention(people).slice(0, 3);
+    const getScopedMechanicRepresentative = (
+        scopeKey: string,
+        mechanicPeople: string[]
+    ) => {
+        const sortedMechanics = sortPeopleForMention(mechanicPeople);
+        const savedRepresentative = selectedFitterRepresentatives[scopeKey];
+
+        if (savedRepresentative && sortedMechanics.includes(savedRepresentative)) {
+            return savedRepresentative;
+        }
+
+        return sortedMechanics[0] ?? "";
+    };
+    const getPersonnelDisplayData = (scopeKey: string, people: string[]) => {
+        const uniquePeople = Array.from(new Set(people)).filter(Boolean);
+        const engineerPeople = sortPeopleForMention(
+            uniquePeople.filter(
+                (person) =>
+                    SKILLED_FITTER_SET.has(person) &&
+                    selectedSkilledFitters.includes(person)
+            )
+        );
+        const mechanicPeople = sortPeopleForMention(
+            uniquePeople.filter((person) => !engineerPeople.includes(person))
+        );
+        const mechanicRepresentative = getScopedMechanicRepresentative(
+            scopeKey,
+            mechanicPeople
+        );
+
+        return {
+            engineerDisplay: formatEngineerTitleDisplay(engineerPeople),
+            mechanicDisplay: formatMechanicSummaryDisplay(
+                mechanicPeople,
+                mechanicRepresentative
+            ),
+            engineerPeople,
+            mechanicPeople,
+            mechanicRepresentative,
+        };
+    };
+    const openPersonnelEditor = (
+        scopeKey: string,
+        scopeTitle: string,
+        mode: "engineer" | "mechanic",
+        people: string[]
+    ) => {
+        setPersonnelEditor({
+            scopeKey,
+            scopeTitle,
+            mode,
+            people,
+        });
+    };
+    const toggleSkilledFitterSelection = (person: string) => {
+        if (!SKILLED_FITTER_SET.has(person)) {
+            return;
+        }
+
+        setSelectedSkilledFitters((previous) => {
+            if (previous.includes(person)) {
+                return previous.filter((value) => value !== person);
+            }
+
+            if (previous.length >= 3) {
+                return previous;
+            }
+
+            return [...previous, person];
+        });
+    };
+    const selectMechanicRepresentative = (scopeKey: string, person: string) => {
+        setSelectedFitterRepresentatives((previous) => ({
+            ...previous,
+            [scopeKey]: person,
+        }));
+    };
+    const renderEditablePersonnelCard = (
+        label: string,
+        value: string,
+        scopeKey: string,
+        scopeTitle: string,
+        mode: "engineer" | "mechanic",
+        people: string[]
+    ) => (
+        <div className="group relative rounded-lg border border-gray-200 bg-white p-4 transition-shadow hover:shadow-sm hover:ring-1 hover:ring-blue-200">
+            <button
+                type="button"
+                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group-hover:opacity-100"
+                onClick={() =>
+                    openPersonnelEditor(scopeKey, scopeTitle, mode, people)
+                }
+                aria-label={`${label} 수정`}
+            >
+                <IconEdit className="h-4 w-4" />
+            </button>
+            <div className="mb-2 pr-10 text-xs font-semibold text-gray-700">
+                {label}
+            </div>
+            <div className="text-sm text-gray-900">{value}</div>
+        </div>
+    );
+
+    const getNormalTimesheetSignature = (row: TimesheetRow) =>
+        [
+            row.date,
+            row.timeFrom,
+            row.timeTo,
+            row.totalHours,
+            row.weekdayNormal,
+            row.weekdayAfter,
+            row.weekendNormal,
+            row.weekendAfter,
+            row.travelWeekday,
+            row.travelWeekend,
+            row.travelWeekdayDisplay ?? "",
+            row.travelWeekendDisplay ?? "",
+        ].join("|");
+
+    const normalTimesheetSections = (() => {
+        const personSignatures = new Map<string, string[]>();
+        const personFirstIndex = new Map<string, number>();
+
+        timesheetRows.forEach((row, rowIndex) => {
+            getRowPersons(row).forEach((person) => {
+                if (!personSignatures.has(person)) {
+                    personSignatures.set(person, []);
+                }
+
+                personSignatures.get(person)!.push(
+                    getNormalTimesheetSignature(row)
+                );
+
+                if (!personFirstIndex.has(person)) {
+                    personFirstIndex.set(person, rowIndex);
+                }
+            });
+        });
+
+        const groupedPersons = new Map<
+            string,
+            { people: string[]; firstIndex: number }
+        >();
+
+        personSignatures.forEach((signatures, person) => {
+            const signatureKey = signatures.join("||");
+
+            if (!groupedPersons.has(signatureKey)) {
+                groupedPersons.set(signatureKey, {
+                    people: [],
+                    firstIndex:
+                        personFirstIndex.get(person) ?? Number.MAX_SAFE_INTEGER,
+                });
+            }
+
+            const group = groupedPersons.get(signatureKey)!;
+            group.people.push(person);
+            group.firstIndex = Math.min(
+                group.firstIndex,
+                personFirstIndex.get(person) ?? Number.MAX_SAFE_INTEGER
+            );
+        });
+
+        return Array.from(groupedPersons.values())
+            .sort((a, b) => a.firstIndex - b.firstIndex)
+            .map((group, index) => {
+                const sectionRows = timesheetRows
+                    .map((row) => {
+                        const matchedPersons = getRowPersons(row).filter((person) =>
+                            group.people.includes(person)
+                        );
+
+                        if (matchedPersons.length === 0) {
+                            return null;
+                        }
+
+                        const filteredSourceEntries = row.sourceEntries.filter(
+                            (entry) =>
+                                (entry.persons ?? []).some((person) =>
+                                    matchedPersons.includes(person)
+                                )
+                        );
+
+                        return {
+                            ...row,
+                            description: matchedPersons.join(", "),
+                            sourceEntries:
+                                filteredSourceEntries.length > 0
+                                    ? filteredSourceEntries
+                                    : row.sourceEntries,
+                        };
+                    })
+                    .filter((row): row is TimesheetRow => Boolean(row))
+                    .map((row, rowIndex, rows) => ({
+                        ...row,
+                        hideDayDate:
+                            rowIndex > 0 && rows[rowIndex - 1]?.date === row.date,
+                    }));
+
+                return {
+                    key: group.people.join("|"),
+                    title: `NORMAL TIMESHEET - ${String.fromCharCode(65 + index)}`,
+                    people: group.people,
+                    rows: sectionRows,
+                };
+            });
+    })();
+    const allTimesheetPeople = getUniquePersonsFromRows(timesheetRows);
+    const allTimesheetPeopleKey = allTimesheetPeople.join("|");
+    const jobDescriptionPersonnel = getPersonnelDisplayData(
+        "JOB_DESCRIPTION",
+        allTimesheetPeople
+    );
+
+    useEffect(() => {
+        if (allTimesheetPeople.length === 0) {
+            setProfileUsernameMap({});
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadProfileUsernames = async () => {
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("name, username")
+                .in("name", allTimesheetPeople);
+
+            if (cancelled) {
+                return;
+            }
+
+            if (error) {
+                console.error("프로필 username 조회 실패:", error);
+                return;
+            }
+
+            const nextMap: Record<string, string> = {};
+            (data ?? []).forEach((profile) => {
+                const profileName =
+                    typeof profile.name === "string" ? profile.name.trim() : "";
+                const profileUsername =
+                    typeof profile.username === "string"
+                        ? profile.username.trim()
+                        : "";
+
+                if (profileName && profileUsername) {
+                    nextMap[profileName] = profileUsername;
+                }
+            });
+
+            setProfileUsernameMap(nextMap);
+        };
+
+        void loadProfileUsernames();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [allTimesheetPeopleKey]);
+
+    useEffect(() => {
+        setSelectedSkilledFitters((previous) => {
+            const validPrevious = previous.filter(
+                (person) =>
+                    SKILLED_FITTER_SET.has(person) &&
+                    allTimesheetPeople.includes(person)
+            );
+
+            if (validPrevious.length > 0) {
+                if (
+                    validPrevious.length === previous.length &&
+                    validPrevious.every((person, index) => person === previous[index])
+                ) {
+                    return previous;
+                }
+
+                return validPrevious;
+            }
+
+            const defaultSkilledFitter = SKILLED_FITTER_PRIORITY.find((person) =>
+                allTimesheetPeople.includes(person)
+            );
+
+            if (!defaultSkilledFitter) {
+                return previous.length === 0 ? previous : [];
+            }
+
+            return previous.length === 1 && previous[0] === defaultSkilledFitter
+                ? previous
+                : [defaultSkilledFitter];
+        });
+    }, [allTimesheetPeopleKey]);
+
+    const getTimesheetRowsBySectionTitle = (sectionTitle: string) => {
+        const normalSection = normalTimesheetSections.find(
+            (section) => section.title === sectionTitle
+        );
+
+        if (normalSection) {
+            return normalSection.rows;
+        }
+
+        return timesheetRows;
+    };
+
+    const isTimesheetRowInteractive = (row: TimesheetRow) =>
+        Object.values(getTimesheetRowModalValues(row)).some((value) => value !== "");
+
+    const getTimesheetRowKey = (sectionTitle: string, row: TimesheetRow) =>
+        `${sectionTitle}-${row.rowId}`;
+
+    const getTimesheetDateGroupKey = (sectionTitle: string, row: TimesheetRow) =>
+        `${sectionTitle}-${row.date}`;
+
+    const isTimesheetDateGroupSelected = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) =>
+        selectedTimesheetDateGroupKeys.includes(
+            getTimesheetDateGroupKey(sectionTitle, row)
+        );
+
+    const getOrderedTimesheetDateGroupKeys = (sectionTitle: string) => {
+        const keys: string[] = [];
+        const seen = new Set<string>();
+
+        getTimesheetRowsBySectionTitle(sectionTitle).forEach((row) => {
+            const key = getTimesheetDateGroupKey(sectionTitle, row);
+            if (seen.has(key)) return;
+            seen.add(key);
+            keys.push(key);
+        });
+
+        return keys;
+    };
+
+    const getTimesheetDateGroupRows = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) =>
+        getTimesheetRowsBySectionTitle(sectionTitle).filter(
+            (candidate) =>
+                getTimesheetDateGroupKey(sectionTitle, candidate) ===
+                getTimesheetDateGroupKey(sectionTitle, row)
+        );
+
+    const getTimesheetDateGroupRowsByKey = (sectionTitle: string, groupKey: string) =>
+        getTimesheetRowsBySectionTitle(sectionTitle).filter(
+            (candidate) => getTimesheetDateGroupKey(sectionTitle, candidate) === groupKey
+        );
+
+    const isFirstTimesheetDateGroupRow = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => getTimesheetDateGroupRows(sectionTitle, row)[0]?.rowId === row.rowId;
+
+    const isLastTimesheetDateGroupRow = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        const groupRows = getTimesheetDateGroupRows(sectionTitle, row);
+        return groupRows[groupRows.length - 1]?.rowId === row.rowId;
+    };
+
+    const getSelectedTimesheetDateBlockKeys = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        const orderedKeys = getOrderedTimesheetDateGroupKeys(sectionTitle);
+        const currentKey = getTimesheetDateGroupKey(sectionTitle, row);
+        const currentIndex = orderedKeys.indexOf(currentKey);
+
+        if (
+            currentIndex === -1 ||
+            !selectedTimesheetDateGroupKeys.includes(currentKey)
+        ) {
+            return [];
+        }
+
+        let startIndex = currentIndex;
+        let endIndex = currentIndex;
+
+        while (
+            startIndex > 0 &&
+            selectedTimesheetDateGroupKeys.includes(orderedKeys[startIndex - 1])
+        ) {
+            startIndex -= 1;
+        }
+
+        while (
+            endIndex < orderedKeys.length - 1 &&
+            selectedTimesheetDateGroupKeys.includes(orderedKeys[endIndex + 1])
+        ) {
+            endIndex += 1;
+        }
+
+        return orderedKeys.slice(startIndex, endIndex + 1);
+    };
+
+    const isFirstSelectedTimesheetDateBlockGroup = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => getSelectedTimesheetDateBlockKeys(sectionTitle, row)[0] ===
+        getTimesheetDateGroupKey(sectionTitle, row);
+
+    const isLastSelectedTimesheetDateBlockGroup = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        const blockKeys = getSelectedTimesheetDateBlockKeys(sectionTitle, row);
+        return (
+            blockKeys[blockKeys.length - 1] ===
+            getTimesheetDateGroupKey(sectionTitle, row)
+        );
+    };
+
+    const toggleTimesheetDateGroupSelection = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        const groupKey = getTimesheetDateGroupKey(sectionTitle, row);
+        const orderedKeys = getOrderedTimesheetDateGroupKeys(sectionTitle);
+        setSelectedTimesheetDateGroupPanel(null);
+
+        setSelectedTimesheetDateGroupKeys((previousKeys) => {
+            const anchorKey =
+                selectedTimesheetDateGroupAnchorKey &&
+                orderedKeys.includes(selectedTimesheetDateGroupAnchorKey)
+                    ? selectedTimesheetDateGroupAnchorKey
+                    : null;
+
+            if (previousKeys.length === 0 || !anchorKey) {
+                setSelectedTimesheetDateGroupAnchorKey(groupKey);
+                return [groupKey];
+            }
+
+            if (groupKey === anchorKey) {
+                if (previousKeys.length === 1) {
+                    setSelectedTimesheetDateGroupAnchorKey(null);
+                    return [];
+                }
+
+                setSelectedTimesheetDateGroupAnchorKey(groupKey);
+                return [groupKey];
+            }
+
+            const anchorIndex = orderedKeys.indexOf(anchorKey);
+            const currentIndex = orderedKeys.indexOf(groupKey);
+
+            if (anchorIndex === -1 || currentIndex === -1) {
+                setSelectedTimesheetDateGroupAnchorKey(groupKey);
+                return [groupKey];
+            }
+
+            const startIndex = Math.min(anchorIndex, currentIndex);
+            const endIndex = Math.max(anchorIndex, currentIndex);
+            return orderedKeys.slice(startIndex, endIndex + 1);
+        });
+    };
+
+    const openTimesheetDateGroupPanel = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        const blockKeys = getSelectedTimesheetDateBlockKeys(sectionTitle, row);
+        if (blockKeys.length === 0) return;
+
+        const fullGroupEntryMap = new Map<number, TimesheetSourceEntryData>();
+        blockKeys.forEach((groupKey) => {
+            getTimesheetDateGroupRowsByKey(sectionTitle, groupKey).forEach((groupRow) => {
+                groupRow.sourceEntries.forEach((entry) => {
+                    fullGroupEntryMap.set(entry.id, entry);
+                });
+            });
+        });
+
+        setSelectedTimesheetRow(null);
+        setSelectedTimesheetDateGroupPanel({
+            blockKey: blockKeys.join("__"),
+            sectionTitle,
+            fullGroupEntries: Array.from(fullGroupEntryMap.values()).sort((a, b) => {
+                const aStart = new Date(
+                    `${a.dateFrom}T${a.timeFrom || "00:00"}`
+                ).getTime();
+                const bStart = new Date(
+                    `${b.dateFrom}T${b.timeFrom || "00:00"}`
+                ).getTime();
+                return aStart - bStart;
+            }),
+        });
+    };
+
+    const getFullGroupEntriesForRows = (rows: TimesheetRow[]) => {
+        const fullGroupEntryMap = new Map<number, TimesheetSourceEntryData>();
+
+        rows.forEach((row) => {
+            row.sourceEntries.forEach((entry) => {
+                fullGroupEntryMap.set(entry.id, entry);
+            });
+        });
+
+        return Array.from(fullGroupEntryMap.values()).sort((a, b) => {
+            const aStart = new Date(
+                `${a.dateFrom}T${a.timeFrom || "00:00"}`
+            ).getTime();
+            const bStart = new Date(
+                `${b.dateFrom}T${b.timeFrom || "00:00"}`
+            ).getTime();
+            return aStart - bStart;
+        });
+    };
+
+    const openTimesheetTotalPanel = (
+        sectionTitle: string,
+        rows: TimesheetRow[]
+    ) => {
+        setSelectedTimesheetRow(null);
+        setSelectedTimesheetDateGroupKeys([]);
+        setSelectedTimesheetDateGroupAnchorKey(null);
+        setSelectedTimesheetDateGroupPanel({
+            blockKey: `${sectionTitle}-total`,
+            sectionTitle,
+            fullGroupEntries: getFullGroupEntriesForRows(rows),
+        });
+    };
+
+    const getTimesheetInteractiveCellProps = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        if (!isTimesheetRowInteractive(row)) {
+            return {};
+        }
+
+        return {
+            "data-timesheet-row-trigger": "true",
+            onMouseEnter: () =>
+                setHoveredTimesheetRowKey(getTimesheetRowKey(sectionTitle, row)),
+            onMouseLeave: () => setHoveredTimesheetRowKey(null),
+            onClick: () => openTimesheetRowModal(sectionTitle, row),
+        };
+    };
+
+    const getTimesheetDateHoverCellProps = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => ({
+        onMouseEnter: () =>
+            setHoveredTimesheetDateGroupKey(
+                getTimesheetDateGroupKey(sectionTitle, row)
+            ),
+        onMouseLeave: () => setHoveredTimesheetDateGroupKey(null),
+    });
+
+    const getTimesheetDateSelectCellProps = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => ({
+        "data-timesheet-date-group-cell": "true",
+        onClick: () => toggleTimesheetDateGroupSelection(sectionTitle, row),
+    });
+
+    const getTimesheetRowPersonsKey = (row: TimesheetRow) =>
+        row.description
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .sort()
+            .join("|");
+
+    const openTimesheetRowModal = (sectionTitle: string, row: TimesheetRow) => {
+        if (!isTimesheetRowInteractive(row)) return;
+
+        const sectionRows = getTimesheetRowsBySectionTitle(sectionTitle);
+        const selectedPersonsKey = getTimesheetRowPersonsKey(row);
+        const hasDifferentGroupOnDate = sectionRows
+            .filter((candidate) => candidate.date === row.date && candidate.rowId !== row.rowId)
+            .some(
+                (candidate) =>
+                    getTimesheetRowPersonsKey(candidate) !== selectedPersonsKey
+            );
+
+        const groupSourceEntryMap = new Map<number, TimesheetSourceEntryData>();
+        if (hasDifferentGroupOnDate) {
+            sectionRows
+                .filter((candidate) => candidate.date === row.date)
+                .forEach((candidate) => {
+                    candidate.sourceEntries.forEach((entry) => {
+                        groupSourceEntryMap.set(entry.id, entry);
+                    });
+                });
+        }
+
+        setSelectedTimesheetDateGroupPanel(null);
+        setSelectedTimesheetRow({
+            rowKey: getTimesheetRowKey(sectionTitle, row),
+            sectionTitle,
+            selectedPersons: sectionTitle.startsWith("NORMAL TIMESHEET - ")
+                ? getRowPersons(row)
+                : [],
+            day: row.day,
+            dateFormatted: row.dateFormatted,
+            timeFrom: row.timeFrom,
+            timeTo: row.timeTo,
+            description: row.description,
+            sourceEntries: row.sourceEntries,
+            groupSourceEntries: Array.from(groupSourceEntryMap.values()).sort((a, b) => {
+                const aStart = new Date(
+                    `${a.dateFrom}T${a.timeFrom || "00:00"}`
+                ).getTime();
+                const bStart = new Date(
+                    `${b.dateFrom}T${b.timeFrom || "00:00"}`
+                ).getTime();
+                return aStart - bStart;
+            }),
+        });
+    };
+
+    const getTimesheetRowStateClass = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        const rowKey = getTimesheetRowKey(sectionTitle, row);
+
+        if (selectedTimesheetRow?.rowKey === rowKey) {
+            return "bg-blue-100";
+        }
+
+        if (hoveredTimesheetRowKey === rowKey) {
+            return "bg-blue-50";
+        }
+
+        return "";
+    };
+
+    const getTimesheetDateGroupStateClass = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) => {
+        const groupKey = getTimesheetDateGroupKey(sectionTitle, row);
+
+        if (selectedTimesheetDateGroupKeys.includes(groupKey)) {
+            return "bg-blue-100";
+        }
+
+        if (hoveredTimesheetDateGroupKey === groupKey) {
+            return "bg-blue-50";
+        }
+
+        return "";
+    };
+
+    const getTimesheetDateGroupBorderClass = (
+        sectionTitle: string,
+        row: TimesheetRow,
+        cellType: "day" | "date"
+    ) => {
+        if (!isTimesheetDateGroupSelected(sectionTitle, row)) {
+            return "";
+        }
+
+        return cellType === "date" ? "relative" : "";
+    };
+
+    const getTimesheetDateGroupBorderStyle = (
+        sectionTitle: string,
+        row: TimesheetRow,
+        cellType: "day" | "date"
+    ): React.CSSProperties => {
+        if (!isTimesheetDateGroupSelected(sectionTitle, row)) {
+            return {};
+        }
+
+        const shadows = [
+            cellType === "day"
+                ? "inset 2px 0 0 0 rgb(96 165 250)"
+                : "inset -2px 0 0 0 rgb(96 165 250)",
+        ];
+
+        if (
+            isFirstSelectedTimesheetDateBlockGroup(sectionTitle, row) &&
+            isFirstTimesheetDateGroupRow(sectionTitle, row)
+        ) {
+            shadows.push("inset 0 2px 0 0 rgb(96 165 250)");
+        }
+
+        if (
+            isLastSelectedTimesheetDateBlockGroup(sectionTitle, row) &&
+            isLastTimesheetDateGroupRow(sectionTitle, row)
+        ) {
+            shadows.push("inset 0 -2px 0 0 rgb(96 165 250)");
+        }
+
+        const style: React.CSSProperties = {
+            boxShadow: shadows.join(", "),
+            transition:
+                "box-shadow 520ms ease-out, background-color 220ms ease-out, border-radius 520ms ease-out",
+        };
+
+        if (
+            isFirstSelectedTimesheetDateBlockGroup(sectionTitle, row) &&
+            isFirstTimesheetDateGroupRow(sectionTitle, row)
+        ) {
+            if (cellType === "day") {
+                style.borderTopLeftRadius = "10px";
+            } else {
+                style.borderTopRightRadius = "10px";
+            }
+        }
+
+        if (
+            isLastSelectedTimesheetDateBlockGroup(sectionTitle, row) &&
+            isLastTimesheetDateGroupRow(sectionTitle, row)
+        ) {
+            if (cellType === "day") {
+                style.borderBottomLeftRadius = "10px";
+            } else {
+                style.borderBottomRightRadius = "10px";
+            }
+        }
+
+        return style;
+    };
+
+    const shouldShowTimesheetDateGroupBadge = (
+        sectionTitle: string,
+        row: TimesheetRow
+    ) =>
+        isTimesheetDateGroupSelected(sectionTitle, row) &&
+        isFirstTimesheetDateGroupRow(sectionTitle, row) &&
+        isFirstSelectedTimesheetDateBlockGroup(sectionTitle, row);
+
+    useEffect(() => {
+        if (selectedTimesheetDateGroupKeys.length === 0) return;
+
+        const handlePointerDown = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (!target) return;
+
+            if (
+                target.closest('[data-timesheet-date-group-cell="true"]') ||
+                target.closest('[data-timesheet-date-group-badge="true"]') ||
+                target.closest('[data-timesheet-date-group-panel="true"]')
+            ) {
+                return;
+            }
+
+            setSelectedTimesheetDateGroupKeys([]);
+            setSelectedTimesheetDateGroupAnchorKey(null);
+            setSelectedTimesheetDateGroupPanel(null);
+        };
+
+        document.addEventListener("mousedown", handlePointerDown);
+        return () => document.removeEventListener("mousedown", handlePointerDown);
+    }, [selectedTimesheetDateGroupKeys.length]);
 
     return (
         <div className="flex h-screen bg-white overflow-hidden font-pretendard">
@@ -1793,40 +3179,61 @@ export default function InvoiceCreatePage() {
                                             <tbody>
                                                 {timesheetRows.map((row) => (
                                                     <React.Fragment key={row.rowId}>
-                                                        <tr className="border-b border-gray-300">
-                                                            <td rowSpan={2} className="px-2 py-2 text-center border-r border-gray-300">{row.hideDayDate ? "" : row.day}</td>
-                                                            <td rowSpan={2} className="px-2 py-2 text-center border-r border-gray-300">{row.hideDayDate ? "" : row.dateFormatted}</td>
-                                                            <td rowSpan={2} className="px-2 py-2 text-center border-r border-gray-300">{row.timeFrom}</td>
-                                                            <td rowSpan={2} className="px-2 py-2 text-center border-r border-gray-300">{row.timeTo}</td>
-                                                            <td rowSpan={2} className="px-2 py-2 text-center border-r border-gray-300 font-bold">{row.totalHours}</td>
-                                                            <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.weekdayNormal > 0 ? row.weekdayNormal : ""}
+                                                        <tr
+                                                            className="border-b border-gray-300"
+                                                        >
+                                                            <td
+                                                                rowSpan={2}
+                                                                className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer transition-colors duration-200 ${getTimesheetDateGroupStateClass("R&D TIMESHEET", row)} ${getTimesheetDateGroupBorderClass("R&D TIMESHEET", row, "day")}`}
+                                                                style={getTimesheetDateGroupBorderStyle("R&D TIMESHEET", row, "day")}
+                                                                {...getTimesheetDateHoverCellProps("R&D TIMESHEET", row)}
+                                                                {...getTimesheetDateSelectCellProps("R&D TIMESHEET", row)}
+                                                            >
+                                                                {row.hideDayDate ? "" : row.day}
                                                             </td>
-                                                            <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.weekdayAfter > 0 ? row.weekdayAfter : ""}
+                                                            <td
+                                                                rowSpan={2}
+                                                                className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer transition-colors duration-200 ${getTimesheetDateGroupStateClass("R&D TIMESHEET", row)} ${getTimesheetDateGroupBorderClass("R&D TIMESHEET", row, "date")}`}
+                                                                style={getTimesheetDateGroupBorderStyle("R&D TIMESHEET", row, "date")}
+                                                                {...getTimesheetDateHoverCellProps("R&D TIMESHEET", row)}
+                                                                {...getTimesheetDateSelectCellProps("R&D TIMESHEET", row)}
+                                                            >
+                                                                {shouldShowTimesheetDateGroupBadge(
+                                                                    "R&D TIMESHEET",
+                                                                    row
+                                                                ) && (
+                                                                    <button
+                                                                        type="button"
+                                                                        data-timesheet-date-group-badge="true"
+                                                                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white shadow-sm hover:bg-blue-700"
+                                                                        onClick={(event) => {
+                                                                            event.stopPropagation();
+                                                                            openTimesheetDateGroupPanel(
+                                                                                "R&D TIMESHEET",
+                                                                                row
+                                                                            );
+                                                                        }}
+                                                                        aria-label="open date group detail"
+                                                                    >
+                                                                        i
+                                                                    </button>
+                                                                )}
+                                                                {row.hideDayDate ? "" : row.dateFormatted}
                                                             </td>
-                                                            <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.weekendNormal > 0 ? row.weekendNormal : ""}
-                                                            </td>
-                                                            <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.weekendAfter > 0 ? row.weekendAfter : ""}
-                                                            </td>
-                                                            <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.travelWeekdayDisplay ||
-                                                                    (row.travelWeekday > 0
-                                                                        ? row.travelWeekday
-                                                                        : "")}
-                                                            </td>
-                                                            <td className="px-2 py-2 text-center border-r border-gray-300">
-                                                                {row.travelWeekendDisplay ||
-                                                                    (row.travelWeekend > 0
-                                                                        ? row.travelWeekend
-                                                                        : "")}
-                                                            </td>
-                                                            <td className="px-2 py-2 text-center"></td>
+                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>{row.timeFrom}</td>
+                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>{row.timeTo}</td>
+                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>{row.totalHours}</td>
+                                                            {renderSplitHoursCells(
+                                                                row,
+                                                                "R&D TIMESHEET",
+                                                                "px-2 py-2"
+                                                            )}
+                                                            <td className={`px-2 py-2 text-center cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}></td>
                                                         </tr>
-                                                        <tr className="border-b border-gray-300">
-                                                            <td colSpan={7} className="px-2 py-1 text-left text-xs text-gray-600">
+                                                        <tr
+                                                            className="border-b border-gray-300"
+                                                        >
+                                                            <td colSpan={7} className={`px-2 py-1 text-left text-xs text-gray-600 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
                                                                 {row.description}
                                                             </td>
                                                         </tr>
@@ -1834,8 +3241,19 @@ export default function InvoiceCreatePage() {
                                                 ))}
                                                 {/* Total Row */}
                                                 {timesheetRows.length > 0 && (
-                                                    <tr className="bg-gray-100 font-semibold">
-                                                        <td colSpan={4} className="px-2 py-2 text-center border-r border-gray-300">Total</td>
+                                                        <tr className="bg-gray-100 font-semibold">
+                                                            <td
+                                                                colSpan={4}
+                                                                className="px-2 py-2 text-center border-r border-gray-300 cursor-pointer transition-colors hover:bg-blue-50"
+                                                                onClick={() =>
+                                                                    openTimesheetTotalPanel(
+                                                                        "R&D TIMESHEET",
+                                                                        timesheetRows
+                                                                    )
+                                                                }
+                                                            >
+                                                                Total
+                                                            </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                             {Math.round(timesheetRows.reduce((sum, row) => sum + row.totalHours, 0) * 10) / 10}
                                                         </td>
@@ -1873,33 +3291,41 @@ export default function InvoiceCreatePage() {
                                         {/* Row 1 - Card 1: SHIP NAME */}
                                         <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                             <div className="text-xs font-semibold text-gray-700 mb-2">SHIP NAME</div>
-                                            <div className="text-sm text-gray-900">SH8300</div>
+                                            <div className="text-sm text-gray-900">{shipNameDisplay}</div>
                                         </div>
                                         {/* Row 1 - Card 2: Engineer Name and Title */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                            <div className="text-xs font-semibold text-gray-700 mb-2">Engineer Name and Title</div>
-                                            <div className="text-sm text-gray-900">KT On / Skilled fitter</div>
-                                        </div>
+                                        {renderEditablePersonnelCard(
+                                            "Engineer Name and Title",
+                                            jobDescriptionPersonnel.engineerDisplay,
+                                            "JOB_DESCRIPTION",
+                                            "JOB DESCRIPTION",
+                                            "engineer",
+                                            allTimesheetPeople
+                                        )}
                                         {/* Row 1 - Card 3: Work Order From */}
                                         <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                             <div className="text-xs font-semibold text-gray-700 mb-2">Work Order From</div>
-                                            <div className="text-sm text-gray-900">Everllence ELU KOREA</div>
+                                            <div className="text-sm text-gray-900">{workOrderFromDisplay}</div>
                                         </div>
                                         {/* Row 1 - Card 4: Departure date & time, from place */}
                                         <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                             <div className="text-xs font-semibold text-gray-700 mb-2">Departure date & time, from place</div>
-                                            <div className="text-sm text-gray-900">04.Feb.2026, 06:00 from Busan</div>
+                                            <div className="text-sm text-gray-900">{jobDescriptionDepartureDisplay}</div>
                                         </div>
                                         {/* Row 2 - Card 5: WORK PLACE */}
                                         <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                             <div className="text-xs font-semibold text-gray-700 mb-2">WORK PLACE</div>
-                                            <div className="text-sm text-gray-900">HHI</div>
+                                            <div className="text-sm text-gray-900">{workPlaceDisplay}</div>
                                         </div>
                                         {/* Row 2 - Card 6: Mechanic names and numbers */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                            <div className="text-xs font-semibold text-gray-700 mb-2">Mechanic names and numbers</div>
-                                            <div className="text-sm text-gray-900">DM Kim and 1 fitter (Total 2 fitters)</div>
-                                        </div>
+                                        {renderEditablePersonnelCard(
+                                            "Mechanic names and numbers",
+                                            jobDescriptionPersonnel.mechanicDisplay,
+                                            "JOB_DESCRIPTION",
+                                            "JOB DESCRIPTION",
+                                            "mechanic",
+                                            allTimesheetPeople
+                                        )}
                                         {/* Row 2 - Card 7: P.O No. */}
                                         <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                             <div className="text-xs font-semibold text-gray-700 mb-2">P.O No.</div>
@@ -1908,7 +3334,7 @@ export default function InvoiceCreatePage() {
                                         {/* Row 2 - Card 8: Return date & time, to place */}
                                         <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                             <div className="text-xs font-semibold text-gray-700 mb-2">Return date & time, to place</div>
-                                            <div className="text-sm text-gray-900">04.Feb.2026, 19:00 to Busan</div>
+                                            <div className="text-sm text-gray-900">{jobDescriptionReturnDisplay}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -2095,52 +3521,76 @@ export default function InvoiceCreatePage() {
                                 </div>
 
                                 {/* NORMAL TIMESHEET 섹션 */}
-                                <div className="flex flex-col gap-6 bg-white border border-gray-200 rounded-xl p-6">
-                                    {/* NORMAL TIMESHEET 제목 - 크고 굵게 */}
-                                    <h2 className="text-3xl font-bold text-black mb-2">NORMAL TIMESHEET</h2>
+                                {normalTimesheetSections.map((section) => (
+                                    <div
+                                        key={section.key}
+                                        className="flex flex-col gap-6 bg-white border border-gray-200 rounded-xl p-6"
+                                    >
+                                        <h2 className="text-3xl font-bold text-black mb-2">
+                                            {section.title}
+                                        </h2>
 
-                                    {/* JOB DESCRIPTION 섹션 */}
-                                    <div className="flex flex-col gap-4 bg-white border border-gray-200 rounded-xl p-6">
                                         <div className="grid grid-cols-4 gap-4">
+                                            {(() => {
+                                                const sectionPersonnel = getPersonnelDisplayData(
+                                                    section.key,
+                                                    section.people
+                                                );
+
+                                                return (
+                                                    <>
                                             <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                                 <div className="text-xs font-semibold text-gray-700 mb-2">SHIP NAME</div>
-                                                <div className="text-sm text-gray-900">SH8300</div>
+                                                <div className="text-sm text-gray-900">{shipNameDisplay}</div>
                                             </div>
-                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                                <div className="text-xs font-semibold text-gray-700 mb-2">Engineer Name and Title</div>
-                                                <div className="text-sm text-gray-900">KT On / Skilled fitter</div>
-                                            </div>
+                                            {renderEditablePersonnelCard(
+                                                "Engineer Name and Title",
+                                                sectionPersonnel.engineerDisplay,
+                                                section.key,
+                                                section.title,
+                                                "engineer",
+                                                section.people
+                                            )}
                                             <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                                 <div className="text-xs font-semibold text-gray-700 mb-2">Work Order From</div>
-                                                <div className="text-sm text-gray-900">Everllence ELU KOREA</div>
+                                                <div className="text-sm text-gray-900">{workOrderFromDisplay}</div>
                                             </div>
                                             <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                                 <div className="text-xs font-semibold text-gray-700 mb-2">Departure date &amp; time, from place</div>
-                                                <div className="text-sm text-gray-900">04.Feb.2026, 06:00 from Busan</div>
+                                                <div className="text-sm text-gray-900">
+                                                    {getBoundaryDisplay(section.rows, "departure")}
+                                                </div>
                                             </div>
                                             <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                                 <div className="text-xs font-semibold text-gray-700 mb-2">WORK PLACE</div>
-                                                <div className="text-sm text-gray-900">HHI</div>
+                                                <div className="text-sm text-gray-900">{workPlaceDisplay}</div>
                                             </div>
-                                            <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                                <div className="text-xs font-semibold text-gray-700 mb-2">Mechanic names and numbers</div>
-                                                <div className="text-sm text-gray-900">DM Kim and 1 fitter (Total 2 fitters)</div>
-                                            </div>
+                                            {renderEditablePersonnelCard(
+                                                "Mechanic names and numbers",
+                                                sectionPersonnel.mechanicDisplay,
+                                                section.key,
+                                                section.title,
+                                                "mechanic",
+                                                section.people
+                                            )}
                                             <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                                 <div className="text-xs font-semibold text-gray-700 mb-2">P.O No.</div>
                                                 <div className="text-sm text-gray-900"></div>
                                             </div>
                                             <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                                 <div className="text-xs font-semibold text-gray-700 mb-2">Return date &amp; time, to place</div>
-                                                <div className="text-sm text-gray-900">04.Feb.2026, 19:00 to Busan</div>
+                                                <div className="text-sm text-gray-900">
+                                                    {getBoundaryDisplay(section.rows, "return")}
+                                                </div>
                                             </div>
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
-                                    </div>
-                                    
-                                    {/* Hours Logging Table */}
-                                    <div className="flex flex-col gap-4">
-                                        <div className="border border-gray-300 rounded overflow-hidden">
-                                            <table className="w-full table-fixed text-[11px] min-w-full border-collapse">
+
+                                        <div className="flex flex-col gap-4">
+                                            <div className="border border-gray-300 rounded overflow-hidden">
+                                                <table className="w-full table-fixed text-[11px] min-w-full border-collapse">
                                                 <colgroup>
                                                     <col className="w-[56px]" />
                                                     <col className="w-[68px]" />
@@ -2179,7 +3629,7 @@ export default function InvoiceCreatePage() {
                                                             Year
                                                         </th>
                                                         <th className="px-1 py-2 text-center font-medium text-gray-900 bg-white border-b border-r border-gray-300">
-                                                            {timesheetRows.length > 0 ? timesheetRows[0].date.split("-")[0] : new Date().getFullYear()}
+                                                            {section.rows.length > 0 ? section.rows[0].date.split("-")[0] : new Date().getFullYear()}
                                                         </th>
                                                         <th rowSpan={2} className="px-1 py-2 text-center font-medium text-gray-700 border-b border-r border-gray-300 leading-tight">
                                                             Time
@@ -2250,64 +3700,93 @@ export default function InvoiceCreatePage() {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {timesheetRows.map((row) => (
-                                                            <tr key={row.rowId} className="border-b border-gray-300">
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">{row.hideDayDate ? "" : row.day}</td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">{row.hideDayDate ? "" : row.dateFormatted}</td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">{row.timeFrom}</td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">{row.timeTo}</td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300 font-bold">{row.totalHours}</td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.weekdayNormal > 0 ? row.weekdayNormal : ""}
+                                                    {section.rows.map((row) => (
+                                                            <tr
+                                                                key={row.rowId}
+                                                                className="border-b border-gray-300"
+                                                            >
+                                                                <td
+                                                                    className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer transition-colors duration-200 ${getTimesheetDateGroupStateClass(section.title, row)} ${getTimesheetDateGroupBorderClass(section.title, row, "day")}`}
+                                                                    style={getTimesheetDateGroupBorderStyle(section.title, row, "day")}
+                                                                    {...getTimesheetDateHoverCellProps(section.title, row)}
+                                                                    {...getTimesheetDateSelectCellProps(section.title, row)}
+                                                                >
+                                                                    {row.hideDayDate ? "" : row.day}
                                                                 </td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.weekdayAfter > 0 ? row.weekdayAfter : ""}
+                                                                <td
+                                                                    className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer transition-colors duration-200 ${getTimesheetDateGroupStateClass(section.title, row)} ${getTimesheetDateGroupBorderClass(section.title, row, "date")}`}
+                                                                    style={getTimesheetDateGroupBorderStyle(section.title, row, "date")}
+                                                                    {...getTimesheetDateHoverCellProps(section.title, row)}
+                                                                    {...getTimesheetDateSelectCellProps(section.title, row)}
+                                                                >
+                                                                    {shouldShowTimesheetDateGroupBadge(
+                                                                        section.title,
+                                                                        row
+                                                                    ) && (
+                                                                        <button
+                                                                            type="button"
+                                                                            data-timesheet-date-group-badge="true"
+                                                                            className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white shadow-sm hover:bg-blue-700"
+                                                                            onClick={(event) => {
+                                                                                event.stopPropagation();
+                                                                                openTimesheetDateGroupPanel(
+                                                                                    section.title,
+                                                                                    row
+                                                                                );
+                                                                            }}
+                                                                            aria-label="open date group detail"
+                                                                        >
+                                                                            i
+                                                                        </button>
+                                                                    )}
+                                                                    {row.hideDayDate ? "" : row.dateFormatted}
                                                                 </td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.weekendNormal > 0 ? row.weekendNormal : ""}
-                                                                </td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.weekendAfter > 0 ? row.weekendAfter : ""}
-                                                                </td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.travelWeekdayDisplay ||
-                                                                        (row.travelWeekday > 0
-                                                                            ? row.travelWeekday
-                                                                            : "")}
-                                                                </td>
-                                                                <td className="px-2 py-3 text-center border-r border-gray-300">
-                                                                    {row.travelWeekendDisplay ||
-                                                                        (row.travelWeekend > 0
-                                                                            ? row.travelWeekend
-                                                                            : "")}
-                                                                </td>
-                                                                <td className="px-2 py-3 text-center"></td>
+                                                                <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>{row.timeFrom}</td>
+                                                                <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>{row.timeTo}</td>
+                                                                <td className={`px-2 py-3 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>{row.totalHours}</td>
+                                                                {renderSplitHoursCells(
+                                                                    row,
+                                                                    section.title,
+                                                                    "px-2 py-3"
+                                                                )}
+                                                                <td className={`px-2 py-3 text-center cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}></td>
                                                             </tr>
                                                     ))}
                                                     {/* Total Row */}
-                                                    {timesheetRows.length > 0 && (
+                                                    {section.rows.length > 0 && (
                                                         <tr className="bg-gray-100 font-semibold">
-                                                            <td colSpan={4} className="px-2 py-2 text-center border-r border-gray-300">Total</td>
-                                                            <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                {Math.round(timesheetRows.reduce((sum, row) => sum + row.totalHours, 0) * 10) / 10}
+                                                            <td
+                                                                colSpan={4}
+                                                                className="px-2 py-2 text-center border-r border-gray-300 cursor-pointer transition-colors hover:bg-blue-50"
+                                                                onClick={() =>
+                                                                    openTimesheetTotalPanel(
+                                                                        section.title,
+                                                                        section.rows
+                                                                    )
+                                                                }
+                                                            >
+                                                                Total
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}
+                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.totalHours, 0) * 10) / 10}
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekdayAfter, 0) * 10) / 10}
+                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekendNormal, 0) * 10) / 10}
+                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekdayAfter, 0) * 10) / 10}
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekendAfter, 0) * 10) / 10}
+                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekendNormal, 0) * 10) / 10}
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                {Math.round(timesheetRows.reduce((sum, row) => sum + row.travelWeekday, 0) * 10) / 10}
+                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekendAfter, 0) * 10) / 10}
                                                             </td>
                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                {Math.round(timesheetRows.reduce((sum, row) => sum + row.travelWeekend, 0) * 10) / 10}
+                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.travelWeekday, 0) * 10) / 10}
+                                                            </td>
+                                                            <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
+                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.travelWeekend, 0) * 10) / 10}
                                                             </td>
                                                             <td className="px-2 py-2 text-center font-bold">0</td>
                                                         </tr>
@@ -2317,11 +3796,82 @@ export default function InvoiceCreatePage() {
                                         </div>
                                     </div>
                                 </div>
+                                ))}
                             </div>
                         </div>
                         </div>
                     )}
                 </div>
+
+                <PersonnelSelectionModal
+                    isOpen={personnelEditor !== null}
+                    onClose={() => setPersonnelEditor(null)}
+                    title={
+                        personnelEditor?.mode === "engineer"
+                            ? "Skilled fitter 수정"
+                            : "Fitter 대표자 수정"
+                    }
+                    scopeTitle={personnelEditor?.scopeTitle ?? ""}
+                    candidates={
+                        personnelEditor === null
+                            ? []
+                            : (
+                                  personnelEditor.mode === "engineer"
+                                      ? getTopSelectableSkilledFitters(
+                                            personnelEditor.people
+                                        )
+                                      : getTopSelectableMechanics(
+                                            getPersonnelDisplayData(
+                                            personnelEditor.scopeKey,
+                                            personnelEditor.people
+                                            ).mechanicPeople
+                                        )
+                              ).map((person) => ({
+                                  name: person,
+                                  displayName: getEnglishPersonName(person),
+                                  selected:
+                                      personnelEditor.mode === "engineer"
+                                          ? selectedSkilledFitters.includes(person)
+                                          : getPersonnelDisplayData(
+                                                personnelEditor.scopeKey,
+                                                personnelEditor.people
+                                            ).mechanicRepresentative === person,
+                              }))
+                    }
+                    onCandidateClick={(person: string) => {
+                        if (!personnelEditor) return;
+
+                        if (personnelEditor.mode === "engineer") {
+                            toggleSkilledFitterSelection(person);
+                            return;
+                        }
+
+                        selectMechanicRepresentative(personnelEditor.scopeKey, person);
+                    }}
+                />
+                <TimesheetRowDetailSidePanel
+                    isOpen={selectedTimesheetRow !== null}
+                    onClose={() => setSelectedTimesheetRow(null)}
+                    sectionTitle={selectedTimesheetRow?.sectionTitle ?? ""}
+                    selectedPersons={selectedTimesheetRow?.selectedPersons ?? []}
+                    day={selectedTimesheetRow?.day ?? ""}
+                    dateFormatted={selectedTimesheetRow?.dateFormatted ?? ""}
+                    timeFrom={selectedTimesheetRow?.timeFrom ?? ""}
+                    timeTo={selectedTimesheetRow?.timeTo ?? ""}
+                    description={selectedTimesheetRow?.description ?? ""}
+                    sourceEntries={selectedTimesheetRow?.sourceEntries ?? []}
+                    groupSourceEntries={
+                        selectedTimesheetRow?.groupSourceEntries ?? []
+                    }
+                />
+                <TimesheetDateGroupDetailSidePanel
+                    isOpen={selectedTimesheetDateGroupPanel !== null}
+                    onClose={() => setSelectedTimesheetDateGroupPanel(null)}
+                    sectionTitle={selectedTimesheetDateGroupPanel?.sectionTitle ?? ""}
+                    fullGroupEntries={
+                        selectedTimesheetDateGroupPanel?.fullGroupEntries ?? []
+                    }
+                />
             </div>
         </div>
     );

@@ -463,7 +463,7 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
                     if (!file.file) continue;
 
                     try {
-                        const filePath = await uploadReceiptFile(
+                        const { filePath, uploadedFile } = await uploadReceiptFile(
                             file.file,
                             workLog.id,
                             file.category
@@ -473,9 +473,9 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
                             category: mapReceiptCategory(file.category),
                             storage_bucket: "work-log-recipts",
                             storage_path: filePath,
-                            original_name: file.file.name,
-                            mime_type: file.file.type || undefined,
-                            file_size: file.file.size || undefined,
+                            original_name: uploadedFile.name,
+                            mime_type: uploadedFile.type || undefined,
+                            file_size: uploadedFile.size || undefined,
                             created_by: originalCreatedBy || user?.id || undefined, // ✅ 원 작성자 기준 유지
                         });
                     } catch (err: any) {
@@ -662,7 +662,7 @@ if (newFiles.length > 0) {
         if (!file.file) continue;
 
         try {
-            const filePath = await uploadReceiptFile(
+            const { filePath, uploadedFile } = await uploadReceiptFile(
                 file.file,
                 workLogId,
                 file.category
@@ -672,9 +672,9 @@ if (newFiles.length > 0) {
                 category: mapReceiptCategory(file.category),
                 storage_bucket: "work-log-recipts",
                 storage_path: filePath,
-                original_name: file.file.name,
-                mime_type: file.file.type || undefined,
-                file_size: file.file.size || undefined,
+                original_name: uploadedFile.name,
+                mime_type: uploadedFile.type || undefined,
+                file_size: uploadedFile.size || undefined,
                 created_by: originalCreatedBy || user?.id || undefined,
             });
         } catch (err: any) {
