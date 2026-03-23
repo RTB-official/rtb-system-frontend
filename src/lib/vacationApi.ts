@@ -392,22 +392,28 @@ export async function getVacationStats(
             (yearStart.getTime() - join.getTime()) / (1000 * 60 * 60 * 24) / 365;
 
         if (yearsOfServiceAtYearStart < 1) {
-            const prevYearHistory = calculateGrantHistory(
-                profile.join_date,
-                year - 1,
-                currentDate
-            );
-            const prevGranted = prevYearHistory.reduce(
-                (sum, h) => sum + (h.granted || 0),
-                0
-            );
-            const prevExpired = Math.abs(
-                prevYearHistory.reduce((sum, h) => sum + (h.expired || 0), 0)
-            );
-            const carryOverDays = Math.max(0, prevGranted - prevExpired);
-            if (carryOverDays > 0) {
-                stats.total += carryOverDays;
-                stats.remaining += carryOverDays;
+            const oneYearAfterJoin = new Date(join);
+            oneYearAfterJoin.setFullYear(join.getFullYear() + 1);
+            oneYearAfterJoin.setHours(0, 0, 0, 0);
+            // 첫 1년 차기일 이후: 전년도 월별 연차는 기념일에 소멸되므로 이월 합산하지 않음
+            if (currentDate < oneYearAfterJoin) {
+                const prevYearHistory = calculateGrantHistory(
+                    profile.join_date,
+                    year - 1,
+                    currentDate
+                );
+                const prevGranted = prevYearHistory.reduce(
+                    (sum, h) => sum + (h.granted || 0),
+                    0
+                );
+                const prevExpired = Math.abs(
+                    prevYearHistory.reduce((sum, h) => sum + (h.expired || 0), 0)
+                );
+                const carryOverDays = Math.max(0, prevGranted - prevExpired);
+                if (carryOverDays > 0) {
+                    stats.total += carryOverDays;
+                    stats.remaining += carryOverDays;
+                }
             }
         }
     }

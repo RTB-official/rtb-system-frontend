@@ -19,6 +19,42 @@ function getYearsBetween(startDate: Date, endDate: Date): number {
 }
 
 /**
+ * 입사 후 첫 1년 차기일 전까지 월별로 지급되는 연차 횟수 (각 1일).
+ * 1년 차 당일 일괄 지급 시 이 분량은 전부 소멸 대상이다.
+ */
+function countMonthlyGrantsBeforeFirstAnniversary(joinDate: string): number {
+    const join = new Date(joinDate);
+    join.setHours(0, 0, 0, 0);
+    const joinDay = join.getDate();
+    const joinYear = join.getFullYear();
+    const joinMonth = join.getMonth();
+
+    const oneYearAfterJoin = new Date(join);
+    oneYearAfterJoin.setFullYear(join.getFullYear() + 1);
+    oneYearAfterJoin.setHours(0, 0, 0, 0);
+
+    let monthOffset = 1;
+    let count = 0;
+    while (monthOffset <= 120) {
+        const calculatedYear = joinYear + Math.floor((joinMonth + monthOffset) / 12);
+        const calculatedMonth = (joinMonth + monthOffset) % 12;
+
+        const grantDate = new Date(calculatedYear, calculatedMonth, 1);
+        const lastDayOfMonth = new Date(calculatedYear, calculatedMonth + 1, 0).getDate();
+        const finalDay = Math.min(joinDay, lastDayOfMonth);
+        grantDate.setDate(finalDay);
+        grantDate.setHours(0, 0, 0, 0);
+
+        if (grantDate >= oneYearAfterJoin) {
+            break;
+        }
+        count++;
+        monthOffset++;
+    }
+    return count;
+}
+
+/**
  * 입사일 기준 연차 계산
  * @param joinDate 입사일 (YYYY-MM-DD 형식)
  * @param targetYear 계산할 연도
@@ -251,13 +287,24 @@ export function getVacationGrantHistory(
             
             // 전년도 근무일수/365*15 올림 처리
             const proratedDays = Math.ceil((workDaysInPreviousYear / 365) * 15);
-            
+
+            const annYear = oneYearAfterJoin.getFullYear();
+            const annMonth = String(oneYearAfterJoin.getMonth() + 1).padStart(2, "0");
+            const annDay = String(oneYearAfterJoin.getDate()).padStart(2, "0");
+            const anniversaryDateStr = `${annYear}-${annMonth}-${annDay}`;
+
+            // 첫 1년 차기일: 그 전까지 월별로 쌓인 연차는 일괄 지급과 동시에 전부 소멸
+            const preAnniversaryMonthly = countMonthlyGrantsBeforeFirstAnniversary(joinDate);
+            if (preAnniversaryMonthly > 0) {
+                history.push({
+                    date: anniversaryDateStr,
+                    expired: -preAnniversaryMonthly,
+                });
+            }
+
             // 입사일 1년 되는 날에 일괄 지급
-            const year = oneYearAfterJoin.getFullYear();
-            const month = String(oneYearAfterJoin.getMonth() + 1).padStart(2, '0');
-            const day = String(oneYearAfterJoin.getDate()).padStart(2, '0');
             history.push({
-                date: `${year}-${month}-${day}`,
+                date: anniversaryDateStr,
                 granted: proratedDays,
             });
             anniversaryProratedGrantDays = proratedDays;
@@ -448,8 +495,14 @@ export function getVacationGrantHistory(
         return dateYear === targetYear;
     });
     
-    // 날짜순으로 정렬
-    return filteredHistory.sort((a, b) => a.date.localeCompare(b.date));
+    // 날짜순 정렬, 같은 날이면 소멸을 지급보다 앞에 둠
+    return filteredHistory.sort((a, b) => {
+        const byDate = a.date.localeCompare(b.date);
+        if (byDate !== 0) return byDate;
+        const order = (h: VacationGrantHistory) =>
+            h.expired != null ? 0 : h.granted != null ? 1 : 2;
+        return order(a) - order(b);
+    });
 }
 
 /**
