@@ -43,6 +43,163 @@ interface TimesheetRowDetailSidePanelProps {
         location?: string | null;
         lunchWorked?: boolean;
     }>;
+    /** 인보이스 페이지와 동일: 공휴일(행정 API·캘린더 키워드). 주말은 별도 판별. */
+    holidayDateKeys?: ReadonlySet<string>;
+}
+
+const GANGDONG_FACTORY = "강동동 공장";
+
+function normalizeLocationName(value: string | null | undefined): string {
+    if (!value) return "";
+
+    const normalized = value.trim();
+    if (!normalized) return "";
+
+    if (normalized === "HHI") return "HD중공업(해양)";
+    if (normalized === "HMD") return "HD미포";
+    if (normalized === "HSHI") return "HD삼호";
+
+    return normalized;
+}
+
+function getFinalDestination(
+    entry: TimesheetRowDetailSidePanelProps["sourceEntries"][number]
+): string {
+    const moveTo = entry.moveTo?.trim();
+    if (moveTo) {
+        return moveTo;
+    }
+
+    const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
+    if (!details.includes("→")) {
+        return details;
+    }
+
+    return details.split("→").pop()?.trim() ?? "";
+}
+
+function getTravelEntryOrigin(
+    entry: TimesheetRowDetailSidePanelProps["sourceEntries"][number]
+): string {
+    const moveFrom = entry.moveFrom?.trim();
+    if (moveFrom) {
+        return moveFrom;
+    }
+
+    const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
+    if (!details.includes("→")) {
+        return details;
+    }
+
+    return details.split("→")[0]?.trim() ?? "";
+}
+
+function sortEntriesByStart(
+    entries: TimesheetRowDetailSidePanelProps["sourceEntries"]
+) {
+    return [...entries].sort((a, b) => {
+        const aStart = new Date(
+            `${a.dateFrom}T${a.timeFrom || "00:00"}`
+        ).getTime();
+        const bStart = new Date(
+            `${b.dateFrom}T${b.timeFrom || "00:00"}`
+        ).getTime();
+        return aStart - bStart;
+    });
+}
+
+/** 인보이스 단일 행과 동일: 선행 이동·말미 이동이 강동동 공장에서 맞물리면 해당 이동들 청구 0 */
+function getZeroBillingTravelIdsForRowScopedEntries(
+    entries: TimesheetRowDetailSidePanelProps["sourceEntries"]
+): Set<number> {
+    const sorted = sortEntriesByStart(entries);
+    let i = 0;
+    while (i < sorted.length && sorted[i].descType === "이동") {
+        i += 1;
+    }
+    const before = sorted.slice(0, i);
+    let j = sorted.length - 1;
+    while (j >= i && sorted[j].descType === "이동") {
+        j -= 1;
+    }
+    const after = sorted.slice(j + 1);
+
+    const lastBefore = before[before.length - 1];
+    const firstAfter = after[0];
+    const factory = normalizeLocationName(GANGDONG_FACTORY);
+
+    if (
+        !lastBefore ||
+        !firstAfter ||
+        normalizeLocationName(getFinalDestination(lastBefore)) !== factory ||
+        normalizeLocationName(getTravelEntryOrigin(firstAfter)) !== factory
+    ) {
+        return new Set();
+    }
+
+    return new Set(
+        [...before, ...after].filter((e) => e.descType === "이동").map((e) => e.id)
+    );
+}
+
+/** 전체 일자 그룹: 인당 작업 블록마다 동일 규칙 적용 */
+function getZeroBillingTravelIdsForGroupEntries(
+    entries: TimesheetRowDetailSidePanelProps["groupSourceEntries"]
+): Set<number> {
+    if (entries.length === 0) {
+        return new Set();
+    }
+
+    const asSource = entries as TimesheetRowDetailSidePanelProps["sourceEntries"];
+    const allPersons = new Set(asSource.flatMap((e) => e.persons ?? []));
+    const result = new Set<number>();
+    const factory = normalizeLocationName(GANGDONG_FACTORY);
+
+    for (const person of allPersons) {
+        const personEntries = sortEntriesByStart(
+            asSource.filter((e) => (e.persons ?? []).includes(person))
+        );
+        let i = 0;
+        while (i < personEntries.length) {
+            const beforeStart = i;
+            while (i < personEntries.length && personEntries[i].descType === "이동") {
+                i += 1;
+            }
+            const before = personEntries.slice(beforeStart, i);
+            if (i >= personEntries.length) {
+                break;
+            }
+            while (
+                i < personEntries.length &&
+                personEntries[i].descType !== "이동"
+            ) {
+                i += 1;
+            }
+            const afterStart = i;
+            while (i < personEntries.length && personEntries[i].descType === "이동") {
+                i += 1;
+            }
+            const after = personEntries.slice(afterStart, i);
+
+            const lastBefore = before[before.length - 1];
+            const firstAfter = after[0];
+            if (
+                lastBefore &&
+                firstAfter &&
+                normalizeLocationName(getFinalDestination(lastBefore)) === factory &&
+                normalizeLocationName(getTravelEntryOrigin(firstAfter)) === factory
+            ) {
+                before
+                    .filter((e) => e.descType === "이동")
+                    .forEach((e) => result.add(e.id));
+                after
+                    .filter((e) => e.descType === "이동")
+                    .forEach((e) => result.add(e.id));
+            }
+        }
+    }
+
+    return result;
 }
 
 interface PanelDisplayData {
@@ -80,6 +237,7 @@ export default function TimesheetRowDetailSidePanel({
     description,
     sourceEntries,
     groupSourceEntries,
+    holidayDateKeys,
 }: TimesheetRowDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const [displayData, setDisplayData] = useState<PanelDisplayData>({
@@ -94,12 +252,35 @@ export default function TimesheetRowDetailSidePanel({
         groupSourceEntries,
     });
 
+    const isChargeHighlightDate = (dateText: string) => {
+        const date = new Date(`${dateText}T00:00:00`);
+        if (Number.isNaN(date.getTime())) {
+            return false;
+        }
+
+        const day = date.getDay();
+        if (day === 0 || day === 6) {
+            return true;
+        }
+
+        return holidayDateKeys?.has(dateText) ?? false;
+    };
+
     const renderSourceEntriesTable = (
         title: string,
         subtitle: string,
         entriesData: TimesheetRowDetailSidePanelProps["sourceEntries"],
-        highlightedEntryIds: Set<number> = new Set()
-    ) => (
+        highlightedEntryIds: Set<number> = new Set(),
+        zeroBillingScope: "row" | "group" = "row"
+    ) => {
+        const zeroBillingTravelIds =
+            zeroBillingScope === "row"
+                ? getZeroBillingTravelIdsForRowScopedEntries(entriesData)
+                : getZeroBillingTravelIdsForGroupEntries(
+                      entriesData as TimesheetRowDetailSidePanelProps["groupSourceEntries"]
+                  );
+
+        return (
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
             <div className="border-b border-gray-200 bg-blue-50 px-4 py-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
@@ -143,7 +324,11 @@ export default function TimesheetRowDetailSidePanel({
                         <tbody>
                             {entriesData.map((entry, index, entries) => {
                                 const [, month, dayOfMonth] = entry.dateFrom.split("-");
-                                const correctionLabel = getCorrectionLabel(entry);
+                                const correctionLabel =
+                                    entry.descType === "이동" &&
+                                    zeroBillingTravelIds.has(entry.id)
+                                        ? formatHoursLabel(0)
+                                        : getCorrectionLabel(entry);
                                 const durationLabel = getDurationLabel(
                                     entry.dateFrom,
                                     entry.timeFrom,
@@ -153,6 +338,16 @@ export default function TimesheetRowDetailSidePanel({
                                 const isSameDateAsPrevious =
                                     index > 0 &&
                                     entries[index - 1]?.dateFrom === entry.dateFrom;
+                                const isDateGroupStart = !isSameDateAsPrevious;
+                                const dateBoundaryTopClass =
+                                    isDateGroupStart && index > 0
+                                        ? "border-t-2 border-t-gray-800"
+                                        : "";
+                                const dateHeaderRedClass =
+                                    !isSameDateAsPrevious &&
+                                    isChargeHighlightDate(entry.dateFrom)
+                                        ? "font-semibold text-red-600"
+                                        : "";
                                 const descriptionText = [
                                     entry.details?.trim(),
                                     entry.note?.trim(),
@@ -166,43 +361,63 @@ export default function TimesheetRowDetailSidePanel({
                                         className={`align-top ${
                                             highlightedEntryIds.has(entry.id)
                                                 ? "bg-blue-50"
-                                                : "odd:bg-white even:bg-gray-50/60"
+                                                : "bg-white"
                                         }`}
                                     >
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center ${dateBoundaryTopClass} ${dateHeaderRedClass}`}
+                                        >
                                             {isSameDateAsPrevious ? "" : Number(month)}
                                         </td>
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center ${dateBoundaryTopClass} ${dateHeaderRedClass}`}
+                                        >
                                             {isSameDateAsPrevious ? "" : Number(dayOfMonth)}
                                         </td>
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center ${dateBoundaryTopClass} ${dateHeaderRedClass}`}
+                                        >
                                             {isSameDateAsPrevious
                                                 ? ""
                                                 : getWeekdayLabel(entry.dateFrom)}
                                         </td>
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                        >
                                             {entry.descType}
                                         </td>
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                        >
                                             {formatTimeToMinutes(entry.timeFrom)}
                                         </td>
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                        >
                                             {formatTimeToMinutes(entry.timeTo)}
                                         </td>
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                        >
                                             {durationLabel || "-"}
                                         </td>
-                                        <td className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
-                                            isWeekendDate(entry.dateFrom)
-                                                ? "font-semibold text-red-600"
-                                                : ""
-                                        }`}>
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
+                                                isChargeHighlightDate(entry.dateFrom)
+                                                    ? "font-semibold text-red-600"
+                                                    : ""
+                                            } ${dateBoundaryTopClass}`}
+                                        >
                                             {correctionLabel}
                                         </td>
-                                        <td className="border-b border-r border-gray-200 px-3 py-2 whitespace-pre-wrap break-words text-gray-900">
+                                        <td
+                                            className={`border-b border-r border-gray-200 px-3 py-2 whitespace-pre-wrap break-words text-gray-900 ${dateBoundaryTopClass}`}
+                                        >
                                             {descriptionText || "-"}
                                         </td>
-                                        <td className="border-b border-gray-200 px-3 py-2 whitespace-pre-wrap break-keep leading-5 text-gray-700">
+                                        <td
+                                            className={`border-b border-gray-200 px-3 py-2 whitespace-pre-wrap break-keep leading-5 text-gray-700 ${dateBoundaryTopClass}`}
+                                        >
                                             {formatRemarkPersons(
                                                 entry.persons,
                                                 new Set(displayData.selectedPersons)
@@ -216,22 +431,13 @@ export default function TimesheetRowDetailSidePanel({
                 </div>
             )}
         </div>
-    );
+        );
+    };
 
     const getWeekdayLabel = (dateText: string) => {
         const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
         const date = new Date(`${dateText}T00:00:00`);
         return Number.isNaN(date.getTime()) ? "-" : weekdays[date.getDay()];
-    };
-
-    const isWeekendDate = (dateText: string) => {
-        const date = new Date(`${dateText}T00:00:00`);
-        if (Number.isNaN(date.getTime())) {
-            return false;
-        }
-
-        const day = date.getDay();
-        return day === 0 || day === 6;
     };
 
     const getDurationLabel = (
@@ -584,10 +790,11 @@ export default function TimesheetRowDetailSidePanel({
                             renderSourceEntriesTable(
                                 "Actual DB Entries - Full Group",
                                 "선택한 날짜의 전체 실제 작업일지 데이터",
-                                displayData.groupSourceEntries,
+                                displayData.groupSourceEntries as TimesheetRowDetailSidePanelProps["sourceEntries"],
                                 new Set(
                                     displayData.sourceEntries.map((entry) => entry.id)
-                                )
+                                ),
+                                "group"
                             )}
                     </div>
                 </div>

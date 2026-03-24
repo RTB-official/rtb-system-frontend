@@ -407,9 +407,6 @@ export default function InvoiceCreatePage() {
         return [
             entry.workLogId,
             entry.descType,
-            entry.moveFrom ?? "",
-            entry.moveTo ?? "",
-            (entry.details ?? "").trim(),
             normalizeLocationName(entry.location),
             [...(entry.persons ?? [])].sort().join("|"),
         ].join("::");
@@ -435,6 +432,11 @@ export default function InvoiceCreatePage() {
         const latestMergedIndexByKey = new Map<string, number>();
 
         sortedEntries.forEach((entry) => {
+            if (entry.descType !== "이동") {
+                merged.push({ ...entry });
+                return;
+            }
+
             const mergeKey = getTravelMergeKey(entry);
             const lastMergedIndex = latestMergedIndexByKey.get(mergeKey);
             const lastEntry =
@@ -445,13 +447,25 @@ export default function InvoiceCreatePage() {
             if (
                 lastEntry &&
                 lastEntry.descType === "이동" &&
-                entry.descType === "이동" &&
                 lastEnd !== null &&
                 currentStart !== null &&
                 lastEnd === currentStart
             ) {
+                const firstMoveFrom =
+                    lastEntry.moveFrom?.trim() || entry.moveFrom?.trim() || "";
+                const lastMoveTo =
+                    entry.moveTo?.trim() || lastEntry.moveTo?.trim() || "";
+                const firstDetails = (lastEntry.details ?? "").trim();
+                const lastDetails = (entry.details ?? "").trim();
+
                 lastEntry.dateTo = entry.dateTo;
                 lastEntry.timeTo = entry.timeTo;
+                lastEntry.moveFrom = firstMoveFrom || lastEntry.moveFrom;
+                lastEntry.moveTo = lastMoveTo || lastEntry.moveTo;
+                lastEntry.details =
+                    firstMoveFrom && lastMoveTo
+                        ? `${firstMoveFrom}→${lastMoveTo} 이동.`
+                        : [firstDetails, lastDetails].filter(Boolean).join(" / ");
                 lastEntry.sourceEntryIds = Array.from(
                     new Set([...lastEntry.sourceEntryIds, ...entry.sourceEntryIds])
                 );
@@ -464,6 +478,7 @@ export default function InvoiceCreatePage() {
 
         return merged;
     };
+
 
     const hasHomeInTravel = (entry: InvoiceTimesheetEntry): boolean => {
         const details = entry.details ?? "";
@@ -486,6 +501,20 @@ export default function InvoiceCreatePage() {
         }
 
         return details.split("→").pop()?.trim() ?? "";
+    };
+
+    const getTravelEntryOrigin = (entry: InvoiceTimesheetEntry): string => {
+        const moveFrom = entry.moveFrom?.trim();
+        if (moveFrom) {
+            return moveFrom;
+        }
+
+        const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
+        if (!details.includes("→")) {
+            return details;
+        }
+
+        return details.split("→")[0]?.trim() ?? "";
     };
 
     const normalizeLocationName = (value: string | null | undefined): string => {
@@ -511,6 +540,8 @@ export default function InvoiceCreatePage() {
 
         return destination === workPlace;
     };
+
+    
 
     const getEntryStartTime = (entry: InvoiceTimesheetEntry): number | null => {
         if (!entry.dateFrom || !entry.timeFrom) {
@@ -731,10 +762,13 @@ export default function InvoiceCreatePage() {
         });
     };
 
-    const loadHolidayDates = async (targetDates: string[]) => {
+    const loadHolidayDates = async (
+        targetDates: string[]
+    ): Promise<Set<string>> => {
         if (targetDates.length === 0) {
-            setHolidayDateSet(new Set());
-            return;
+            const empty = new Set<string>();
+            setHolidayDateSet(empty);
+            return empty;
         }
 
         const uniqueDates = Array.from(new Set(targetDates));
@@ -783,16 +817,14 @@ export default function InvoiceCreatePage() {
             });
 
             setHolidayDateSet(merged);
+            return merged;
         } catch (error) {
             console.error("휴일 데이터 로드 실패:", error);
-            setHolidayDateSet(new Set());
+            const empty = new Set<string>();
+            setHolidayDateSet(empty);
+            return empty;
         }
     };
-
-    const isHoliday = (dateString: string): boolean => {
-        return isWeekend(dateString) || holidayDateSet.has(dateString);
-    };
-
 
     // 보고서 데이터 로드 (다중 선택 지원)
     useEffect(() => {
@@ -847,7 +879,7 @@ export default function InvoiceCreatePage() {
                 );
                 const allEntries = mergeContinuousTravelEntries(rawEntries);
 
-                await loadHolidayDates(
+                const holidaySetForTimesheet = await loadHolidayDates(
                     allEntries.flatMap((entry) =>
                         enumerateDateRange(entry.dateFrom, entry.dateTo)
                     )
@@ -1024,7 +1056,12 @@ export default function InvoiceCreatePage() {
                     const dayWorkEntries = sortedDayEntries.filter(
                         (entry) => entry.descType === "작업"
                     );
-                    const isWeekendDay = isHoliday(date);
+                    const dayWaitEntries = sortedDayEntries.filter(
+                        (entry) => entry.descType === "대기"
+                    );
+                    // state(holidayDateSet)는 아직 갱신 전일 수 있으므로 방금 로드한 Set 사용
+                    const isWeekendDay =
+                        isWeekend(date) || holidaySetForTimesheet.has(date);
 
                     const buildSimpleRow = (): TimesheetRow => {
                         let weekdayNormal = 0;
@@ -1152,26 +1189,40 @@ export default function InvoiceCreatePage() {
                         };
                     };
 
-                    if (dayWorkEntries.length === 0) {
+                    if (dayWorkEntries.length === 0 && dayWaitEntries.length === 0) {
                         rows.push(buildSimpleRow());
                         return;
                     }
 
-                    const firstWorkStart = Math.min(
-                        ...dayWorkEntries
+                    const anchorEntriesForDayBounds =
+                        dayWorkEntries.length > 0 ? dayWorkEntries : dayWaitEntries;
+                    const firstAnchorStart = Math.min(
+                        ...anchorEntriesForDayBounds
                             .map((entry) => getEntryStartTime(entry))
                             .filter((value): value is number => value !== null)
                     );
-                    const lastWorkEnd = Math.max(
-                        ...dayWorkEntries
+                    const lastAnchorEnd = Math.max(
+                        ...anchorEntriesForDayBounds
                             .map((entry) => getEntryEndTime(entry))
                             .filter((value): value is number => value !== null)
                     );
-                    const firstWorkTime = formatTimeHHMM(new Date(firstWorkStart));
-                    const lastWorkTime = formatTimeHHMM(new Date(lastWorkEnd));
+                    const firstWorkTime = formatTimeHHMM(new Date(firstAnchorStart));
+                    const lastWorkTime = formatTimeHHMM(new Date(lastAnchorEnd));
 
+                    const waitPersonsThisDate = new Set<string>();
+                    sortedDayEntries.forEach((entry) => {
+                        if (entry.descType !== "대기") {
+                            return;
+                        }
+                        entry.persons?.forEach((person) =>
+                            waitPersonsThisDate.add(person)
+                        );
+                    });
                     const currentWorkPersons = Array.from(
-                        workPersonsByDate.get(date) ?? new Set<string>()
+                        new Set([
+                            ...(workPersonsByDate.get(date) ?? []),
+                            ...waitPersonsThisDate,
+                        ])
                     ).sort();
                     const previousDate = shiftDateByDays(date, -1);
                     const nextDate = shiftDateByDays(date, 1);
@@ -1334,26 +1385,30 @@ export default function InvoiceCreatePage() {
                                 return;
                             }
 
-                            let beforeTravelEntriesForNext =
+                            if (!currentBlock) {
+                                currentBlock = {
+                                    workEntries: [entry],
+                                    beforeTravelEntries:
+                                        interBlockTravelEntries.slice(),
+                                    afterTravelEntries: [],
+                                };
+                                interBlockTravelEntries = [];
+                                return;
+                            }
+
+                            const beforeTravelEntriesForNext =
                                 interBlockTravelEntries.filter((travelEntry) =>
                                     isDestinationWorkPlace(travelEntry)
                                 );
+                            const currentAfterTravelEntries =
+                                interBlockTravelEntries.filter(
+                                    (travelEntry) =>
+                                        !isDestinationWorkPlace(travelEntry)
+                                );
 
-                            if (currentBlock) {
-                                beforeTravelEntriesForNext =
-                                    interBlockTravelEntries.filter((travelEntry) =>
-                                        isDestinationWorkPlace(travelEntry)
-                                    );
-                                const currentAfterTravelEntries =
-                                    interBlockTravelEntries.filter(
-                                        (travelEntry) =>
-                                            !isDestinationWorkPlace(travelEntry)
-                                    );
-
-                                currentBlock.afterTravelEntries =
-                                    currentAfterTravelEntries;
-                                blocks.push(currentBlock);
-                            }
+                            currentBlock.afterTravelEntries =
+                                currentAfterTravelEntries;
+                            blocks.push(currentBlock);
 
                             currentBlock = {
                                 workEntries: [entry],
@@ -1566,37 +1621,15 @@ export default function InvoiceCreatePage() {
 
                     const travelOnlyRows: PersonDayRow[] = allDayPersons.flatMap(
                         (person) => {
+                            if (currentWorkPersonSet.has(person)) {
+                                return [];
+                            }
+
                             const personEntries = sortedDayEntries.filter((entry) =>
                                 (entry.persons ?? []).includes(person)
                             );
 
-                            if (!currentWorkPersonSet.has(person)) {
-                                const row = buildTravelOnlyRow(person, personEntries);
-                                return row ? [row] : [];
-                            }
-
-                            const firstNonMoveEntryStart = personEntries
-                                .filter((entry) => entry.descType !== "이동")
-                                .map((entry) => getEntryStartTime(entry))
-                                .filter((value): value is number => value !== null)
-                                .sort((a, b) => a - b)[0];
-
-                            if (firstNonMoveEntryStart === undefined) {
-                                return [];
-                            }
-
-                            const leadingTravelOnlyEntries = personEntries.filter(
-                                (entry) =>
-                                    entry.descType === "이동" &&
-                                    !isDestinationWorkPlace(entry) &&
-                                    (getEntryEndTime(entry) ?? Number.MAX_SAFE_INTEGER) <=
-                                        firstNonMoveEntryStart
-                            );
-
-                            const row = buildTravelOnlyRow(
-                                person,
-                                leadingTravelOnlyEntries
-                            );
+                            const row = buildTravelOnlyRow(person, personEntries);
                             return row ? [row] : [];
                         }
                     );
@@ -1629,13 +1662,44 @@ export default function InvoiceCreatePage() {
                                     block.afterTravelEntries,
                                     blockSpan.latest
                                 );
+
+                                const gangdongFactory = normalizeLocationName(
+                                    "강동동 공장"
+                                );
+                                const lastBeforeTravelEntry =
+                                    block.beforeTravelEntries.length > 0
+                                        ? block.beforeTravelEntries[
+                                              block.beforeTravelEntries.length - 1
+                                          ]
+                                        : null;
+                                const firstAfterTravelEntry =
+                                    block.afterTravelEntries.length > 0
+                                        ? block.afterTravelEntries[0]
+                                        : null;
+                                const factoryWrapsWorkBlock =
+                                    lastBeforeTravelEntry &&
+                                    firstAfterTravelEntry &&
+                                    normalizeLocationName(
+                                        getFinalDestination(lastBeforeTravelEntry)
+                                    ) === gangdongFactory &&
+                                    normalizeLocationName(
+                                        getTravelEntryOrigin(firstAfterTravelEntry)
+                                    ) === gangdongFactory;
+
+                                const beforeMoveHours = factoryWrapsWorkBlock
+                                    ? 0
+                                    : beforeTravel.hours;
+                                const afterMoveHours = factoryWrapsWorkBlock
+                                    ? 0
+                                    : afterTravel.hours;
+
                                 const travelHours = roundHours(
-                                    beforeTravel.hours +
-                                        afterTravel.hours +
+                                    beforeMoveHours +
+                                        afterMoveHours +
                                         waitingHours
                                 );
                                 const moveTravelHours = roundHours(
-                                    beforeTravel.hours + afterTravel.hours
+                                    beforeMoveHours + afterMoveHours
                                 );
                                 const timeFrom =
                                     [
@@ -1683,9 +1747,9 @@ export default function InvoiceCreatePage() {
                                     rowKey: [
                                         blockIndex,
                                         beforeTravel.kind,
-                                        beforeTravel.hours,
+                                        beforeMoveHours,
                                         afterTravel.kind,
-                                        afterTravel.hours,
+                                        afterMoveHours,
                                         working.normal,
                                         working.after,
                                         timeFrom,
@@ -2114,6 +2178,8 @@ export default function InvoiceCreatePage() {
         const rounded = Math.round(value * 10) / 10;
         return Number.isInteger(rounded) ? String(rounded) : String(rounded);
     };
+    const shouldShowInvoiceManpowerHourRow = (value: number) =>
+        Math.round(value * 10) / 10 !== 0;
     const getInvoiceHourSummary = (people: string[]) => {
         const targetPeople = new Set(people);
 
@@ -3561,7 +3627,9 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
-                                                    {/* : Weekday/ Normal Working Hours */}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        skilledFitterInvoiceSummary.weekdayNormal
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3573,6 +3641,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        skilledFitterInvoiceSummary.weekdayAfter
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ After Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3584,6 +3656,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        skilledFitterInvoiceSummary.weekendNormal
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3595,6 +3671,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        skilledFitterInvoiceSummary.weekendAfter
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ After Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3606,7 +3686,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
-                                                    {/* : Weekday/ Waiting & Travel Hours */}
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        skilledFitterInvoiceSummary.travelWeekday
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Waiting & Travel Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3618,6 +3701,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        skilledFitterInvoiceSummary.travelWeekend
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Waiting &amp; Travel Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3629,6 +3716,7 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
                                                     {/* 1.2 Fitters */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">
@@ -3662,7 +3750,9 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
-                                                    {/* : Weekday/ Normal Working Hours */}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        fitterInvoiceSummary.weekdayNormal
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3674,6 +3764,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        fitterInvoiceSummary.weekdayAfter
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ After Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3685,6 +3779,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        fitterInvoiceSummary.weekendNormal
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3696,6 +3794,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        fitterInvoiceSummary.weekendAfter
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ After Normal Working Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3707,7 +3809,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
-                                                    {/* : Weekday/ Waiting & Travel Hours */}
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        fitterInvoiceSummary.travelWeekday
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekday/ Waiting & Travel Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3719,6 +3824,10 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
+                                                    {shouldShowInvoiceManpowerHourRow(
+                                                        fitterInvoiceSummary.travelWeekend
+                                                    ) && (
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-12 border-b border-gray-300">: Weekend &amp; Holiday/ Waiting &amp; Travel Hours</td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
@@ -3730,6 +3839,7 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
                                                     </tr>
+                                                    )}
                                                     {/* 2. Daily Allowance */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 font-semibold border-b border-gray-300">2. Daily Allowance</td>
@@ -4119,6 +4229,7 @@ export default function InvoiceCreatePage() {
                     groupSourceEntries={
                         selectedTimesheetRow?.groupSourceEntries ?? []
                     }
+                    holidayDateKeys={holidayDateSet}
                 />
                 <TimesheetDateGroupDetailSidePanel
                     isOpen={selectedTimesheetDateGroupPanel !== null}
@@ -4127,6 +4238,7 @@ export default function InvoiceCreatePage() {
                     fullGroupEntries={
                         selectedTimesheetDateGroupPanel?.fullGroupEntries ?? []
                     }
+                    holidayDateKeys={holidayDateSet}
                 />
             </div>
         </div>
