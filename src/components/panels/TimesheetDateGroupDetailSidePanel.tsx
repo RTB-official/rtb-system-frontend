@@ -23,6 +23,8 @@ interface TimesheetDateGroupDetailSidePanelProps {
     onClose: () => void;
     sectionTitle: string;
     fullGroupEntries: TimesheetSourceEntryData[];
+    /** 인보이스 페이지와 동일한 공휴일 집합(주말은 별도 판별). */
+    holidayDateKeys?: ReadonlySet<string>;
 }
 
 function CloseIcon() {
@@ -41,6 +43,7 @@ export default function TimesheetDateGroupDetailSidePanel({
     onClose,
     sectionTitle,
     fullGroupEntries,
+    holidayDateKeys,
 }: TimesheetDateGroupDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
 
@@ -85,14 +88,18 @@ export default function TimesheetDateGroupDetailSidePanel({
         return Number.isNaN(date.getTime()) ? "-" : weekdays[date.getDay()];
     };
 
-    const isWeekendDate = (dateText: string) => {
+    const isChargeHighlightDate = (dateText: string) => {
         const date = new Date(`${dateText}T00:00:00`);
         if (Number.isNaN(date.getTime())) {
             return false;
         }
 
         const day = date.getDay();
-        return day === 0 || day === 6;
+        if (day === 0 || day === 6) {
+            return true;
+        }
+
+        return holidayDateKeys?.has(dateText) ?? false;
     };
 
     const getDurationHours = (
@@ -357,6 +364,16 @@ export default function TimesheetDateGroupDetailSidePanel({
                                             const isSameDateAsPrevious =
                                                 index > 0 &&
                                                 entries[index - 1]?.dateFrom === entry.dateFrom;
+                                            const isDateGroupStart = !isSameDateAsPrevious;
+                                            const dateBoundaryTopClass =
+                                                isDateGroupStart && index > 0
+                                                    ? "border-t-2 border-t-gray-800"
+                                                    : "";
+                                            const dateHeaderRedClass =
+                                                !isSameDateAsPrevious &&
+                                                isChargeHighlightDate(entry.dateFrom)
+                                                    ? "font-semibold text-red-600"
+                                                    : "";
                                             const descriptionText = [
                                                 entry.details?.trim(),
                                                 entry.note?.trim(),
@@ -367,46 +384,64 @@ export default function TimesheetDateGroupDetailSidePanel({
                                             return (
                                                 <tr
                                                     key={`full-group-${entry.id}-${index}`}
-                                                    className="align-top odd:bg-white even:bg-gray-50/60"
+                                                    className="align-top bg-white"
                                                 >
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 text-center">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 text-center ${dateBoundaryTopClass} ${dateHeaderRedClass}`}
+                                                    >
                                                         {isSameDateAsPrevious ? "" : Number(month)}
                                                     </td>
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 text-center">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 text-center ${dateBoundaryTopClass} ${dateHeaderRedClass}`}
+                                                    >
                                                         {isSameDateAsPrevious ? "" : Number(dayOfMonth)}
                                                     </td>
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 text-center">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 text-center ${dateBoundaryTopClass} ${dateHeaderRedClass}`}
+                                                    >
                                                         {isSameDateAsPrevious
                                                             ? ""
                                                             : getWeekdayLabel(entry.dateFrom)}
                                                     </td>
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                                    >
                                                         {entry.descType}
                                                     </td>
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                                    >
                                                         {formatTimeToMinutes(entry.timeFrom)}
                                                     </td>
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                                    >
                                                         {formatTimeToMinutes(entry.timeTo)}
                                                     </td>
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
+                                                    >
                                                         {durationHours === null
                                                             ? "-"
                                                             : formatHoursLabel(durationHours)}
                                                     </td>
                                                     <td
                                                         className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
-                                                            isWeekendDate(entry.dateFrom)
+                                                            isChargeHighlightDate(entry.dateFrom)
                                                                 ? "font-semibold text-red-600"
                                                                 : ""
-                                                        }`}
+                                                        } ${dateBoundaryTopClass}`}
                                                     >
                                                         {chargeLabel}
                                                     </td>
-                                                    <td className="border-b border-r border-gray-200 px-3 py-2 whitespace-pre-wrap break-words text-gray-900">
+                                                    <td
+                                                        className={`border-b border-r border-gray-200 px-3 py-2 whitespace-pre-wrap break-words text-gray-900 ${dateBoundaryTopClass}`}
+                                                    >
                                                         {descriptionText || "-"}
                                                     </td>
-                                                    <td className="border-b border-gray-200 px-3 py-2 whitespace-pre-wrap break-keep leading-5 text-gray-700">
+                                                    <td
+                                                        className={`border-b border-gray-200 px-3 py-2 whitespace-pre-wrap break-keep leading-5 text-gray-700 ${dateBoundaryTopClass}`}
+                                                    >
                                                         {formatRemarkPersons(entry.persons)}
                                                     </td>
                                                 </tr>
