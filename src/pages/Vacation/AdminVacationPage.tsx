@@ -1,5 +1,5 @@
 // AdminVacationPage.tsx
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -15,12 +15,15 @@ import {
     leaveTypeToKorean,
     statusToKorean,
     calculateAllEmployeesVacation,
-    getCurrentTotalAnnualLeave,
     type Vacation,
 } from "../../lib/vacationApi";
 import { useAuth } from "../../store/auth";
 import { supabase } from "../../lib/supabase";
-import { calculateAnnualLeave } from "../../lib/vacationCalculator";
+import {
+    getVacationGrantHistory as calculateGrantHistory,
+    type VacationGrantHistory,
+} from "../../lib/vacationCalculator";
+import { mergeVacationGrantHistory } from "../../lib/vacationSpecialGrants";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import ExpandableDetailPanel from "../../components/common/ExpandableDetailPanel";
@@ -49,6 +52,289 @@ interface VacationRequestRow {
     status: string;
     createdAt: string;
     vacation: Vacation;
+}
+
+const VACATION_TIMELINE_START_YEAR = 2025;
+
+type VacationBalanceEvent = {
+    date: string;
+    createdAt: string;
+    order: number;
+    delta: number;
+    kind: "grant" | "expire" | "vacation";
+    vacationId?: string;
+};
+
+type VacationGrantBucket = {
+    date: string;
+    remaining: number;
+};
+
+function getVacationDayCount(vacation: Pick<Vacation, "leave_type">) {
+    return vacation.leave_type === "FULL" ? 1 : 0.5;
+}
+
+function sumBucketBalance(buckets: VacationGrantBucket[]) {
+    return buckets.reduce((sum, bucket) => sum + bucket.remaining, 0);
+}
+
+function consumeFromBuckets(
+    buckets: VacationGrantBucket[],
+    amount: number,
+    predicate: (bucket: VacationGrantBucket) => boolean
+) {
+    let remainingToConsume = amount;
+
+    for (const bucket of buckets) {
+        if (remainingToConsume <= 0) break;
+        if (!predicate(bucket) || bucket.remaining <= 0) continue;
+
+        const consumed = Math.min(bucket.remaining, remainingToConsume);
+        bucket.remaining -= consumed;
+        remainingToConsume -= consumed;
+    }
+
+    return amount - remainingToConsume;
+}
+
+function buildVacationBalanceSnapshot({
+    vacations,
+    grantHistories,
+}: {
+    vacations: Vacation[];
+    grantHistories: VacationGrantHistory[];
+}) {
+    const events: VacationBalanceEvent[] = [];
+    const grantEventKeys = new Set<string>();
+    const expireEventKeys = new Set<string>();
+
+    grantHistories.forEach((history) => {
+        if (history.granted) {
+            const grantKey = `grant:${history.date}:${history.granted}`;
+            if (!grantEventKeys.has(grantKey)) {
+                grantEventKeys.add(grantKey);
+                events.push({
+                    date: history.date,
+                    createdAt: history.date,
+                    order: 0,
+                    delta: history.granted,
+                    kind: "grant",
+                });
+            }
+        }
+
+        if (history.expired) {
+            const expireKey = `expire:${history.date}:${history.expired}`;
+            if (!expireEventKeys.has(expireKey)) {
+                expireEventKeys.add(expireKey);
+                events.push({
+                    date: history.date,
+                    createdAt: history.date,
+                    order: 1,
+                    delta: history.expired,
+                    kind: "expire",
+                });
+            }
+        }
+    });
+
+    vacations
+        .filter((vacation) => vacation.date >= `${VACATION_TIMELINE_START_YEAR}-01-01`)
+        .forEach((vacation) => {
+            const affectsBalance =
+                vacation.status === "approved" || vacation.status === "pending";
+
+            events.push({
+                date: vacation.date,
+                createdAt: vacation.created_at,
+                order: 2,
+                delta: affectsBalance ? -getVacationDayCount(vacation) : 0,
+                kind: "vacation",
+                vacationId: vacation.id,
+            });
+        });
+
+    events.sort((a, b) => {
+        const dateDiff =
+            new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (dateDiff !== 0) return dateDiff;
+
+        if (a.order !== b.order) return a.order - b.order;
+
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+
+    const buckets: VacationGrantBucket[] = [];
+
+    events.forEach((event) => {
+        if (event.kind === "grant" && event.delta > 0) {
+            buckets.push({
+                date: event.date,
+                remaining: event.delta,
+            });
+        }
+
+        if (event.kind === "expire" && event.delta < 0) {
+            const expiryAmount = Math.abs(event.delta);
+            const isYearEndExpiry = event.date.endsWith("-12-31");
+            const expiryYear = event.date.slice(0, 4);
+            consumeFromBuckets(
+                buckets,
+                expiryAmount,
+                (bucket) =>
+                    isYearEndExpiry
+                        ? bucket.date.startsWith(`${expiryYear}-`)
+                        : bucket.date < event.date
+            );
+        }
+
+        if (event.kind === "vacation" && event.delta < 0) {
+            consumeFromBuckets(buckets, Math.abs(event.delta), () => true);
+        }
+    });
+
+    return {
+        endingBalance: Math.max(0, sumBucketBalance(buckets)),
+    };
+}
+
+function buildEmployeeStats({
+    employeeId,
+    userName,
+    joinDate,
+    email,
+    selectedYear,
+    timelineVacations,
+}: {
+    employeeId: string;
+    userName: string;
+    joinDate?: string;
+    email?: string | null;
+    selectedYear: number;
+    timelineVacations: Vacation[];
+}): EmployeeStats {
+    const employeeVacations = timelineVacations.filter(
+        (vacation) => vacation.user_id === employeeId
+    );
+    const selectedYearVacations = employeeVacations.filter((vacation) =>
+        vacation.date.startsWith(`${selectedYear}-`)
+    );
+
+    const approvedSelectedYear = selectedYearVacations
+        .filter((vacation) => vacation.status === "approved")
+        .reduce((sum, vacation) => sum + getVacationDayCount(vacation), 0);
+    const pendingSelectedYear = selectedYearVacations
+        .filter((vacation) => vacation.status === "pending")
+        .reduce((sum, vacation) => sum + getVacationDayCount(vacation), 0);
+
+    if (!joinDate) {
+        return {
+            userId: employeeId,
+            userName,
+            usedDays: approvedSelectedYear,
+            pendingDays: pendingSelectedYear,
+            remainingDays: Math.max(0, 15 - approvedSelectedYear - pendingSelectedYear),
+            totalDays: 15,
+        };
+    }
+
+    const currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+    const anniversaryDate = new Date(joinDate);
+    anniversaryDate.setHours(0, 0, 0, 0);
+    anniversaryDate.setFullYear(anniversaryDate.getFullYear() + 1);
+    const anniversaryDateStr = `${anniversaryDate.getFullYear()}-${String(
+        anniversaryDate.getMonth() + 1
+    ).padStart(2, "0")}-${String(anniversaryDate.getDate()).padStart(2, "0")}`;
+
+    const historyYears = Array.from(
+        { length: selectedYear - VACATION_TIMELINE_START_YEAR + 1 },
+        (_, index) => VACATION_TIMELINE_START_YEAR + index
+    );
+    const selectedYearHistory = mergeVacationGrantHistory(
+        calculateGrantHistory(joinDate, selectedYear, currentDate),
+        { email, name: userName },
+        selectedYear
+    );
+    const allGrantHistories = historyYears.flatMap((year) =>
+        mergeVacationGrantHistory(
+            calculateGrantHistory(joinDate, year, currentDate),
+            { email, name: userName },
+            year
+        )
+    );
+    const balanceSnapshot = buildVacationBalanceSnapshot({
+        vacations: employeeVacations,
+        grantHistories: allGrantHistories,
+    });
+
+    const preAnniversaryGranted = selectedYearHistory
+        .filter(
+            (history) => (history.granted || 0) > 0 && history.date < anniversaryDateStr
+        )
+        .reduce((sum, history) => sum + (history.granted || 0), 0);
+    const postAnniversaryGranted = selectedYearHistory
+        .filter(
+            (history) => (history.granted || 0) > 0 && history.date >= anniversaryDateStr
+        )
+        .reduce((sum, history) => sum + (history.granted || 0), 0);
+
+    if (
+        selectedYear < anniversaryDate.getFullYear() &&
+        currentDate >= anniversaryDate &&
+        preAnniversaryGranted > 0
+    ) {
+        return {
+            userId: employeeId,
+            userName,
+            usedDays: 0,
+            pendingDays: 0,
+            remainingDays: 0,
+            totalDays: preAnniversaryGranted,
+        };
+    }
+
+    if (
+        selectedYear === anniversaryDate.getFullYear() &&
+        preAnniversaryGranted > 0 &&
+        postAnniversaryGranted > 0
+    ) {
+        const approvedAfterAnniversary = selectedYearVacations
+            .filter(
+                (vacation) =>
+                    vacation.status === "approved" &&
+                    vacation.date >= anniversaryDateStr
+            )
+            .reduce((sum, vacation) => sum + getVacationDayCount(vacation), 0);
+        const pendingAfterAnniversary = selectedYearVacations
+            .filter(
+                (vacation) =>
+                    vacation.status === "pending" &&
+                    vacation.date >= anniversaryDateStr
+            )
+            .reduce((sum, vacation) => sum + getVacationDayCount(vacation), 0);
+
+        return {
+            userId: employeeId,
+            userName,
+            usedDays: approvedAfterAnniversary,
+            pendingDays: pendingAfterAnniversary,
+            remainingDays: balanceSnapshot.endingBalance,
+            totalDays: postAnniversaryGranted,
+        };
+    }
+
+    return {
+        userId: employeeId,
+        userName,
+        usedDays: approvedSelectedYear,
+        pendingDays: pendingSelectedYear,
+        remainingDays: balanceSnapshot.endingBalance,
+        totalDays: Math.max(
+            0,
+            balanceSnapshot.endingBalance + approvedSelectedYear + pendingSelectedYear
+        ),
+    };
 }
 
 export default function AdminVacationPage() {
@@ -120,97 +406,48 @@ export default function AdminVacationPage() {
         }
     };
 
+    const loadAdminData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const yearNum = parseInt(year, 10);
+            const [yearlyVacations, timelineVacations, employees] = await Promise.all([
+                getVacations(undefined, { year: yearNum }),
+                getVacations(undefined),
+                fetchAllProfiles(),
+            ]);
+
+            const employeeNameMap = new Map(employees.map((emp) => [emp.id, emp.name]));
+            const profileMap = new Map(
+                employees.map((emp) => [emp.id, { email: emp.email, position: emp.position }])
+            );
+            setEmployeeMap(employeeNameMap);
+            setEmployeeProfiles(profileMap);
+
+            const statsList = employees.map((emp) =>
+                buildEmployeeStats({
+                    employeeId: emp.id,
+                    userName: emp.name,
+                    joinDate: emp.joinDate,
+                    email: emp.email,
+                    selectedYear: yearNum,
+                    timelineVacations,
+                })
+            );
+
+            setEmployeeStats(statsList);
+            setPendingVacations(yearlyVacations.filter((vacation) => vacation.status === "pending"));
+        } catch (error) {
+            console.error("데이터 로드 실패:", error);
+            showError("데이터를 불러오는데 실패했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    }, [showError, year]);
+
     // 전체 휴가 데이터 로드
     useEffect(() => {
-        const loadData = async () => {
-            setLoading(true);
-            try {
-                const yearNum = parseInt(year);
-
-                // 모든 직원의 휴가 조회
-                const allVacations = await getVacations(undefined, { year: yearNum });
-
-                const employees = await fetchAllProfiles();
-                const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
-                const profileMap = new Map(employees.map(emp => [emp.id, { email: emp.email, position: emp.position }]));
-                setEmployeeMap(employeeNameMap);
-                setEmployeeProfiles(profileMap);
-
-                // 직원별 통계 계산
-                const statsMap = new Map<string, EmployeeStats>();
-
-                const annualLeavePromises = employees.map(async (emp) => {
-                    let totalDays = 15;
-                    if (emp.joinDate) {
-                        try {
-                            totalDays = await getCurrentTotalAnnualLeave(emp.id);
-                            const approvedVacations = allVacations.filter(
-                                v => v.user_id === emp.id && v.status === "approved"
-                            );
-                            const usedDays = approvedVacations.reduce(
-                                (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
-                                0
-                            );
-                            totalDays = totalDays + usedDays;
-                        } catch (error) {
-                            console.error(`직원 ${emp.id} 연차 계산 실패:`, error);
-                            totalDays = calculateAnnualLeave(emp.joinDate!, yearNum);
-                        }
-                    }
-                    return { empId: emp.id, totalDays };
-                });
-
-                // 모든 연차 계산 완료 대기
-                const annualLeaveResults = await Promise.all(annualLeavePromises);
-                const annualLeaveMap = new Map(annualLeaveResults.map(r => [r.empId, r.totalDays]));
-
-                // 통계 초기화
-                for (const emp of employees) {
-                    const totalDays = annualLeaveMap.get(emp.id) || 15;
-                    statsMap.set(emp.id, {
-                        userId: emp.id,
-                        userName: emp.name,
-                        usedDays: 0,
-                        pendingDays: 0,
-                        remainingDays: totalDays,
-                        totalDays: totalDays,
-                    });
-                }
-
-                allVacations.forEach(vacation => {
-                    const days = vacation.leave_type === "FULL" ? 1 : 0.5;
-                    const stats = statsMap.get(vacation.user_id);
-
-                    if (stats) {
-                        if (vacation.status === "approved") {
-                            stats.usedDays += days;
-                        } else if (vacation.status === "pending") {
-                            stats.pendingDays += days;
-                        }
-                    }
-                });
-
-                // 모든 직원의 잔여일수 재계산 (사용한 것과 대기 중인 것을 모두 차감)
-                statsMap.forEach((stats) => {
-                    stats.remainingDays = Math.max(0, stats.totalDays - stats.usedDays - stats.pendingDays);
-                });
-
-                const employeeStatsList = Array.from(statsMap.values());
-                setEmployeeStats(employeeStatsList);
-
-                // 대기 중인 휴가만 필터링
-                const pending = allVacations.filter(v => v.status === "pending");
-                setPendingVacations(pending);
-            } catch (error) {
-                console.error("데이터 로드 실패:", error);
-                showError("데이터를 불러오는데 실패했습니다.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        loadData();
-    }, [year]);
+        loadAdminData();
+    }, [loadAdminData]);
 
     // 모바일: URL 쿼리(employee)와 상세 직원 동기화
     useEffect(() => {
@@ -288,87 +525,15 @@ export default function AdminVacationPage() {
 
             showSuccess(approved ? "휴가가 승인되었습니다." : "휴가가 반려되었습니다.");
 
-            // 백그라운드에서 전체 데이터 다시 로드 (통계 업데이트)
-            const yearNum = parseInt(year);
-
             // 잠시 대기 후 DB에서 최신 데이터 조회 (업데이트 반영 시간 확보)
             await new Promise(resolve => setTimeout(resolve, 300));
-
-            // 모든 직원의 휴가 조회
-            const allVacations = await getVacations(undefined, { year: yearNum });
-
-            // 대기 중인 휴가만 필터링 (최신 데이터로 업데이트)
-            const pending = allVacations.filter(v => v.status === "pending");
-            setPendingVacations(pending);
-
-            const employees = await fetchAllProfiles();
-            const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
-            setEmployeeMap(employeeNameMap);
-            setEmployeeProfiles(new Map(employees.map(emp => [emp.id, { email: emp.email, position: emp.position }])));
-
-            // 직원별 통계 재계산
-            const statsMap = new Map<string, EmployeeStats>();
-
-            for (const emp of employees) {
-                const joinDate = emp.joinDate;
-                let totalDays = 15; // 기본값
-
-                if (joinDate) {
-                    try {
-                        totalDays = await getCurrentTotalAnnualLeave(emp.id);
-                        // 지급받은 총 연차 계산
-                        const approvedVacations = allVacations.filter(
-                            v => v.user_id === emp.id && v.status === "approved"
-                        );
-                        const usedDays = approvedVacations.reduce(
-                            (sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5),
-                            0
-                        );
-                        totalDays = totalDays + usedDays;
-                    } catch (error) {
-                        console.error(`직원 ${emp.id} 연차 계산 실패:`, error);
-                        totalDays = calculateAnnualLeave(joinDate, yearNum);
-                    }
-                }
-
-                // 해당 직원의 휴가 통계 계산
-                const empVacations = allVacations.filter(v => v.user_id === emp.id);
-                const usedDays = empVacations
-                    .filter(v => v.status === "approved")
-                    .reduce((sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5), 0);
-                const pendingDays = empVacations
-                    .filter(v => v.status === "pending")
-                    .reduce((sum, v) => sum + (v.leave_type === "FULL" ? 1 : 0.5), 0);
-
-                statsMap.set(emp.id, {
-                    userId: emp.id,
-                    userName: emp.name,
-                    usedDays,
-                    pendingDays,
-                    remainingDays: Math.max(0, totalDays - usedDays - pendingDays),
-                    totalDays,
-                });
-            }
-
-            setEmployeeStats(Array.from(statsMap.values()));
+            await loadAdminData();
         } catch (error: any) {
             console.error("처리 실패:", error);
             showError(error.message || "처리에 실패했습니다.");
-
-            // 에러 발생 시 목록 다시 조회
-            if (user?.id) {
-                const yearNum = parseInt(year);
-                const allVacations = await getVacations(undefined, { year: yearNum });
-                const pending = allVacations.filter(v => v.status === "pending");
-                setPendingVacations(pending);
-            }
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleCalculateAllVacations = () => {
-        setCalculateConfirmOpen(true);
     };
 
     const confirmCalculateAllVacations = async () => {
@@ -378,59 +543,7 @@ export default function AdminVacationPage() {
             setLoading(true);
             await calculateAllEmployeesVacation(2025);
             showSuccess("모든 직원의 연차 계산이 완료되었습니다.");
-            // 데이터 새로고침
-            const yearNum = parseInt(year);
-            const allVacations = await getVacations(undefined, { year: yearNum });
-            const employees = await fetchAllProfiles();
-            const employeeNameMap = new Map(employees.map(emp => [emp.id, emp.name]));
-            setEmployeeMap(employeeNameMap);
-            setEmployeeProfiles(new Map(employees.map(emp => [emp.id, { email: emp.email, position: emp.position }])));
-
-            const statsMap = new Map<string, EmployeeStats>();
-            employees.forEach(emp => {
-                const joinDate = emp.joinDate;
-                const totalDays = joinDate
-                    ? calculateAnnualLeave(joinDate, yearNum)
-                    : 15;
-                statsMap.set(emp.id, {
-                    userId: emp.id,
-                    userName: emp.name,
-                    usedDays: 0,
-                    pendingDays: 0,
-                    remainingDays: totalDays,
-                    totalDays: totalDays,
-                });
-            });
-
-            allVacations.forEach(vacation => {
-                if (!statsMap.has(vacation.user_id)) {
-                    const name = employeeNameMap.get(vacation.user_id) || "알 수 없음";
-                    const totalDays = 15;
-                    statsMap.set(vacation.user_id, {
-                        userId: vacation.user_id,
-                        userName: name,
-                        usedDays: 0,
-                        pendingDays: 0,
-                        remainingDays: totalDays,
-                        totalDays: totalDays,
-                    });
-                }
-
-                const stats = statsMap.get(vacation.user_id)!;
-                const days = vacation.leave_type === "FULL" ? 1 : 0.5;
-
-                if (vacation.status === "approved") {
-                    stats.usedDays += days;
-                } else if (vacation.status === "pending") {
-                    stats.pendingDays += days;
-                }
-                stats.remainingDays = stats.totalDays - stats.usedDays - stats.pendingDays;
-            });
-
-            setEmployeeStats(Array.from(statsMap.values()));
-
-            const pending = allVacations.filter(v => v.status === "pending");
-            setPendingVacations(pending);
+            await loadAdminData();
         } catch (error: any) {
             console.error("연차 계산 실패:", error);
             showError(error.message || "연차 계산에 실패했습니다.");
