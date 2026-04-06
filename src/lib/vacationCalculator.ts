@@ -280,6 +280,58 @@ export function getVacationGrantHistory(
         let anniversaryProratedGrantDays = 0;
         let hasAnniversaryProratedGrant = false;
         
+        // 입사일 1년 되는 날 이전까지는 매월 1개씩 지급
+        while (true) {
+            // 입사일로부터 N개월 후 날짜 계산
+            const calculatedYear = joinYear + Math.floor((joinMonth + monthOffset) / 12);
+            const calculatedMonth = (joinMonth + monthOffset) % 12;
+            
+            // 해당 연도 범위를 벗어나면 종료
+            if (calculatedYear > targetYear) {
+                break;
+            }
+            
+            // 날짜 생성 (입사일과 같은 일자)
+            const grantDate = new Date(calculatedYear, calculatedMonth, 1);
+            const lastDayOfMonth = new Date(calculatedYear, calculatedMonth + 1, 0).getDate();
+            const finalDay = Math.min(joinDay, lastDayOfMonth);
+            grantDate.setDate(finalDay);
+            
+            // 입사일 1년 되는 날 이후는 월별 지급 중단
+            if (grantDate >= oneYearAfterJoin) {
+                break;
+            }
+            
+            // 현재 날짜까지만 지급 내역 표시
+            if (grantDate > currentDate) {
+                monthOffset++;
+                if (grantDate > yearEnd && calculatedYear >= targetYear) {
+                    break;
+                }
+                continue;
+            }
+            
+            // 해당 연도 내에 있는 경우만 추가
+            if (grantDate >= yearStart && grantDate <= yearEnd) {
+                // 타임존 문제 방지를 위해 로컬 날짜로 직접 구성
+                const year = grantDate.getFullYear();
+                const month = String(grantDate.getMonth() + 1).padStart(2, '0');
+                const day = String(grantDate.getDate()).padStart(2, '0');
+                history.push({
+                    date: `${year}-${month}-${day}`,
+                    granted: 1,
+                });
+            }
+            
+            // 다음 달로 이동
+            monthOffset++;
+            
+            // 해당 연도를 벗어나면 종료
+            if (grantDate > yearEnd && calculatedYear >= targetYear) {
+                break;
+            }
+        }
+
         // 입사일 1년 되는 날이 해당 연도 내에 있고, 현재 날짜 이전인 경우
         if (oneYearAfterJoin >= yearStart && oneYearAfterJoin <= yearEnd && oneYearAfterJoin <= currentDate) {
             // 전년도 근무일수 계산 (입사일부터 전년도 12월 31일까지)
@@ -309,58 +361,6 @@ export function getVacationGrantHistory(
             });
             anniversaryProratedGrantDays = proratedDays;
             hasAnniversaryProratedGrant = true;
-        } else {
-            // 입사일 1년 되는 날 이전까지는 매월 1개씩 지급
-            while (true) {
-                // 입사일로부터 N개월 후 날짜 계산
-                const calculatedYear = joinYear + Math.floor((joinMonth + monthOffset) / 12);
-                const calculatedMonth = (joinMonth + monthOffset) % 12;
-                
-                // 해당 연도 범위를 벗어나면 종료
-                if (calculatedYear > targetYear) {
-                    break;
-                }
-                
-                // 날짜 생성 (입사일과 같은 일자)
-                const grantDate = new Date(calculatedYear, calculatedMonth, 1);
-                const lastDayOfMonth = new Date(calculatedYear, calculatedMonth + 1, 0).getDate();
-                const finalDay = Math.min(joinDay, lastDayOfMonth);
-                grantDate.setDate(finalDay);
-                
-                // 입사일 1년 되는 날 이후는 월별 지급 중단
-                if (grantDate >= oneYearAfterJoin) {
-                    break;
-                }
-                
-                // 현재 날짜까지만 지급 내역 표시
-                if (grantDate > currentDate) {
-                    monthOffset++;
-                    if (grantDate > yearEnd && calculatedYear >= targetYear) {
-                        break;
-                    }
-                    continue;
-                }
-                
-                // 해당 연도 내에 있는 경우만 추가
-                if (grantDate >= yearStart && grantDate <= yearEnd) {
-                    // 타임존 문제 방지를 위해 로컬 날짜로 직접 구성
-                    const year = grantDate.getFullYear();
-                    const month = String(grantDate.getMonth() + 1).padStart(2, '0');
-                    const day = String(grantDate.getDate()).padStart(2, '0');
-                    history.push({
-                        date: `${year}-${month}-${day}`,
-                        granted: 1,
-                    });
-                }
-                
-                // 다음 달로 이동
-                monthOffset++;
-                
-                // 해당 연도를 벗어나면 종료
-                if (grantDate > yearEnd && calculatedYear >= targetYear) {
-                    break;
-                }
-            }
         }
         
         // Expiry handling for pre-1-year grants

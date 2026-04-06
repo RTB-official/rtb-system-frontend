@@ -1,5 +1,5 @@
 // VacationPage.tsx
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -16,16 +16,15 @@ import {
     updateVacation,
     deleteVacation,
     getVacations,
-    getVacationStats,
     getVacationGrantHistory,
-    getCurrentTotalAnnualLeave,
     statusToKorean,
     leaveTypeToKorean,
     formatVacationDate,
+    formatVacationDays,
     type Vacation,
     type VacationStatus as ApiVacationStatus,
 } from "../../lib/vacationApi";
-import type { VacationGrantHistory } from "../../lib/vacationCalculator";
+import type { VacationGrantHistoryEntry } from "../../lib/vacationSpecialGrants";
 import { useToast } from "../../components/ui/ToastProvider";
 import useIsMobile from "../../hooks/useIsMobile";
 
@@ -57,9 +56,458 @@ export interface GrantExpireRow {
     id: string;
     monthLabel: string;
     granted?: number;
+    grantedLabel?: string;
     expired?: number;
     used?: number;
     balance?: number;
+}
+
+interface SummaryGrantItem {
+    days: number;
+    expired: boolean;
+    note?: string;
+}
+
+interface VacationSummary {
+    myAnnual: number;
+    granted: number;
+    used: number;
+    expired: number;
+    grantItems: SummaryGrantItem[];
+}
+
+const VACATION_TIMELINE_START_YEAR = 2025;
+
+type VacationBalanceEvent = {
+    date: string;
+    createdAt: string;
+    order: number;
+    delta: number;
+    kind: "grant" | "expire" | "vacation";
+    vacationId?: string;
+    status?: ApiVacationStatus;
+};
+
+type VacationGrantBucket = {
+    date: string;
+    original: number;
+    remaining: number;
+    used: number;
+    expired: number;
+    sequence: number;
+};
+
+function sumBucketBalance(buckets: VacationGrantBucket[]) {
+    return buckets.reduce((sum, bucket) => sum + bucket.remaining, 0);
+}
+
+function consumeFromBuckets(
+    buckets: VacationGrantBucket[],
+    amount: number,
+    predicate: (bucket: VacationGrantBucket) => boolean,
+    reason: "used" | "expired"
+) {
+    let remainingToConsume = amount;
+
+    for (const bucket of buckets) {
+        if (remainingToConsume <= 0) break;
+        if (!predicate(bucket) || bucket.remaining <= 0) continue;
+
+        const consumed = Math.min(bucket.remaining, remainingToConsume);
+        bucket.remaining -= consumed;
+        if (reason === "used") {
+            bucket.used += consumed;
+        } else {
+            bucket.expired += consumed;
+        }
+        remainingToConsume -= consumed;
+    }
+
+    return amount - remainingToConsume;
+}
+
+function getVacationDayCount(vacation: Pick<Vacation, "leave_type">) {
+    return vacation.leave_type === "FULL" ? 1 : 0.5;
+}
+
+function buildVacationBalanceSnapshot({
+    vacations,
+    grantHistories,
+    selectedYear,
+}: {
+    vacations: Vacation[];
+    grantHistories: VacationGrantHistoryEntry[];
+    selectedYear: number;
+}) {
+    const events: VacationBalanceEvent[] = [];
+    const selectedYearStart = `${selectedYear}-01-01`;
+    const selectedYearEnd = `${selectedYear}-12-31`;
+    const grantEventKeys = new Set<string>();
+    const expireEventKeys = new Set<string>();
+    let bucketSequence = 0;
+
+    grantHistories.forEach((history) => {
+        if (history.granted) {
+            const grantKey = `grant:${history.date}:${history.granted}`;
+            if (!grantEventKeys.has(grantKey)) {
+                grantEventKeys.add(grantKey);
+                events.push({
+                    date: history.date,
+                    createdAt: history.date,
+                    order: 0,
+                    delta: history.granted,
+                    kind: "grant",
+                });
+            }
+        }
+
+        if (history.expired) {
+            const expireKey = `expire:${history.date}:${history.expired}`;
+            if (!expireEventKeys.has(expireKey)) {
+                expireEventKeys.add(expireKey);
+                events.push({
+                    date: history.date,
+                    createdAt: history.date,
+                    order: 1,
+                    delta: history.expired,
+                    kind: "expire",
+                });
+            }
+        }
+    });
+
+    vacations
+        .filter((vacation) => vacation.date >= `${VACATION_TIMELINE_START_YEAR}-01-01`)
+        .forEach((vacation) => {
+            const affectsBalance =
+                vacation.status === "approved" || vacation.status === "pending";
+
+            events.push({
+                date: vacation.date,
+                createdAt: vacation.created_at,
+                order: 2,
+                delta: affectsBalance ? -getVacationDayCount(vacation) : 0,
+                kind: "vacation",
+                vacationId: vacation.id,
+                status: vacation.status,
+            });
+        });
+
+    events.sort((a, b) => {
+        const dateDiff =
+            new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (dateDiff !== 0) return dateDiff;
+
+        if (a.order !== b.order) return a.order - b.order;
+
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+
+    let balance = 0;
+    let yearUsed = 0;
+    let yearPending = 0;
+    let yearExpired = 0;
+    const remainMap = new Map<string, number>();
+    const buckets: VacationGrantBucket[] = [];
+
+    events.forEach((event) => {
+        if (event.kind === "grant" && event.delta > 0) {
+            buckets.push({
+                date: event.date,
+                original: event.delta,
+                remaining: event.delta,
+                used: 0,
+                expired: 0,
+                sequence: bucketSequence++,
+            });
+        }
+
+        if (event.kind === "expire" && event.delta < 0) {
+            const expiryAmount = Math.abs(event.delta);
+            const isYearEndExpiry = event.date.endsWith("-12-31");
+            const expiryYear = event.date.slice(0, 4);
+            const expiredAmount = consumeFromBuckets(
+                buckets,
+                expiryAmount,
+                (bucket) =>
+                    isYearEndExpiry
+                        ? bucket.date.startsWith(`${expiryYear}-`)
+                        : bucket.date < event.date,
+                "expired"
+            );
+
+            if (event.date >= selectedYearStart && event.date <= selectedYearEnd) {
+                yearExpired += expiredAmount;
+            }
+        }
+
+        if (event.kind === "vacation" && event.delta < 0) {
+            consumeFromBuckets(
+                buckets,
+                Math.abs(event.delta),
+                () => true,
+                "used"
+            );
+        }
+
+        balance = Math.max(0, sumBucketBalance(buckets));
+
+        if (event.vacationId) {
+            remainMap.set(event.vacationId, balance);
+
+            if (
+                event.date >= selectedYearStart &&
+                event.date <= selectedYearEnd &&
+                event.delta < 0
+            ) {
+                const usedDays = Math.abs(event.delta);
+
+                if (event.status === "approved") {
+                    yearUsed += usedDays;
+                } else if (event.status === "pending") {
+                    yearPending += usedDays;
+                }
+            }
+        }
+    });
+
+    return {
+        remainMap,
+        endingBalance: balance,
+        yearUsed,
+        yearPending,
+        yearExpired,
+        grantBuckets: buckets.map((bucket) => ({ ...bucket })),
+    };
+}
+
+function buildSelectedYearSummary({
+    selectedYearHistory,
+    yearlyVacations,
+    endingBalance,
+    fallbackUsed,
+    fallbackExpired,
+    grantBuckets,
+    selectedYear,
+    joinDate,
+}: {
+    selectedYearHistory: VacationGrantHistoryEntry[];
+    yearlyVacations: Vacation[];
+    endingBalance: number;
+    fallbackUsed: number;
+    fallbackExpired: number;
+    grantBuckets: VacationGrantBucket[];
+    selectedYear: number;
+    joinDate?: string | null;
+}): VacationSummary {
+    const grantEntries = selectedYearHistory
+        .filter((history) => (history.granted || 0) > 0)
+        .map((history) => ({
+            date: history.date,
+            days: history.granted || 0,
+            note: history.note,
+        }));
+
+    if (grantEntries.length === 0) {
+        return {
+            myAnnual: endingBalance,
+            granted: 0,
+            used: fallbackUsed,
+            expired: fallbackExpired,
+            grantItems: [],
+        };
+    }
+
+    if (joinDate) {
+        const anniversaryDate = new Date(joinDate);
+        anniversaryDate.setHours(0, 0, 0, 0);
+        anniversaryDate.setFullYear(anniversaryDate.getFullYear() + 1);
+        const anniversaryDateStr = `${anniversaryDate.getFullYear()}-${String(
+            anniversaryDate.getMonth() + 1
+        ).padStart(2, "0")}-${String(anniversaryDate.getDate()).padStart(2, "0")}`;
+        const currentDate = new Date();
+        currentDate.setHours(0, 0, 0, 0);
+
+        const usedInSelectedYear = yearlyVacations
+            .filter(
+                (vacation) =>
+                    vacation.status !== "rejected"
+            )
+            .reduce((sum, vacation) => sum + getVacationDayCount(vacation), 0);
+
+        const preAnniversaryGranted = grantEntries
+            .filter((entry) => entry.date < anniversaryDateStr)
+            .reduce((sum, entry) => sum + entry.days, 0);
+
+        const postAnniversaryEntries = grantEntries.filter(
+            (entry) => entry.date >= anniversaryDateStr
+        );
+        const postAnniversaryGranted = postAnniversaryEntries.reduce(
+            (sum, entry) => sum + entry.days,
+            0
+        );
+
+        const usedAfterAnniversary = yearlyVacations
+            .filter(
+                (vacation) =>
+                    vacation.date >= anniversaryDateStr &&
+                    vacation.status !== "rejected"
+            )
+            .reduce((sum, vacation) => sum + getVacationDayCount(vacation), 0);
+
+        if (
+            selectedYear < anniversaryDate.getFullYear() &&
+            preAnniversaryGranted > 0 &&
+            currentDate >= anniversaryDate
+        ) {
+            return {
+                myAnnual: 0,
+                granted: preAnniversaryGranted,
+                used: usedInSelectedYear,
+                expired: preAnniversaryGranted,
+                grantItems: [
+                    {
+                        days: preAnniversaryGranted,
+                        expired: true,
+                    },
+                ],
+            };
+        }
+
+        if (
+            selectedYear === anniversaryDate.getFullYear() &&
+            preAnniversaryGranted > 0 &&
+            postAnniversaryGranted > 0
+        ) {
+            return {
+                myAnnual: endingBalance,
+                granted: preAnniversaryGranted + postAnniversaryGranted,
+                used: usedAfterAnniversary,
+                expired: preAnniversaryGranted,
+                grantItems: [
+                    {
+                        days: preAnniversaryGranted,
+                        expired: true,
+                    },
+                    ...(() => {
+                        const items: SummaryGrantItem[] = [];
+                        const regularPostGranted = postAnniversaryEntries
+                            .filter((entry) => !entry.note)
+                            .reduce((sum, entry) => sum + entry.days, 0);
+
+                        if (regularPostGranted > 0) {
+                            items.push({
+                                days: regularPostGranted,
+                                expired: false,
+                            });
+                        }
+
+                        postAnniversaryEntries
+                            .filter((entry) => !!entry.note)
+                            .forEach((entry) => {
+                                items.push({
+                                    days: entry.days,
+                                    expired: false,
+                                    note: entry.note,
+                                });
+                            });
+
+                        return items;
+                    })(),
+                ],
+            };
+        }
+    }
+
+    const matchingBuckets = grantBuckets
+        .filter((bucket) => bucket.date.startsWith(`${selectedYear}-`))
+        .sort((a, b) => {
+            const dateDiff = a.date.localeCompare(b.date);
+            if (dateDiff !== 0) return dateDiff;
+            return a.sequence - b.sequence;
+        });
+
+    let bucketIndex = 0;
+    const grantBatches: Array<{
+        totalGranted: number;
+        used: number;
+        remaining: number;
+        expiredAmount: number;
+        note?: string;
+    }> = [];
+
+    grantEntries.forEach((entry, entryIndex) => {
+        const matchingBucketOffset = matchingBuckets
+            .slice(bucketIndex)
+            .findIndex(
+                (bucket) => bucket.date === entry.date && bucket.original === entry.days
+            );
+        const matchingBucket =
+            matchingBucketOffset >= 0
+                ? matchingBuckets[bucketIndex + matchingBucketOffset]
+                : undefined;
+
+        if (!matchingBucket) {
+            grantBatches.push({
+                totalGranted: entry.days,
+                used: 0,
+                remaining: 0,
+                expiredAmount: 0,
+                note: entry.note,
+            });
+            return;
+        }
+
+        bucketIndex = bucketIndex + matchingBucketOffset + 1;
+
+        const shouldMergeWithPrevious =
+            entry.days === 1 &&
+            entryIndex > 0 &&
+            grantEntries[entryIndex - 1]?.days === 1;
+
+        if (shouldMergeWithPrevious) {
+            const lastBatch = grantBatches[grantBatches.length - 1];
+            lastBatch.totalGranted += matchingBucket.original;
+            lastBatch.used += matchingBucket.used;
+            lastBatch.remaining += matchingBucket.remaining;
+            lastBatch.expiredAmount += matchingBucket.expired;
+            return;
+        }
+
+        grantBatches.push({
+            totalGranted: matchingBucket.original,
+            used: matchingBucket.used,
+            remaining: matchingBucket.remaining,
+            expiredAmount: matchingBucket.expired,
+            note: entry.note,
+        });
+    });
+
+    const activeBatches = grantBatches.filter((batch) => batch.expiredAmount === 0);
+    const expiredBatches = grantBatches.filter((batch) => batch.expiredAmount > 0);
+
+    const activeRemaining = activeBatches.reduce(
+        (sum, batch) => sum + batch.remaining,
+        0
+    );
+    const activeUsed = activeBatches.reduce((sum, batch) => sum + batch.used, 0);
+    const expiredGranted = expiredBatches.reduce(
+        (sum, batch) => sum + batch.totalGranted,
+        0
+    );
+    const grantItems = grantBatches.map((batch) => ({
+        days: batch.totalGranted,
+        expired: batch.expiredAmount > 0,
+        note: batch.note,
+    }));
+
+    return {
+        myAnnual: activeRemaining || (expiredBatches.length > 0 ? 0 : endingBalance),
+        granted: grantBatches.reduce((sum, batch) => sum + batch.totalGranted, 0),
+        used: activeUsed || (activeBatches.length > 0 ? 0 : fallbackUsed),
+        expired: expiredGranted || fallbackExpired,
+        grantItems,
+    };
 }
 
 export default function VacationPage() {
@@ -69,9 +517,7 @@ export default function VacationPage() {
     const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
-    const [userPosition, setUserPosition] = useState<string | null>(null);
-    const [userRole, setUserRole] = useState<string | null>(null);
-    const [userDepartment, setUserDepartment] = useState<string | null>(null);
+    const [userJoinDate, setUserJoinDate] = useState<string | null>(null);
 
     // 사용자 권한 확인 및 리다이렉트
     useEffect(() => {
@@ -80,15 +526,12 @@ export default function VacationPage() {
 
             const { data: profile } = await supabase
                 .from("profiles")
-                .select("position, role, department")
+                .select("position, role, department, join_date")
                 .eq("id", user.id)
                 .single();
 
             if (profile) {
-                setUserPosition(profile.position);
-                setUserRole(profile.role);
-                setUserDepartment(profile.department);
-
+                setUserJoinDate(profile.join_date ?? null);
                 // 대표님인 경우 승인 페이지로 리다이렉트
                 if (profile.position === "대표") {
                     navigate("/vacation/admin", { replace: true });
@@ -112,13 +555,16 @@ export default function VacationPage() {
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [vacations, setVacations] = useState<Vacation[]>([]);
-    const [summary, setSummary] = useState({
+    const [summary, setSummary] = useState<VacationSummary>({
         myAnnual: 0,
         granted: 0,
         used: 0,
         expired: 0,
+        grantItems: [],
     });
-    const [grantHistory, setGrantHistory] = useState<VacationGrantHistory[]>([]);
+    const [grantHistory, setGrantHistory] = useState<VacationGrantHistoryEntry[]>([]);
+    const [allGrantHistories, setAllGrantHistories] = useState<VacationGrantHistoryEntry[]>([]);
+    const [allVacations, setAllVacations] = useState<Vacation[]>([]);
 
     // URL 파라미터로 모달 열기 및 날짜 설정
     const [initialDate, setInitialDate] = useState<string | null>(null);
@@ -136,6 +582,61 @@ export default function VacationPage() {
         }
     }, [searchParams, setSearchParams]);
 
+    const loadVacationData = useCallback(
+        async (yearNum: number) => {
+            if (!user?.id) return;
+
+            const historyYears = Array.from(
+                { length: yearNum - VACATION_TIMELINE_START_YEAR + 1 },
+                (_, index) => VACATION_TIMELINE_START_YEAR + index
+            );
+
+            const [yearlyVacations, timelineVacations, selectedYearHistory, allHistories] =
+                await Promise.all([
+                    getVacations(user.id, { year: yearNum }),
+                    getVacations(user.id),
+                    getVacationGrantHistory(user.id, yearNum),
+                    Promise.all(
+                        historyYears.map((targetYear) =>
+                            getVacationGrantHistory(user.id, targetYear)
+                        )
+                    ),
+                ]);
+
+            const flattenedHistory = allHistories.flat();
+            const balanceSnapshot = buildVacationBalanceSnapshot({
+                vacations: timelineVacations,
+                grantHistories: flattenedHistory,
+                selectedYear: yearNum,
+            });
+
+            const totalExpired = Math.abs(
+                selectedYearHistory.reduce(
+                    (sum, history) => sum + (history.expired || 0),
+                    0
+                )
+            );
+
+            setVacations(yearlyVacations);
+            setAllVacations(timelineVacations);
+            setGrantHistory(selectedYearHistory);
+            setAllGrantHistories(flattenedHistory);
+            setSummary(
+                buildSelectedYearSummary({
+                    selectedYearHistory,
+                    yearlyVacations,
+                    endingBalance: balanceSnapshot.endingBalance,
+                    fallbackUsed: balanceSnapshot.yearUsed + balanceSnapshot.yearPending,
+                    fallbackExpired: balanceSnapshot.yearExpired || totalExpired,
+                    grantBuckets: balanceSnapshot.grantBuckets,
+                    selectedYear: yearNum,
+                    joinDate: userJoinDate,
+                })
+            );
+        },
+        [user?.id, userJoinDate]
+    );
+
     // 휴가 목록 조회 (병렬 처리로 최적화)
     useEffect(() => {
         if (!user?.id) return;
@@ -143,34 +644,7 @@ export default function VacationPage() {
         const fetchVacations = async () => {
             setLoading(true);
             try {
-                const yearNum = parseInt(year);
-
-                // 휴가 목록을 먼저 가져온 후, 나머지를 병렬로 실행
-                const data = await getVacations(user.id, { year: yearNum });
-
-                // 휴가 목록을 재사용하여 통계 계산 (중복 호출 방지)
-                const [stats, history, currentTotal] = await Promise.all([
-                    getVacationStats(user.id, yearNum, data),
-                    getVacationGrantHistory(user.id, yearNum),
-                    getCurrentTotalAnnualLeave(user.id),
-                ]);
-
-                setVacations(data);
-                setGrantHistory(history);
-
-                // 지급 총합 계산 (해당 연도만)
-                const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
-                const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
-
-                const remainingWithPending = Math.max(0, (stats.total || 0) - stats.used - stats.pending);
-                const usedWithPending = stats.used + stats.pending;
-
-                setSummary({
-                    myAnnual: remainingWithPending, // ??(??) ?? ?? ??
-                    granted: totalGranted || stats.total || 0, // ?? ?? ??
-                    used: usedWithPending, // ?? + ?? ?? ??
-                    expired: totalExpired, // ?? ?? ??
-                });
+                await loadVacationData(parseInt(year, 10));
             } catch (error) {
                 console.error("휴가 목록 조회 실패:", error);
                 showError("휴가 목록을 불러오는데 실패했습니다.");
@@ -180,7 +654,7 @@ export default function VacationPage() {
         };
 
         fetchVacations();
-    }, [user?.id, year]);
+    }, [loadVacationData, showError, user?.id, year]);
 
     // 삭제 확인 메시지 생성
     const deleteConfirmMessage = useMemo(() => {
@@ -198,26 +672,16 @@ export default function VacationPage() {
 
     // API 데이터를 VacationRow 형식으로 변환
     const rows: VacationRow[] = useMemo(() => {
-        const yearTotal = summary.granted > 0 ? summary.granted : summary.myAnnual;
-        const sortedByDate = [...vacations].sort((a, b) => {
-            const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
-            if (dateDiff !== 0) return dateDiff;
-            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        });
-
-        let cumulativeReserved = 0;
-        const remainMap = new Map<string, number>();
-
-        sortedByDate.forEach((vacation) => {
-            if (vacation.status === "approved" || vacation.status === "pending") {
-                cumulativeReserved += vacation.leave_type === "FULL" ? 1 : 0.5;
-            }
-            remainMap.set(vacation.id, Math.max(0, yearTotal - cumulativeReserved));
+        const balanceSnapshot = buildVacationBalanceSnapshot({
+            vacations: allVacations,
+            grantHistories: allGrantHistories,
+            selectedYear: parseInt(year, 10),
         });
 
         return vacations.map((vacation) => {
-            const usedDays = vacation.leave_type === "FULL" ? -1 : -0.5;
-            const remainDays = remainMap.get(vacation.id) ?? Math.max(0, yearTotal - cumulativeReserved);
+            const usedDays = -getVacationDayCount(vacation);
+            const remainDays =
+                balanceSnapshot.remainMap.get(vacation.id) ?? summary.myAnnual;
 
             return {
                 id: vacation.id,
@@ -230,27 +694,33 @@ export default function VacationPage() {
                 date: vacation.date,
             };
         });
-    }, [vacations, summary.myAnnual, summary.granted]);
+    }, [allGrantHistories, allVacations, summary.myAnnual, vacations, year]);
 
     // 지급/소멸 내역 변환
     const grantExpireRows = useMemo<GrantExpireRow[]>(() => {
         const selectedYear = parseInt(year, 10);
-        return grantHistory.map((h, index) => {
-            const date = new Date(h.date);
-            const displayYear = date.getFullYear();
-            const month = date.getMonth() + 1;
-            const day = date.getDate();
+        return grantHistory
+            .map((h, index) => {
+                const date = new Date(h.date);
+                const displayYear = date.getFullYear();
+                const month = date.getMonth() + 1;
+                const day = date.getDate();
 
-            return {
-                id: `grant-${index}`,
-                monthLabel:
-                    displayYear !== selectedYear
-                        ? `${displayYear}년 ${month}월 ${day}일`
-                        : `${month}월 ${day}일`,
-                granted: h.granted,
-                expired: h.expired,
-            };
-        });
+                return {
+                    id: `grant-${index}`,
+                    monthLabel:
+                        displayYear !== selectedYear
+                            ? `${displayYear}년 ${month}월 ${day}일`
+                            : `${month}월 ${day}일`,
+                    granted: h.granted,
+                    grantedLabel:
+                        h.granted != null && h.note
+                            ? `${formatVacationDays(h.granted)}(${h.note})`
+                            : undefined,
+                    expired: h.expired,
+                };
+            })
+            .reverse();
     }, [grantHistory, year]);
 
     // 간단 페이징(1페이지 10개 고정)
@@ -290,28 +760,7 @@ export default function VacationPage() {
             setDeleteTargetId(null);
 
             // 목록 새로고침
-            const yearNum = parseInt(year);
-            const data = await getVacations(user.id, { year: yearNum });
-            setVacations(data);
-
-            const stats = await getVacationStats(user.id, yearNum);
-
-            // 지급/소멸 내역 조회
-            const history = await getVacationGrantHistory(user.id, yearNum);
-            setGrantHistory(history);
-
-            // 지급 총합 계산
-            const totalGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
-            const totalExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
-
-            const remainingWithPending = Math.max(0, (stats.total || 0) - stats.used - stats.pending);
-
-            setSummary({
-                myAnnual: remainingWithPending,
-                granted: totalGranted || stats.total || 0,
-                used: stats.used,
-                expired: totalExpired,
-            });
+            await loadVacationData(parseInt(year, 10));
         } catch (error: any) {
             console.error("휴가 삭제 실패:", error);
             showError(error.message || "휴가 삭제에 실패했습니다.");
@@ -360,19 +809,7 @@ export default function VacationPage() {
             setEditingVacation(null);
 
             // 목록 새로고침
-            const yearNum = parseInt(year);
-            const data = await getVacations(user.id, { year: yearNum });
-            setVacations(data);
-
-            const stats = await getVacationStats(user.id, yearNum);
-            const remainingWithPending = Math.max(0, (stats.total || 0) - stats.used - stats.pending);
-            const usedWithPending = stats.used + stats.pending;
-            setSummary({
-                myAnnual: remainingWithPending,
-                granted: stats.total || 0,
-                used: usedWithPending,
-                expired: 0,
-            });
+            await loadVacationData(parseInt(year, 10));
         } catch (error: any) {
             console.error("휴가 처리 실패:", error);
             showError(error.message || (editingVacation ? "휴가 수정에 실패했습니다." : "휴가 신청에 실패했습니다."));

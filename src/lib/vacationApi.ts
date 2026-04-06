@@ -7,9 +7,12 @@ import {
 import {
     calculateAnnualLeave,
     getVacationGrantHistory as calculateGrantHistory,
-    type VacationGrantHistory,
     updateVacationBalances,
 } from "./vacationCalculator";
+import {
+    mergeVacationGrantHistory,
+    type VacationGrantHistoryEntry,
+} from "./vacationSpecialGrants";
 
 function buildVacationMonthRange(year: number, monthZeroBased: number) {
     const monthNumber = monthZeroBased + 1;
@@ -427,11 +430,11 @@ export async function getVacationStats(
 export async function getVacationGrantHistory(
     userId: string,
     year: number
-): Promise<VacationGrantHistory[]> {
+): Promise<VacationGrantHistoryEntry[]> {
     // 프로필에서 입사일 가져오기
     const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("join_date")
+        .select("join_date, email, name")
         .eq("id", userId)
         .single();
     
@@ -441,7 +444,11 @@ export async function getVacationGrantHistory(
     }
     
     // 지급/소멸 내역 계산
-    return calculateGrantHistory(profile.join_date, year);
+    return mergeVacationGrantHistory(
+        calculateGrantHistory(profile.join_date, year),
+        { email: profile.email, name: profile.name },
+        year
+    );
 }
 
 /**
@@ -475,7 +482,7 @@ export async function getCurrentTotalAnnualLeave(userId: string): Promise<number
     // 프로필에서 입사일 가져오기
     const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("join_date")
+        .select("join_date, email, name")
         .eq("id", userId)
         .single();
     
@@ -497,7 +504,11 @@ export async function getCurrentTotalAnnualLeave(userId: string): Promise<number
     // 모든 연도의 지급 내역을 합산
     let totalGranted = 0;
     for (let year = startYear; year <= currentYear; year++) {
-        const history = calculateGrantHistory(profile.join_date, year, currentDate);
+        const history = mergeVacationGrantHistory(
+            calculateGrantHistory(profile.join_date, year, currentDate),
+            { email: profile.email, name: profile.name },
+            year
+        );
         const yearGranted = history.reduce((sum, h) => sum + (h.granted || 0), 0);
         const yearExpired = Math.abs(history.reduce((sum, h) => sum + (h.expired || 0), 0));
         totalGranted += yearGranted - yearExpired;

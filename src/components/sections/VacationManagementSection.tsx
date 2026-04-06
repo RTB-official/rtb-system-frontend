@@ -18,12 +18,18 @@ interface Summary {
     granted: number; // 지급
     used: number; // 사용
     expired: number; // 소멸
+    grantItems?: {
+        days: number;
+        expired: boolean;
+        note?: string;
+    }[];
 }
 
 export interface GrantExpireRow {
     id: string;
     monthLabel: string; // "2025년 1월"
     granted?: number; // 15
+    grantedLabel?: string;
     expired?: number; // -3 (표시는 -3일)
     used?: number; // -3
     balance?: number; // 15
@@ -98,6 +104,14 @@ export default function VacationManagementSection({
     const isMobile = useIsMobile();
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+    const grantedValue =
+        summary.grantItems && summary.grantItems.length > 0
+            ? summary.grantItems
+                  .map((item) =>
+                      `${formatVacationDays(item.days)}${item.expired ? "(소멸됨)" : item.note ? `(${item.note})` : ""}`
+                  )
+                  .join(" / ")
+            : formatVacationDays(summary.granted);
     const summaryCards = [
         {
             label: "내 연차",
@@ -106,17 +120,17 @@ export default function VacationManagementSection({
         },
         {
             label: "지급",
-            value: `+ ${formatVacationDays(summary.granted)}`,
+            value: grantedValue,
             color: "text-green-600",
         },
         {
             label: "사용",
-            value: `- ${formatVacationDays(summary.used)}`,
+            value: formatVacationDays(summary.used),
             color: "text-gray-900",
         },
         {
             label: "소멸",
-            value: `- ${formatVacationDays(summary.expired)}`,
+            value: formatVacationDays(summary.expired),
             color: "text-red-600",
         },
     ];
@@ -335,7 +349,11 @@ export default function VacationManagementSection({
                                     <li key={row.id} className="rounded-xl border border-gray-200 p-4 flex flex-col gap-1 bg-white">
                                         <p className="font-medium text-gray-900">{labelWithYear}</p>
                                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                                            {row.granted != null && <span>지급 {formatDaysOrDash(row.granted)}</span>}
+                                            {row.grantedLabel ? (
+                                                <span>지급 {row.grantedLabel}</span>
+                                            ) : row.granted != null ? (
+                                                <span>지급 {formatDaysOrDash(row.granted)}</span>
+                                            ) : null}
                                             {row.expired != null && <span>소멸 {formatDaysOrDash(row.expired)}</span>}
                                             {row.used != null && <span>사용 {formatDaysOrDash(row.used)}</span>}
                                             {row.balance != null && <span className="font-medium text-gray-900">잔여 {formatBalanceOrDash(row.balance)}</span>}
@@ -413,6 +431,13 @@ function GrantExpireTable({
                     label: "지급",
                     width: "20%",
                     render: (_value, row: GrantExpireRow) => {
+                        if (row.grantedLabel) {
+                            return (
+                                <span className="font-medium text-gray-900">
+                                    {row.grantedLabel}
+                                </span>
+                            );
+                        }
                         if (row.granted === null || row.granted === undefined) {
                             return null;
                         }
