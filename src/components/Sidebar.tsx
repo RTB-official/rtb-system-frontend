@@ -131,7 +131,10 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         .trim()
         .toLowerCase();
     const canShowInvoiceMenu =
-        normalizedLoginId === "mw.park" || normalizedLoginId === "brian.ko";
+        normalizedLoginId === "mw.park" ||
+        normalizedLoginId === "brian.ko" ||
+        normalizedLoginId === "hg.kim" ||
+        normalizedLoginId === "jay.kim";
 
     const {
         showNotifications,

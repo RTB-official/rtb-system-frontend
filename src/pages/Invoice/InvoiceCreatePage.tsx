@@ -61,12 +61,15 @@ interface TimesheetRowModalData {
     description: string;
     sourceEntries: TimesheetSourceEntryData[];
     groupSourceEntries: TimesheetSourceEntryData[];
+    previousWorkLocations: Record<string, string[]>;
+    nextWorkLocations: Record<string, string[]>;
 }
 
 interface TimesheetDateGroupPanelData {
     blockKey: string;
     sectionTitle: string;
     fullGroupEntries: TimesheetSourceEntryData[];
+    workLocationsByDate: Record<string, Record<string, string[]>>;
 }
 
 interface PersonnelEditorState {
@@ -83,6 +86,8 @@ interface PersonnelSelectionCandidate {
 }
 
 type WorkLogEntryItem = WorkLogFullData["entries"][number];
+type WorkLocationContext = Record<string, string[]>;
+type WorkLocationContextByDate = Record<string, WorkLocationContext>;
 
 type InvoiceTimesheetEntry = WorkLogEntryItem & {
     workLogId: number;
@@ -998,14 +1003,124 @@ export default function InvoiceCreatePage() {
                 const workDates = Array.from(
                     new Set(workEntries.map((entry) => entry.dateFrom))
                 ).sort();
-                const workPersonsByDate = new Map<string, Set<string>>();
+                const inferWorkPlaceFromTravelSegments = (
+                    leadingTravelEntries: InvoiceTimesheetEntry[],
+                    trailingTravelEntries: InvoiceTimesheetEntry[]
+                ) => {
+                    const lastLeadingTravelEntry =
+                        leadingTravelEntries[leadingTravelEntries.length - 1];
+                    const leadingDestination = lastLeadingTravelEntry
+                        ? normalizeLocationName(
+                              getFinalDestination(lastLeadingTravelEntry)
+                          )
+                        : "";
+                    if (leadingDestination && leadingDestination !== "자택") {
+                        return leadingDestination;
+                    }
+
+                    const firstTrailingTravelEntry = trailingTravelEntries[0];
+                    const trailingOrigin = firstTrailingTravelEntry
+                        ? normalizeLocationName(
+                              getTravelEntryOrigin(firstTrailingTravelEntry)
+                          )
+                        : "";
+                    if (trailingOrigin && trailingOrigin !== "자택") {
+                        return trailingOrigin;
+                    }
+
+                    return "";
+                };
+
+                const collectInferredWorkPlacesForPerson = (
+                    entries: InvoiceTimesheetEntry[],
+                    person: string
+                ) => {
+                    const personEntries = [...entries]
+                        .filter((entry) => (entry.persons ?? []).includes(person))
+                        .sort((a, b) => {
+                            const aStart =
+                                getEntryStartTime(a) ?? Number.MAX_SAFE_INTEGER;
+                            const bStart =
+                                getEntryStartTime(b) ?? Number.MAX_SAFE_INTEGER;
+                            if (aStart !== bStart) return aStart - bStart;
+                            const aEnd =
+                                getEntryEndTime(a) ?? Number.MAX_SAFE_INTEGER;
+                            const bEnd =
+                                getEntryEndTime(b) ?? Number.MAX_SAFE_INTEGER;
+                            return aEnd - bEnd;
+                        });
+
+                    const inferredPlaces = new Set<string>();
+                    let index = 0;
+                    let leadingTravelEntries: InvoiceTimesheetEntry[] = [];
+
+                    while (
+                        index < personEntries.length &&
+                        personEntries[index].descType === "이동"
+                    ) {
+                        leadingTravelEntries.push(personEntries[index]);
+                        index += 1;
+                    }
+
+                    while (index < personEntries.length) {
+                        const anchorEntries: InvoiceTimesheetEntry[] = [];
+                        while (
+                            index < personEntries.length &&
+                            personEntries[index].descType !== "이동"
+                        ) {
+                            anchorEntries.push(personEntries[index]);
+                            index += 1;
+                        }
+
+                        if (anchorEntries.length === 0) {
+                            break;
+                        }
+
+                        const trailingTravelEntries: InvoiceTimesheetEntry[] = [];
+                        while (
+                            index < personEntries.length &&
+                            personEntries[index].descType === "이동"
+                        ) {
+                            trailingTravelEntries.push(personEntries[index]);
+                            index += 1;
+                        }
+
+                        const inferredPlace = inferWorkPlaceFromTravelSegments(
+                            leadingTravelEntries,
+                            trailingTravelEntries
+                        );
+                        if (inferredPlace) {
+                            inferredPlaces.add(inferredPlace);
+                        }
+
+                        leadingTravelEntries = trailingTravelEntries;
+                    }
+
+                    return inferredPlaces;
+                };
+
+                const workLocationsByDate = new Map<
+                    string,
+                    Map<string, Set<string>>
+                >();
                 workDates.forEach((date) => {
-                    const persons = new Set<string>();
-                    (entriesByDate.get(date) ?? []).forEach((entry) => {
-                        if (entry.descType !== "작업") return;
-                        entry.persons?.forEach((person) => persons.add(person));
+                    const dayEntries = entriesByDate.get(date) ?? [];
+                    const persons = Array.from(
+                        new Set(dayEntries.flatMap((entry) => entry.persons ?? []))
+                    );
+                    const locationsByPerson = new Map<string, Set<string>>();
+
+                    persons.forEach((person) => {
+                        const inferredPlaces = collectInferredWorkPlacesForPerson(
+                            dayEntries,
+                            person
+                        );
+                        if (inferredPlaces.size > 0) {
+                            locationsByPerson.set(person, inferredPlaces);
+                        }
                     });
-                    workPersonsByDate.set(date, persons);
+
+                    workLocationsByDate.set(date, locationsByPerson);
                 });
                 const roundHours = (value: number): number =>
                     Math.round(value * 10) / 10;
@@ -1220,17 +1335,43 @@ export default function InvoiceCreatePage() {
                     });
                     const currentWorkPersons = Array.from(
                         new Set([
-                            ...(workPersonsByDate.get(date) ?? []),
+                            ...Array.from(
+                                workLocationsByDate.get(date)?.keys() ?? []
+                            ),
                             ...waitPersonsThisDate,
                         ])
                     ).sort();
                     const previousDate = shiftDateByDays(date, -1);
                     const nextDate = shiftDateByDays(date, 1);
-                    const previousWorkPersons =
-                        workPersonsByDate.get(previousDate) ?? new Set<string>();
-                    const nextWorkPersons =
-                        workPersonsByDate.get(nextDate) ?? new Set<string>();
-                    const hasNextCalendarWorkDate = workPersonsByDate.has(nextDate);
+                    const previousWorkLocations =
+                        workLocationsByDate.get(previousDate) ??
+                        new Map<string, Set<string>>();
+                    const nextWorkLocations =
+                        workLocationsByDate.get(nextDate) ??
+                        new Map<string, Set<string>>();
+                    const hasNextCalendarWorkDate = workLocationsByDate.has(nextDate);
+
+                    const doesWorkContextMatchBlockLocation = (
+                        person: string,
+                        beforeTravelEntries: InvoiceTimesheetEntry[],
+                        afterTravelEntries: InvoiceTimesheetEntry[],
+                        workContext: Map<string, Set<string>>
+                    ) => {
+                        const workPlaces = workContext.get(person);
+                        if (!workPlaces || workPlaces.size === 0) {
+                            return false;
+                        }
+
+                        const blockWorkPlace = inferWorkPlaceFromTravelSegments(
+                            beforeTravelEntries,
+                            afterTravelEntries
+                        );
+                        if (!blockWorkPlace) {
+                            return false;
+                        }
+
+                        return workPlaces.has(blockWorkPlace);
+                    };
 
                     const getWorkingMetricsForEntries = (
                         entries: InvoiceTimesheetEntry[]
@@ -1437,6 +1578,7 @@ export default function InvoiceCreatePage() {
                         person: string,
                         blockIndex: number,
                         beforeTravelEntries: InvoiceTimesheetEntry[],
+                        afterTravelEntries: InvoiceTimesheetEntry[],
                         blockStartTime: string
                     ) => {
                         if (beforeTravelEntries.length === 0) {
@@ -1450,7 +1592,14 @@ export default function InvoiceCreatePage() {
                         }
 
                         if (blockIndex === 0) {
-                            if (!previousWorkPersons.has(person)) {
+                            if (
+                                !doesWorkContextMatchBlockLocation(
+                                    person,
+                                    beforeTravelEntries,
+                                    afterTravelEntries,
+                                    previousWorkLocations
+                                )
+                            ) {
                                 const fixedHours =
                                     getHomeTravelHours(
                                         beforeTravelEntries[0].location
@@ -1500,6 +1649,7 @@ export default function InvoiceCreatePage() {
                         person: string,
                         blockIndex: number,
                         totalBlocks: number,
+                        beforeTravelEntries: InvoiceTimesheetEntry[],
                         afterTravelEntries: InvoiceTimesheetEntry[],
                         blockEndTime: string
                     ) => {
@@ -1521,7 +1671,15 @@ export default function InvoiceCreatePage() {
                             );
                         }
 
-                        if (hasNextCalendarWorkDate && nextWorkPersons.has(person)) {
+                        if (
+                            hasNextCalendarWorkDate &&
+                            doesWorkContextMatchBlockLocation(
+                                person,
+                                beforeTravelEntries,
+                                afterTravelEntries,
+                                nextWorkLocations
+                            )
+                        ) {
                             const start = afterTravelEntries[0].timeFrom ?? blockEndTime;
                             return {
                                 kind: "continued",
@@ -1556,6 +1714,31 @@ export default function InvoiceCreatePage() {
                         travelWeekdayDisplay: string;
                         travelWeekendDisplay: string;
                         label: string;
+                    };
+
+                    const splitFirstBlockLeadingTravelEntries = (
+                        beforeTravelEntries: InvoiceTimesheetEntry[]
+                    ) => {
+                        const firstInboundTravelIndex = beforeTravelEntries.findIndex(
+                            (entry) => isDestinationWorkPlace(entry)
+                        );
+
+                        if (firstInboundTravelIndex <= 0) {
+                            return {
+                                detachedLeadingEntries:
+                                    [] as InvoiceTimesheetEntry[],
+                                effectiveBeforeTravelEntries: beforeTravelEntries,
+                            };
+                        }
+
+                        return {
+                            detachedLeadingEntries: beforeTravelEntries.slice(
+                                0,
+                                firstInboundTravelIndex
+                            ),
+                            effectiveBeforeTravelEntries:
+                                beforeTravelEntries.slice(firstInboundTravelIndex),
+                        };
                     };
 
                     const buildTravelOnlyRow = (
@@ -1638,8 +1821,37 @@ export default function InvoiceCreatePage() {
                         ...travelOnlyRows,
                         ...currentWorkPersons.flatMap((person) => {
                             const blocks = getPersonBlocks(person);
+                            const firstBlock = blocks[0] ?? null;
+                            const firstBlockLeadingTravel =
+                                firstBlock === null
+                                    ? {
+                                          detachedLeadingEntries:
+                                              [] as InvoiceTimesheetEntry[],
+                                          effectiveBeforeTravelEntries:
+                                              [] as InvoiceTimesheetEntry[],
+                                      }
+                                    : splitFirstBlockLeadingTravelEntries(
+                                          firstBlock.beforeTravelEntries
+                                      );
+                            const detachedLeadingTravelRow =
+                                firstBlockLeadingTravel.detachedLeadingEntries
+                                    .length > 0
+                                    ? buildTravelOnlyRow(
+                                          person,
+                                          firstBlockLeadingTravel.detachedLeadingEntries
+                                      )
+                                    : null;
 
-                            return blocks.map((block, blockIndex) => {
+                            return [
+                                ...(detachedLeadingTravelRow
+                                    ? [detachedLeadingTravelRow]
+                                    : []),
+                                ...blocks.map((block, blockIndex) => {
+                                    const effectiveBeforeTravelEntries =
+                                        blockIndex === 0
+                                            ? firstBlockLeadingTravel
+                                                  .effectiveBeforeTravelEntries
+                                            : block.beforeTravelEntries;
                                 const working = getWorkingMetricsForEntries(
                                     block.workEntries
                                 );
@@ -1652,13 +1864,15 @@ export default function InvoiceCreatePage() {
                                 const beforeTravel = getBeforeTravelSummary(
                                     person,
                                     blockIndex,
-                                    block.beforeTravelEntries,
+                                    effectiveBeforeTravelEntries,
+                                    block.afterTravelEntries,
                                     blockSpan.earliest
                                 );
                                 const afterTravel = getAfterTravelSummary(
                                     person,
                                     blockIndex,
                                     blocks.length,
+                                    effectiveBeforeTravelEntries,
                                     block.afterTravelEntries,
                                     blockSpan.latest
                                 );
@@ -1667,9 +1881,9 @@ export default function InvoiceCreatePage() {
                                     "강동동 공장"
                                 );
                                 const lastBeforeTravelEntry =
-                                    block.beforeTravelEntries.length > 0
-                                        ? block.beforeTravelEntries[
-                                              block.beforeTravelEntries.length - 1
+                                    effectiveBeforeTravelEntries.length > 0
+                                        ? effectiveBeforeTravelEntries[
+                                              effectiveBeforeTravelEntries.length - 1
                                           ]
                                         : null;
                                 const firstAfterTravelEntry =
@@ -1759,7 +1973,7 @@ export default function InvoiceCreatePage() {
                                     sourceEntryIds: Array.from(
                                         new Set(
                                             [
-                                                ...block.beforeTravelEntries,
+                                                ...effectiveBeforeTravelEntries,
                                                 ...block.workEntries,
                                                 ...block.afterTravelEntries,
                                             ].flatMap(
@@ -1800,7 +2014,8 @@ export default function InvoiceCreatePage() {
                                         : "",
                                     label,
                                 };
-                            });
+                                }),
+                            ];
                         }),
                     ];
 
@@ -2855,12 +3070,134 @@ export default function InvoiceCreatePage() {
         });
     };
 
+    const buildWorkLocationContextByDate = (
+        rows: TimesheetRow[]
+    ): WorkLocationContextByDate => {
+        const locationsByDate = new Map<string, Map<string, Set<string>>>();
+
+        rows.forEach((row) => {
+            if (locationsByDate.has(row.date)) {
+                return;
+            }
+
+            const dateEntries = rows
+                .filter((candidate) => candidate.date === row.date)
+                .flatMap((candidate) => candidate.sourceEntries)
+                .filter(
+                    (entry, index, entries) =>
+                        entries.findIndex((candidate) => candidate.id === entry.id) ===
+                        index
+                )
+                .sort((a, b) => {
+                    const aStart = new Date(
+                        `${a.dateFrom}T${a.timeFrom || "00:00"}`
+                    ).getTime();
+                    const bStart = new Date(
+                        `${b.dateFrom}T${b.timeFrom || "00:00"}`
+                    ).getTime();
+                    return aStart - bStart;
+                });
+
+            const persons = Array.from(
+                new Set(dateEntries.flatMap((entry) => entry.persons ?? []))
+            );
+            const locationsByPerson = new Map<string, Set<string>>();
+
+            persons.forEach((person) => {
+                const personEntries = dateEntries.filter((entry) =>
+                    (entry.persons ?? []).includes(person)
+                );
+                let index = 0;
+                let leadingTravelEntries: TimesheetSourceEntryData[] = [];
+                while (
+                    index < personEntries.length &&
+                    personEntries[index].descType === "이동"
+                ) {
+                    leadingTravelEntries.push(personEntries[index]);
+                    index += 1;
+                }
+
+                while (index < personEntries.length) {
+                    const anchorEntries: TimesheetSourceEntryData[] = [];
+                    while (
+                        index < personEntries.length &&
+                        personEntries[index].descType !== "이동"
+                    ) {
+                        anchorEntries.push(personEntries[index]);
+                        index += 1;
+                    }
+
+                    if (anchorEntries.length === 0) {
+                        break;
+                    }
+
+                    const trailingTravelEntries: TimesheetSourceEntryData[] = [];
+                    while (
+                        index < personEntries.length &&
+                        personEntries[index].descType === "이동"
+                    ) {
+                        trailingTravelEntries.push(personEntries[index]);
+                        index += 1;
+                    }
+
+                    const lastLeadingTravelEntry =
+                        leadingTravelEntries[leadingTravelEntries.length - 1];
+                    const firstTrailingTravelEntry = trailingTravelEntries[0];
+                    const inferredPlace =
+                        (lastLeadingTravelEntry
+                            ? normalizeLocationName(
+                                  getFinalDestination(
+                                      lastLeadingTravelEntry as InvoiceTimesheetEntry
+                                  )
+                              )
+                            : "") ||
+                        (firstTrailingTravelEntry
+                            ? normalizeLocationName(
+                                  getTravelEntryOrigin(
+                                      firstTrailingTravelEntry as InvoiceTimesheetEntry
+                                  )
+                              )
+                            : "");
+
+                    if (inferredPlace && inferredPlace !== "자택") {
+                        if (!locationsByPerson.has(person)) {
+                            locationsByPerson.set(person, new Set<string>());
+                        }
+                        locationsByPerson.get(person)!.add(inferredPlace);
+                    }
+
+                    leadingTravelEntries = trailingTravelEntries;
+                }
+            });
+
+            locationsByDate.set(row.date, locationsByPerson);
+        });
+
+        return Object.fromEntries(
+            Array.from(locationsByDate.entries()).map(
+                ([date, locationsByPerson]) => [
+                    date,
+                    Object.fromEntries(
+                        Array.from(locationsByPerson.entries()).map(
+                            ([person, locations]) => [
+                                person,
+                                Array.from(locations).sort(),
+                            ]
+                        )
+                    ),
+                ]
+            )
+        );
+    };
+
     const openTimesheetDateGroupPanel = (
         sectionTitle: string,
         row: TimesheetRow
     ) => {
         const blockKeys = getSelectedTimesheetDateBlockKeys(sectionTitle, row);
         if (blockKeys.length === 0) return;
+        const workLocationContextByDate =
+            buildWorkLocationContextByDate(timesheetRows);
 
         const fullGroupEntryMap = new Map<number, TimesheetSourceEntryData>();
         blockKeys.forEach((groupKey) => {
@@ -2884,6 +3221,7 @@ export default function InvoiceCreatePage() {
                 ).getTime();
                 return aStart - bStart;
             }),
+            workLocationsByDate: workLocationContextByDate,
         });
     };
 
@@ -2911,6 +3249,8 @@ export default function InvoiceCreatePage() {
         sectionTitle: string,
         rows: TimesheetRow[]
     ) => {
+        const workLocationContextByDate =
+            buildWorkLocationContextByDate(timesheetRows);
         setSelectedTimesheetRow(null);
         setSelectedTimesheetDateGroupKeys([]);
         setSelectedTimesheetDateGroupAnchorKey(null);
@@ -2918,6 +3258,7 @@ export default function InvoiceCreatePage() {
             blockKey: `${sectionTitle}-total`,
             sectionTitle,
             fullGroupEntries: getFullGroupEntriesForRows(rows),
+            workLocationsByDate: workLocationContextByDate,
         });
     };
 
@@ -2969,6 +3310,8 @@ export default function InvoiceCreatePage() {
         if (!isTimesheetRowInteractive(row)) return;
 
         const sectionRows = getTimesheetRowsBySectionTitle(sectionTitle);
+        const workLocationContextByDate =
+            buildWorkLocationContextByDate(timesheetRows);
         const selectedPersonsKey = getTimesheetRowPersonsKey(row);
         const hasDifferentGroupOnDate = sectionRows
             .filter((candidate) => candidate.date === row.date && candidate.rowId !== row.rowId)
@@ -3010,6 +3353,10 @@ export default function InvoiceCreatePage() {
                 ).getTime();
                 return aStart - bStart;
             }),
+            previousWorkLocations:
+                workLocationContextByDate[shiftDateByDays(row.date, -1)] ?? {},
+            nextWorkLocations:
+                workLocationContextByDate[shiftDateByDays(row.date, 1)] ?? {},
         });
     };
 
@@ -4229,6 +4576,10 @@ export default function InvoiceCreatePage() {
                     groupSourceEntries={
                         selectedTimesheetRow?.groupSourceEntries ?? []
                     }
+                    previousWorkLocations={
+                        selectedTimesheetRow?.previousWorkLocations ?? {}
+                    }
+                    nextWorkLocations={selectedTimesheetRow?.nextWorkLocations ?? {}}
                     holidayDateKeys={holidayDateSet}
                 />
                 <TimesheetDateGroupDetailSidePanel
@@ -4237,6 +4588,9 @@ export default function InvoiceCreatePage() {
                     sectionTitle={selectedTimesheetDateGroupPanel?.sectionTitle ?? ""}
                     fullGroupEntries={
                         selectedTimesheetDateGroupPanel?.fullGroupEntries ?? []
+                    }
+                    workLocationsByDate={
+                        selectedTimesheetDateGroupPanel?.workLocationsByDate ?? {}
                     }
                     holidayDateKeys={holidayDateSet}
                 />

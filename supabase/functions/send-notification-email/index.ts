@@ -22,6 +22,66 @@ const SKIP_200 = () => new Response("skip", { status: 200, headers: { "Content-T
 const RESEND_URL = "https://api.resend.com/emails";
 const EMAIL_TIMEOUT_MS = 8000;
 const WORKLOG_THROTTLE_SECONDS = 3;
+const WORKLOG_COLLECT_WAIT_MS = 1200;
+const WORKLOG_COLLECT_MAX_ROUNDS = 3;
+const POST_SUBMIT_SUPPRESS_SECONDS = 20;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isDraftTrue(value: unknown): boolean {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+function isDraftFalse(value: unknown): boolean {
+  return value === false || value === "false" || value === 0 || value === "0";
+}
+
+function isDraftSubmitEvent(ev: any): boolean {
+  const table = String(ev?.source_table ?? ev?.table ?? "");
+  const operation = String(ev?.operation ?? "").toUpperCase();
+  if (table !== "work_logs" || operation !== "UPDATE") return false;
+
+  const before = ev?.changes?.is_draft?.before;
+  const after = ev?.changes?.is_draft?.after;
+  return isDraftTrue(before) && isDraftFalse(after);
+}
+
+function getPendingEventIds(events: any[]): number[] {
+  return (events || [])
+    .map((ev: any) => Number(ev?.id))
+    .filter((id: number) => Number.isFinite(id) && id > 0);
+}
+
+async function markEmailEventsSent(admin: ReturnType<typeof createClient>, eventIds: number[]): Promise<void> {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return;
+  await admin
+    .from("email_events")
+    .update({ sent_at: new Date().toISOString() })
+    .in("id", eventIds);
+}
+
+async function wasDraftSubmitSentRecently(
+  admin: ReturnType<typeof createClient>,
+  workLogId: number,
+  seconds: number
+): Promise<boolean> {
+  const since = new Date(Date.now() - seconds * 1000).toISOString();
+  const { data, error } = await admin
+    .from("email_events")
+    .select("id, source_table, operation, changes, sent_at")
+    .eq("work_log_id", workLogId)
+    .not("sent_at", "is", null)
+    .gte("sent_at", since)
+    .order("sent_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error("recent_draft_submit_check_error", error);
+    return false;
+  }
+
+  return (data || []).some((ev: any) => isDraftSubmitEvent(ev));
+}
 
 async function sendResendEmail(resendKey: string, body: Record<string, any>): Promise<boolean> {
   const controller = new AbortController();
@@ -74,6 +134,61 @@ async function shouldSendWorkLogEmail(
     return true;
   }
 }
+
+async function fetchPendingWorkLogEvents(
+  admin: ReturnType<typeof createClient>,
+  workLogId: number
+): Promise<{ data: any[]; error: any }> {
+  const { data, error } = await admin
+    .from("email_events")
+    .select("id, source_table, operation, snapshot, changes, created_at")
+    .eq("work_log_id", workLogId)
+    .is("sent_at", null)
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  return {
+    data: Array.isArray(data) ? data : [],
+    error,
+  };
+}
+
+async function collectPendingWorkLogEvents(
+  admin: ReturnType<typeof createClient>,
+  workLogId: number
+): Promise<{ data: any[]; error: any }> {
+  let prevSignature = "";
+  let latestData: any[] = [];
+
+  for (let round = 0; round < WORKLOG_COLLECT_MAX_ROUNDS; round++) {
+    const { data, error } = await fetchPendingWorkLogEvents(admin, workLogId);
+    if (error) return { data: [], error };
+
+    latestData = data;
+
+    const signature = data
+      .map((ev: any) => `${ev.id}:${ev.created_at ?? ""}:${ev.source_table ?? ""}:${ev.operation ?? ""}`)
+      .join("|");
+
+    if (!signature) {
+      return { data, error: null };
+    }
+
+    if (signature === prevSignature) {
+      return { data, error: null };
+    }
+
+    prevSignature = signature;
+
+    if (round < WORKLOG_COLLECT_MAX_ROUNDS - 1) {
+      await sleep(WORKLOG_COLLECT_WAIT_MS);
+    }
+  }
+
+  return { data: latestData, error: null };
+}
+
+
 
 async function buildFriendlyContent(
   table: string,
@@ -173,7 +288,7 @@ const { batched, work_log_id, events } = payload;
 
       if (safeTable === "work_logs") {
         const isDraft = safeRecord?.is_draft;
-        if (isDraft === true || isDraft === "true" || isDraft === 1) {
+        if (isDraftTrue(isDraft)) {
           console.log("skip_reason", "work_logs_draft");
           return SKIP_200();
         }
@@ -197,35 +312,11 @@ const { batched, work_log_id, events } = payload;
           : null;
 
       if (batched === true && Array.isArray(events) && events.length > 0 && work_log_id != null) {
-        const workLogId = Number(work_log_id);
-        if (!(await shouldSendWorkLogEmail(admin, workLogId))) {
-          console.log("skip_reason", "throttled");
-          return SKIP_200();
-        }
-        if (await getWorkLogIsDraft(workLogId)) {
-          console.log("skip_reason", "batched_worklog_draft");
-          return new Response("skip");
-        }
-        const safeEvents = events.slice(0, 200).map((ev: any) => ({
-          table: typeof ev.table === "string" ? ev.table : "",
-          operation: typeof ev.operation === "string" ? ev.operation : "",
-          record: ev.record && typeof ev.record === "object" ? ev.record : {},
-          changes: ev.changes && typeof ev.changes === "object" ? ev.changes : undefined,
-        }));
-        const { subject, text, html } = await buildBatchedReportEmail(workLogId, safeEvents);
-        const ok = await sendResendEmail(resendKey, {
-          from: "RTB 알림 <no-reply@rtb-kor.com>",
-          to: INVOICE_EMAILS,
-          subject,
-          text,
-          html,
+        console.log("skip_reason", "legacy_batched_path_disabled", {
+          work_log_id,
+          eventsCount: events.length,
         });
-        if (!ok) {
-          console.log("skip_reason", "resend_failed_batched");
-          return SKIP_200();
-        }
-        console.log("send_result", "ok_batched");
-        return new Response("ok");
+        return SKIP_200();
       }
 
 
@@ -236,8 +327,9 @@ const { batched, work_log_id, events } = payload;
           : undefined;
 
 // 🔥 email_events: work_log_id 기준으로 "미발송 이벤트"를 모아서 batched 메일 1통만 발송
-const workLogIdRaw = eventRecord?.work_log_id ?? recordForContent?.work_log_id ?? recordForContent?.id;
+const workLogIdRaw = eventRecord?.work_log_id ?? safeRecord?.work_log_id ?? safeRecord?.id;
 const workLogId = Number(workLogIdRaw);
+const currentEventId = Number(eventRecord?.id);
 
 if (!workLogId || !Number.isFinite(workLogId)) {
   return SKIP_200();
@@ -251,14 +343,8 @@ if (!admin) {
   return SKIP_200();
 }
 
-// ✅ 같은 work_log_id의 "미발송 이벤트"를 모아서 1통만 발송
-const { data: pendingEvents, error: pendingErr } = await admin
-  .from("email_events")
-  .select("id, source_table, operation, snapshot, changes, created_at")
-  .eq("work_log_id", workLogId)
-  .is("sent_at", null)
-  .order("created_at", { ascending: true })
-  .limit(50);
+// ✅ 같은 work_log_id의 "미발송 이벤트"를 잠깐 모아서 안정된 뒤 1통만 발송
+const { data: pendingEvents, error: pendingErr } = await collectPendingWorkLogEvents(admin, workLogId);
 
 if (pendingErr) {
   console.error("email_events_fetch_error", pendingErr);
@@ -266,6 +352,31 @@ if (pendingErr) {
 }
 
 if (!pendingEvents || pendingEvents.length === 0) {
+  return SKIP_200();
+}
+
+const latestPendingEvent = pendingEvents[pendingEvents.length - 1];
+const latestPendingEventId = Number(latestPendingEvent?.id);
+if (
+  Number.isFinite(currentEventId) &&
+  Number.isFinite(latestPendingEventId) &&
+  currentEventId !== latestPendingEventId
+) {
+  console.log("skip_reason", "stale_pending_event_invocation", {
+    workLogId,
+    currentEventId,
+    latestPendingEventId,
+    pendingCount: pendingEvents.length,
+  });
+  return SKIP_200();
+}
+
+// ✅ 최종적으로 모인 이벤트 묶음 기준으로 throttle 적용
+if (!(await shouldSendWorkLogEmail(admin, workLogId))) {
+  console.log("skip_reason", "throttled_email_events", {
+    workLogId,
+    pendingCount: pendingEvents.length,
+  });
   return SKIP_200();
 }
 
@@ -317,13 +428,10 @@ try {
 
 if (hasWorkLogDeleteEvent || !workLogExists || looksLikeCascadeDelete) {
   // 🔥 중요: 전체 삭제면 메일을 보내지 않고, 이번에 읽은 이벤트만 sent 처리(레이스 방지)
-  const pendingIds = (pendingEvents || []).map((e: any) => e?.id).filter((x: any) => x != null);
+  const pendingIds = getPendingEventIds(pendingEvents);
 
   if (pendingIds.length > 0) {
-    await admin
-      .from("email_events")
-      .update({ sent_at: new Date().toISOString() })
-      .in("id", pendingIds);
+    await markEmailEventsSent(admin, pendingIds);
   }
 
   console.log("skip_reason", "worklog_deleted_no_email", {
@@ -345,18 +453,25 @@ const safeEvents = pendingEvents.slice(0, 50).map((ev: any) => ({
   changes: ev.changes ?? undefined,
 }));
 
+const pendingIds = getPendingEventIds(pendingEvents);
+const hasDraftSubmitInBatch = safeEvents.some((ev: any) => isDraftSubmitEvent(ev));
+
+if (!hasDraftSubmitInBatch && (await wasDraftSubmitSentRecently(admin, workLogId, POST_SUBMIT_SUPPRESS_SECONDS))) {
+  await markEmailEventsSent(admin, pendingIds);
+  console.log("skip_reason", "covered_by_recent_draft_submit", {
+    workLogId,
+    pendingCount: pendingEvents.length,
+  });
+  return SKIP_200();
+}
+
 
 const { subject, text, html } = await buildBatchedReportEmail(workLogId, safeEvents);
 
 // 혹시 안전장치로 비어있으면 스킵
 if (!subject) {
-  const pendingIds = (pendingEvents || []).map((e: any) => e?.id).filter((x: any) => x != null);
-
   if (pendingIds.length > 0) {
-    await admin
-      .from("email_events")
-      .update({ sent_at: new Date().toISOString() })
-      .in("id", pendingIds);
+    await markEmailEventsSent(admin, pendingIds);
   }
 
   console.log("skip_reason", "empty_subject_after_build", { workLogId });
@@ -379,13 +494,8 @@ if (!ok) {
 }
 
 // 🔥 중요: 이번에 보낸 이벤트만 sent 처리(레이스 방지)
-const pendingIds = (pendingEvents || []).map((e: any) => e?.id).filter((x: any) => x != null);
-
 if (pendingIds.length > 0) {
-  await admin
-    .from("email_events")
-    .update({ sent_at: new Date().toISOString() })
-    .in("id", pendingIds);
+  await markEmailEventsSent(admin, pendingIds);
 }
 
 console.log("send_result", "ok_batched_email_events", { workLogId });

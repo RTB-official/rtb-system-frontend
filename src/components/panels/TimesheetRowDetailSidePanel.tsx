@@ -43,6 +43,8 @@ interface TimesheetRowDetailSidePanelProps {
         location?: string | null;
         lunchWorked?: boolean;
     }>;
+    previousWorkLocations: Record<string, string[]>;
+    nextWorkLocations: Record<string, string[]>;
     /** 인보이스 페이지와 동일: 공휴일(행정 API·캘린더 키워드). 주말은 별도 판별. */
     holidayDateKeys?: ReadonlySet<string>;
 }
@@ -225,6 +227,25 @@ function CloseIcon() {
     );
 }
 
+function DescTypeBadge({ value }: { value: string }) {
+    const styles =
+        value === "이동"
+            ? "bg-lime-100 text-lime-800 ring-lime-200"
+            : value === "작업"
+              ? "bg-sky-100 text-sky-800 ring-sky-200"
+              : value === "대기"
+                ? "bg-orange-100 text-orange-800 ring-orange-200"
+                : "bg-gray-100 text-gray-800 ring-gray-200";
+
+    return (
+        <span
+            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ring-inset ${styles}`}
+        >
+            {value}
+        </span>
+    );
+}
+
 export default function TimesheetRowDetailSidePanel({
     isOpen,
     onClose,
@@ -237,6 +258,8 @@ export default function TimesheetRowDetailSidePanel({
     description,
     sourceEntries,
     groupSourceEntries,
+    previousWorkLocations,
+    nextWorkLocations,
     holidayDateKeys,
 }: TimesheetRowDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
@@ -273,6 +296,12 @@ export default function TimesheetRowDetailSidePanel({
         highlightedEntryIds: Set<number> = new Set(),
         zeroBillingScope: "row" | "group" = "row"
     ) => {
+        const travelChargeContextEntries =
+            zeroBillingScope === "group"
+                ? entriesData
+                : displayData.groupSourceEntries.length > 0
+                  ? (displayData.groupSourceEntries as TimesheetRowDetailSidePanelProps["sourceEntries"])
+                  : entriesData;
         const zeroBillingTravelIds =
             zeroBillingScope === "row"
                 ? getZeroBillingTravelIdsForRowScopedEntries(entriesData)
@@ -325,10 +354,11 @@ export default function TimesheetRowDetailSidePanel({
                             {entriesData.map((entry, index, entries) => {
                                 const [, month, dayOfMonth] = entry.dateFrom.split("-");
                                 const correctionLabel =
-                                    entry.descType === "이동" &&
-                                    zeroBillingTravelIds.has(entry.id)
-                                        ? formatHoursLabel(0)
-                                        : getCorrectionLabel(entry);
+                                    getCorrectionLabel(
+                                        entry,
+                                        travelChargeContextEntries,
+                                        zeroBillingTravelIds
+                                    );
                                 const durationLabel = getDurationLabel(
                                     entry.dateFrom,
                                     entry.timeFrom,
@@ -384,7 +414,7 @@ export default function TimesheetRowDetailSidePanel({
                                         <td
                                             className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                         >
-                                            {entry.descType}
+                                            <DescTypeBadge value={entry.descType} />
                                         </td>
                                         <td
                                             className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
@@ -542,6 +572,13 @@ export default function TimesheetRowDetailSidePanel({
         normalMinutes = Math.max(0, normalMinutes);
         const afterMinutes = Math.max(0, totalMinutes - rawNormalMinutes);
 
+        if (entry.descType === "대기") {
+            const waitingMinutes = normalMinutes + afterMinutes;
+            return waitingMinutes > 0
+                ? `W=${formatHoursLabel(waitingMinutes / 60)}`
+                : "-";
+        }
+
         const labels = [
             normalMinutes > 0 ? `N=${formatHoursLabel(normalMinutes / 60)}` : "",
             afterMinutes > 0 ? `A=${formatHoursLabel(afterMinutes / 60)}` : "",
@@ -573,8 +610,368 @@ export default function TimesheetRowDetailSidePanel({
         return null;
     };
 
+    type PanelEntry = TimesheetRowDetailSidePanelProps["sourceEntries"][number];
+    type PersonBlock = {
+        anchorEntries: PanelEntry[];
+        beforeTravelEntries: PanelEntry[];
+        afterTravelEntries: PanelEntry[];
+    };
+
+    const roundHours = (value: number) => Math.round(value * 10) / 10;
+
+    const hasHomeInTravel = (entry: PanelEntry): boolean => {
+        const details = entry.details ?? "";
+        return (
+            details.includes("자택") ||
+            entry.moveFrom === "자택" ||
+            entry.moveTo === "자택"
+        );
+    };
+
+    const calculateRawTravelHours = (entry: PanelEntry): number => {
+        if (
+            entry.descType !== "이동" ||
+            !entry.dateFrom ||
+            !entry.dateTo ||
+            !entry.timeFrom ||
+            !entry.timeTo
+        ) {
+            return 0;
+        }
+
+        const start = new Date(`${entry.dateFrom}T${entry.timeFrom}`);
+        const end =
+            entry.timeTo === "24:00"
+                ? new Date(
+                      new Date(`${entry.dateTo}T00:00:00`).getTime() +
+                          24 * 60 * 60 * 1000
+                  )
+                : new Date(`${entry.dateTo}T${entry.timeTo}`);
+
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+            return 0;
+        }
+
+        return Math.floor((end.getTime() - start.getTime()) / 60000) / 60;
+    };
+
+    const getPrimaryLocation = (location?: string | null) =>
+        normalizeLocationName(location?.split(",")[0].trim() ?? "");
+
+    const inferWorkPlaceFromTravelSegments = (
+        beforeTravelEntries: PanelEntry[],
+        afterTravelEntries: PanelEntry[]
+    ) => {
+        const lastBeforeTravelEntry =
+            beforeTravelEntries[beforeTravelEntries.length - 1];
+        const leadingDestination = lastBeforeTravelEntry
+            ? normalizeLocationName(getFinalDestination(lastBeforeTravelEntry))
+            : "";
+
+        if (leadingDestination && leadingDestination !== "자택") {
+            return leadingDestination;
+        }
+
+        const firstAfterTravelEntry = afterTravelEntries[0];
+        const trailingOrigin = firstAfterTravelEntry
+            ? normalizeLocationName(getTravelEntryOrigin(firstAfterTravelEntry))
+            : "";
+
+        if (trailingOrigin && trailingOrigin !== "자택") {
+            return trailingOrigin;
+        }
+
+        return "";
+    };
+
+    const doesWorkContextMatchBlockLocation = (
+        person: string,
+        beforeTravelEntries: PanelEntry[],
+        afterTravelEntries: PanelEntry[],
+        workLocations: Record<string, string[]>
+    ) => {
+        const blockWorkPlace = inferWorkPlaceFromTravelSegments(
+            beforeTravelEntries,
+            afterTravelEntries
+        );
+        if (!blockWorkPlace) {
+            return false;
+        }
+
+        return (workLocations[person] ?? []).includes(blockWorkPlace);
+    };
+
+    const isDestinationWorkPlace = (entry: PanelEntry): boolean => {
+        const destination = normalizeLocationName(getFinalDestination(entry));
+        const workPlace = getPrimaryLocation(entry.location);
+
+        if (!destination || !workPlace) {
+            return false;
+        }
+
+        return destination === workPlace;
+    };
+
+    const summarizeTravelEntries = (
+        entries: PanelEntry[],
+        useFixedHomeHours: boolean
+    ) => {
+        if (entries.length === 0) {
+            return {
+                kind: "none",
+                hours: 0,
+            };
+        }
+
+        const lastEntry = entries[entries.length - 1];
+        const fixedHours = getHomeTravelHours(lastEntry.location) ?? 0;
+        const hasHome = entries.some((entry) => hasHomeInTravel(entry));
+
+        if (useFixedHomeHours && hasHome && fixedHours > 0) {
+            return {
+                kind: "home",
+                hours: fixedHours,
+            };
+        }
+
+        return {
+            kind: "travel",
+            hours: roundHours(
+                entries.reduce((sum, entry) => sum + calculateRawTravelHours(entry), 0)
+            ),
+        };
+    };
+
+    const getBlockSpanForEntries = (entries: PanelEntry[]) => {
+        const earliest =
+            entries
+                .map((entry) => entry.timeFrom)
+                .filter((value): value is string => Boolean(value))
+                .sort()[0] ?? "00:00";
+        const latest =
+            entries
+                .map((entry) => entry.timeTo)
+                .filter((value): value is string => Boolean(value))
+                .sort();
+
+        return {
+            earliest,
+            latest: latest.length > 0 ? latest[latest.length - 1] : earliest,
+        };
+    };
+
+    const getPersonBlocks = (
+        person: string,
+        entries: PanelEntry[]
+    ): PersonBlock[] => {
+        const personEntries = sortEntriesByStart(
+            entries.filter((entry) => (entry.persons ?? []).includes(person))
+        );
+        const blocks: PersonBlock[] = [];
+
+        let currentBlock: PersonBlock | null = null;
+        let interBlockTravelEntries: PanelEntry[] = [];
+
+        personEntries.forEach((entry) => {
+            if (entry.descType === "이동") {
+                interBlockTravelEntries.push(entry);
+                return;
+            }
+
+            if (currentBlock && interBlockTravelEntries.length === 0) {
+                currentBlock.anchorEntries.push(entry);
+                return;
+            }
+
+            if (!currentBlock) {
+                currentBlock = {
+                    anchorEntries: [entry],
+                    beforeTravelEntries: interBlockTravelEntries.slice(),
+                    afterTravelEntries: [],
+                };
+                interBlockTravelEntries = [];
+                return;
+            }
+
+            const beforeTravelEntriesForNext = interBlockTravelEntries.filter(
+                (travelEntry) => isDestinationWorkPlace(travelEntry)
+            );
+            const currentAfterTravelEntries = interBlockTravelEntries.filter(
+                (travelEntry) => !isDestinationWorkPlace(travelEntry)
+            );
+
+            currentBlock.afterTravelEntries = currentAfterTravelEntries;
+            blocks.push(currentBlock);
+
+            currentBlock = {
+                anchorEntries: [entry],
+                beforeTravelEntries: beforeTravelEntriesForNext,
+                afterTravelEntries: [],
+            };
+            interBlockTravelEntries = [];
+        });
+
+        if (currentBlock) {
+            blocks.push({
+                anchorEntries: currentBlock.anchorEntries,
+                beforeTravelEntries: currentBlock.beforeTravelEntries,
+                afterTravelEntries: interBlockTravelEntries.slice(),
+            });
+        }
+
+        return blocks;
+    };
+
+    const getBeforeTravelSummary = (
+        person: string,
+        blockIndex: number,
+        beforeTravelEntries: PanelEntry[],
+        afterTravelEntries: PanelEntry[]
+    ) => {
+        if (beforeTravelEntries.length === 0) {
+            return { kind: "none", hours: 0 };
+        }
+
+        if (blockIndex === 0) {
+            if (
+                !doesWorkContextMatchBlockLocation(
+                    person,
+                    beforeTravelEntries,
+                    afterTravelEntries,
+                    previousWorkLocations
+                )
+            ) {
+                const fixedHours =
+                    getHomeTravelHours(beforeTravelEntries[0].location) ?? 0;
+                const hasHome = beforeTravelEntries.some((entry) => hasHomeInTravel(entry));
+
+                if (hasHome && fixedHours > 0) {
+                    return { kind: "initial-home", hours: fixedHours };
+                }
+
+                return summarizeTravelEntries(beforeTravelEntries, false);
+            }
+
+            return { kind: "continued", hours: 1 };
+        }
+
+        return summarizeTravelEntries(beforeTravelEntries, true);
+    };
+
+    const getAfterTravelSummary = (
+        person: string,
+        blockIndex: number,
+        totalBlocks: number,
+        beforeTravelEntries: PanelEntry[],
+        afterTravelEntries: PanelEntry[]
+    ) => {
+        if (afterTravelEntries.length === 0) {
+            return { kind: "none", hours: 0 };
+        }
+
+        if (blockIndex < totalBlocks - 1) {
+            return summarizeTravelEntries(afterTravelEntries, true);
+        }
+
+        if (
+            doesWorkContextMatchBlockLocation(
+                person,
+                beforeTravelEntries,
+                afterTravelEntries,
+                nextWorkLocations
+            )
+        ) {
+            return { kind: "continued", hours: 1 };
+        }
+
+        return summarizeTravelEntries(afterTravelEntries, true);
+    };
+
+    const getTravelChargeHoursForPerson = (
+        entry: PanelEntry,
+        person: string,
+        contextEntries: PanelEntry[],
+        zeroBillingTravelIds: Set<number>
+    ): number | null => {
+        const blocks = getPersonBlocks(person, contextEntries);
+        const factory = normalizeLocationName(GANGDONG_FACTORY);
+
+        if (blocks.length === 0) {
+            const personEntries = sortEntriesByStart(
+                contextEntries.filter((candidate) =>
+                    (candidate.persons ?? []).includes(person)
+                )
+            );
+
+            if (!personEntries.some((candidate) => candidate.id === entry.id)) {
+                return null;
+            }
+
+            return zeroBillingTravelIds.has(entry.id)
+                ? 0
+                : summarizeTravelEntries(
+                      personEntries.filter((candidate) => candidate.descType === "이동"),
+                      true
+                  ).hours;
+        }
+
+        for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+            const block = blocks[blockIndex];
+            const blockSpan = getBlockSpanForEntries(block.anchorEntries);
+            const beforeTravel = getBeforeTravelSummary(
+                person,
+                blockIndex,
+                block.beforeTravelEntries
+                ,
+                block.afterTravelEntries
+            );
+            const afterTravel = getAfterTravelSummary(
+                person,
+                blockIndex,
+                blocks.length,
+                block.beforeTravelEntries,
+                block.afterTravelEntries
+            );
+            const lastBeforeTravelEntry =
+                block.beforeTravelEntries[block.beforeTravelEntries.length - 1];
+            const firstAfterTravelEntry = block.afterTravelEntries[0];
+            const factoryWrapsBlock =
+                lastBeforeTravelEntry &&
+                firstAfterTravelEntry &&
+                normalizeLocationName(
+                    getFinalDestination(lastBeforeTravelEntry)
+                ) === factory &&
+                normalizeLocationName(
+                    getTravelEntryOrigin(firstAfterTravelEntry)
+                ) === factory;
+
+            if (block.beforeTravelEntries.some((candidate) => candidate.id === entry.id)) {
+                return zeroBillingTravelIds.has(entry.id) || factoryWrapsBlock
+                    ? 0
+                    : beforeTravel.hours;
+            }
+
+            if (block.afterTravelEntries.some((candidate) => candidate.id === entry.id)) {
+                return zeroBillingTravelIds.has(entry.id) || factoryWrapsBlock
+                    ? 0
+                    : afterTravel.hours;
+            }
+
+            if (
+                block.anchorEntries.some((candidate) => candidate.id === entry.id) &&
+                blockSpan.earliest
+            ) {
+                return null;
+            }
+        }
+
+        return null;
+    };
+
     const getCorrectionLabel = (
-        entry: TimesheetRowDetailSidePanelProps["sourceEntries"][number]
+        entry: PanelEntry,
+        contextEntries: PanelEntry[],
+        zeroBillingTravelIds: Set<number>
     ) => {
         const durationLabel = getDurationLabel(
             entry.dateFrom,
@@ -589,6 +986,28 @@ export default function TimesheetRowDetailSidePanel({
 
         if (entry.descType !== "이동") {
             return durationLabel || "-";
+        }
+
+        const personHours = entry.persons
+            .map((person) =>
+                getTravelChargeHoursForPerson(
+                    entry,
+                    person,
+                    contextEntries,
+                    zeroBillingTravelIds
+                )
+            )
+            .filter((value): value is number => value !== null);
+
+        if (personHours.length > 0) {
+            const personLabels = personHours.map((value) => formatHoursLabel(value));
+            return personLabels.every((label) => label === personLabels[0])
+                ? personLabels[0]
+                : personLabels.join(",");
+        }
+
+        if (zeroBillingTravelIds.has(entry.id)) {
+            return formatHoursLabel(0);
         }
 
         const fixedHours = getHomeTravelHours(entry.location);
