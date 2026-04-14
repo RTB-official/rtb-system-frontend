@@ -40,6 +40,7 @@ interface TimesheetRowDetailSidePanelProps {
         moveTo?: string;
         location?: string | null;
         lunchWorked?: boolean;
+        clientDuplicated?: boolean;
     }>;
     groupSourceEntries: Array<{
         id: number;
@@ -56,6 +57,7 @@ interface TimesheetRowDetailSidePanelProps {
         moveTo?: string;
         location?: string | null;
         lunchWorked?: boolean;
+        clientDuplicated?: boolean;
     }>;
     previousWorkLocations: Record<string, string[]>;
     nextWorkLocations: Record<string, string[]>;
@@ -84,11 +86,23 @@ interface TimesheetRowDetailSidePanelProps {
     >;
     invoiceTimesheetPeople?: string[];
     getOriginalTimesheetEntryPersons?: (entryId: number) => string[];
+    getTimesheetEntryEditBaseline?: (entryId: number) =>
+        | {
+              descType: string;
+              dateFrom: string;
+              dateTo: string;
+              timeFrom: string;
+              timeTo: string;
+              manualBillableHours?: number;
+          }
+        | undefined;
     onReplaceTimesheetEntryPerson?: (args: {
         entryId: number;
         fromPerson: string;
         toPerson: string;
     }) => void;
+    /** 엔트리별 수동 청구시간(시) — 비어 있으면 자동 계산 */
+    manualBillableHoursByEntryId?: Record<number, number>;
 }
 
 type TravelChargeOverrideTarget = "home" | "lodging";
@@ -106,6 +120,10 @@ type PersonVesselHistoryItem = {
 };
 
 const GANGDONG_FACTORY = "강동동 공장";
+
+/** 복사(clientDuplicated) 엔트리 행 배경 — 기본 색 위에 아주 연한 빗금만 얹음 */
+const DUPLICATED_ENTRY_ROW_STRIPE_IMAGE =
+    "repeating-linear-gradient(135deg, transparent 0px, transparent 6px, rgba(15, 23, 42, 0.08) 6px, rgba(15, 23, 42, 0.08) 7px)";
 
 const sortPeopleByKoreanOrder = (people: string[]) =>
     [...people].sort((a, b) => a.localeCompare(b, "ko"));
@@ -390,23 +408,47 @@ function CloseIcon() {
     );
 }
 
-function DescTypeBadge({ value }: { value: string }) {
-    const styles =
+function DescTypeBadge({
+    value,
+    emphasizeChangedText,
+}: {
+    value: string;
+    emphasizeChangedText?: boolean;
+}) {
+    const bgRing =
         value === "이동"
-            ? "bg-lime-100 text-lime-800 ring-lime-200"
+            ? "bg-lime-100 ring-lime-200"
             : value === "작업"
-              ? "bg-sky-100 text-sky-800 ring-sky-200"
+              ? "bg-sky-100 ring-sky-200"
               : value === "대기"
-                ? "bg-orange-100 text-orange-800 ring-orange-200"
-                : "bg-gray-100 text-gray-800 ring-gray-200";
+                ? "bg-orange-100 ring-orange-200"
+                : "bg-gray-100 ring-gray-200";
+    const textColor = emphasizeChangedText
+        ? "text-red-600"
+        : value === "이동"
+          ? "text-lime-800"
+          : value === "작업"
+            ? "text-sky-800"
+            : value === "대기"
+              ? "text-orange-800"
+              : "text-gray-800";
 
     return (
         <span
-            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ring-inset ${styles}`}
+            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ring-inset ${bgRing} ${textColor}`}
         >
             {value}
         </span>
     );
+}
+
+function normalizeMultilineCompare(s: string): string {
+    return s
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .join("\n");
 }
 
 function renderTravelBadgeLabelWithArrow(label: string, arrowClassName: string): ReactNode {
@@ -502,7 +544,9 @@ export default function TimesheetRowDetailSidePanel({
     personVesselHistoryByPerson,
     invoiceTimesheetPeople = [],
     getOriginalTimesheetEntryPersons,
+    getTimesheetEntryEditBaseline,
     onReplaceTimesheetEntryPerson,
+    manualBillableHoursByEntryId = {},
 }: TimesheetRowDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
@@ -552,7 +596,7 @@ export default function TimesheetRowDetailSidePanel({
                 ? CSS.escape(editorKey)
                 : editorKey.replace(/"/g, '\\"');
         const editorEl = body.querySelector<HTMLElement>(
-            `[data-travel-override-editor="true"][data-editor-key="${escapedKey}"]`
+            `[data-editor-key="${escapedKey}"]`
         );
         if (!editorEl) return;
 
@@ -782,6 +826,16 @@ export default function TimesheetRowDetailSidePanel({
             entry: (typeof entriesData)[number]
         ) => {
             const persons = entry.persons ?? [];
+            if (entry.clientDuplicated) {
+                const baseline =
+                    getOriginalTimesheetEntryPersons?.(entry.id) ?? [];
+                const unchangedFromDuplicateBaseline =
+                    baseline.length === persons.length &&
+                    baseline.every((p, i) => p === persons[i]);
+                if (persons.length === 0 || unchangedFromDuplicateBaseline) {
+                    return null;
+                }
+            }
             if (persons.length === 0) {
                 return "-";
             }
@@ -794,6 +848,8 @@ export default function TimesheetRowDetailSidePanel({
             const highlightedPersons = new Set(displayData.selectedPersons);
             const originalEntryPersons =
                 getOriginalTimesheetEntryPersons?.(entry.id) ?? [];
+            const originalPersonSet = new Set(originalEntryPersons);
+            const hasPersonsBaseline = originalEntryPersons.length > 0;
 
             return (
                 <div className="flex flex-col gap-1">
@@ -808,12 +864,9 @@ export default function TimesheetRowDetailSidePanel({
                                     person
                                 );
                                 const isActive = expandedRemarkKey === rk;
-                                const slotIndex = lineIdx * 3 + i;
-                                const originalForSlot =
-                                    originalEntryPersons[slotIndex];
                                 const isReplacedRemarkPerson =
-                                    originalForSlot !== undefined &&
-                                    person !== originalForSlot;
+                                    hasPersonsBaseline &&
+                                    !originalPersonSet.has(person);
                                 return (
                                     <Fragment
                                         key={`${entry.id}-${person}-${lineIdx}-${i}`}
@@ -928,6 +981,75 @@ export default function TimesheetRowDetailSidePanel({
                                     entry.dateTo,
                                     entry.timeTo
                                 );
+                                const editBaseline =
+                                    getTimesheetEntryEditBaseline?.(entry.id);
+                                const fieldEditedClass =
+                                    "font-medium text-red-600 underline decoration-red-600";
+                                const baselineSynth = editBaseline
+                                    ? {
+                                          ...entry,
+                                          descType: editBaseline.descType,
+                                          dateFrom: editBaseline.dateFrom,
+                                          dateTo: editBaseline.dateTo,
+                                          timeFrom: editBaseline.timeFrom,
+                                          timeTo: editBaseline.timeTo,
+                                      }
+                                    : null;
+                                const baselineDurationHours = baselineSynth
+                                    ? getDurationHours(
+                                          baselineSynth.dateFrom,
+                                          baselineSynth.timeFrom,
+                                          baselineSynth.dateTo,
+                                          baselineSynth.timeTo
+                                      )
+                                    : null;
+                                const baselineDurationLabel =
+                                    baselineDurationHours === null
+                                        ? "-"
+                                        : formatHoursLabel(baselineDurationHours);
+                                const currentDurationLabel =
+                                    durationLabel || "-";
+                                const baselineCorrectionLabel = baselineSynth
+                                    ? getCorrectionLabel(
+                                          baselineSynth,
+                                          travelChargeContextEntries,
+                                          zeroBillingTravelIds,
+                                          false,
+                                          {
+                                              manualBillableHours:
+                                                  editBaseline!.manualBillableHours,
+                                          }
+                                      )
+                                    : "";
+                                const descTypeChanged = Boolean(
+                                    editBaseline &&
+                                        entry.descType !== editBaseline.descType
+                                );
+                                const fromChanged = Boolean(
+                                    editBaseline &&
+                                        formatTimeToMinutes(entry.timeFrom) !==
+                                            formatTimeToMinutes(
+                                                editBaseline.timeFrom
+                                            )
+                                );
+                                const toChanged = Boolean(
+                                    editBaseline &&
+                                        formatTimeToMinutes(entry.timeTo) !==
+                                            formatTimeToMinutes(editBaseline.timeTo)
+                                );
+                                const durationChanged = Boolean(
+                                    editBaseline &&
+                                        currentDurationLabel !== baselineDurationLabel
+                                );
+                                const chargeChanged = Boolean(
+                                    editBaseline &&
+                                        normalizeMultilineCompare(
+                                            String(correctionLabel)
+                                        ) !==
+                                            normalizeMultilineCompare(
+                                                String(baselineCorrectionLabel)
+                                            )
+                                );
                                 const isSameDateAsPrevious =
                                     index > 0 &&
                                     entries[index - 1]?.dateFrom === entry.dateFrom;
@@ -989,6 +1111,13 @@ export default function TimesheetRowDetailSidePanel({
                                 const isRemarkEditorRowVisible =
                                     remarkShellKey !== null;
 
+                                const duplicatedStripeStyle = entry.clientDuplicated
+                                    ? {
+                                          backgroundImage:
+                                              DUPLICATED_ENTRY_ROW_STRIPE_IMAGE,
+                                      }
+                                    : undefined;
+
                                 return (
                                     <Fragment key={`${title}-${entry.id}-${index}`}>
                                         <tr
@@ -999,6 +1128,7 @@ export default function TimesheetRowDetailSidePanel({
                                                       ? "bg-blue-50"
                                                       : "bg-white"
                                             }`}
+                                            style={duplicatedStripeStyle}
                                         >
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-center ${dateBoundaryTopClass} ${dateHeaderRedClass}`}
@@ -1020,22 +1150,53 @@ export default function TimesheetRowDetailSidePanel({
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                             >
-                                                <DescTypeBadge value={entry.descType} />
+                                                <DescTypeBadge
+                                                    value={entry.descType}
+                                                    emphasizeChangedText={
+                                                        descTypeChanged
+                                                    }
+                                                />
                                             </td>
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                             >
-                                                {formatTimeToMinutes(entry.timeFrom)}
+                                                <span
+                                                    className={
+                                                        fromChanged
+                                                            ? fieldEditedClass
+                                                            : undefined
+                                                    }
+                                                >
+                                                    {formatTimeToMinutes(
+                                                        entry.timeFrom
+                                                    )}
+                                                </span>
                                             </td>
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                             >
-                                                {formatTimeToMinutes(entry.timeTo)}
+                                                <span
+                                                    className={
+                                                        toChanged
+                                                            ? fieldEditedClass
+                                                            : undefined
+                                                    }
+                                                >
+                                                    {formatTimeToMinutes(entry.timeTo)}
+                                                </span>
                                             </td>
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                             >
-                                                {durationLabel || "-"}
+                                                <span
+                                                    className={
+                                                        durationChanged
+                                                            ? fieldEditedClass
+                                                            : undefined
+                                                    }
+                                                >
+                                                    {durationLabel || "-"}
+                                                </span>
                                             </td>
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
@@ -1044,14 +1205,24 @@ export default function TimesheetRowDetailSidePanel({
                                                         : ""
                                                 } ${dateBoundaryTopClass}`}
                                             >
-                                                {correctionLabel}
+                                                <span
+                                                    className={
+                                                        chargeChanged
+                                                            ? `${fieldEditedClass} whitespace-pre-line inline-block`
+                                                            : "whitespace-pre-line inline-block"
+                                                    }
+                                                >
+                                                    {correctionLabel}
+                                                </span>
                                             </td>
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-gray-900 ${dateBoundaryTopClass}`}
                                             >
                                                 <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0 whitespace-pre-wrap break-words">
-                                                        {descriptionText || "-"}
+                                                    <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            {descriptionText || "-"}
+                                                        </div>
                                                     </div>
                                                     {descriptionBadges.length > 0 ? (
                                                         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -1092,6 +1263,7 @@ export default function TimesheetRowDetailSidePanel({
                                                         ? "bg-pink-50"
                                                         : "bg-slate-50/60"
                                                 }
+                                                style={duplicatedStripeStyle}
                                             >
                                                 <td
                                                     colSpan={10}
@@ -1153,6 +1325,7 @@ export default function TimesheetRowDetailSidePanel({
                                                         ? "bg-pink-50"
                                                         : "bg-slate-50/60"
                                                 }
+                                                style={duplicatedStripeStyle}
                                             >
                                                 <td
                                                     colSpan={10}
@@ -1840,19 +2013,6 @@ export default function TimesheetRowDetailSidePanel({
         return summarizeTravelEntries(afterTravelEntries, true);
     };
 
-    const getTravelChargeHoursForPerson = (
-        entry: PanelEntry,
-        person: string,
-        contextEntries: PanelEntry[],
-        zeroBillingTravelIds: Set<number>
-    ): number | null =>
-        getTravelChargeResultForPerson(
-            entry,
-            person,
-            contextEntries,
-            zeroBillingTravelIds
-        ).hours;
-
     const getTravelChargeResultForPerson = (
         entry: PanelEntry,
         person: string,
@@ -1971,14 +2131,32 @@ export default function TimesheetRowDetailSidePanel({
     const getCorrectionLabel = (
         entry: PanelEntry,
         contextEntries: PanelEntry[],
-        zeroBillingTravelIds: Set<number>
+        zeroBillingTravelIds: Set<number>,
+        ignoreEntryManual = false,
+        opts?: { manualBillableHours?: number }
     ) => {
+        const rawTravelHours = roundHours(calculateRawTravelHours(entry));
         const durationLabel = getDurationLabel(
             entry.dateFrom,
             entry.timeFrom,
             entry.dateTo,
             entry.timeTo
         );
+
+        if (!ignoreEntryManual) {
+            const manual =
+                opts && Object.prototype.hasOwnProperty.call(opts, "manualBillableHours")
+                    ? opts.manualBillableHours
+                    : manualBillableHoursByEntryId[entry.id];
+            if (manual !== undefined) {
+                if (entry.descType === "대기") {
+                    return `W=${formatHoursLabel(manual)}`;
+                }
+                if (entry.descType === "작업" || entry.descType === "이동") {
+                    return formatHoursLabel(manual);
+                }
+            }
+        }
 
         if (entry.descType === "작업" || entry.descType === "대기") {
             return getWorkingCorrectionLabel(entry);
@@ -1989,14 +2167,24 @@ export default function TimesheetRowDetailSidePanel({
         }
 
         const personHours = entry.persons
-            .map((person) =>
-                getTravelChargeHoursForPerson(
+            .map((person) => {
+                const chargeResult = getTravelChargeResultForPerson(
                     entry,
                     person,
                     contextEntries,
                     zeroBillingTravelIds
-                )
-            )
+                );
+
+                if (chargeResult.hours === null) {
+                    return null;
+                }
+
+                // 상세 패널의 청구시간은 행 단위 값이어야 하므로,
+                // 일반 이동(travel)은 이동 묶음 합계 대신 현재 엔트리의 시간만 표시한다.
+                return chargeResult.kind === "travel"
+                    ? rawTravelHours
+                    : chargeResult.hours;
+            })
             .filter((value): value is number => value !== null);
 
         if (personHours.length > 0) {
@@ -2251,13 +2439,28 @@ export default function TimesheetRowDetailSidePanel({
 
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === "Escape") {
+                if (expandedEditorKey) {
+                    closeEditor();
+                    return;
+                }
+                if (expandedRemarkKey) {
+                    closeRemarkEditor();
+                    return;
+                }
                 onClose();
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [isOpen, onClose]);
+    }, [
+        closeEditor,
+        closeRemarkEditor,
+        expandedEditorKey,
+        expandedRemarkKey,
+        isOpen,
+        onClose,
+    ]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -2285,6 +2488,14 @@ export default function TimesheetRowDetailSidePanel({
             }
 
             if (target.closest('[data-timesheet-row-trigger="true"]')) {
+                return;
+            }
+
+            if (target.closest("[data-base-modal='true']")) {
+                return;
+            }
+
+            if (target.closest('[data-app-toast="true"]')) {
                 return;
             }
 

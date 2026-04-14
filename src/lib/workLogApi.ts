@@ -142,6 +142,8 @@ export interface WorkLogFullData {
         moveFrom?: string;
         moveTo?: string;
         lunch_worked?: boolean;
+        /** 인보이스 생성 화면에서 복사로 만든 항목(저장 payload에는 미사용) */
+        clientDuplicated?: boolean;
     }>;
     expenses: Array<{
         id: number;

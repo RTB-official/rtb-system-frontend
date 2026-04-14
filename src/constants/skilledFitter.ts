@@ -22,8 +22,8 @@ const isSkilledFitterRemarkCheckDescType = (descType: string | undefined) => {
 
 /**
  * 해당 날짜에 구분이 "작업" 또는 "대기"인 행이 하나라도 있으면 스킬드 핏터 비고 검사 대상.
- * `requiredSkilledFittersInRemarks`에 지정된 인원(Engineer Name and Title과 동일)이
- * 그날 어떤 행의 비고(persons)에도 한 명이라도 빠지면 그 날짜 키(YYYY-MM-DD)를 담는다.
+ * `requiredSkilledFittersInRemarks`에 지정된 인원(Engineer Name and Title과 동일) 중
+ * 그날 어떤 행의 비고(persons)에도 한 명도 없으면 그 날짜 키(YYYY-MM-DD)를 담는다.
  * 배열이 비면(지정 없음) 스킬드 핏터 5명 중 아무도 비고에 없을 때만 누락으로 본다.
  */
 export function getDatesMissingSkilledFitterRemark(
@@ -61,7 +61,7 @@ export function getDatesMissingSkilledFitterRemark(
         const required = requiredSkilledFittersInRemarks.filter(Boolean);
         const isMissing =
             required.length > 0
-                ? required.some((name) => !personsThatDay.has(name))
+                ? required.every((name) => !personsThatDay.has(name))
                 : !Array.from(SKILLED_FITTER_NAME_SET).some((name) =>
                       personsThatDay.has(name)
                   );
