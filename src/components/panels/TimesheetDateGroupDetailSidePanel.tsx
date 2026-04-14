@@ -13,6 +13,7 @@ import {
     TRAVEL_OVERRIDE_EDITOR_ANIM_MS,
     TravelOverrideEditorAnimatedShell,
 } from "./TravelOverrideEditorAnimatedShell";
+import { TimesheetEntryEditorForm } from "./TimesheetEntryEditorForm";
 import { getDatesMissingSkilledFitterRemark } from "../../constants/skilledFitter";
 
 interface TimesheetSourceEntryData {
@@ -30,6 +31,7 @@ interface TimesheetSourceEntryData {
     moveTo?: string;
     location?: string | null;
     lunchWorked?: boolean;
+    clientDuplicated?: boolean;
 }
 
 interface TimesheetDateGroupDetailSidePanelProps {
@@ -68,11 +70,43 @@ interface TimesheetDateGroupDetailSidePanelProps {
     invoiceTimesheetPeople?: string[];
     /** 최초 로드 시점의 엔트리 인원 배열(슬롯 원복 후보 계산용) */
     getOriginalTimesheetEntryPersons?: (entryId: number) => string[];
+    getTimesheetEntryEditBaseline?: (entryId: number) =>
+        | {
+              descType: string;
+              dateFrom: string;
+              dateTo: string;
+              timeFrom: string;
+              timeTo: string;
+              manualBillableHours?: number;
+          }
+        | undefined;
     /** 비고에서 엔트리 단위로 참여자 이름 교체(원본 work log 데이터 반영) */
     onReplaceTimesheetEntryPerson?: (args: {
         entryId: number;
         fromPerson: string;
         toPerson: string;
+    }) => void;
+    onDuplicateTimesheetEntry?: (entryId: number) => void;
+    onDeleteTimesheetEntry?: (entryId: number) => void;
+    onUndo?: () => void;
+    onRedo?: () => void;
+    /** 기본값: 부모에서 초기화 확인 모달을 띄우는 등 처리 */
+    onFullGroupResetToDefault?: () => void;
+    /** true면 기본값 비활성(예: 로드된 보고서 없음) */
+    resetToInitialDisabled?: boolean;
+    undoDisabled?: boolean;
+    redoDisabled?: boolean;
+    /** 엔트리별 수동 청구시간(시) — 비어 있으면 자동 계산 */
+    manualBillableHoursByEntryId?: Record<number, number>;
+    onUpdateTimesheetEntry?: (payload: {
+        entryId: number;
+        descType: string;
+        dateFrom: string;
+        dateTo: string;
+        timeFrom: string;
+        timeTo: string;
+        persons: string[];
+        manualBillableHours: number | null;
     }) => void;
 }
 
@@ -91,6 +125,10 @@ type PersonVesselHistoryItem = {
 };
 
 const GANGDONG_FACTORY = "강동동 공장";
+
+/** 복사(clientDuplicated) 엔트리 행 배경 — 기본 색 위에 아주 연한 빗금만 얹음 */
+const DUPLICATED_ENTRY_ROW_STRIPE_IMAGE =
+    "repeating-linear-gradient(135deg, transparent 0px, transparent 6px, rgba(15, 23, 42, 0.08) 6px, rgba(15, 23, 42, 0.08) 7px)";
 
 const sortPeopleByKoreanOrder = (people: string[]) =>
     [...people].sort((a, b) => a.localeCompare(b, "ko"));
@@ -271,23 +309,48 @@ function CloseIcon() {
     );
 }
 
-function DescTypeBadge({ value }: { value: string }) {
-    const styles =
+function DescTypeBadge({
+    value,
+    emphasizeChangedText,
+}: {
+    value: string;
+    /** true면 배경·테두리는 유지하고 ��자만 ��간색 */
+    emphasizeChangedText?: boolean;
+}) {
+    const bgRing =
         value === "이동"
-            ? "bg-lime-100 text-lime-800 ring-lime-200"
+            ? "bg-lime-100 ring-lime-200"
             : value === "작업"
-              ? "bg-sky-100 text-sky-800 ring-sky-200"
+              ? "bg-sky-100 ring-sky-200"
               : value === "대기"
-                ? "bg-orange-100 text-orange-800 ring-orange-200"
-                : "bg-gray-100 text-gray-800 ring-gray-200";
+                ? "bg-orange-100 ring-orange-200"
+                : "bg-gray-100 ring-gray-200";
+    const textColor = emphasizeChangedText
+        ? "text-red-600"
+        : value === "이동"
+          ? "text-lime-800"
+          : value === "작업"
+            ? "text-sky-800"
+            : value === "대기"
+              ? "text-orange-800"
+              : "text-gray-800";
 
     return (
         <span
-            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ring-inset ${styles}`}
+            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4 ring-1 ring-inset ${bgRing} ${textColor}`}
         >
             {value}
         </span>
     );
+}
+
+function normalizeMultilineCompare(s: string): string {
+    return s
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .join("\n");
 }
 
 function renderTravelBadgeLabelWithArrow(label: string, arrowClassName: string): ReactNode {
@@ -376,7 +439,18 @@ export default function TimesheetDateGroupDetailSidePanel({
     personVesselHistoryByPerson,
     invoiceTimesheetPeople = [],
     getOriginalTimesheetEntryPersons,
+    getTimesheetEntryEditBaseline,
     onReplaceTimesheetEntryPerson,
+    onDuplicateTimesheetEntry,
+    onDeleteTimesheetEntry,
+    onUndo,
+    onRedo,
+    onFullGroupResetToDefault,
+    resetToInitialDisabled,
+    undoDisabled = true,
+    redoDisabled = true,
+    manualBillableHoursByEntryId = {},
+    onUpdateTimesheetEntry,
 }: TimesheetDateGroupDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
@@ -386,11 +460,22 @@ export default function TimesheetDateGroupDetailSidePanel({
     expandedEditorKeyRef.current = expandedEditorKey;
     const closeEditorTimerRef = useRef<number | null>(null);
 
+    const [expandedEntryEditKey, setExpandedEntryEditKey] = useState<string | null>(null);
+    const [entryEditClosingKey, setEntryEditClosingKey] = useState<string | null>(null);
+    const expandedEntryEditKeyRef = useRef<string | null>(null);
+    expandedEntryEditKeyRef.current = expandedEntryEditKey;
+    const closeEntryEditTimerRef = useRef<number | null>(null);
+
     const [expandedRemarkKey, setExpandedRemarkKey] = useState<string | null>(null);
     const [remarkClosingKey, setRemarkClosingKey] = useState<string | null>(null);
     const [remarkPersonReplacePickerKey, setRemarkPersonReplacePickerKey] = useState<
         string | null
     >(null);
+    const [dbEntryContextMenu, setDbEntryContextMenu] = useState<{
+        x: number;
+        y: number;
+        entryId: number;
+    } | null>(null);
     const expandedRemarkKeyRef = useRef<string | null>(null);
     expandedRemarkKeyRef.current = expandedRemarkKey;
     const closeRemarkTimerRef = useRef<number | null>(null);
@@ -417,6 +502,15 @@ export default function TimesheetDateGroupDetailSidePanel({
         }
     }, []);
 
+    const dismissEntryEditImmediate = useCallback(() => {
+        setExpandedEntryEditKey(null);
+        setEntryEditClosingKey(null);
+        if (closeEntryEditTimerRef.current != null) {
+            window.clearTimeout(closeEntryEditTimerRef.current);
+            closeEntryEditTimerRef.current = null;
+        }
+    }, []);
+
     const ensureExpandedEditorVisible = useCallback((editorKey: string) => {
         const body = scrollBodyRef.current;
         if (!body) return;
@@ -426,7 +520,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                 ? CSS.escape(editorKey)
                 : editorKey.replace(/"/g, '\\"');
         const editorEl = body.querySelector<HTMLElement>(
-            `[data-travel-override-editor="true"][data-editor-key="${escapedKey}"]`
+            `[data-editor-key="${escapedKey}"]`
         );
         if (!editorEl) return;
 
@@ -457,13 +551,14 @@ export default function TimesheetDateGroupDetailSidePanel({
 
     const openRemarkEditor = useCallback((key: string) => {
         dismissTravelEditorImmediate();
+        dismissEntryEditImmediate();
         if (closeRemarkTimerRef.current != null) {
             window.clearTimeout(closeRemarkTimerRef.current);
             closeRemarkTimerRef.current = null;
         }
         setRemarkClosingKey(null);
         setExpandedRemarkKey(key);
-    }, [dismissTravelEditorImmediate]);
+    }, [dismissEntryEditImmediate, dismissTravelEditorImmediate]);
 
     const closeEditor = useCallback(() => {
         const key = expandedEditorKeyRef.current;
@@ -481,13 +576,42 @@ export default function TimesheetDateGroupDetailSidePanel({
 
     const openEditor = useCallback((key: string) => {
         dismissRemarkEditorImmediate();
+        dismissEntryEditImmediate();
         if (closeEditorTimerRef.current != null) {
             window.clearTimeout(closeEditorTimerRef.current);
             closeEditorTimerRef.current = null;
         }
         setEditorClosingKey(null);
         setExpandedEditorKey(key);
-    }, [dismissRemarkEditorImmediate]);
+    }, [dismissEntryEditImmediate, dismissRemarkEditorImmediate]);
+
+    const closeEntryEdit = useCallback(() => {
+        const key = expandedEntryEditKeyRef.current;
+        if (key === null) return;
+        setEntryEditClosingKey(key);
+        setExpandedEntryEditKey(null);
+        if (closeEntryEditTimerRef.current != null) {
+            window.clearTimeout(closeEntryEditTimerRef.current);
+        }
+        closeEntryEditTimerRef.current = window.setTimeout(() => {
+            setEntryEditClosingKey(null);
+            closeEntryEditTimerRef.current = null;
+        }, TRAVEL_OVERRIDE_EDITOR_ANIM_MS);
+    }, []);
+
+    const openEntryEdit = useCallback(
+        (key: string) => {
+            dismissTravelEditorImmediate();
+            dismissRemarkEditorImmediate();
+            if (closeEntryEditTimerRef.current != null) {
+                window.clearTimeout(closeEntryEditTimerRef.current);
+                closeEntryEditTimerRef.current = null;
+            }
+            setEntryEditClosingKey(null);
+            setExpandedEntryEditKey(key);
+        },
+        [dismissRemarkEditorImmediate, dismissTravelEditorImmediate]
+    );
 
     const getTravelChargeOverrideKey = (entryId: number, person: string) =>
         `${entryId}:${person}`;
@@ -500,14 +624,16 @@ export default function TimesheetDateGroupDetailSidePanel({
                 window.clearTimeout(closeEditorTimerRef.current);
                 closeEditorTimerRef.current = null;
             }
+            dismissEntryEditImmediate();
             dismissRemarkEditorImmediate();
         }
-    }, [dismissRemarkEditorImmediate, isOpen]);
+    }, [dismissEntryEditImmediate, dismissRemarkEditorImmediate, isOpen]);
 
     useLayoutEffect(() => {
         if (!isOpen) return;
 
-        const activeEditorKey = expandedRemarkKey ?? expandedEditorKey;
+        const activeEditorKey =
+            expandedRemarkKey ?? expandedEditorKey ?? expandedEntryEditKey;
         if (!activeEditorKey) return;
 
         let rafId = 0;
@@ -525,6 +651,7 @@ export default function TimesheetDateGroupDetailSidePanel({
     }, [
         ensureExpandedEditorVisible,
         expandedEditorKey,
+        expandedEntryEditKey,
         expandedRemarkKey,
         isOpen,
     ]);
@@ -534,13 +661,34 @@ export default function TimesheetDateGroupDetailSidePanel({
 
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === "Escape") {
+                if (expandedEntryEditKey) {
+                    closeEntryEdit();
+                    return;
+                }
+                if (expandedEditorKey) {
+                    closeEditor();
+                    return;
+                }
+                if (expandedRemarkKey) {
+                    closeRemarkEditor();
+                    return;
+                }
                 onClose();
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [isOpen, onClose]);
+    }, [
+        closeEditor,
+        closeEntryEdit,
+        closeRemarkEditor,
+        expandedEditorKey,
+        expandedEntryEditKey,
+        expandedRemarkKey,
+        isOpen,
+        onClose,
+    ]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -564,6 +712,12 @@ export default function TimesheetDateGroupDetailSidePanel({
                 ) {
                     closeEditor();
                 }
+                if (
+                    expandedEntryEditKey &&
+                    !target.closest('[data-entry-edit-editor="true"]')
+                ) {
+                    closeEntryEdit();
+                }
                 return;
             }
 
@@ -571,10 +725,19 @@ export default function TimesheetDateGroupDetailSidePanel({
                 return;
             }
 
+            if (target.closest("[data-base-modal='true']")) {
+                return;
+            }
+
+            if (target.closest('[data-app-toast="true"]')) {
+                return;
+            }
+
             if (disableOutsideClose) {
                 return;
             }
 
+            dismissEntryEditImmediate();
             dismissRemarkEditorImmediate();
             setExpandedEditorKey(null);
             setEditorClosingKey(null);
@@ -589,10 +752,13 @@ export default function TimesheetDateGroupDetailSidePanel({
         return () => document.removeEventListener("mousedown", handlePointerDown);
     }, [
         closeEditor,
+        closeEntryEdit,
         closeRemarkEditor,
         disableOutsideClose,
+        dismissEntryEditImmediate,
         dismissRemarkEditorImmediate,
         expandedEditorKey,
+        expandedEntryEditKey,
         expandedRemarkKey,
         isOpen,
         onClose,
@@ -645,6 +811,16 @@ export default function TimesheetDateGroupDetailSidePanel({
 
     const formatHoursLabel = (value: number) => {
         return Number.isInteger(value) ? String(value) : String(value);
+    };
+
+    const getDurationLabel = (
+        startDate: string,
+        startTime: string,
+        endDate: string,
+        endTime: string
+    ) => {
+        const durationHours = getDurationHours(startDate, startTime, endDate, endTime);
+        return durationHours === null ? "" : formatHoursLabel(durationHours);
     };
 
     const getOverlapMinutes = (
@@ -1018,11 +1194,6 @@ export default function TimesheetDateGroupDetailSidePanel({
 
     const resolvedWorkLocationsByDate = workLocationsByDate ?? {};
 
-    const getTravelChargeHoursForPerson = (
-        entry: TimesheetSourceEntryData,
-        person: string
-    ): number | null => getTravelChargeResultForPerson(entry, person).hours;
-
     const getTravelChargeResultForPerson = (
         entry: TimesheetSourceEntryData,
         person: string
@@ -1182,8 +1353,35 @@ export default function TimesheetDateGroupDetailSidePanel({
         return { hours: null, kind: "none" };
     };
 
-    const getChargeLabel = (entry: TimesheetSourceEntryData) => {
+    const getChargeLabel = (
+        entry: TimesheetSourceEntryData,
+        ignoreEntryManualOrOpts:
+            | boolean
+            | {
+                  ignoreEntryManual?: boolean;
+                  manualBillableHours?: number;
+              } = false
+    ) => {
+        let ignoreEntryManual = false;
+        let useExplicitManual = false;
+        let explicitManual: number | undefined;
+        if (typeof ignoreEntryManualOrOpts === "boolean") {
+            ignoreEntryManual = ignoreEntryManualOrOpts;
+        } else if (ignoreEntryManualOrOpts && typeof ignoreEntryManualOrOpts === "object") {
+            ignoreEntryManual = ignoreEntryManualOrOpts.ignoreEntryManual ?? false;
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    ignoreEntryManualOrOpts,
+                    "manualBillableHours"
+                )
+            ) {
+                useExplicitManual = true;
+                explicitManual = ignoreEntryManualOrOpts.manualBillableHours;
+            }
+        }
+
         const zeroBillingTravelIds = getZeroBillingTravelIdsForDate(entry.dateFrom);
+        const rawTravelHours = roundHours(calculateRawTravelHours(entry));
         const durationHours = getDurationHours(
             entry.dateFrom,
             entry.timeFrom,
@@ -1192,6 +1390,20 @@ export default function TimesheetDateGroupDetailSidePanel({
         );
         const durationLabel =
             durationHours === null ? "" : formatHoursLabel(durationHours);
+
+        if (!ignoreEntryManual) {
+            const manual = useExplicitManual
+                ? explicitManual
+                : manualBillableHoursByEntryId[entry.id];
+            if (manual !== undefined) {
+                if (entry.descType === "대기") {
+                    return `W=${formatHoursLabel(manual)}`;
+                }
+                if (entry.descType === "작업" || entry.descType === "이동") {
+                    return formatHoursLabel(manual);
+                }
+            }
+        }
 
         if (entry.descType === "작업" || entry.descType === "대기") {
             return getWorkingChargeLabel(entry);
@@ -1202,7 +1414,19 @@ export default function TimesheetDateGroupDetailSidePanel({
         }
 
         const personHours = entry.persons
-            .map((person) => getTravelChargeHoursForPerson(entry, person))
+            .map((person) => {
+                const chargeResult = getTravelChargeResultForPerson(entry, person);
+
+                if (chargeResult.hours === null) {
+                    return null;
+                }
+
+                // 상세 패널의 청구시간은 행 단위 값이어야 하므로,
+                // 일반 이동(travel)은 이동 묶음 합계 대신 현재 엔트리의 시간만 표시한다.
+                return chargeResult.kind === "travel"
+                    ? rawTravelHours
+                    : chargeResult.hours;
+            })
             .filter((value): value is number => value !== null);
 
         if (personHours.length > 0) {
@@ -1421,6 +1645,16 @@ export default function TimesheetDateGroupDetailSidePanel({
 
     const renderInteractiveRemarkPersons = (entry: TimesheetSourceEntryData) => {
         const persons = entry.persons ?? [];
+        if (entry.clientDuplicated) {
+            const baseline =
+                getOriginalTimesheetEntryPersons?.(entry.id) ?? [];
+            const unchangedFromDuplicateBaseline =
+                baseline.length === persons.length &&
+                baseline.every((p, i) => p === persons[i]);
+            if (persons.length === 0 || unchangedFromDuplicateBaseline) {
+                return null;
+            }
+        }
         if (persons.length === 0) {
             return "-";
         }
@@ -1432,6 +1666,8 @@ export default function TimesheetDateGroupDetailSidePanel({
 
         const originalEntryPersons =
             getOriginalTimesheetEntryPersons?.(entry.id) ?? [];
+        const originalPersonSet = new Set(originalEntryPersons);
+        const hasPersonsBaseline = originalEntryPersons.length > 0;
 
         return (
             <div className="flex flex-col gap-1">
@@ -1443,11 +1679,9 @@ export default function TimesheetDateGroupDetailSidePanel({
                         {line.map((person, i) => {
                             const rk = getFullGroupRemarkEditorKey(entry.id, person);
                             const isActive = expandedRemarkKey === rk;
-                            const slotIndex = lineIdx * 3 + i;
-                            const originalForSlot = originalEntryPersons[slotIndex];
                             const isReplacedRemarkPerson =
-                                originalForSlot !== undefined &&
-                                person !== originalForSlot;
+                                hasPersonsBaseline &&
+                                !originalPersonSet.has(person);
                             return (
                                 <Fragment key={`${entry.id}-${person}-${lineIdx}-${i}`}>
                                     {i > 0 ? (
@@ -1531,7 +1765,144 @@ export default function TimesheetDateGroupDetailSidePanel({
         </div>
     );
 
-    return createPortal(
+    useEffect(() => {
+        if (!isOpen) {
+            setDbEntryContextMenu(null);
+        }
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (!dbEntryContextMenu) {
+            return;
+        }
+        const onPointerDown = (e: MouseEvent) => {
+            const t = e.target as Element;
+            if (t.closest('[data-db-entry-context-menu="true"]')) {
+                return;
+            }
+            // mousedown이 tr의 click보다 먼저 와서 메뉴를 지운 뒤 click이 다시 열리는 깜빡임 방지.
+            // 행 내부 버튼·비고·이동배지는 행 click과 무관하므로 기존처럼 mousedown에서 닫음.
+            const inDbRow = t.closest("[data-db-entry-row]");
+            if (
+                inDbRow &&
+                !t.closest("button") &&
+                !t.closest("[data-remark-person]") &&
+                !t.closest("[data-travel-override-badge]")
+            ) {
+                return;
+            }
+            setDbEntryContextMenu(null);
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        return () => document.removeEventListener("mousedown", onPointerDown);
+    }, [dbEntryContextMenu]);
+
+    const dbEntryMenuPortal =
+        dbEntryContextMenu &&
+        (onDuplicateTimesheetEntry ||
+            onDeleteTimesheetEntry ||
+            onUpdateTimesheetEntry) ? (
+            (() => {
+                const MENU_W = 168;
+                const MENU_H = 168;
+                const x = Math.max(
+                    8,
+                    Math.min(
+                        dbEntryContextMenu.x,
+                        window.innerWidth - MENU_W - 8
+                    )
+                );
+                const y = Math.max(
+                    8,
+                    Math.min(
+                        dbEntryContextMenu.y,
+                        window.innerHeight - MENU_H - 8
+                    )
+                );
+                return createPortal(
+                    <div
+                        data-db-entry-context-menu="true"
+                        className="fixed z-[20000] min-w-[160px] rounded-lg border border-gray-200 bg-white py-1 text-sm shadow-xl"
+                        style={{ left: x, top: y }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        role="menu"
+                    >
+                        {onDuplicateTimesheetEntry ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
+                                onClick={() => {
+                                    onDuplicateTimesheetEntry(
+                                        dbEntryContextMenu.entryId
+                                    );
+                                    setDbEntryContextMenu(null);
+                                }}
+                            >
+                                복사
+                            </button>
+                        ) : null}
+                        {onUpdateTimesheetEntry ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
+                                onClick={() => {
+                                    const id = dbEntryContextMenu.entryId;
+                                    setDbEntryContextMenu(null);
+                                    openEntryEdit(`full-group:edit:${id}`);
+                                }}
+                            >
+                                수정
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                disabled
+                                className="block w-full cursor-not-allowed px-3 py-2 text-left text-gray-400"
+                            >
+                                수정
+                            </button>
+                        )}
+                        {onDeleteTimesheetEntry ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full px-3 py-2 text-left text-red-700 hover:bg-red-50"
+                                onClick={() => {
+                                    onDeleteTimesheetEntry(
+                                        dbEntryContextMenu.entryId
+                                    );
+                                    setDbEntryContextMenu(null);
+                                }}
+                            >
+                                삭제
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                disabled
+                                className="block w-full cursor-not-allowed px-3 py-2 text-left text-gray-400"
+                            >
+                                삭제
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            disabled
+                            className="block w-full cursor-not-allowed px-3 py-2 text-left text-gray-400"
+                        >
+                            메모
+                        </button>
+                    </div>,
+                    document.body
+                );
+            })()
+        ) : null;
+
+    return (
+        <>
+            {createPortal(
         <aside
             ref={panelRef}
             data-timesheet-date-group-panel="true"
@@ -1561,9 +1932,48 @@ export default function TimesheetDateGroupDetailSidePanel({
 
                 <div ref={scrollBodyRef} className="flex-1 overflow-y-auto px-6 py-6">
                     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                        <div className="border-b border-gray-200 bg-blue-50 px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-blue-50 px-4 py-3">
                             <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
                                 Actual DB Entries - Full Group
+                            </div>
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                {onUndo ? (
+                                    <button
+                                        type="button"
+                                        className="rounded-full border border-blue-200/90 bg-white px-3 py-1.5 text-xs font-medium text-blue-900 shadow-sm transition-colors hover:bg-blue-100/70 disabled:cursor-not-allowed disabled:opacity-40"
+                                        disabled={undoDisabled}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={onUndo}
+                                    >
+                                        Undo
+                                    </button>
+                                ) : null}
+                                {onRedo ? (
+                                    <button
+                                        type="button"
+                                        className="rounded-full border border-blue-200/90 bg-white px-3 py-1.5 text-xs font-medium text-blue-900 shadow-sm transition-colors hover:bg-blue-100/70 disabled:cursor-not-allowed disabled:opacity-40"
+                                        disabled={redoDisabled}
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={onRedo}
+                                    >
+                                        Redo
+                                    </button>
+                                ) : null}
+                                {onFullGroupResetToDefault ? (
+                                    <button
+                                        type="button"
+                                        className="rounded-full border border-blue-200/90 bg-white px-3 py-1.5 text-xs font-medium text-blue-900 shadow-sm transition-colors hover:bg-blue-100/70 disabled:cursor-not-allowed disabled:opacity-40"
+                                        disabled={
+                                            resetToInitialDisabled !== undefined
+                                                ? resetToInitialDisabled
+                                                : fullGroupEntries.length === 0
+                                        }
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={onFullGroupResetToDefault}
+                                    >
+                                        기본값
+                                    </button>
+                                ) : null}
                             </div>
                         </div>
 
@@ -1616,6 +2026,71 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                 entry.timeFrom,
                                                 entry.dateTo,
                                                 entry.timeTo
+                                            );
+                                            const editBaseline =
+                                                getTimesheetEntryEditBaseline?.(entry.id);
+                                            const fieldEditedClass =
+                                                "font-medium text-red-600 underline decoration-red-600";
+                                            const baselineSynth = editBaseline
+                                                ? {
+                                                      ...entry,
+                                                      descType: editBaseline.descType,
+                                                      dateFrom: editBaseline.dateFrom,
+                                                      dateTo: editBaseline.dateTo,
+                                                      timeFrom: editBaseline.timeFrom,
+                                                      timeTo: editBaseline.timeTo,
+                                                  }
+                                                : null;
+                                            const baselineDurationHours = baselineSynth
+                                                ? getDurationHours(
+                                                      baselineSynth.dateFrom,
+                                                      baselineSynth.timeFrom,
+                                                      baselineSynth.dateTo,
+                                                      baselineSynth.timeTo
+                                                  )
+                                                : null;
+                                            const baselineDurationLabel =
+                                                baselineDurationHours === null
+                                                    ? "-"
+                                                    : formatHoursLabel(baselineDurationHours);
+                                            const currentDurationLabel =
+                                                durationHours === null
+                                                    ? "-"
+                                                    : formatHoursLabel(durationHours);
+                                            const baselineChargeLabel = baselineSynth
+                                                ? getChargeLabel(baselineSynth, {
+                                                      manualBillableHours:
+                                                          editBaseline!.manualBillableHours,
+                                                  })
+                                                : "";
+                                            const descTypeChanged = Boolean(
+                                                editBaseline &&
+                                                    entry.descType !== editBaseline.descType
+                                            );
+                                            const fromChanged = Boolean(
+                                                editBaseline &&
+                                                    formatTimeToMinutes(entry.timeFrom) !==
+                                                        formatTimeToMinutes(
+                                                            editBaseline.timeFrom
+                                                        )
+                                            );
+                                            const toChanged = Boolean(
+                                                editBaseline &&
+                                                    formatTimeToMinutes(entry.timeTo) !==
+                                                        formatTimeToMinutes(editBaseline.timeTo)
+                                            );
+                                            const durationChanged = Boolean(
+                                                editBaseline &&
+                                                    currentDurationLabel !== baselineDurationLabel
+                                            );
+                                            const chargeChanged = Boolean(
+                                                editBaseline &&
+                                                    normalizeMultilineCompare(
+                                                        String(chargeLabel)
+                                                    ) !==
+                                                        normalizeMultilineCompare(
+                                                            String(baselineChargeLabel)
+                                                        )
                                             );
                                             const isSameDateAsPrevious =
                                                 index > 0 &&
@@ -1674,13 +2149,86 @@ export default function TimesheetDateGroupDetailSidePanel({
                                             const isRemarkEditorRowVisible =
                                                 remarkShellKey !== null;
 
+                                            const entryEditKey = `full-group:edit:${entry.id}`;
+                                            const isEntryEditOpen =
+                                                expandedEntryEditKey === entryEditKey;
+                                            const isEntryEditRowVisible =
+                                                isEntryEditOpen ||
+                                                entryEditClosingKey === entryEditKey;
+
+                                            const dbRowInteractive = Boolean(
+                                                onDuplicateTimesheetEntry ||
+                                                    onDeleteTimesheetEntry ||
+                                                    onUpdateTimesheetEntry
+                                            );
+                                            const dbRowHoverClass = dbRowInteractive
+                                                ? rowPink
+                                                    ? "cursor-pointer transition-colors hover:bg-pink-100/90"
+                                                    : "cursor-pointer transition-colors hover:bg-gray-50"
+                                                : "";
+
+                                            const duplicatedStripeStyle =
+                                                entry.clientDuplicated
+                                                    ? {
+                                                          backgroundImage:
+                                                              DUPLICATED_ENTRY_ROW_STRIPE_IMAGE,
+                                                      }
+                                                    : undefined;
+
                                             return (
                                                 <Fragment key={`full-group-${entry.id}-${index}`}>
                                                     <tr
-                                                        className={
+                                                        data-db-entry-row={
+                                                            dbRowInteractive
+                                                                ? "true"
+                                                                : undefined
+                                                        }
+                                                        className={`${
                                                             rowPink
                                                                 ? "align-top bg-pink-50"
                                                                 : "align-top bg-white"
+                                                        } ${dbRowHoverClass}`}
+                                                        style={duplicatedStripeStyle}
+                                                        onClick={
+                                                            dbRowInteractive
+                                                                ? (e) => {
+                                                                      const el =
+                                                                          e.target as HTMLElement;
+                                                                      if (
+                                                                          el.closest(
+                                                                              "button"
+                                                                          )
+                                                                      ) {
+                                                                          return;
+                                                                      }
+                                                                      if (
+                                                                          el.closest(
+                                                                              "[data-remark-person]"
+                                                                          )
+                                                                      ) {
+                                                                          return;
+                                                                      }
+                                                                      if (
+                                                                          el.closest(
+                                                                              "[data-travel-override-badge]"
+                                                                          )
+                                                                      ) {
+                                                                          return;
+                                                                      }
+                                                                      setDbEntryContextMenu(
+                                                                          (prev) =>
+                                                                              prev?.entryId ===
+                                                                              entry.id
+                                                                                  ? null
+                                                                                  : {
+                                                                                        x: e.clientX,
+                                                                                        y: e.clientY,
+                                                                                        entryId:
+                                                                                            entry.id,
+                                                                                    }
+                                                                      );
+                                                                  }
+                                                                : undefined
                                                         }
                                                     >
                                                         <td
@@ -1703,24 +2251,57 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                         <td
                                                             className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                                         >
-                                                            <DescTypeBadge value={entry.descType} />
+                                                            <DescTypeBadge
+                                                                value={entry.descType}
+                                                                emphasizeChangedText={
+                                                                    descTypeChanged
+                                                                }
+                                                            />
                                                         </td>
                                                         <td
                                                             className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                                         >
-                                                            {formatTimeToMinutes(entry.timeFrom)}
+                                                            <span
+                                                                className={
+                                                                    fromChanged
+                                                                        ? fieldEditedClass
+                                                                        : undefined
+                                                                }
+                                                            >
+                                                                {formatTimeToMinutes(
+                                                                    entry.timeFrom
+                                                                )}
+                                                            </span>
                                                         </td>
                                                         <td
                                                             className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                                         >
-                                                            {formatTimeToMinutes(entry.timeTo)}
+                                                            <span
+                                                                className={
+                                                                    toChanged
+                                                                        ? fieldEditedClass
+                                                                        : undefined
+                                                                }
+                                                            >
+                                                                {formatTimeToMinutes(entry.timeTo)}
+                                                            </span>
                                                         </td>
                                                         <td
                                                             className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-nowrap ${dateBoundaryTopClass}`}
                                                         >
-                                                            {durationHours === null
-                                                                ? "-"
-                                                                : formatHoursLabel(durationHours)}
+                                                            <span
+                                                                className={
+                                                                    durationChanged
+                                                                        ? fieldEditedClass
+                                                                        : undefined
+                                                                }
+                                                            >
+                                                                {durationHours === null
+                                                                    ? "-"
+                                                                    : formatHoursLabel(
+                                                                          durationHours
+                                                                      )}
+                                                            </span>
                                                         </td>
                                                         <td
                                                             className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
@@ -1729,7 +2310,15 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                     : ""
                                                             } ${dateBoundaryTopClass}`}
                                                         >
-                                                            {chargeLabel}
+                                                            <span
+                                                                className={
+                                                                    chargeChanged
+                                                                        ? `${fieldEditedClass} whitespace-pre-line inline-block`
+                                                                        : "whitespace-pre-line inline-block"
+                                                                }
+                                                            >
+                                                                {chargeLabel}
+                                                            </span>
                                                         </td>
                                                         <td
                                                             className={`border-b border-r border-gray-200 px-3 py-2 text-gray-900 ${dateBoundaryTopClass}`}
@@ -1779,6 +2368,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                     ? "bg-pink-50"
                                                                     : "bg-slate-50/60"
                                                             }
+                                                            style={duplicatedStripeStyle}
                                                         >
                                                             <td
                                                                 colSpan={10}
@@ -1834,6 +2424,65 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                             </td>
                                                         </tr>
                                                     ) : null}
+                                                    {onUpdateTimesheetEntry &&
+                                                    isEntryEditRowVisible ? (
+                                                        <tr
+                                                            className={
+                                                                rowPink
+                                                                    ? "bg-pink-50"
+                                                                    : "bg-slate-50/60"
+                                                            }
+                                                        >
+                                                            <td
+                                                                colSpan={10}
+                                                                className="overflow-hidden border-b border-gray-200 px-3 py-0"
+                                                            >
+                                                                <TravelOverrideEditorAnimatedShell
+                                                                    editorKey={entryEditKey}
+                                                                    isExpanded={isEntryEditOpen}
+                                                                    isClosing={
+                                                                        entryEditClosingKey ===
+                                                                        entryEditKey
+                                                                    }
+                                                                >
+                                                                    <TimesheetEntryEditorForm
+                                                                        entry={entry}
+                                                                        contextEntries={
+                                                                            fullGroupEntries
+                                                                        }
+                                                                        invoiceTimesheetPeople={
+                                                                            invoiceTimesheetPeople
+                                                                        }
+                                                                        manualBillableHours={
+                                                                            manualBillableHoursByEntryId[
+                                                                                entry.id
+                                                                            ]
+                                                                        }
+                                                                        getDurationLabel={
+                                                                            getDurationLabel
+                                                                        }
+                                                                        getChargeLabelForDraft={(
+                                                                            draft
+                                                                        ) =>
+                                                                            getChargeLabel(
+                                                                                draft,
+                                                                                true
+                                                                            )
+                                                                        }
+                                                                        onSave={
+                                                                            onUpdateTimesheetEntry
+                                                                        }
+                                                                        onCancel={closeEntryEdit}
+                                                                        formTitle={
+                                                                            entry.clientDuplicated
+                                                                                ? "복사된 엔트리 수정"
+                                                                                : "엔트리 수정"
+                                                                        }
+                                                                    />
+                                                                </TravelOverrideEditorAnimatedShell>
+                                                            </td>
+                                                        </tr>
+                                                    ) : null}
                                                     {isRemarkEditorRowVisible ? (
                                                         <tr
                                                             className={
@@ -1841,6 +2490,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                     ? "bg-pink-50"
                                                                     : "bg-slate-50/60"
                                                             }
+                                                            style={duplicatedStripeStyle}
                                                         >
                                                             <td
                                                                 colSpan={10}
@@ -2049,5 +2699,8 @@ export default function TimesheetDateGroupDetailSidePanel({
             </div>
         </aside>,
         document.body
+            )}
+            {dbEntryMenuPortal}
+        </>
     );
 }

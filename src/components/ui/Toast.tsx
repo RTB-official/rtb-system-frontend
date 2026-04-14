@@ -1,5 +1,5 @@
 //Toast.tsx
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconCheckmark, IconError, IconInfo } from "../icons/Icons";
 import useIsMobile from "../../hooks/useIsMobile";
@@ -37,8 +37,42 @@ function Toast({ toast, onClose, offset = 0 }: ToastProps) {
   const [countdown, setCountdown] = useState<number | null>(null);
   const isMobile = useIsMobile();
 
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const enterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissedRef = useRef(false);
+
+  const dismissNow = useCallback(() => {
+    if (dismissedRef.current) {
+      return;
+    }
+    dismissedRef.current = true;
+    if (enterTimerRef.current != null) {
+      clearTimeout(enterTimerRef.current);
+      enterTimerRef.current = null;
+    }
+    if (progressIntervalRef.current != null) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    if (autoCloseTimerRef.current != null) {
+      clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = null;
+    }
+    setIsVisible(false);
+    window.setTimeout(() => onCloseRef.current(toast.id), 200);
+  }, [toast.id]);
+
+  const dismissNowRef = useRef(dismissNow);
+  dismissNowRef.current = dismissNow;
+
   useEffect(() => {
+    dismissedRef.current = false;
     const timer = setTimeout(() => setIsVisible(true), 10);
+    enterTimerRef.current = timer;
 
     const duration = toast.duration || 3000;
     const startTime = Date.now();
@@ -47,23 +81,27 @@ function Toast({ toast, onClose, offset = 0 }: ToastProps) {
       const elapsed = Date.now() - startTime;
       const remaining = Math.max(0, 100 - (elapsed / duration) * 100);
       setProgress(remaining);
-      
+
       // 종료 카운트다운 계산 (초 단위)
       const remainingSeconds = Math.ceil((duration - elapsed) / 1000);
       setCountdown(remainingSeconds > 0 ? remainingSeconds : null);
     }, 100);
+    progressIntervalRef.current = progressInterval;
 
     const autoCloseTimer = setTimeout(() => {
-      setIsVisible(false);
-      setTimeout(() => onClose(toast.id), 200);
+      dismissNowRef.current();
     }, duration);
+    autoCloseTimerRef.current = autoCloseTimer;
 
     return () => {
       clearTimeout(timer);
+      enterTimerRef.current = null;
       clearTimeout(autoCloseTimer);
+      autoCloseTimerRef.current = null;
       clearInterval(progressInterval);
+      progressIntervalRef.current = null;
     };
-  }, [toast.id, toast.duration, onClose]);
+  }, [toast.id, toast.duration]);
 
   const progressBarColor =
     toast.type === "success" ? "bg-green-500" : toast.type === "error" ? "bg-red-500" : "bg-blue-500";
@@ -72,11 +110,16 @@ function Toast({ toast, onClose, offset = 0 }: ToastProps) {
   if (isMobile) {
     return createPortal(
       <div
+        data-app-toast="true"
+        onMouseDown={(e) => e.stopPropagation()}
         className={`fixed right-4 z-[10001] transition-all duration-300 ease-out ${isVisible ? "opacity-100 translate-x-0" : "opacity-0 translate-x-full"
           }`}
         style={{ top: `${Math.max(20, 20 + offset)}px`, maxWidth: 'calc(100vw - 32px)' }}
       >
-        <div className="bg-gray-800/90 rounded-lg shadow-2xl w-fit max-w-[calc(100vw-32px)] px-4 py-3 flex items-center gap-3 relative overflow-hidden">
+        <div
+          className="bg-gray-800/90 rounded-lg shadow-2xl w-fit max-w-[calc(100vw-32px)] px-4 py-3 flex items-center gap-3 relative overflow-hidden cursor-pointer"
+          onClick={dismissNow}
+        >
           {/* 진행 바 */}
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700/50">
             <div
@@ -130,11 +173,16 @@ function Toast({ toast, onClose, offset = 0 }: ToastProps) {
   // 데스크톱: 기존 우측 하강 스타일
   return createPortal(
     <div
+      data-app-toast="true"
+      onMouseDown={(e) => e.stopPropagation()}
       className={`fixed right-9 z-[10001] transition-all duration-300 ease-out ${isVisible ? "opacity-100 translate-x-0" : "opacity-0 translate-x-full"
         }`}
       style={{ top: `${100 + offset}px` }}
     >
-      <div className="bg-gray-800/90 rounded-lg shadow-2xl min-w-[260px] max-w-[520px] px-5 py-4 flex items-start gap-3 relative overflow-hidden">
+      <div
+        className="bg-gray-800/90 rounded-lg shadow-2xl min-w-[260px] max-w-[520px] px-5 py-4 flex items-start gap-3 relative overflow-hidden cursor-pointer"
+        onClick={dismissNow}
+      >
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700/50">
           <div
             className={`h-full transition-all duration-75 ease-linear ${progressBarColor}`}

@@ -61,9 +61,11 @@ export default function BaseModal({
 
     return createPortal(
         <div
+            data-base-modal="true"
             className="fixed inset-0 z-[10000] flex items-center justify-center"
             aria-modal="true"
             role="dialog"
+            onMouseDown={(e) => e.stopPropagation()}
         >
             {/* Overlay */}
             <div className="absolute inset-0 bg-black/35" onClick={onClose} />
