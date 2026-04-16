@@ -1,5 +1,5 @@
 // src/pages/Invoice/InvoiceCreatePage.tsx
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -80,6 +80,52 @@ function compareTimesheetSourceEntriesByTimeThenId(
         return -1;
     }
     return b.id - a.id;
+}
+
+function timesheetSourceToWorkLogEntry(
+    src: TimesheetSourceEntryData
+): WorkLogFullData["entries"][number] {
+    return {
+        id: src.id,
+        dateFrom: src.dateFrom,
+        timeFrom: src.timeFrom,
+        dateTo: src.dateTo,
+        timeTo: src.timeTo,
+        descType: src.descType,
+        details: src.details,
+        persons: [...(src.persons ?? [])],
+        note: src.note,
+        moveFrom: src.moveFrom,
+        moveTo: src.moveTo,
+        lunch_worked: src.lunchWorked,
+        clientDuplicated: src.clientDuplicated === true,
+    };
+}
+
+function insertWorkLogEntrySorted(
+    entries: WorkLogFullData["entries"],
+    newEntry: WorkLogFullData["entries"][number]
+): WorkLogFullData["entries"] {
+    const next = [...entries, newEntry];
+    next.sort((a, b) => {
+        const aStart = new Date(`${a.dateFrom}T${a.timeFrom || "00:00"}`).getTime();
+        const bStart = new Date(`${b.dateFrom}T${b.timeFrom || "00:00"}`).getTime();
+        if (aStart !== bStart) {
+            return aStart - bStart;
+        }
+        return a.id - b.id;
+    });
+    return next;
+}
+
+function mergeRestoredPanelEntries(
+    arr: TimesheetSourceEntryData[],
+    restored: TimesheetSourceEntryData
+): TimesheetSourceEntryData[] {
+    if (arr.some((e) => e.id === restored.id)) {
+        return arr;
+    }
+    return [...arr, restored].sort(compareTimesheetSourceEntriesByTimeThenId);
 }
 
 /** 날짜 그룹 패널 동기화: 이전 엔트리와 새로 계산한 엔트리가 동일한지 확인한다. */
@@ -221,6 +267,8 @@ interface TimesheetRowModalData {
     groupSourceEntries: TimesheetSourceEntryData[];
     previousWorkLocations: Record<string, string[]>;
     nextWorkLocations: Record<string, string[]>;
+    /** 타임시트 행의 YYYY-MM-DD — 삭제 엔트리 스코프(내 엔트리만 모두 삭제해도 유지) */
+    timesheetRowCalendarDate?: string;
 }
 
 interface TimesheetDateGroupPanelData {
@@ -228,6 +276,8 @@ interface TimesheetDateGroupPanelData {
     sectionTitle: string;
     fullGroupEntries: TimesheetSourceEntryData[];
     workLocationsByDate: Record<string, Record<string, string[]>>;
+    /** 패널이 다루는 행 날짜(YYYY-MM-DD) — 엔트리가 모두 삭제된 뒤에도 삭제 목록 스코프 유지 */
+    panelCalendarDates?: string[];
 }
 
 type PersonVesselHistoryItem = {
@@ -248,6 +298,7 @@ type InvoiceUndoSnapshot = {
     workLogDataList: WorkLogFullData[];
     travelChargeOverrides: TravelChargeOverrideMap;
     entryManualBillableHours: Record<number, number>;
+    deletedTimesheetEntries: TimesheetSourceEntryData[];
     selectedTimesheetDateGroupPanel: TimesheetDateGroupPanelData | null;
     selectedTimesheetRow: TimesheetRowModalData | null;
 };
@@ -259,6 +310,9 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
         workLogDataList: JSON.parse(JSON.stringify(s.workLogDataList)) as WorkLogFullData[],
         travelChargeOverrides: { ...s.travelChargeOverrides },
         entryManualBillableHours: { ...s.entryManualBillableHours },
+        deletedTimesheetEntries: JSON.parse(
+            JSON.stringify(s.deletedTimesheetEntries ?? [])
+        ) as TimesheetSourceEntryData[],
         selectedTimesheetDateGroupPanel: s.selectedTimesheetDateGroupPanel
             ? (JSON.parse(
                   JSON.stringify(s.selectedTimesheetDateGroupPanel)
@@ -564,6 +618,22 @@ export default function InvoiceCreatePage() {
         (row: TimesheetRow) => MealCountAdjustmentEntry | undefined
     >(() => undefined);
     const loadedWorkLogIdsParamRef = useRef<string | null>(null);
+    const initialTimesheetRowValueByIdentityRef = useRef<
+        Record<
+            string,
+            {
+                timeFrom: string;
+                timeTo: string;
+                totalHours: string;
+                weekdayNormal: string;
+                weekdayAfter: string;
+                weekendNormal: string;
+                weekendAfter: string;
+                travelWeekday: string;
+                travelWeekend: string;
+            }
+        >
+    >({});
     /** 최초 로드(또는 API 재조회) 직후 보고서 스냅샷 — 기본값 초기화에 사용 */
     const initialWorkLogSnapshotRef = useRef<WorkLogFullData[] | null>(null);
     const originalEntryPersonsByIdRef = useRef<Record<number, string[]>>({});
@@ -572,12 +642,18 @@ export default function InvoiceCreatePage() {
     >({});
     const [invoiceResetConfirmOpen, setInvoiceResetConfirmOpen] =
         useState(false);
+    const [timesheetEntryEditorRemountTickById, setTimesheetEntryEditorRemountTickById] =
+        useState<Record<number, number>>({});
+    const [deletedTimesheetEntries, setDeletedTimesheetEntries] = useState<
+        TimesheetSourceEntryData[]
+    >([]);
     const { showError, showSuccess } = useToast();
 
     latestInvoiceStateRef.current = {
         workLogDataList,
         travelChargeOverrides,
         entryManualBillableHours,
+        deletedTimesheetEntries,
         selectedTimesheetDateGroupPanel,
         selectedTimesheetRow,
     };
@@ -587,6 +663,31 @@ export default function InvoiceCreatePage() {
 
     const getTravelChargeOverride = (entryId: number, person: string) =>
         travelChargeOverrides[getTravelChargeOverrideKey(entryId, person)] ?? null;
+
+    /** 타임시트 행에 실제 표시되는 인원 기준 자택/숙소 오버라이드 시그니처 */
+    const getTravelChargeOverrideSignatureForRow = (row: TimesheetRow) => {
+        const visiblePeople = new Set(
+            row.description
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean)
+        );
+        const parts: string[] = [];
+        for (const entry of row.sourceEntries) {
+            for (const person of entry.persons ?? []) {
+                if (!visiblePeople.has(person)) {
+                    continue;
+                }
+                const o = getTravelChargeOverride(entry.id, person);
+                if (o) {
+                    parts.push(
+                        `${entry.id}\x1f${person}\x1f${o.target}`
+                    );
+                }
+            }
+        }
+        return parts.sort((a, b) => a.localeCompare(b, "ko")).join("|");
+    };
 
     const setTravelChargeOverrideTarget = (
         entryId: number,
@@ -714,6 +815,7 @@ export default function InvoiceCreatePage() {
         setWorkLogDataList(snapshot.workLogDataList);
         setTravelChargeOverrides(snapshot.travelChargeOverrides);
         setEntryManualBillableHours(snapshot.entryManualBillableHours ?? {});
+        setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceUndoRedoCounts({
@@ -734,6 +836,7 @@ export default function InvoiceCreatePage() {
         setWorkLogDataList(snapshot.workLogDataList);
         setTravelChargeOverrides(snapshot.travelChargeOverrides);
         setEntryManualBillableHours(snapshot.entryManualBillableHours ?? {});
+        setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceUndoRedoCounts({
@@ -770,6 +873,7 @@ export default function InvoiceCreatePage() {
         setWorkLogDataList(restored);
         setTravelChargeOverrides({});
         setEntryManualBillableHours({});
+        setDeletedTimesheetEntries([]);
         duplicateTimesheetEntryIdRef.current = -1;
         setSelectedFitterRepresentatives({});
         setSelectedTimesheetRow(null);
@@ -1576,6 +1680,49 @@ export default function InvoiceCreatePage() {
                     rawEntries.map((entry) => [entry.id, entry] as const)
                 );
                 const allEntries = mergeContinuousTravelEntries(rawEntries);
+                const getMergedTravelHoursWithManualOverride = (
+                    entry: InvoiceTimesheetEntry
+                ): { hours: number; hasManualOverride: boolean } => {
+                    const sourceIds =
+                        entry.sourceEntryIds.length > 0
+                            ? entry.sourceEntryIds
+                            : [entry.id];
+                    let hasManualOverride = false;
+                    let hours = 0;
+
+                    sourceIds.forEach((sourceEntryId) => {
+                        const manual = entryManualBillableHours[sourceEntryId];
+                        if (manual !== undefined) {
+                            hasManualOverride = true;
+                            hours += manual;
+                            return;
+                        }
+
+                        const rawSourceEntry = rawEntryById.get(sourceEntryId);
+                        hours += rawSourceEntry
+                            ? calculateRawTravelHours(rawSourceEntry)
+                            : calculateRawTravelHours(entry);
+                    });
+
+                    return {
+                        hours: roundHours(hours),
+                        hasManualOverride,
+                    };
+                };
+
+                /** 수동 청구시간이 하나라도 있으면 출장지·override 고정시간보다 우선 */
+                const entriesHaveManualBillableTravel = (
+                    entries: InvoiceTimesheetEntry[]
+                ): boolean =>
+                    entries.some((e) => {
+                        const ids =
+                            e.sourceEntryIds && e.sourceEntryIds.length > 0
+                                ? e.sourceEntryIds
+                                : [e.id];
+                        return ids.some(
+                            (id) => entryManualBillableHours[id] !== undefined
+                        );
+                    });
 
                 // 날짜별로 그룹화
                 const entriesByDate = new Map<string, InvoiceTimesheetEntry[]>();
@@ -1949,6 +2096,30 @@ export default function InvoiceCreatePage() {
                                 .sort();
                         const latestValue =
                             latest.length > 0 ? latest[latest.length - 1] : null;
+
+                        if (entriesHaveManualBillableTravel(entries)) {
+                            const mixedHours = entries.reduce(
+                                (acc, entry) => {
+                                    const result =
+                                        getMergedTravelHoursWithManualOverride(
+                                            entry
+                                        );
+                                    return {
+                                        hours: acc.hours + result.hours,
+                                        hasManualOverride:
+                                            acc.hasManualOverride ||
+                                            result.hasManualOverride,
+                                    };
+                                },
+                                { hours: 0, hasManualOverride: false }
+                            );
+                            return {
+                                hours: roundHours(mixedHours.hours),
+                                start: earliest,
+                                end: latestValue,
+                            };
+                        }
+
                         const override = getLatestTravelChargeOverrideForEntries(
                             entries,
                             person
@@ -1989,13 +2160,22 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
+                        const mixedHours = entries.reduce(
+                            (acc, entry) => {
+                                const result =
+                                    getMergedTravelHoursWithManualOverride(entry);
+                                return {
+                                    hours: acc.hours + result.hours,
+                                    hasManualOverride:
+                                        acc.hasManualOverride ||
+                                        result.hasManualOverride,
+                                };
+                            },
+                            { hours: 0, hasManualOverride: false }
+                        );
+
                         return {
-                            hours: roundHours(
-                                entries.reduce(
-                                    (sum, entry) => sum + calculateRawTravelHours(entry),
-                                    0
-                                )
-                            ),
+                            hours: roundHours(mixedHours.hours),
                             start: earliest,
                             end: latestValue,
                         };
@@ -2298,23 +2478,24 @@ export default function InvoiceCreatePage() {
                                 .sort();
                         const latestValue =
                             latest.length > 0 ? latest[latest.length - 1] : null;
-                        const manualSumAll = (() => {
+                        const manualOrAutoMixedHours = (() => {
+                            let hasManualOverride = false;
                             let sum = 0;
                             for (const e of entries) {
-                                const m = entryManualBillableHours[e.id];
-                                if (m === undefined) {
-                                    return null;
-                                }
-                                sum += m;
+                                const result =
+                                    getMergedTravelHoursWithManualOverride(e);
+                                hasManualOverride =
+                                    hasManualOverride || result.hasManualOverride;
+                                sum += result.hours;
                             }
-                            return roundHours(sum);
+                            return hasManualOverride ? roundHours(sum) : null;
                         })();
 
-                        if (manualSumAll !== null) {
+                        if (manualOrAutoMixedHours !== null) {
                             const destination = getFinalDestination(lastEntry);
                             return {
                                 kind: fallbackLabel,
-                                hours: manualSumAll,
+                                hours: manualOrAutoMixedHours,
                                 start: earliest,
                                 end: latestValue,
                                 label: destination || fallbackLabel,
@@ -2476,6 +2657,23 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
+                        if (entriesHaveManualBillableTravel(beforeTravelEntries)) {
+                            if (blockIndex === 0) {
+                                return summarizeTravelEntries(
+                                    beforeTravelEntries,
+                                    "최초투입",
+                                    false,
+                                    person
+                                );
+                            }
+                            return summarizeTravelEntries(
+                                beforeTravelEntries,
+                                "이동",
+                                true,
+                                person
+                            );
+                        }
+
                         const override = getLatestTravelChargeOverrideForEntries(
                             beforeTravelEntries,
                             person
@@ -2579,6 +2777,23 @@ export default function InvoiceCreatePage() {
                                 end: null as string | null,
                                 label: "",
                             };
+                        }
+
+                        if (entriesHaveManualBillableTravel(afterTravelEntries)) {
+                            if (blockIndex < totalBlocks - 1) {
+                                return summarizeTravelEntries(
+                                    afterTravelEntries,
+                                    "이동",
+                                    true,
+                                    person
+                                );
+                            }
+                            return summarizeTravelEntries(
+                                afterTravelEntries,
+                                "최종 철수",
+                                true,
+                                person
+                            );
                         }
 
                         const override = getLatestTravelChargeOverrideForEntries(
@@ -3188,11 +3403,20 @@ export default function InvoiceCreatePage() {
                     });
                 });
 
-                setTimesheetRows(
+                const finalTimesheetRows =
                     mergeAdjacentTimesheetRowsByVisibleTimeAndCharge(
                         applyChargedTimeWindowToTimesheetRows(rows)
-                    )
-                );
+                    );
+                setTimesheetRows(finalTimesheetRows);
+                if (!shouldReuseLoadedData) {
+                    initialTimesheetRowValueByIdentityRef.current =
+                        Object.fromEntries(
+                            finalTimesheetRows.map((row) => [
+                                getTimesheetRowIdentityKey(row),
+                                getTimesheetRowDisplayedValueSnapshot(row),
+                            ])
+                        );
+                }
             } catch (error) {
                 console.error("보고서 데이터 로드 실패:", error);
                 showError("보고서 데이터를 불러오는 중 오류가 발생했습니다.");
@@ -3655,6 +3879,17 @@ export default function InvoiceCreatePage() {
                 getSectionMealGroupData(sectionTitle, sectionKey, rows, row).totalMeals,
             0
         );
+    const mealsCellSplitShell = (left: ReactNode, right: ReactNode) => (
+        <div className="flex min-h-[18px] w-full items-stretch">
+            <div className="relative flex min-w-0 flex-1 flex-col items-center justify-center border-r border-gray-200 px-0.5">
+                {left}
+            </div>
+            <div className="flex min-w-0 flex-1 items-center justify-center px-0.5 tabular-nums text-gray-400">
+                {right}
+            </div>
+        </div>
+    );
+
     const renderMealsCell = (
         sectionTitle: string,
         sectionKey: string | undefined,
@@ -3665,19 +3900,45 @@ export default function InvoiceCreatePage() {
         const isFirstRowForMealGroup =
             getMealGroupRows(sectionTitle, sectionKey, rows, row)[0]?.rowId ===
             row.rowId;
-        const cellClassName = `relative px-1 py-0 text-center align-middle ${getTimesheetRowStateClass(
+        const cellClassName = `relative px-0 py-0 text-center align-middle ${getTimesheetRowStateClass(
             sectionTitle,
             row
         )}`;
+
+        const lodgingEmpty = (
+            <span className="select-none text-gray-300" aria-hidden="true">
+                —
+            </span>
+        );
 
         if (!isFirstRowForMealGroup) {
             return (
                 <td
                     className={cellClassName}
                     {...getTimesheetInteractiveCellProps(sectionTitle, row)}
-                />
+                >
+                    {mealsCellSplitShell(null, lodgingEmpty)}
+                </td>
             );
         }
+
+        const lodgingCount = countLodgingArrivalPersonsForMealGroup(
+            sectionTitle,
+            sectionKey,
+            rows,
+            row
+        );
+        const lodgingValue = (
+            <span
+                className={`tabular-nums ${
+                    lodgingCount > 0
+                        ? "font-semibold text-gray-900"
+                        : "text-gray-400"
+                }`}
+            >
+                {lodgingCount}
+            </span>
+        );
 
         const mealsData = getSectionMealGroupData(
             sectionTitle,
@@ -3698,77 +3959,80 @@ export default function InvoiceCreatePage() {
                 className={cellClassName}
                 {...getTimesheetInteractiveCellProps(sectionTitle, row)}
             >
-                <div className="relative flex min-h-[18px] items-center justify-center pr-3">
-                    <span
-                        className={`block text-center font-semibold leading-none ${
-                            mealsData.isMealAdjusted
-                                ? "text-red-600 underline decoration-red-600 underline-offset-2"
-                                : "text-gray-900"
-                        }`}
-                    >
-                        {mealsLabel}
-                    </span>
-                    <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0">
-                    <button
-                        type="button"
-                        className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            adjustSectionMealGroupMeals(
-                                sectionTitle,
-                                sectionKey,
-                                rows,
-                                row,
-                                1
-                            );
-                        }}
-                        aria-label="increase meals"
-                    >
-                        <svg
-                            viewBox="0 0 16 16"
-                            width="7"
-                            height="7"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
+                {mealsCellSplitShell(
+                    <div className="relative flex min-h-[18px] w-full items-center justify-center pr-3">
+                        <span
+                            className={`block text-center font-semibold leading-none ${
+                                mealsData.isMealAdjusted
+                                    ? getTimesheetChangedValueTextClass(true, mealsLabel)
+                                    : "text-gray-900"
+                            }`}
                         >
-                            <path d="M4 10l4-4 4 4" />
-                        </svg>
-                    </button>
-                    <button
-                        type="button"
-                        className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            adjustSectionMealGroupMeals(
-                                sectionTitle,
-                                sectionKey,
-                                rows,
-                                row,
-                                -1
-                            );
-                        }}
-                        aria-label="decrease meals"
-                    >
-                        <svg
-                            viewBox="0 0 16 16"
-                            width="7"
-                            height="7"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M4 6l4 4 4-4" />
-                        </svg>
-                    </button>
-                    </div>
-                </div>
+                            {mealsLabel}
+                        </span>
+                        <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0">
+                            <button
+                                type="button"
+                                className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    adjustSectionMealGroupMeals(
+                                        sectionTitle,
+                                        sectionKey,
+                                        rows,
+                                        row,
+                                        1
+                                    );
+                                }}
+                                aria-label="increase meals"
+                            >
+                                <svg
+                                    viewBox="0 0 16 16"
+                                    width="7"
+                                    height="7"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M4 10l4-4 4 4" />
+                                </svg>
+                            </button>
+                            <button
+                                type="button"
+                                className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    adjustSectionMealGroupMeals(
+                                        sectionTitle,
+                                        sectionKey,
+                                        rows,
+                                        row,
+                                        -1
+                                    );
+                                }}
+                                aria-label="decrease meals"
+                            >
+                                <svg
+                                    viewBox="0 0 16 16"
+                                    width="7"
+                                    height="7"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M4 6l4 4 4-4" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>,
+                    lodgingValue
+                )}
             </td>
         );
     };
@@ -3832,6 +4096,7 @@ export default function InvoiceCreatePage() {
         sectionTitle: string,
         sizeClassName: string
     ) => {
+        const changed = getTimesheetRowChangedFlags(row);
         const values = {
             weekdayNormal:
                 row.weekdayNormal > 0 ? String(row.weekdayNormal) : "",
@@ -3866,37 +4131,79 @@ export default function InvoiceCreatePage() {
                     className={getCellClassName()}
                     {...interactiveCellProps}
                 >
-                    {values.weekdayNormal}
+                    <span
+                        className={getTimesheetChangedValueTextClass(
+                            changed.weekdayNormal,
+                            values.weekdayNormal
+                        )}
+                    >
+                        {values.weekdayNormal}
+                    </span>
                 </td>
                 <td
                     className={getCellClassName()}
                     {...interactiveCellProps}
                 >
-                    {values.weekdayAfter}
+                    <span
+                        className={getTimesheetChangedValueTextClass(
+                            changed.weekdayAfter,
+                            values.weekdayAfter
+                        )}
+                    >
+                        {values.weekdayAfter}
+                    </span>
                 </td>
                 <td
                     className={getCellClassName()}
                     {...interactiveCellProps}
                 >
-                    {values.weekendNormal}
+                    <span
+                        className={getTimesheetChangedValueTextClass(
+                            changed.weekendNormal,
+                            values.weekendNormal
+                        )}
+                    >
+                        {values.weekendNormal}
+                    </span>
                 </td>
                 <td
                     className={getCellClassName()}
                     {...interactiveCellProps}
                 >
-                    {values.weekendAfter}
+                    <span
+                        className={getTimesheetChangedValueTextClass(
+                            changed.weekendAfter,
+                            values.weekendAfter
+                        )}
+                    >
+                        {values.weekendAfter}
+                    </span>
                 </td>
                 <td
                     className={getCellClassName()}
                     {...interactiveCellProps}
                 >
-                    {values.travelWeekday}
+                    <span
+                        className={getTimesheetChangedValueTextClass(
+                            changed.travelWeekday,
+                            values.travelWeekday
+                        )}
+                    >
+                        {values.travelWeekday}
+                    </span>
                 </td>
                 <td
                     className={getCellClassName()}
                     {...interactiveCellProps}
                 >
-                    {values.travelWeekend}
+                    <span
+                        className={getTimesheetChangedValueTextClass(
+                            changed.travelWeekend,
+                            values.travelWeekend
+                        )}
+                    >
+                        {values.travelWeekend}
+                    </span>
                 </td>
             </>
         );
@@ -4376,20 +4683,20 @@ export default function InvoiceCreatePage() {
             entry.moveFrom === "자택" ||
             entry.moveTo === "자택";
         const override = getTravelChargeOverride(entry.id, person);
+        const travelHours = calculateTravelHours({
+            ...entry,
+            sourceEntryIds: [entry.id],
+        } as InvoiceTimesheetEntry);
 
         let target: TravelChargeOverrideTarget | null = null;
         if (override?.target === "lodging") {
             target = "lodging";
         } else if (override?.target === "home") {
             target = "home";
-        } else if (
-            calculateTravelHours({
-                ...entry,
-                sourceEntryIds: [entry.id],
-            } as InvoiceTimesheetEntry) === 1 &&
-            (containsLodging || containsHome)
-        ) {
+        } else if (travelHours === 1 && containsLodging) {
             target = "lodging";
+        } else if (travelHours === 1 && containsHome) {
+            target = "home";
         } else if (containsHome && fixedHours > 0) {
             target = "home";
         }
@@ -4404,6 +4711,75 @@ export default function InvoiceCreatePage() {
 
         return target === "home" ? "→자택" : "→숙소";
     };
+
+    /** 해당 meal 그룹·해당 일자에서 이동 배지가 `→숙소`인 인원 수(중복 인원 1회) */
+    const countLodgingArrivalPersonsForMealGroup = (
+        sectionTitle: string,
+        sectionKey: string | undefined,
+        allRows: TimesheetRow[],
+        row: TimesheetRow
+    ): number => {
+        const groupRows = getMealGroupRows(sectionTitle, sectionKey, allRows, row);
+        const dateKey = row.date;
+        const entryById = new Map<number, TimesheetSourceEntryData>();
+        for (const r of groupRows) {
+            for (const e of r.sourceEntries) {
+                if (e.dateFrom === dateKey) {
+                    entryById.set(e.id, e);
+                }
+            }
+        }
+        const entries = [...entryById.values()];
+        const persons = getUniquePersonsFromRows(groupRows);
+        let n = 0;
+        for (const person of persons) {
+            for (const entry of entries) {
+                if (entry.descType !== "이동") {
+                    continue;
+                }
+                if (!(entry.persons ?? []).includes(person)) {
+                    continue;
+                }
+                if (getTravelBadgeLabelForPerson(entry, person) === "→숙소") {
+                    n += 1;
+                    break;
+                }
+            }
+        }
+        return n;
+    };
+
+    const getSectionLodgingArrivalTotal = (
+        sectionTitle: string,
+        sectionKey: string | undefined,
+        rows: TimesheetRow[]
+    ) =>
+        rows
+            .reduce((groupLeadRows, row) => {
+                const key = getMealGroupKey(sectionTitle, sectionKey, row);
+                if (
+                    groupLeadRows.some(
+                        (candidate) =>
+                            getMealGroupKey(sectionTitle, sectionKey, candidate) ===
+                            key
+                    )
+                ) {
+                    return groupLeadRows;
+                }
+                return [...groupLeadRows, row];
+            }, [] as TimesheetRow[])
+            .reduce(
+                (sum, row) =>
+                    sum +
+                    countLodgingArrivalPersonsForMealGroup(
+                        sectionTitle,
+                        sectionKey,
+                        rows,
+                        row
+                    ),
+                0
+            );
+
     const getNormalTimesheetComments = (
         section: NormalTimesheetSection
     ): string[] => {
@@ -5175,6 +5551,16 @@ export default function InvoiceCreatePage() {
         });
 
         setSelectedTimesheetRow(null);
+        const panelCalendarDates = Array.from(
+            new Set(
+                blockKeys.flatMap((groupKey) =>
+                    getTimesheetDateGroupRowsByKey(sectionTitle, groupKey).map(
+                        (groupRow) => groupRow.date
+                    )
+                )
+            )
+        ).sort();
+
         setSelectedTimesheetDateGroupPanel({
             blockKey: blockKeys.join("__"),
             sectionTitle,
@@ -5182,6 +5568,7 @@ export default function InvoiceCreatePage() {
                 compareTimesheetSourceEntriesByTimeThenId
             ),
             workLocationsByDate: workLocationContextByDate,
+            panelCalendarDates,
         });
     };
 
@@ -5208,11 +5595,16 @@ export default function InvoiceCreatePage() {
         setSelectedTimesheetRow(null);
         setSelectedTimesheetDateGroupKeys([]);
         setSelectedTimesheetDateGroupAnchorKey(null);
+        const panelCalendarDates = Array.from(
+            new Set(rows.map((r) => r.date))
+        ).sort();
+
         setSelectedTimesheetDateGroupPanel({
             blockKey: `${sectionTitle}-total`,
             sectionTitle,
             fullGroupEntries: getFullGroupEntriesForRows(rows),
             workLocationsByDate: workLocationContextByDate,
+            panelCalendarDates,
         });
     };
 
@@ -5259,6 +5651,30 @@ export default function InvoiceCreatePage() {
             .filter(Boolean)
             .sort()
             .join("|");
+    /** 날짜 + 엔트리 id 집합만 사용 — 인원 교체 시에도 초기 스냅샷 키가 유지되어 시간·근무 표시가 오표시되지 않음 */
+    const getTimesheetRowIdentityKey = (row: TimesheetRow) =>
+        [
+            row.date,
+            Array.from(new Set(row.sourceEntries.map((entry) => entry.id)))
+                .sort((a, b) => a - b)
+                .join(","),
+        ].join("::");
+    const getTimesheetRowDisplayedValueSnapshot = (row: TimesheetRow) => ({
+        timeFrom: row.timeFrom,
+        timeTo: row.timeTo,
+        totalHours: String(row.totalHours),
+        weekdayNormal: row.weekdayNormal > 0 ? String(row.weekdayNormal) : "",
+        weekdayAfter: row.weekdayAfter > 0 ? String(row.weekdayAfter) : "",
+        weekendNormal: row.weekendNormal > 0 ? String(row.weekendNormal) : "",
+        weekendAfter: row.weekendAfter > 0 ? String(row.weekendAfter) : "",
+        travelWeekday:
+            row.travelWeekdayDisplay ||
+            (row.travelWeekday > 0 ? String(row.travelWeekday) : ""),
+        travelWeekend:
+            row.travelWeekendDisplay ||
+            (row.travelWeekend > 0 ? String(row.travelWeekend) : ""),
+        travelChargeOverrideSignature: getTravelChargeOverrideSignatureForRow(row),
+    });
 
     const getOriginalTimesheetEntryPersons = useCallback(
         (entryId: number) => originalEntryPersonsByIdRef.current[entryId] ?? [],
@@ -5268,6 +5684,83 @@ export default function InvoiceCreatePage() {
     const getTimesheetEntryEditBaseline = useCallback(
         (entryId: number) => timesheetEntryEditBaselineByIdRef.current[entryId],
         []
+    );
+    const getTimesheetChangedValueTextClass = (
+        isChanged: boolean,
+        displayedText?: string
+    ) =>
+        isChanged && (displayedText ?? "").trim() !== ""
+            ? "inline-block rounded border border-blue-500 px-1 py-0.5 align-middle text-blue-700"
+            : "";
+    const isTimesheetRowEditedFromBaseline = useCallback(
+        (row: TimesheetRow) =>
+            row.sourceEntries.some((entry) => {
+                const baseline = timesheetEntryEditBaselineByIdRef.current[entry.id];
+                if (!baseline) {
+                    return false;
+                }
+                const currentManual = entryManualBillableHours[entry.id];
+                const baselineManual = baseline.manualBillableHours;
+                return (
+                    baseline.descType !== entry.descType ||
+                    baseline.dateFrom !== entry.dateFrom ||
+                    baseline.dateTo !== entry.dateTo ||
+                    baseline.timeFrom !== (entry.timeFrom ?? "") ||
+                    baseline.timeTo !== (entry.timeTo ?? "") ||
+                    (baselineManual ?? null) !== (currentManual ?? null)
+                );
+            }),
+        [entryManualBillableHours]
+    );
+    const getTimesheetRowChangedFlags = useCallback(
+        (row: TimesheetRow) => {
+            const identity = getTimesheetRowIdentityKey(row);
+            const baseline =
+                initialTimesheetRowValueByIdentityRef.current[identity];
+            const normOverrideSig = (v: string | undefined) => v ?? "";
+            const overrideSigNow = getTravelChargeOverrideSignatureForRow(row);
+            if (!baseline) {
+                const fallbackChanged = isTimesheetRowEditedFromBaseline(row);
+                const travelOverrideDirty = overrideSigNow !== "";
+                return {
+                    timeFrom: fallbackChanged,
+                    timeTo: fallbackChanged,
+                    totalHours: fallbackChanged,
+                    weekdayNormal: fallbackChanged,
+                    weekdayAfter: fallbackChanged,
+                    weekendNormal: fallbackChanged,
+                    weekendAfter: fallbackChanged,
+                    travelWeekday: fallbackChanged || travelOverrideDirty,
+                    travelWeekend: fallbackChanged || travelOverrideDirty,
+                };
+            }
+            const current = getTimesheetRowDisplayedValueSnapshot(row);
+            const overrideChanged =
+                normOverrideSig(current.travelChargeOverrideSignature) !==
+                normOverrideSig(
+                    (
+                        baseline as {
+                            travelChargeOverrideSignature?: string;
+                        }
+                    ).travelChargeOverrideSignature
+                );
+            return {
+                timeFrom: current.timeFrom !== baseline.timeFrom,
+                timeTo: current.timeTo !== baseline.timeTo,
+                totalHours: current.totalHours !== baseline.totalHours,
+                weekdayNormal: current.weekdayNormal !== baseline.weekdayNormal,
+                weekdayAfter: current.weekdayAfter !== baseline.weekdayAfter,
+                weekendNormal: current.weekendNormal !== baseline.weekendNormal,
+                weekendAfter: current.weekendAfter !== baseline.weekendAfter,
+                travelWeekday:
+                    current.travelWeekday !== baseline.travelWeekday ||
+                    overrideChanged,
+                travelWeekend:
+                    current.travelWeekend !== baseline.travelWeekend ||
+                    overrideChanged,
+            };
+        },
+        [isTimesheetRowEditedFromBaseline, travelChargeOverrides]
     );
 
     /** 병합 행 비고: 원본 스냅샷에 없는 현재 이름(추가·교체)만 빨간 강조 — 슬롯 인덱스 비교 금지 */
@@ -5487,6 +5980,116 @@ export default function InvoiceCreatePage() {
         ]
     );
 
+    const resetSingleTimesheetEntryToInitial = useCallback(
+        (entryId: number) => {
+            const snap = initialWorkLogSnapshotRef.current;
+            let fromSnap: WorkLogFullData["entries"][number] | undefined;
+            if (snap) {
+                for (const wl of snap) {
+                    const e = wl.entries.find((en) => en.id === entryId);
+                    if (e) {
+                        fromSnap = e;
+                        break;
+                    }
+                }
+            }
+            const baseline = timesheetEntryEditBaselineByIdRef.current[entryId];
+            if (!fromSnap && !baseline) {
+                showError("기본값 정보를 찾을 수 없습니다.");
+                return;
+            }
+
+            const prevList =
+                latestInvoiceStateRef.current?.workLogDataList ?? [];
+            let mapped: TimesheetSourceEntryData | null = null;
+            let found = false;
+
+            const nextList = prevList.map((wl) => {
+                const idx = wl.entries.findIndex((e) => e.id === entryId);
+                if (idx === -1) {
+                    return wl;
+                }
+                found = true;
+                const cur = wl.entries[idx];
+                const nextEn: WorkLogFullData["entries"][number] = fromSnap
+                    ? (JSON.parse(
+                          JSON.stringify(fromSnap)
+                      ) as WorkLogFullData["entries"][number])
+                    : {
+                          ...cur,
+                          descType: baseline!.descType,
+                          dateFrom: baseline!.dateFrom,
+                          dateTo: baseline!.dateTo,
+                          timeFrom: baseline!.timeFrom,
+                          timeTo: baseline!.timeTo,
+                          persons: [
+                              ...(originalEntryPersonsByIdRef.current[entryId] ??
+                                  cur.persons ??
+                                  []),
+                          ],
+                      };
+                nextEn.clientDuplicated = cur.clientDuplicated === true;
+                const entries = [...wl.entries];
+                entries[idx] = nextEn;
+                mapped = mapWorkLogEntryToTimesheetSource(
+                    nextEn,
+                    wl.workLog.id,
+                    wl.workLog.location ?? null
+                );
+                return { ...wl, entries };
+            });
+
+            if (!found || !mapped) {
+                showError("엔트리를 찾을 수 없습니다.");
+                return;
+            }
+
+            pushInvoiceUndoSnapshot();
+            setWorkLogDataList(nextList);
+
+            setEntryManualBillableHours((prev) => {
+                if (!(entryId in prev)) {
+                    return prev;
+                }
+                const next = { ...prev };
+                delete next[entryId];
+                return next;
+            });
+
+            resetTravelChargeOverridesForEntry(entryId);
+
+            const mergePanel = (arr: TimesheetSourceEntryData[]) =>
+                arr.map((e) => (e.id === entryId ? mapped! : e));
+
+            setSelectedTimesheetRow((p) =>
+                p
+                    ? {
+                          ...p,
+                          sourceEntries: mergePanel(p.sourceEntries),
+                          groupSourceEntries: mergePanel(p.groupSourceEntries),
+                      }
+                    : p
+            );
+
+            setSelectedTimesheetDateGroupPanel((p) =>
+                p && p.fullGroupEntries.some((e) => e.id === entryId)
+                    ? {
+                          ...p,
+                          fullGroupEntries: mergePanel(p.fullGroupEntries),
+                      }
+                    : p
+            );
+
+            setTimesheetEntryEditorRemountTickById((prev) => ({
+                ...prev,
+                [entryId]: (prev[entryId] ?? 0) + 1,
+            }));
+
+            showSuccess("이 엔트리를 기본값으로 되돌렸습니다.");
+        },
+        [mapWorkLogEntryToTimesheetSource, pushInvoiceUndoSnapshot, showError, showSuccess]
+    );
+
     const duplicateTimesheetEntry = useCallback(
         (entryId: number) => {
             let wlIndex = -1;
@@ -5613,6 +6216,25 @@ export default function InvoiceCreatePage() {
 
             pushInvoiceUndoSnapshot();
 
+            // 삭제 전 엔트리를 별도 보관(사이드 패널에서 조회)
+            const w = workLogDataList[wlIndex];
+            const targetEntry = w.entries.find((e) => e.id === entryId) ?? null;
+            if (
+                targetEntry &&
+                targetEntry.clientDuplicated !== true
+            ) {
+                const panelEntry = mapWorkLogEntryToTimesheetSource(
+                    targetEntry,
+                    w.workLog.id,
+                    w.workLog.location ?? null
+                );
+                setDeletedTimesheetEntries((prev) => {
+                    // 같은 id가 여러 번 들어가지 않게
+                    const next = prev.filter((e) => e.id !== entryId);
+                    return [panelEntry, ...next];
+                });
+            }
+
             resetTravelChargeOverridesForEntry(entryId);
             delete originalEntryPersonsByIdRef.current[entryId];
             delete timesheetEntryEditBaselineByIdRef.current[entryId];
@@ -5664,10 +6286,152 @@ export default function InvoiceCreatePage() {
         },
         [
             workLogDataList,
+            mapWorkLogEntryToTimesheetSource,
             showError,
             showSuccess,
             resetTravelChargeOverridesForEntry,
             pushInvoiceUndoSnapshot,
+        ]
+    );
+
+    const restoreDeletedTimesheetEntriesBatch = useCallback(
+        (entryIds: number[]) => {
+            const idSet = new Set(entryIds);
+            if (idSet.size === 0) {
+                return;
+            }
+            const snap = latestInvoiceStateRef.current;
+            if (!snap) {
+                return;
+            }
+            const toRestore = snap.deletedTimesheetEntries.filter((e) =>
+                idSet.has(e.id)
+            );
+            if (toRestore.length === 0) {
+                showError("되돌릴 엔트리가 없습니다.");
+                return;
+            }
+
+            for (const d of toRestore) {
+                const wl = snap.workLogDataList.find(
+                    (w) => w.workLog.id === d.workLogId
+                );
+                if (!wl) {
+                    showError(
+                        `작업일지 #${d.workLogId}를 찾을 수 없어 엔트리 #${d.id}를 복구할 수 없습니다.`
+                    );
+                    return;
+                }
+                if (wl.entries.some((e) => e.id === d.id)) {
+                    showError(`엔트리 #${d.id}는 이미 복구되어 있습니다.`);
+                    return;
+                }
+            }
+
+            pushInvoiceUndoSnapshot();
+
+            for (const d of toRestore) {
+                const wlEntry = timesheetSourceToWorkLogEntry(d);
+                originalEntryPersonsByIdRef.current[d.id] = [
+                    ...(wlEntry.persons ?? []),
+                ];
+                timesheetEntryEditBaselineByIdRef.current[d.id] = {
+                    descType: wlEntry.descType,
+                    dateFrom: wlEntry.dateFrom,
+                    dateTo: wlEntry.dateTo,
+                    timeFrom: wlEntry.timeFrom ?? "",
+                    timeTo: wlEntry.timeTo ?? "",
+                };
+            }
+
+            setWorkLogDataList((prev) => {
+                const next = [...prev];
+                for (const d of toRestore) {
+                    const wi = next.findIndex((w) => w.workLog.id === d.workLogId);
+                    if (wi === -1) {
+                        continue;
+                    }
+                    const wl = next[wi];
+                    if (wl.entries.some((e) => e.id === d.id)) {
+                        continue;
+                    }
+                    const wlEntry = timesheetSourceToWorkLogEntry(d);
+                    next[wi] = {
+                        ...wl,
+                        entries: insertWorkLogEntrySorted(wl.entries, wlEntry),
+                    };
+                }
+                return next;
+            });
+
+            setDeletedTimesheetEntries((prev) =>
+                prev.filter((e) => !idSet.has(e.id))
+            );
+
+            setTimesheetEntryEditorRemountTickById((prev) => {
+                const next = { ...prev };
+                for (const d of toRestore) {
+                    next[d.id] = (prev[d.id] ?? 0) + 1;
+                }
+                return next;
+            });
+
+            setSelectedTimesheetRow((prev) => {
+                if (!prev) {
+                    return prev;
+                }
+                let source = prev.sourceEntries;
+                let group = prev.groupSourceEntries;
+                const panelDates = new Set(
+                    [...source, ...group].map((e) => e.dateFrom)
+                );
+                for (const d of toRestore) {
+                    if (!panelDates.has(d.dateFrom)) {
+                        continue;
+                    }
+                    const mapped = mapWorkLogEntryToTimesheetSource(
+                        timesheetSourceToWorkLogEntry(d),
+                        d.workLogId,
+                        d.location ?? null
+                    );
+                    source = mergeRestoredPanelEntries(source, mapped);
+                    group = mergeRestoredPanelEntries(group, mapped);
+                }
+                return { ...prev, sourceEntries: source, groupSourceEntries: group };
+            });
+
+            setSelectedTimesheetDateGroupPanel((prev) => {
+                if (!prev) {
+                    return prev;
+                }
+                let full = prev.fullGroupEntries;
+                const panelDates = new Set(full.map((e) => e.dateFrom));
+                for (const d of toRestore) {
+                    if (!panelDates.has(d.dateFrom)) {
+                        continue;
+                    }
+                    const mapped = mapWorkLogEntryToTimesheetSource(
+                        timesheetSourceToWorkLogEntry(d),
+                        d.workLogId,
+                        d.location ?? null
+                    );
+                    full = mergeRestoredPanelEntries(full, mapped);
+                }
+                return { ...prev, fullGroupEntries: full };
+            });
+
+            const n = toRestore.length;
+            showSuccess(
+                n === 1
+                    ? `엔트리 #${toRestore[0].id}를 되돌렸습니다.`
+                    : `${n}개 엔트리를 되돌렸습니다.`
+            );
+        },
+        [
+            pushInvoiceUndoSnapshot,
+            mapWorkLogEntryToTimesheetSource,
+            showError,
+            showSuccess,
         ]
     );
 
@@ -5722,6 +6486,7 @@ export default function InvoiceCreatePage() {
                     workLocationContextByDate[shiftDateByDays(row.date, -1)] ?? {},
                 nextWorkLocations:
                     workLocationContextByDate[shiftDateByDays(row.date, 1)] ?? {},
+                timesheetRowCalendarDate: row.date,
             };
         },
         [timesheetRows]
@@ -6134,7 +6899,7 @@ export default function InvoiceCreatePage() {
                                                 <col className="w-[88px]" />
                                             </colgroup>
                                             <thead className="bg-gray-100">
-                                                {/* 1행: Indication of date & time / Total Hours / Split of Hours / Meals */}
+                                                {/* 1행: Indication of date & time / Total Hours / Split of Hours / Meals & 숙박 */}
                                                 <tr>
                                                     <th colSpan={4} className="px-1 py-2 text-center font-semibold text-gray-900 border-b border-r border-gray-300">
                                                         Indication of date &amp; time
@@ -6149,6 +6914,10 @@ export default function InvoiceCreatePage() {
                                                     </th>
                                                     <th rowSpan={3} className="px-1 py-2 text-center font-semibold text-gray-900 border-b border-gray-300 leading-tight">
                                                         Meals
+                                                        <br />
+                                                        &amp;
+                                                        <br />
+                                                        숙박
                                                     </th>
                                                 </tr>
                                                 {/* 2행: Year/Day/Date/Time From/Time To + 상위 그룹 헤더 */}
@@ -6271,9 +7040,15 @@ export default function InvoiceCreatePage() {
                                                                 )}
                                                                 {row.hideDayDate ? "" : row.dateFormatted}
                                                             </td>
-                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>{row.timeFrom}</td>
-                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>{row.timeTo}</td>
-                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>{row.totalHours}</td>
+                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
+                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeFrom, row.timeFrom)}>{row.timeFrom}</span>
+                                                            </td>
+                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
+                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{row.timeTo}</span>
+                                                            </td>
+                                                            <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
+                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(row.totalHours))}>{row.totalHours}</span>
+                                                            </td>
                                                             {renderSplitHoursCells(
                                                                 row,
                                                                 "R&D TIMESHEET",
@@ -6317,7 +7092,7 @@ export default function InvoiceCreatePage() {
                                                                                         replaced.has(
                                                                                             person
                                                                                         )
-                                                                                            ? "font-bold text-red-600 underline"
+                                                                                            ? "inline-block rounded border border-blue-500 px-1 py-0.5 font-bold text-blue-700"
                                                                                             : ""
                                                                                     }
                                                                                 >
@@ -6369,12 +7144,35 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                             {Math.round(timesheetRows.reduce((sum, row) => sum + row.travelWeekend, 0) * 10) / 10}
                                                         </td>
-                                                        <td className="px-2 py-2 text-center font-bold">
-                                                            {getSectionMealsTotal(
-                                                                "R&D TIMESHEET",
-                                                                undefined,
-                                                                timesheetRows
-                                                            )}
+                                                        <td className="px-0 py-2 text-center font-bold">
+                                                            <div className="flex min-h-[20px] w-full items-stretch">
+                                                                <div className="flex min-w-0 flex-1 items-center justify-center border-r border-gray-200 px-0.5">
+                                                                    {getSectionMealsTotal(
+                                                                        "R&D TIMESHEET",
+                                                                        undefined,
+                                                                        timesheetRows
+                                                                    )}
+                                                                </div>
+                                                                {(() => {
+                                                                    const lodgingTotal =
+                                                                        getSectionLodgingArrivalTotal(
+                                                                            "R&D TIMESHEET",
+                                                                            undefined,
+                                                                            timesheetRows
+                                                                        );
+                                                                    return (
+                                                                        <div
+                                                                            className={`flex min-w-0 flex-1 items-center justify-center px-0.5 tabular-nums ${
+                                                                                lodgingTotal > 0
+                                                                                    ? "font-semibold text-gray-900"
+                                                                                    : "text-gray-400"
+                                                                            }`}
+                                                                        >
+                                                                            {lodgingTotal}
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 )}
@@ -6673,6 +7471,10 @@ export default function InvoiceCreatePage() {
                                                                         </th>
                                                                         <th rowSpan={3} className="px-1 py-2 text-center font-semibold text-gray-900 border-b border-gray-300 leading-tight">
                                                                             Meals
+                                                                            <br />
+                                                                            &amp;
+                                                                            <br />
+                                                                            숙박
                                                                         </th>
                                                                     </tr>
                                                                     <tr>
@@ -6767,9 +7569,15 @@ export default function InvoiceCreatePage() {
                                                                                 )}
                                                                                 {row.hideDayDate ? "" : row.dateFormatted}
                                                                             </td>
-                                                                            <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>{row.timeFrom}</td>
-                                                                            <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>{row.timeTo}</td>
-                                                                            <td className={`px-2 py-3 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>{row.totalHours}</td>
+                                                                            <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>
+                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeFrom, row.timeFrom)}>{row.timeFrom}</span>
+                                                                            </td>
+                                                                            <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>
+                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{row.timeTo}</span>
+                                                                            </td>
+                                                                            <td className={`px-2 py-3 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>
+                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(row.totalHours))}>{row.totalHours}</span>
+                                                                            </td>
                                                                             {renderSplitHoursCells(
                                                                                 row,
                                                                                 section.title,
@@ -6819,12 +7627,35 @@ export default function InvoiceCreatePage() {
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                                                 {Math.round(section.rows.reduce((sum, row) => sum + row.travelWeekend, 0) * 10) / 10}
                                                                             </td>
-                                                                            <td className="px-2 py-2 text-center font-bold">
-                                                                                {getSectionMealsTotal(
-                                                                                    section.title,
-                                                                                    section.key,
-                                                                                    section.rows
-                                                                                )}
+                                                                            <td className="px-0 py-2 text-center font-bold">
+                                                                                <div className="flex min-h-[20px] w-full items-stretch">
+                                                                                    <div className="flex min-w-0 flex-1 items-center justify-center border-r border-gray-200 px-0.5">
+                                                                                        {getSectionMealsTotal(
+                                                                                            section.title,
+                                                                                            section.key,
+                                                                                            section.rows
+                                                                                        )}
+                                                                                    </div>
+                                                                                    {(() => {
+                                                                                        const lodgingTotal =
+                                                                                            getSectionLodgingArrivalTotal(
+                                                                                                section.title,
+                                                                                                section.key,
+                                                                                                section.rows
+                                                                                            );
+                                                                                        return (
+                                                                                            <div
+                                                                                                className={`flex min-w-0 flex-1 items-center justify-center px-0.5 tabular-nums ${
+                                                                                                    lodgingTotal > 0
+                                                                                                        ? "font-semibold text-gray-900"
+                                                                                                        : "text-gray-400"
+                                                                                                }`}
+                                                                                            >
+                                                                                                {lodgingTotal}
+                                                                                            </div>
+                                                                                        );
+                                                                                    })()}
+                                                                                </div>
                                                                             </td>
                                                                         </tr>
                                                                     )}
@@ -7273,8 +8104,12 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
                                                             {invoiceMealsTotal}
                                                         </td>
-                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">
+                                                        <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300 leading-tight">
                                                             Meals
+                                                            <br />
+                                                            &amp;
+                                                            <br />
+                                                            숙박
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">
                                                             {formatKrwWithCommas(
@@ -7434,6 +8269,16 @@ export default function InvoiceCreatePage() {
                     getTimesheetEntryEditBaseline={getTimesheetEntryEditBaseline}
                     onReplaceTimesheetEntryPerson={replaceTimesheetEntryPerson}
                     manualBillableHoursByEntryId={entryManualBillableHours}
+                    deletedEntries={deletedTimesheetEntries}
+                    onRestoreDeletedTimesheetEntry={(entryId) =>
+                        restoreDeletedTimesheetEntriesBatch([entryId])
+                    }
+                    onRestoreAllDeletedTimesheetEntriesInScope={
+                        restoreDeletedTimesheetEntriesBatch
+                    }
+                    timesheetRowCalendarDate={
+                        selectedTimesheetRow?.timesheetRowCalendarDate ?? ""
+                    }
                 />
                 <TimesheetDateGroupDetailSidePanel
                     isOpen={selectedTimesheetDateGroupPanel !== null}
@@ -7475,6 +8320,22 @@ export default function InvoiceCreatePage() {
                     redoDisabled={invoiceUndoRedoCounts.future === 0}
                     manualBillableHoursByEntryId={entryManualBillableHours}
                     onUpdateTimesheetEntry={updateTimesheetEntry}
+                    onResetSingleTimesheetEntryToInitial={
+                        resetSingleTimesheetEntryToInitial
+                    }
+                    timesheetEntryEditorRemountTickById={
+                        timesheetEntryEditorRemountTickById
+                    }
+                    deletedEntries={deletedTimesheetEntries}
+                    onRestoreDeletedTimesheetEntry={(entryId) =>
+                        restoreDeletedTimesheetEntriesBatch([entryId])
+                    }
+                    onRestoreAllDeletedTimesheetEntriesInScope={
+                        restoreDeletedTimesheetEntriesBatch
+                    }
+                    panelCalendarDates={
+                        selectedTimesheetDateGroupPanel?.panelCalendarDates ?? []
+                    }
                 />
             </div>
         </div>

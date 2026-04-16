@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import BaseModal from "../ui/BaseModal";
+
 export type TimesheetEntryEditorEntry = {
     id: number;
     workLogId: number;
@@ -343,6 +345,10 @@ export type TimesheetEntryEditorFormProps = {
     getChargeLabelForDraft: (draft: TimesheetEntryEditorEntry) => string;
     onSave: (payload: TimesheetEntryUpdatePayload) => void;
     onCancel: () => void;
+    /** 처음 불러온 보고서 기준으로 이 엔트리만 되돌림(부모에서 처리) */
+    onResetEntryToInitial?: (entryId: number) => void;
+    /** 기본값 적용 후 폼 기준선 갱신용(엔트리별로 증가) */
+    remountTick?: number;
     /** 기본값: 엔트리 수정 */
     formTitle?: string;
 };
@@ -356,15 +362,24 @@ export function TimesheetEntryEditorForm({
     getChargeLabelForDraft,
     onSave,
     onCancel,
+    onResetEntryToInitial,
+    remountTick = 0,
     formTitle = "엔트리 수정",
 }: TimesheetEntryEditorFormProps) {
     const baselineEntryIdRef = useRef<number | null>(null);
+    const baselineRemountRef = useRef(0);
     const baselineRef = useRef<EditorBaselineSnapshot | null>(null);
-    if (baselineEntryIdRef.current !== entry.id) {
+    if (
+        baselineEntryIdRef.current !== entry.id ||
+        baselineRemountRef.current !== remountTick
+    ) {
         baselineEntryIdRef.current = entry.id;
+        baselineRemountRef.current = remountTick;
         baselineRef.current = buildEditorBaseline(entry, manualBillableHours);
     }
     const baseline = baselineRef.current!;
+
+    const [defaultConfirmOpen, setDefaultConfirmOpen] = useState(false);
 
     const [descType, setDescType] = useState(entry.descType);
     const [dateFrom, setDateFrom] = useState(entry.dateFrom);
@@ -519,7 +534,8 @@ export function TimesheetEntryEditorForm({
         normalizeMultilineCompare(displayManualCharge) !==
         normalizeMultilineCompare(baselineChargeDisplay);
 
-    const fieldChangedClass = "text-red-600 underline decoration-red-600";
+    const fieldChangedClass =
+        "inline-block rounded border border-blue-500 px-1 py-0.5 text-blue-700";
 
     const togglePerson = (person: string) => {
         setSelectedPersons((prev) => {
@@ -627,9 +643,52 @@ export function TimesheetEntryEditorForm({
             data-entry-edit-editor="true"
             className="my-2 space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm ring-1 ring-gray-900/5"
         >
+            <BaseModal
+                isOpen={defaultConfirmOpen}
+                onClose={() => setDefaultConfirmOpen(false)}
+                title="기본값으로 되돌리기"
+                maxWidth="max-w-md"
+                footer={
+                    <>
+                        <button
+                            type="button"
+                            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                            onClick={() => setDefaultConfirmOpen(false)}
+                        >
+                            취소
+                        </button>
+                        <button
+                            type="button"
+                            className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
+                            onClick={() => {
+                                setDefaultConfirmOpen(false);
+                                onResetEntryToInitial?.(entry.id);
+                            }}
+                        >
+                            기본값 적용
+                        </button>
+                    </>
+                }
+            >
+                <p className="text-sm leading-relaxed text-gray-700">
+                    이 엔트리에 대해 수정한 구분·일시·인원·청구시간과 이동 청구(자택/숙소)
+                    선택만 초기화하고, 이 페이지를 처음 불러왔을 때의 보고서 값으로
+                    되돌립니다. 다른 엔트리·타임시트 전체에는 영향을 주지 않습니다.
+                    계속하시겠습니까?
+                </p>
+            </BaseModal>
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm font-semibold text-gray-900">{formTitle}</div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    {onResetEntryToInitial ? (
+                        <button
+                            type="button"
+                            onClick={() => setDefaultConfirmOpen(true)}
+                            className="rounded-full px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                        >
+                            기본값
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         onClick={onCancel}
@@ -660,7 +719,7 @@ export function TimesheetEntryEditorForm({
                                     ? [
                                           "border-gray-900 bg-gray-900",
                                           descTypeChanged
-                                              ? "text-red-400"
+                                              ? "text-sky-200"
                                               : "text-white",
                                       ].join(" ")
                                     : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",

@@ -103,6 +103,28 @@ interface TimesheetRowDetailSidePanelProps {
     }) => void;
     /** 엔트리별 수동 청구시간(시) — 비어 있으면 자동 계산 */
     manualBillableHoursByEntryId?: Record<number, number>;
+    /** 인보이스 페이지에서 삭제한 엔트리 목록(조회용) */
+    deletedEntries?: Array<{
+        id: number;
+        workLogId: number;
+        dateFrom: string;
+        timeFrom: string;
+        dateTo: string;
+        timeTo: string;
+        descType: string;
+        details: string;
+        persons: string[];
+        note?: string;
+        moveFrom?: string;
+        moveTo?: string;
+        location?: string | null;
+        lunchWorked?: boolean;
+        clientDuplicated?: boolean;
+    }>;
+    onRestoreDeletedTimesheetEntry?: (entryId: number) => void;
+    onRestoreAllDeletedTimesheetEntriesInScope?: (entryIds: number[]) => void;
+    /** 타임시트 행 YYYY-MM-DD — 내 엔트리만 모두 삭제해도 삭제 목록 스코프 유지 */
+    timesheetRowCalendarDate?: string;
 }
 
 type TravelChargeOverrideTarget = "home" | "lodging";
@@ -112,6 +134,7 @@ type TravelDescriptionBadgeData = {
     people: string[];
     target: TravelChargeOverrideTarget;
     direction: TravelBadgeDirection;
+    isChanged: boolean;
 };
 
 type PersonVesselHistoryItem = {
@@ -395,6 +418,36 @@ interface PanelDisplayData {
     description: string;
     sourceEntries: TimesheetRowDetailSidePanelProps["sourceEntries"];
     groupSourceEntries: TimesheetRowDetailSidePanelProps["groupSourceEntries"];
+    timesheetRowCalendarDate: string;
+}
+
+function scopeDeletedEntriesForInvoiceRowPanel(
+    deleted: NonNullable<TimesheetRowDetailSidePanelProps["deletedEntries"]>,
+    source: TimesheetRowDetailSidePanelProps["sourceEntries"],
+    group: TimesheetRowDetailSidePanelProps["groupSourceEntries"],
+    rowCalendarDate: string | undefined
+) {
+    const datesFromRemaining = new Set(
+        [...source, ...group].flatMap((e) =>
+            [e.dateFrom, e.dateTo].filter(Boolean)
+        )
+    );
+    const rowCal = rowCalendarDate?.trim();
+    return deleted.filter((e) => {
+        if (e.clientDuplicated === true) {
+            return false;
+        }
+        if (datesFromRemaining.has(e.dateFrom)) {
+            return true;
+        }
+        if (rowCal && (e.dateFrom === rowCal || e.dateTo === rowCal)) {
+            return true;
+        }
+        if (!rowCal && datesFromRemaining.size === 0) {
+            return true;
+        }
+        return false;
+    });
 }
 
 function CloseIcon() {
@@ -424,7 +477,7 @@ function DescTypeBadge({
                 ? "bg-orange-100 ring-orange-200"
                 : "bg-gray-100 ring-gray-200";
     const textColor = emphasizeChangedText
-        ? "text-red-600"
+        ? "border-2 border-blue-500 text-blue-800"
         : value === "이동"
           ? "text-lime-800"
           : value === "작업"
@@ -492,18 +545,33 @@ function TravelDescriptionBadge({
     label,
     onClick,
     isActive = false,
+    emphasizeChangedText = false,
 }: {
     label: string;
     onClick?: () => void;
     isActive?: boolean;
+    emphasizeChangedText?: boolean;
 }) {
     const isHome = label.includes("자택");
+    const textClass = emphasizeChangedText
+        ? "text-blue-800"
+        : isHome
+          ? "text-amber-700"
+          : "text-sky-700";
     const styles = isHome
-        ? "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100"
-        : "bg-sky-50 text-sky-700 ring-sky-200 hover:bg-sky-100";
+        ? `bg-amber-50 ring-amber-200 hover:bg-amber-100 ${textClass} ${
+              emphasizeChangedText ? "border-2 border-blue-500" : ""
+          }`
+        : `bg-sky-50 ring-sky-200 hover:bg-sky-100 ${textClass} ${
+              emphasizeChangedText ? "border-2 border-blue-500" : ""
+          }`;
     const arrowClass = isHome
-        ? "mx-px font-extrabold text-orange-950 tabular-nums"
-        : "mx-px font-extrabold text-blue-950 tabular-nums";
+        ? `mx-px font-extrabold tabular-nums ${
+              emphasizeChangedText ? "text-blue-800" : "text-orange-950"
+          }`
+        : `mx-px font-extrabold tabular-nums ${
+              emphasizeChangedText ? "text-blue-800" : "text-blue-950"
+          }`;
     const activeClass = isActive
         ? isHome
             ? "ring-amber-400 shadow-sm"
@@ -547,6 +615,10 @@ export default function TimesheetRowDetailSidePanel({
     getTimesheetEntryEditBaseline,
     onReplaceTimesheetEntryPerson,
     manualBillableHoursByEntryId = {},
+    deletedEntries = [],
+    onRestoreDeletedTimesheetEntry,
+    onRestoreAllDeletedTimesheetEntriesInScope,
+    timesheetRowCalendarDate = "",
 }: TimesheetRowDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
@@ -668,6 +740,7 @@ export default function TimesheetRowDetailSidePanel({
         description,
         sourceEntries,
         groupSourceEntries,
+        timesheetRowCalendarDate,
     });
 
     const patchDisplayDataEntryPersons = useCallback(
@@ -885,7 +958,7 @@ export default function TimesheetRowDetailSidePanel({
                                                 "hover:bg-gray-100 hover:text-gray-900",
                                                 isActive
                                                     ? isReplacedRemarkPerson
-                                                        ? "bg-red-50 font-bold text-red-700 underline ring-1 ring-red-200"
+                                                        ? "bg-blue-50 font-bold text-blue-800 ring-2 ring-blue-400"
                                                         : [
                                                               "bg-blue-50 text-blue-900 ring-1 ring-blue-200",
                                                               highlightedPersons.has(
@@ -897,7 +970,7 @@ export default function TimesheetRowDetailSidePanel({
                                                               .filter(Boolean)
                                                               .join(" ")
                                                     : isReplacedRemarkPerson
-                                                      ? "font-bold text-red-600 underline"
+                                                      ? "rounded border border-blue-500 px-0.5 font-bold text-blue-700"
                                                       : highlightedPersons.has(
                                                             person
                                                         )
@@ -984,7 +1057,7 @@ export default function TimesheetRowDetailSidePanel({
                                 const editBaseline =
                                     getTimesheetEntryEditBaseline?.(entry.id);
                                 const fieldEditedClass =
-                                    "font-medium text-red-600 underline decoration-red-600";
+                                    "inline-block rounded border border-blue-500 px-1 py-0.5 font-medium text-blue-700";
                                 const baselineSynth = editBaseline
                                     ? {
                                           ...entry,
@@ -1018,6 +1091,7 @@ export default function TimesheetRowDetailSidePanel({
                                           {
                                               manualBillableHours:
                                                   editBaseline!.manualBillableHours,
+                                              ignoreTravelOverrides: true,
                                           }
                                       )
                                     : "";
@@ -1230,6 +1304,9 @@ export default function TimesheetRowDetailSidePanel({
                                                                 <TravelDescriptionBadge
                                                                     key={badge.label}
                                                                     label={badge.label}
+                                                                    emphasizeChangedText={
+                                                                        badge.isChanged
+                                                                    }
                                                                     isActive={
                                                                         isEditorOpen &&
                                                                         travelEditorData?.direction ===
@@ -2017,10 +2094,13 @@ export default function TimesheetRowDetailSidePanel({
         entry: PanelEntry,
         person: string,
         contextEntries: PanelEntry[],
-        zeroBillingTravelIds: Set<number>
+        zeroBillingTravelIds: Set<number>,
+        opts?: { ignoreOverride?: boolean }
     ): { hours: number | null; kind: string } => {
-        const override =
-            travelChargeOverrides[getTravelChargeOverrideKey(entry.id, person)] ?? null;
+        const override = opts?.ignoreOverride
+            ? null
+            : travelChargeOverrides[getTravelChargeOverrideKey(entry.id, person)] ??
+              null;
         const fixedHours = getHomeTravelHours(entry.location) ?? 0;
 
         if (override?.target === "lodging") {
@@ -2133,7 +2213,7 @@ export default function TimesheetRowDetailSidePanel({
         contextEntries: PanelEntry[],
         zeroBillingTravelIds: Set<number>,
         ignoreEntryManual = false,
-        opts?: { manualBillableHours?: number }
+        opts?: { manualBillableHours?: number; ignoreTravelOverrides?: boolean }
     ) => {
         const rawTravelHours = roundHours(calculateRawTravelHours(entry));
         const durationLabel = getDurationLabel(
@@ -2172,7 +2252,8 @@ export default function TimesheetRowDetailSidePanel({
                     entry,
                     person,
                     contextEntries,
-                    zeroBillingTravelIds
+                    zeroBillingTravelIds,
+                    opts?.ignoreTravelOverrides ? { ignoreOverride: true } : undefined
                 );
 
                 if (chargeResult.hours === null) {
@@ -2254,6 +2335,23 @@ export default function TimesheetRowDetailSidePanel({
             home: [],
             lodging: [],
         };
+        const groupedChangedPeople: Record<TravelChargeOverrideTarget, string[]> = {
+            home: [],
+            lodging: [],
+        };
+        const resolveBadgeTargetFromChargeResult = (chargeResult: {
+            hours: number | null;
+            kind: string;
+        }): TravelChargeOverrideTarget | null => {
+            const isHomeCharge =
+                chargeResult.kind === "home" ||
+                chargeResult.kind.endsWith("-home");
+            return chargeResult.hours === 1 && (containsLodging || containsHome)
+                ? "lodging"
+                : isHomeCharge
+                  ? "home"
+                  : null;
+        };
 
         entry.persons.forEach((person) => {
             const chargeResult = getTravelChargeResultForPerson(
@@ -2262,18 +2360,22 @@ export default function TimesheetRowDetailSidePanel({
                 contextEntries,
                 zeroBillingTravelIds
             );
-            const isHomeCharge =
-                chargeResult.kind === "home" ||
-                chargeResult.kind.endsWith("-home");
-            const target: TravelChargeOverrideTarget | null =
-                chargeResult.hours === 1 && (containsLodging || containsHome)
-                    ? "lodging"
-                    : isHomeCharge
-                      ? "home"
-                      : null;
+            const target = resolveBadgeTargetFromChargeResult(chargeResult);
 
             if (target) {
                 groupedPeople[target].push(person);
+                const baselineTarget = resolveBadgeTargetFromChargeResult(
+                    getTravelChargeResultForPerson(
+                        entry,
+                        person,
+                        contextEntries,
+                        zeroBillingTravelIds,
+                        { ignoreOverride: true }
+                    )
+                );
+                if (target !== baselineTarget) {
+                    groupedChangedPeople[target].push(person);
+                }
             }
         });
 
@@ -2295,6 +2397,7 @@ export default function TimesheetRowDetailSidePanel({
                 people,
                 target,
                 direction,
+                isChanged: groupedChangedPeople[target].length > 0,
             };
         });
     };
@@ -2534,6 +2637,7 @@ export default function TimesheetRowDetailSidePanel({
             description,
             sourceEntries,
             groupSourceEntries,
+            timesheetRowCalendarDate,
         });
     }, [
         isOpen,
@@ -2546,6 +2650,7 @@ export default function TimesheetRowDetailSidePanel({
         description,
         sourceEntries,
         groupSourceEntries,
+        timesheetRowCalendarDate,
     ]);
 
     return createPortal(
@@ -2602,6 +2707,92 @@ export default function TimesheetRowDetailSidePanel({
                                 ),
                                 "group"
                             )}
+
+                        {(() => {
+                            const scoped = scopeDeletedEntriesForInvoiceRowPanel(
+                                deletedEntries,
+                                displayData.sourceEntries,
+                                displayData.groupSourceEntries,
+                                displayData.timesheetRowCalendarDate || undefined
+                            );
+                            if (scoped.length === 0) {
+                                return null;
+                            }
+                            return (
+                                <details className="rounded-xl border border-gray-200 bg-white">
+                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-gray-900 [&::-webkit-details-marker]:hidden">
+                                        <span className="flex min-w-0 flex-1 items-center gap-2">
+                                            삭제된 엔트리 보기{" "}
+                                            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                                                {scoped.length}
+                                            </span>
+                                        </span>
+                                        {onRestoreAllDeletedTimesheetEntriesInScope &&
+                                        scoped.length > 0 ? (
+                                            <button
+                                                type="button"
+                                                className="shrink-0 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                                                onClick={(ev) => {
+                                                    ev.preventDefault();
+                                                    ev.stopPropagation();
+                                                    onRestoreAllDeletedTimesheetEntriesInScope(
+                                                        scoped.map((x) => x.id)
+                                                    );
+                                                }}
+                                            >
+                                                모두 되돌리기
+                                            </button>
+                                        ) : null}
+                                    </summary>
+                                    <div className="border-t border-gray-200 px-4 py-3">
+                                        <div className="space-y-2">
+                                            {scoped.map((e) => (
+                                                <div
+                                                    key={`deleted-${e.id}`}
+                                                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
+                                                >
+                                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                                        <div className="text-xs font-semibold text-gray-900">
+                                                            #{e.id} · {e.descType}
+                                                        </div>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <div className="text-xs text-gray-600">
+                                                                {e.dateFrom}{" "}
+                                                                {e.timeFrom || "--:--"}–
+                                                                {e.timeTo || "--:--"}
+                                                            </div>
+                                                            {onRestoreDeletedTimesheetEntry ? (
+                                                                <button
+                                                                    type="button"
+                                                                    className="shrink-0 rounded-md border border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100"
+                                                                    onClick={(ev) => {
+                                                                        ev.preventDefault();
+                                                                        ev.stopPropagation();
+                                                                        onRestoreDeletedTimesheetEntry(
+                                                                            e.id
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    되돌리기
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
+                                                    <div className="mt-1 text-xs text-gray-700">
+                                                        {(e.persons ?? []).join(", ") || "인원 없음"}
+                                                    </div>
+                                                    {e.details ? (
+                                                        <div className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-700">
+                                                            {e.details}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </details>
+                            );
+                        })()}
                     </div>
                 </div>
             </div>
