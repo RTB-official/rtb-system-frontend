@@ -689,6 +689,46 @@ export default function InvoiceCreatePage() {
         return parts.sort((a, b) => a.localeCompare(b, "ko")).join("|");
     };
 
+    const getLinkedTravelOverrideEntryIdsForPerson = (
+        entryId: number,
+        person: string
+    ) => {
+        const linkedEntryIds = new Set<number>([entryId]);
+        const baseEntry = timesheetRows
+            .flatMap((row) => row.sourceEntries)
+            .find((entry) => entry.id === entryId);
+        if (!baseEntry?.dateFrom) {
+            return linkedEntryIds;
+        }
+
+        const previousDate = shiftDateByDays(baseEntry.dateFrom, -1);
+
+        const previousDateEntries = timesheetRows
+            .filter((row) => row.date === previousDate)
+            .flatMap((row) => row.sourceEntries)
+            .filter((entry, index, entries) => {
+                return (
+                    entries.findIndex((candidate) => candidate.id === entry.id) ===
+                    index
+                );
+            })
+            .sort(compareTimesheetSourceEntriesByTimeThenId);
+
+        const personPreviousEntries = previousDateEntries.filter((entry) =>
+            (entry.persons ?? []).includes(person)
+        );
+
+        for (let i = personPreviousEntries.length - 1; i >= 0; i -= 1) {
+            const entry = personPreviousEntries[i];
+            if (entry.descType !== "이동") {
+                break;
+            }
+            linkedEntryIds.add(entry.id);
+        }
+
+        return linkedEntryIds;
+    };
+
     const setTravelChargeOverrideTarget = (
         entryId: number,
         person: string,
@@ -705,82 +745,52 @@ export default function InvoiceCreatePage() {
                 },
             };
 
-            // 전날 편집(자택/숙소)이 다음날 "첫 이동" 판정에도 자동 연동되도록
-            // 다음 날짜의 leading travel(첫 작업/대기/작업 전 연속 이동) 엔트리에 같은 오버라이드를 복사한다.
-            const baseEntry = timesheetRows
-                .flatMap((row) => row.sourceEntries)
-                .find((entry) => entry.id === entryId);
-            if (!baseEntry?.dateFrom) {
-                return next;
-            }
-
-            const previousDate = shiftDateByDays(baseEntry.dateFrom, -1);
-            const nextDate = shiftDateByDays(baseEntry.dateFrom, 1);
-
-            // 오늘 편집(자택/숙소)이 전날 "마지막 이동" 판정에도 자동 연동되도록
-            // 이전 날짜의 trailing travel(마지막 작업/대기 이후 연속 이동) 엔트리에 같은 오버라이드를 복사한다.
-            const previousDateEntries = timesheetRows
-                .filter((row) => row.date === previousDate)
-                .flatMap((row) => row.sourceEntries)
-                .filter((entry, index, entries) => {
-                    return (
-                        entries.findIndex((candidate) => candidate.id === entry.id) ===
-                        index
-                    );
-                })
-                .sort(compareTimesheetSourceEntriesByTimeThenId);
-
-            const personPreviousEntries = previousDateEntries.filter((entry) =>
-                (entry.persons ?? []).includes(person)
+            // 자택/숙소 변경은 전날 말미 이동(trailing travel)까지만 동기화한다.
+            // 다음날 첫 이동까지 복사하면 실제 숙소 출발이 자택 출발로 오염될 수 있다.
+            getLinkedTravelOverrideEntryIdsForPerson(entryId, person).forEach(
+                (linkedEntryId) => {
+                    next[getTravelChargeOverrideKey(linkedEntryId, person)] = {
+                        target,
+                        updatedAt,
+                    };
+                }
             );
-            const trailingTravelIds: number[] = [];
-            for (let i = personPreviousEntries.length - 1; i >= 0; i -= 1) {
-                const entry = personPreviousEntries[i];
-                if (entry.descType !== "이동") break;
-                trailingTravelIds.push(entry.id);
-            }
-
-            trailingTravelIds.forEach((prevEntryId) => {
-                next[getTravelChargeOverrideKey(prevEntryId, person)] = {
-                    target,
-                    updatedAt,
-                };
-            });
-            const nextDateEntries = timesheetRows
-                .filter((row) => row.date === nextDate)
-                .flatMap((row) => row.sourceEntries)
-                .filter((entry, index, entries) => {
-                    return (
-                        entries.findIndex((candidate) => candidate.id === entry.id) ===
-                        index
-                    );
-                })
-                .sort(compareTimesheetSourceEntriesByTimeThenId);
-
-            const personNextEntries = nextDateEntries.filter((entry) =>
-                (entry.persons ?? []).includes(person)
-            );
-            const leadingTravelIds: number[] = [];
-            for (const entry of personNextEntries) {
-                if (entry.descType !== "이동") break;
-                leadingTravelIds.push(entry.id);
-            }
-
-            leadingTravelIds.forEach((nextEntryId) => {
-                next[getTravelChargeOverrideKey(nextEntryId, person)] = {
-                    target,
-                    updatedAt,
-                };
-            });
 
             return next;
         });
     };
 
     const resetTravelChargeOverridesForEntry = (entryId: number) => {
+        const baseEntry = timesheetRows
+            .flatMap((row) => row.sourceEntries)
+            .find((entry) => entry.id === entryId);
+        if (!baseEntry) {
+            setTravelChargeOverrides((previous) =>
+                Object.fromEntries(
+                    Object.entries(previous).filter(
+                        ([key]) => !key.startsWith(`${entryId}:`)
+                    )
+                )
+            );
+            return;
+        }
+
+        const keysToDelete = new Set<string>();
+        for (const person of baseEntry.persons ?? []) {
+            getLinkedTravelOverrideEntryIdsForPerson(entryId, person).forEach(
+                (linkedEntryId) => {
+                    keysToDelete.add(
+                        getTravelChargeOverrideKey(linkedEntryId, person)
+                    );
+                }
+            );
+        }
+
         setTravelChargeOverrides((previous) =>
             Object.fromEntries(
-                Object.entries(previous).filter(([key]) => !key.startsWith(`${entryId}:`))
+                Object.entries(previous).filter(
+                    ([key]) => !keysToDelete.has(key)
+                )
             )
         );
     };
@@ -4091,12 +4101,35 @@ export default function InvoiceCreatePage() {
             }
         );
 
+    /** 노말·애프터·주말 노말·주말 애프터 합으로 식사 구간 배지 (타임시트 분할 셀) */
+    const getTimesheetSplitBracketBadgeLabel = (
+        row: TimesheetRow
+    ): "4▼" | "8▼" | null => {
+        const sum =
+            row.weekdayNormal +
+            row.weekdayAfter +
+            row.weekendNormal +
+            row.weekendAfter;
+        const rounded = Math.round(sum * 10) / 10;
+        if (rounded <= 0) {
+            return null;
+        }
+        if (rounded < 4) {
+            return "4▼";
+        }
+        if (rounded >= 4 && rounded < 8) {
+            return "8▼";
+        }
+        return null;
+    };
+
     const renderSplitHoursCells = (
         row: TimesheetRow,
         sectionTitle: string,
         sizeClassName: string
     ) => {
         const changed = getTimesheetRowChangedFlags(row);
+        const splitBracketLabel = getTimesheetSplitBracketBadgeLabel(row);
         const values = {
             weekdayNormal:
                 row.weekdayNormal > 0 ? String(row.weekdayNormal) : "",
@@ -4128,9 +4161,17 @@ export default function InvoiceCreatePage() {
         return (
             <>
                 <td
-                    className={getCellClassName()}
+                    className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
+                    {splitBracketLabel !== null && row.weekdayNormal > 0 ? (
+                        <span
+                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            aria-hidden="true"
+                        >
+                            {splitBracketLabel}
+                        </span>
+                    ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
                             changed.weekdayNormal,
@@ -4141,9 +4182,17 @@ export default function InvoiceCreatePage() {
                     </span>
                 </td>
                 <td
-                    className={getCellClassName()}
+                    className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
+                    {splitBracketLabel !== null && row.weekdayAfter > 0 ? (
+                        <span
+                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            aria-hidden="true"
+                        >
+                            {splitBracketLabel}
+                        </span>
+                    ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
                             changed.weekdayAfter,
@@ -4154,9 +4203,17 @@ export default function InvoiceCreatePage() {
                     </span>
                 </td>
                 <td
-                    className={getCellClassName()}
+                    className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
+                    {splitBracketLabel !== null && row.weekendNormal > 0 ? (
+                        <span
+                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            aria-hidden="true"
+                        >
+                            {splitBracketLabel}
+                        </span>
+                    ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
                             changed.weekendNormal,
@@ -4167,9 +4224,17 @@ export default function InvoiceCreatePage() {
                     </span>
                 </td>
                 <td
-                    className={getCellClassName()}
+                    className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
+                    {splitBracketLabel !== null && row.weekendAfter > 0 ? (
+                        <span
+                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            aria-hidden="true"
+                        >
+                            {splitBracketLabel}
+                        </span>
+                    ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
                             changed.weekendAfter,
@@ -4421,6 +4486,11 @@ export default function InvoiceCreatePage() {
             <div className="text-sm text-gray-900">{value}</div>
         </div>
     );
+
+    const getNormalTimesheetSheetLetter = (sectionTitle: string) => {
+        const match = sectionTitle.match(/TIMESHEET - ([A-Z])\s*$/);
+        return match?.[1] ?? "?";
+    };
 
     const getNormalTimesheetSignature = (row: TimesheetRow) =>
         [
@@ -6914,10 +6984,6 @@ export default function InvoiceCreatePage() {
                                                     </th>
                                                     <th rowSpan={3} className="px-1 py-2 text-center font-semibold text-gray-900 border-b border-gray-300 leading-tight">
                                                         Meals
-                                                        <br />
-                                                        &amp;
-                                                        <br />
-                                                        숙박
                                                     </th>
                                                 </tr>
                                                 {/* 2행: Year/Day/Date/Time From/Time To + 상위 그룹 헤더 */}
@@ -7225,13 +7291,30 @@ export default function InvoiceCreatePage() {
                                                         null
                                                     );
                                                 }}
-                                                className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1 text-left transition-colors hover:bg-gray-100"
+                                                className="group -mx-2 flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-left transition-colors hover:bg-gray-100"
                                                 aria-label="switch to rnd timesheet"
                                             >
-                                                <h2 className="text-3xl font-bold text-black">
-                                                    {section?.title ?? "NORMAL TIMESHEET"}
-                                                </h2>
-                                                <span className="text-sm font-semibold text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">
+                                                <div className="min-w-0 flex-1">
+                                                    <h2 className="truncate text-3xl font-bold text-black">
+                                                        {section
+                                                            ? `${
+                                                                  normalTimesheetGrouping ===
+                                                                  "person"
+                                                                      ? "인원별"
+                                                                      : "날짜별"
+                                                              } TIMESHEET - ${getNormalTimesheetSheetLetter(
+                                                                  section.title
+                                                              )}`
+                                                            : "TIMESHEET"}
+                                                        {total > 0 ? (
+                                                            <span className="whitespace-nowrap text-3xl font-bold tabular-nums text-gray-800">
+                                                                {" "}
+                                                                ({safeIndex + 1}/{total})
+                                                            </span>
+                                                        ) : null}
+                                                    </h2>
+                                                </div>
+                                                <span className="shrink-0 text-sm font-semibold text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">
                                                     R&amp;D로 전환
                                                 </span>
                                             </button>
@@ -7471,10 +7554,6 @@ export default function InvoiceCreatePage() {
                                                                         </th>
                                                                         <th rowSpan={3} className="px-1 py-2 text-center font-semibold text-gray-900 border-b border-gray-300 leading-tight">
                                                                             Meals
-                                                                            <br />
-                                                                            &amp;
-                                                                            <br />
-                                                                            숙박
                                                                         </th>
                                                                     </tr>
                                                                     <tr>
@@ -7684,7 +7763,7 @@ export default function InvoiceCreatePage() {
                                             </>
                                         ) : (
                                             <div className="text-sm text-gray-500">
-                                                표시할 NORMAL TIMESHEET가 없습니다.
+                                                표시할 타임시트가 없습니다.
                                             </div>
                                         )}
                                     </div>
@@ -8106,10 +8185,6 @@ export default function InvoiceCreatePage() {
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300 leading-tight">
                                                             Meals
-                                                            <br />
-                                                            &amp;
-                                                            <br />
-                                                            숙박
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">
                                                             {formatKrwWithCommas(

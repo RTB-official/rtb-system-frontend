@@ -15,6 +15,12 @@ import {
 } from "./TravelOverrideEditorAnimatedShell";
 import { TimesheetEntryEditorForm } from "./TimesheetEntryEditorForm";
 import { getDatesMissingSkilledFitterRemark } from "../../constants/skilledFitter";
+import {
+    buildConsecutiveWorkClusterIndices,
+    getWorkEntryAutoBillableTotalHours,
+    sumClusterWorkBillableHours,
+    type WorkEntryClusterable,
+} from "../../utils/workEntryBillableHours";
 
 interface TimesheetSourceEntryData {
     id: number;
@@ -990,6 +996,52 @@ export default function TimesheetDateGroupDetailSidePanel({
 
     const roundHours = (value: number) => Math.round(value * 10) / 10;
 
+    const getWorkChargeBracketBadgeLabel = (
+        entry: TimesheetSourceEntryData,
+        allEntries: TimesheetSourceEntryData[],
+        entryIndex: number,
+        opts?: { manualBillableHours?: number }
+    ): "4▼" | "8▼" | null => {
+        if (entry.descType !== "작업") {
+            return null;
+        }
+        const cluster = buildConsecutiveWorkClusterIndices(
+            allEntries as WorkEntryClusterable[],
+            entryIndex
+        );
+        const hours = sumClusterWorkBillableHours(cluster, (i) => {
+            const e = allEntries[i];
+            if (e.descType !== "작업") {
+                return null;
+            }
+            let manual: number | undefined;
+            if (
+                opts &&
+                Object.prototype.hasOwnProperty.call(opts, "manualBillableHours") &&
+                i === entryIndex
+            ) {
+                manual = opts.manualBillableHours;
+            } else {
+                manual = manualBillableHoursByEntryId[e.id];
+            }
+            if (manual !== undefined) {
+                return roundHours(manual);
+            }
+            return getWorkEntryAutoBillableTotalHours(e);
+        });
+        if (hours === null || hours <= 0) {
+            return null;
+        }
+        if (hours < 4) {
+            return "4▼";
+        }
+        /** 인보이스 타임시트 분할 합계와 동일: 4 ≤ h < 8 → 8▼ (정확히 4h도 포함) */
+        if (hours >= 4 && hours < 8) {
+            return "8▼";
+        }
+        return null;
+    };
+
     const hasHomeInTravel = (entry: TimesheetSourceEntryData): boolean => {
         const details = entry.details ?? "";
         return (
@@ -1891,7 +1943,80 @@ export default function TimesheetDateGroupDetailSidePanel({
             onUpdateTimesheetEntry) ? (
             (() => {
                 const MENU_W = 168;
-                const MENU_H = 168;
+                const contextEntry = fullGroupEntries.find(
+                    (e) => e.id === dbEntryContextMenu.entryId
+                );
+                const contextEntryIndex = contextEntry
+                    ? fullGroupEntries.findIndex((e) => e.id === contextEntry.id)
+                    : -1;
+                const workBracketBadge =
+                    contextEntry && contextEntryIndex >= 0
+                        ? getWorkChargeBracketBadgeLabel(
+                              contextEntry,
+                              fullGroupEntries,
+                              contextEntryIndex
+                          )
+                        : null;
+                const manualBillableStored = contextEntry
+                    ? manualBillableHoursByEntryId[contextEntry.id]
+                    : undefined;
+                const manualBillableRounded =
+                    manualBillableStored !== undefined
+                        ? roundHours(manualBillableStored)
+                        : undefined;
+                const showRevertManualBillable =
+                    Boolean(onUpdateTimesheetEntry) &&
+                    contextEntry?.descType === "작업" &&
+                    (manualBillableRounded === 4 || manualBillableRounded === 8);
+                const showWorkCharge8h =
+                    Boolean(onUpdateTimesheetEntry) &&
+                    contextEntry?.descType === "작업" &&
+                    (workBracketBadge === "4▼" || workBracketBadge === "8▼");
+                const showWorkCharge4h =
+                    Boolean(onUpdateTimesheetEntry) &&
+                    contextEntry?.descType === "작업" &&
+                    workBracketBadge === "4▼";
+                const menuRowCount =
+                    (showRevertManualBillable ? 1 : 0) +
+                    (showWorkCharge8h ? 1 : 0) +
+                    (showWorkCharge4h ? 1 : 0) +
+                    (onDuplicateTimesheetEntry ? 1 : 0) +
+                    1 +
+                    1 +
+                    1;
+                const MENU_H = menuRowCount * 40 + 16;
+                const applyWorkManualBillableHours = (hours: number) => {
+                    if (!onUpdateTimesheetEntry || !contextEntry) {
+                        return;
+                    }
+                    onUpdateTimesheetEntry({
+                        entryId: contextEntry.id,
+                        descType: contextEntry.descType,
+                        dateFrom: contextEntry.dateFrom,
+                        dateTo: contextEntry.dateTo,
+                        timeFrom: contextEntry.timeFrom,
+                        timeTo: contextEntry.timeTo,
+                        persons: [...contextEntry.persons],
+                        manualBillableHours: hours,
+                    });
+                    setDbEntryContextMenu(null);
+                };
+                const applyRevertManualBillableToAuto = () => {
+                    if (!onUpdateTimesheetEntry || !contextEntry) {
+                        return;
+                    }
+                    onUpdateTimesheetEntry({
+                        entryId: contextEntry.id,
+                        descType: contextEntry.descType,
+                        dateFrom: contextEntry.dateFrom,
+                        dateTo: contextEntry.dateTo,
+                        timeFrom: contextEntry.timeFrom,
+                        timeTo: contextEntry.timeTo,
+                        persons: [...contextEntry.persons],
+                        manualBillableHours: null,
+                    });
+                    setDbEntryContextMenu(null);
+                };
                 const x = Math.max(
                     8,
                     Math.min(
@@ -1914,6 +2039,36 @@ export default function TimesheetDateGroupDetailSidePanel({
                         onMouseDown={(e) => e.stopPropagation()}
                         role="menu"
                     >
+                        {showRevertManualBillable ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
+                                onClick={applyRevertManualBillableToAuto}
+                            >
+                                되돌리기 (3h)
+                            </button>
+                        ) : null}
+                        {showWorkCharge8h ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
+                                onClick={() => applyWorkManualBillableHours(8)}
+                            >
+                                8h 청구
+                            </button>
+                        ) : null}
+                        {showWorkCharge4h ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
+                                onClick={() => applyWorkManualBillableHours(4)}
+                            >
+                                4h 청구
+                            </button>
+                        ) : null}
                         {onDuplicateTimesheetEntry ? (
                             <button
                                 type="button"
@@ -2108,6 +2263,12 @@ export default function TimesheetDateGroupDetailSidePanel({
                                         {fullGroupEntries.map((entry, index, entries) => {
                                             const [, month, dayOfMonth] = entry.dateFrom.split("-");
                                             const chargeLabel = getChargeLabel(entry);
+                                            const workChargeBracketBadge =
+                                                getWorkChargeBracketBadgeLabel(
+                                                    entry,
+                                                    fullGroupEntries,
+                                                    index
+                                                );
                                             const durationHours = getDurationHours(
                                                 entry.dateFrom,
                                                 entry.timeFrom,
@@ -2392,12 +2553,20 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                             </span>
                                                         </td>
                                                         <td
-                                                            className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
+                                                            className={`relative border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
                                                                 isChargeHighlightDate(entry.dateFrom)
                                                                     ? "font-semibold text-red-600"
                                                                     : ""
                                                             } ${dateBoundaryTopClass}`}
                                                         >
+                                                            {workChargeBracketBadge ? (
+                                                                <span
+                                                                    className="pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                                                                    aria-hidden="true"
+                                                                >
+                                                                    {workChargeBracketBadge}
+                                                                </span>
+                                                            ) : null}
                                                             <span
                                                                 className={
                                                                     chargeChanged
