@@ -1,21 +1,18 @@
 //workloadDetailPage.tsx
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
-import Table from "../../components/common/Table";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkeleton";
-import Pagination from "../../components/common/Pagination";
-import { IconArrowBack, IconChevronRight } from "../../components/icons/Icons";
+import { IconArrowBack } from "../../components/icons/Icons";
+import WorkloadDailyDetailAnalysis from "./components/WorkloadDailyDetailAnalysis";
 import useIsMobile from "../../hooks/useIsMobile";
 import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
 import {
     getWorkerWorkloadDetail,
     formatHours,
-    formatDetailDate,
-    formatTimeRange,
     type WorkloadDetailEntry,
 } from "../../lib/workloadDetailApi";
 const IconWork = () => (
@@ -160,18 +157,6 @@ export default function WorkloadDetailPage() {
         loadData();
     }, [personName, selectedYear, selectedMonth, isStaff, isAdmin, isCEO, currentUserId, navigate]);
 
-
-    // 페이지네이션 계산
-    const totalPages = useMemo(() => {
-        return Math.ceil(detailEntries.length / itemsPerPage);
-    }, [detailEntries.length]);
-
-    const currentTableData = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        return detailEntries.slice(startIndex, endIndex);
-    }, [detailEntries, currentPage, itemsPerPage]);
-
     return (
         <div className="flex h-screen bg-white font-pretendard">
             {/* 모바일 오버레이 */}
@@ -273,124 +258,14 @@ export default function WorkloadDetailPage() {
                                 />
                             </div>
 
-                            {/* 날짜별 세부 분석 */}
-                            <div className={isMobile ? "" : "rounded-2xl border border-gray-200 bg-white p-7"}>
-                                <h2 className="text-base md:text-[22px] font-semibold text-gray-700 tracking-tight mb-3 md:mb-6">
-                                    날짜별 세부 분석
-                                </h2>
-
-                                {detailEntries.length === 0 ? (
-                                    <p className="py-8 text-center text-gray-500 text-sm">
-                                        선택한 기간의 작업 내역이 없습니다.
-                                    </p>
-                                ) : isMobile ? (
-                                    <>
-                                        <ul className="flex flex-col gap-2">
-                                            {currentTableData.map((row) => {
-                                                const formattedDate = formatDetailDate(row.date);
-                                                const date = new Date(row.date + "T00:00:00");
-                                                const dayOfWeek = date.getDay();
-                                                let dateColor = "text-gray-800";
-                                                if (dayOfWeek === 0) dateColor = "text-red-600";
-                                                else if (dayOfWeek === 6) dateColor = "text-blue-600";
-                                                return (
-                                                    <li key={row.id}>
-                                                        <button
-                                                            type="button"
-                                                            className="w-full rounded-xl border border-gray-200 bg-white p-4 flex items-center justify-between gap-3 text-left active:bg-gray-50 transition-colors"
-                                                            onClick={() => handleRowClick(row)}
-                                                        >
-                                                            <div className="min-w-0 flex-1">
-                                                                <p className={`font-medium ${dateColor}`}>{formattedDate}</p>
-                                                                <p className="text-sm text-gray-500 mt-0.5">
-                                                                    {row.vesselName || "—"} · {formatTimeRange(row.timeFrom, row.timeTo)}
-                                                                </p>
-                                                                <p className="text-sm text-gray-600 mt-1">
-                                                                    작업 {formatHours(row.workTime)} · 이동 {formatHours(row.travelTime)} · 대기 {formatHours(row.waitTime)}
-                                                                </p>
-                                                            </div>
-                                                            <IconChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
-                                                        </button>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                        {totalPages > 1 && (
-                                            <Pagination
-                                                currentPage={currentPage}
-                                                totalPages={totalPages}
-                                                onPageChange={setCurrentPage}
-                                                className="py-4"
-                                            />
-                                        )}
-                                    </>
-                                ) : (
-                                    <Table
-                                        columns={[
-                                            {
-                                                key: "date",
-                                                label: "날짜",
-                                                render: (_value, row: WorkloadDetailEntry, index: number) => {
-                                                    const prev = currentTableData[index - 1];
-                                                    if (prev?.date === row.date) {
-                                                        return <span className="text-transparent">-</span>;
-                                                    }
-                                                    const formattedDate = formatDetailDate(row.date);
-                                                    const date = new Date(row.date + "T00:00:00");
-                                                    const dayOfWeek = date.getDay();
-                                                    let colorClass = "text-gray-800";
-                                                    if (dayOfWeek === 0) colorClass = "text-red-600";
-                                                    else if (dayOfWeek === 6) colorClass = "text-blue-600";
-                                                    return (
-                                                        <span className={`font-medium ${colorClass}`}>
-                                                            {formattedDate}
-                                                        </span>
-                                                    );
-                                                },
-                                            },
-                                            {
-                                                key: "vesselName",
-                                                label: "호선명",
-                                                render: (value: string | null, row: WorkloadDetailEntry, index: number) => {
-                                                    const prev = currentTableData[index - 1];
-                                                    if (prev?.date === row.date) return <span className="text-transparent">-</span>;
-                                                    return value || "";
-                                                },
-                                            },
-                                            {
-                                                key: "workTime",
-                                                label: "작업시간",
-                                                render: (_, row: WorkloadDetailEntry) => formatHours(row.workTime),
-                                            },
-                                            {
-                                                key: "timeRange",
-                                                label: "시간대",
-                                                render: (_, row: WorkloadDetailEntry) =>
-                                                    formatTimeRange(row.timeFrom, row.timeTo),
-                                            },
-                                            {
-                                                key: "travelTime",
-                                                label: "이동시간",
-                                                render: (_, row: WorkloadDetailEntry) => formatHours(row.travelTime),
-                                            },
-                                            {
-                                                key: "waitTime",
-                                                label: "대기시간",
-                                                render: (_, row: WorkloadDetailEntry) => formatHours(row.waitTime),
-                                            },
-                                        ]}
-                                        data={currentTableData}
-                                        rowKey="id"
-                                        onRowClick={handleRowClick}
-                                        emptyText="선택한 기간의 작업 내역이 없습니다."
-                                        pagination={
-                                            totalPages > 1
-                                                ? { currentPage, totalPages, onPageChange: setCurrentPage }
-                                                : undefined
-                                        }
-                                    />
-                                )}
-                            </div>
+                            <WorkloadDailyDetailAnalysis
+                                entries={detailEntries}
+                                isMobile={isMobile}
+                                currentPage={currentPage}
+                                onPageChange={setCurrentPage}
+                                itemsPerPage={itemsPerPage}
+                                onRowClick={handleRowClick}
+                            />
                         </div>
                     )}
                 </main>

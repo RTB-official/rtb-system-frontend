@@ -14,6 +14,12 @@ import {
     TravelOverrideEditorAnimatedShell,
 } from "./TravelOverrideEditorAnimatedShell";
 import { getDatesMissingSkilledFitterRemark } from "../../constants/skilledFitter";
+import {
+    buildConsecutiveWorkClusterIndices,
+    getWorkEntryAutoBillableTotalHours,
+    sumClusterWorkBillableHours,
+    type WorkEntryClusterable,
+} from "../../utils/workEntryBillableHours";
 
 interface TimesheetRowDetailSidePanelProps {
     isOpen: boolean;
@@ -1143,6 +1149,12 @@ export default function TimesheetRowDetailSidePanel({
                                 ]
                                     .filter(Boolean)
                                     .join("\n");
+                                const workChargeBracketBadge =
+                                    getWorkChargeBracketBadgeLabel(
+                                        entry,
+                                        entries,
+                                        index
+                                    );
                                 const descriptionBadges = getTravelDescriptionBadges(
                                     entry,
                                     travelChargeContextEntries,
@@ -1273,12 +1285,20 @@ export default function TimesheetRowDetailSidePanel({
                                                 </span>
                                             </td>
                                             <td
-                                                className={`border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
+                                                className={`relative border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
                                                     isChargeHighlightDate(entry.dateFrom)
                                                         ? "font-semibold text-red-600"
                                                         : ""
                                                 } ${dateBoundaryTopClass}`}
                                             >
+                                                {workChargeBracketBadge ? (
+                                                    <span
+                                                        className="pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                                                        aria-hidden="true"
+                                                    >
+                                                        {workChargeBracketBadge}
+                                                    </span>
+                                                ) : null}
                                                 <span
                                                     className={
                                                         chargeChanged
@@ -1771,6 +1791,52 @@ export default function TimesheetRowDetailSidePanel({
     };
 
     const roundHours = (value: number) => Math.round(value * 10) / 10;
+
+    const getWorkChargeBracketBadgeLabel = (
+        entry: PanelEntry,
+        allEntries: PanelEntry[],
+        entryIndex: number,
+        opts?: { manualBillableHours?: number }
+    ): "4▼" | "8▼" | null => {
+        if (entry.descType !== "작업") {
+            return null;
+        }
+        const cluster = buildConsecutiveWorkClusterIndices(
+            allEntries as WorkEntryClusterable[],
+            entryIndex
+        );
+        const hours = sumClusterWorkBillableHours(cluster, (i) => {
+            const e = allEntries[i];
+            if (e.descType !== "작업") {
+                return null;
+            }
+            let manual: number | undefined;
+            if (
+                opts &&
+                Object.prototype.hasOwnProperty.call(opts, "manualBillableHours") &&
+                i === entryIndex
+            ) {
+                manual = opts.manualBillableHours;
+            } else {
+                manual = manualBillableHoursByEntryId[e.id];
+            }
+            if (manual !== undefined) {
+                return roundHours(manual);
+            }
+            return getWorkEntryAutoBillableTotalHours(e);
+        });
+        if (hours === null || hours <= 0) {
+            return null;
+        }
+        if (hours < 4) {
+            return "4▼";
+        }
+        /** 인보이스 타임시트 분할 합계와 동일: 4 ≤ h < 8 → 8▼ (정확히 4h도 포함) */
+        if (hours >= 4 && hours < 8) {
+            return "8▼";
+        }
+        return null;
+    };
 
     const hasHomeInTravel = (entry: PanelEntry): boolean => {
         const details = entry.details ?? "";

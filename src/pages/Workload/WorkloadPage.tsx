@@ -28,6 +28,10 @@ import {
     TABLE_COLUMNS,
     Y_AXIS_INTERVAL,
 } from "./workloadConstants";
+import {
+    getWorkerWorkloadDetail,
+    type WorkloadDetailEntry,
+} from "../../lib/workloadDetailApi";
 
 export default function WorkloadPage() {
     const navigate = useNavigate();
@@ -73,6 +77,9 @@ export default function WorkloadPage() {
     // ✅ 사람별 사유 저장(임시: 페이지 내 상태)
     const [reasonByName, setReasonByName] = useState<Record<string, string>>({});
     const [reasonGovByName, setReasonGovByName] = useState<Record<string, string>>({}); // ✅ 공무팀 사유 저장
+    const [reasonDetailEntries, setReasonDetailEntries] = useState<WorkloadDetailEntry[]>([]);
+    const [reasonDetailLoading, setReasonDetailLoading] = useState(false);
+    const [reasonDetailPage, setReasonDetailPage] = useState(1);
 
     // ✅ 차트에서 현재 호버(툴팁) 중인 이름
     const [hoveredName, setHoveredName] = useState<string | null>(null);
@@ -135,7 +142,19 @@ export default function WorkloadPage() {
         setReasonTargetName(null);
         setReasonText("");
         setReasonGovText("");
+        setReasonDetailEntries([]);
+        setReasonDetailPage(1);
     }, []);
+
+    const handleReasonDetailRowClick = useCallback(
+        (row: WorkloadDetailEntry) => {
+            if (!row?.workLogId) return;
+            navigate(`/report/${row.workLogId}`, {
+                state: { isDraft: row.isDraft },
+            });
+        },
+        [navigate]
+    );
 
     // ✅ 저장(DB: 월별 upsert / 둘 다 empty면 delete)
     const handleReasonSave = useCallback(async () => {
@@ -267,6 +286,46 @@ export default function WorkloadPage() {
         () => parseInt(selectedMonth.replace("월", "")),
         [selectedMonth]
     );
+
+    // ✅ 막대 클릭으로 연 사유 패널: 상세 페이지와 동일한 날짜별 세부 분석 데이터
+    useEffect(() => {
+        if (!reasonTargetName) {
+            setReasonDetailEntries([]);
+            setReasonDetailLoading(false);
+            setReasonDetailPage(1);
+            return;
+        }
+
+        let cancelled = false;
+        setReasonDetailLoading(true);
+        setReasonDetailPage(1);
+
+        (async () => {
+            try {
+                const data = await getWorkerWorkloadDetail(reasonTargetName, {
+                    year: selectedYearNum,
+                    month: selectedMonthNum,
+                });
+                if (!cancelled) {
+                    setReasonDetailEntries(data.entries);
+                }
+            } catch (e) {
+                console.error("워크로드 상세(패널) 로드 실패:", e);
+                if (!cancelled) {
+                    setReasonDetailEntries([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setReasonDetailLoading(false);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [reasonTargetName, selectedYearNum, selectedMonthNum]);
+
     useEffect(() => {
         showLastMonthRef.current = showLastMonth;
     }, [showLastMonth]);
@@ -851,6 +910,11 @@ export default function WorkloadPage() {
                                 onReasonGovTextChange={setReasonGovText}
                                 onSave={handleReasonSave}
                                 onClose={handleReasonClose}
+                                reasonDetailEntries={reasonDetailEntries}
+                                reasonDetailLoading={reasonDetailLoading}
+                                reasonDetailPage={reasonDetailPage}
+                                onReasonDetailPageChange={setReasonDetailPage}
+                                onReasonDetailRowClick={handleReasonDetailRowClick}
                             />
 
                             <WorkloadTableSection
