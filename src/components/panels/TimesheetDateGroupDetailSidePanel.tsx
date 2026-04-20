@@ -18,6 +18,7 @@ import { getDatesMissingSkilledFitterRemark } from "../../constants/skilledFitte
 import {
     buildConsecutiveWorkClusterIndices,
     getWorkEntryAutoBillableTotalHours,
+    isManualRoundedBillableFourOrEight,
     sumClusterWorkBillableHours,
     type WorkEntryClusterable,
 } from "../../utils/workEntryBillableHours";
@@ -44,11 +45,11 @@ interface TimesheetDateGroupDetailSidePanelProps {
     isOpen: boolean;
     onClose: () => void;
     sectionTitle: string;
-    /** true면 패널 바깥 클릭으로 닫히지 않음(특정 진입 플로우에서만 사용) */
+    /** When true, outside clicks do not close the panel (e.g. nested pickers). */
     disableOutsideClose?: boolean;
     fullGroupEntries: TimesheetSourceEntryData[];
     workLocationsByDate?: Record<string, Record<string, string[]>>;
-    /** 인보이스 페이지와 동일한 공휴일 집합(주말은 별도 판별). */
+    /** Dates (YYYY-MM-DD) treated as holidays for highlighting/rules. */
     holidayDateKeys?: ReadonlySet<string>;
     travelChargeOverrides: Record<
         string,
@@ -63,7 +64,7 @@ interface TimesheetDateGroupDetailSidePanelProps {
         target: "home" | "lodging"
     ) => void;
     onTravelChargeOverrideResetEntry: (entryId: number) => void;
-    /** Engineer Name and Title에 선택된 스킬드 핏터(비고 연분홍 검사 기준) */
+    /** Skilled fitter display names that must appear in remarks when required. */
     requiredSkilledFittersInRemarks: string[];
     personVesselHistoryByPerson: Record<
         string,
@@ -72,9 +73,9 @@ interface TimesheetDateGroupDetailSidePanelProps {
             vessels: string[];
         }>
     >;
-    /** 인보이스 타임시트에 등장하는 전체 인원(비고 인원 교체 후보 풀) */
+    /** Invoice timesheet people list for editors/pickers. */
     invoiceTimesheetPeople?: string[];
-    /** 최초 로드 시점의 엔트리 인원 배열(슬롯 원복 후보 계산용) */
+    /** Original persons for an entry before local edits (if tracked). */
     getOriginalTimesheetEntryPersons?: (entryId: number) => string[];
     getTimesheetEntryEditBaseline?: (entryId: number) =>
         | {
@@ -86,7 +87,7 @@ interface TimesheetDateGroupDetailSidePanelProps {
               manualBillableHours?: number;
           }
         | undefined;
-    /** 비고에서 엔트리 단위로 참여자 이름 교체(원본 work log 데이터 반영) */
+    /** Replace one assigned person on an entry (work-log sync). */
     onReplaceTimesheetEntryPerson?: (args: {
         entryId: number;
         fromPerson: string;
@@ -96,13 +97,13 @@ interface TimesheetDateGroupDetailSidePanelProps {
     onDeleteTimesheetEntry?: (entryId: number) => void;
     onUndo?: () => void;
     onRedo?: () => void;
-    /** 기본값: 부모에서 초기화 확인 모달을 띄우는 등 처리 */
+    /** Reset the full date group to the saved/default snapshot (confirm in parent). */
     onFullGroupResetToDefault?: () => void;
-    /** true면 기본값 비활성(예: 로드된 보고서 없음) */
+    /** When true, disable full-group reset (parent-controlled). */
     resetToInitialDisabled?: boolean;
     undoDisabled?: boolean;
     redoDisabled?: boolean;
-    /** 엔트리별 수동 청구시간(시) — 비어 있으면 자동 계산 */
+    /** Per-entry manual billable hours (e.g. 4h/8h rounded work claims). */
     manualBillableHoursByEntryId?: Record<number, number>;
     onUpdateTimesheetEntry?: (payload: {
         entryId: number;
@@ -114,15 +115,15 @@ interface TimesheetDateGroupDetailSidePanelProps {
         persons: string[];
         manualBillableHours: number | null;
     }) => void;
-    /** 이 엔트리만 처음 로드 시 보고서 값으로 복구 */
+    /** Revert a single entry to its initial snapshot. */
     onResetSingleTimesheetEntryToInitial?: (entryId: number) => void;
-    /** 엔트리 편집 폼 기준선 리셋(기본값 적용 후) */
+    /** Bump value to force-remount the inline entry editor for an entry id. */
     timesheetEntryEditorRemountTickById?: Record<number, number>;
-    /** 인보이스 페이지에서 삭제한 엔트리 목록(조회용) */
+    /** Soft-deleted entries to list under the table (restore actions). */
     deletedEntries?: TimesheetSourceEntryData[];
     onRestoreDeletedTimesheetEntry?: (entryId: number) => void;
     onRestoreAllDeletedTimesheetEntriesInScope?: (entryIds: number[]) => void;
-    /** 패널이 다루는 행 날짜(YYYY-MM-DD) — 엔트리가 모두 삭제된 뒤에도 삭제 목록 스코프 유지 */
+    /** Panel calendar dates (YYYY-MM-DD) used to scope deleted/visible rows. */
     panelCalendarDates?: string[];
 }
 
@@ -141,7 +142,7 @@ type PersonVesselHistoryItem = {
     vessels: string[];
 };
 
-const GANGDONG_FACTORY = "강동동 공장";
+const GANGDONG_FACTORY = "\uAC15\uB3D9\uB3D9 \uACF5\uC7A5";
 
 function scopeDeletedEntriesForInvoiceDateGroupPanel(
     deleted: NonNullable<TimesheetDateGroupDetailSidePanelProps["deletedEntries"]>,
@@ -169,7 +170,7 @@ function scopeDeletedEntriesForInvoiceDateGroupPanel(
     });
 }
 
-/** 복사(clientDuplicated) 엔트리 행 배경 — 기본 색 위에 아주 연한 빗금만 얹음 */
+/** Diagonal stripe for rows flagged as client-duplicated. */
 const DUPLICATED_ENTRY_ROW_STRIPE_IMAGE =
     "repeating-linear-gradient(135deg, transparent 0px, transparent 6px, rgba(15, 23, 42, 0.08) 6px, rgba(15, 23, 42, 0.08) 7px)";
 
@@ -284,9 +285,9 @@ const normalizeLocationName = (value: string | null | undefined): string => {
     const normalized = value.trim();
     if (!normalized) return "";
 
-    if (normalized === "HHI") return "HD중공업(해양)";
-    if (normalized === "HMD") return "HD미포";
-    if (normalized === "HSHI") return "HD삼호";
+    if (normalized === "HHI") return "HD\uC911\uACF5\uC5C5(\uD574\uC591)";
+    if (normalized === "HMD") return "HD\uBBF8\uD3EC";
+    if (normalized === "HSHI") return "HD\uC0BC\uD638";
 
     return normalized;
 };
@@ -297,12 +298,15 @@ const getFinalDestination = (entry: TimesheetSourceEntryData): string => {
         return moveTo;
     }
 
-    const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
-    if (!details.includes("→")) {
+    const details = (entry.details ?? "")
+        .replace(/\s*\uC774\uB3D9\.?\s*$/, "")
+        .trim();
+    const arrow = "\u2192";
+    if (!details.includes(arrow)) {
         return details;
     }
 
-    return details.split("→").pop()?.trim() ?? "";
+    return details.split(arrow).pop()?.trim() ?? "";
 };
 
 const getTravelEntryOrigin = (entry: TimesheetSourceEntryData): string => {
@@ -311,12 +315,15 @@ const getTravelEntryOrigin = (entry: TimesheetSourceEntryData): string => {
         return moveFrom;
     }
 
-    const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
-    if (!details.includes("→")) {
+    const details = (entry.details ?? "")
+        .replace(/\s*\uC774\uB3D9\.?\s*$/, "")
+        .trim();
+    const arrow = "\u2192";
+    if (!details.includes(arrow)) {
         return details;
     }
 
-    return details.split("→")[0]?.trim() ?? "";
+    return details.split(arrow)[0]?.trim() ?? "";
 };
 
 const sortEntriesByStart = (entries: TimesheetSourceEntryData[]) =>
@@ -357,24 +364,24 @@ function DescTypeBadge({
     emphasizeChangedText,
 }: {
     value: string;
-    /** true면 배경·테두리는 유지하고 ��자만 ��간색 */
+    /** When true, emphasize changed text (border) while keeping badge colors. */
     emphasizeChangedText?: boolean;
 }) {
     const bgRing =
-        value === "이동"
+        value === "\uC774\uB3D9"
             ? "bg-lime-100 ring-lime-200"
-            : value === "작업"
+            : value === "\uC791\uC5C5"
               ? "bg-sky-100 ring-sky-200"
-              : value === "대기"
+              : value === "\uB300\uAE30"
                 ? "bg-orange-100 ring-orange-200"
                 : "bg-gray-100 ring-gray-200";
     const textColor = emphasizeChangedText
         ? "border-2 border-blue-500 text-blue-800"
-        : value === "이동"
+        : value === "\uC774\uB3D9"
           ? "text-lime-800"
-          : value === "작업"
+          : value === "\uC791\uC5C5"
             ? "text-sky-800"
-            : value === "대기"
+            : value === "\uB300\uAE30"
               ? "text-orange-800"
               : "text-gray-800";
 
@@ -397,10 +404,11 @@ function normalizeMultilineCompare(s: string): string {
 }
 
 function renderTravelBadgeLabelWithArrow(label: string, arrowClassName: string): ReactNode {
-    if (!label.includes("→")) {
+    const arrow = "\u2192";
+    if (!label.includes(arrow)) {
         return label;
     }
-    const parts = label.split("→");
+    const parts = label.split(arrow);
     const nodes: ReactNode[] = [];
     for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
@@ -414,7 +422,7 @@ function renderTravelBadgeLabelWithArrow(label: string, arrowClassName: string):
         if (i < parts.length - 1) {
             nodes.push(
                 <span key={`a-${i}`} className={arrowClassName}>
-                    →
+                    {arrow}
                 </span>
             );
         }
@@ -427,10 +435,14 @@ function getTravelBadgeLabel(
     target: TravelChargeOverrideTarget
 ) {
     if (direction === "departure") {
-        return target === "home" ? "자택→ " : "숙소→ ";
+        return target === "home"
+            ? "\uC790\uD0DD\u2192 "
+            : "\uC219\uC18C\u2192 ";
     }
 
-    return target === "home" ? "→자택" : "→숙소";
+    return target === "home"
+        ? "\u2192\uC790\uD0DD"
+        : "\u2192\uC219\uC18C";
 }
 
 function TravelDescriptionBadge({
@@ -444,7 +456,7 @@ function TravelDescriptionBadge({
     isActive?: boolean;
     emphasizeChangedText?: boolean;
 }) {
-    const isHome = label.includes("자택");
+    const isHome = label.includes("\uC790\uD0DD");
     const textClass = emphasizeChangedText
         ? "text-blue-800"
         : isHome
@@ -829,7 +841,15 @@ export default function TimesheetDateGroupDetailSidePanel({
     ]);
 
     const getWeekdayLabel = (dateText: string) => {
-        const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+        const weekdays = [
+            "\uC77C",
+            "\uC6D4",
+            "\uD654",
+            "\uC218",
+            "\uBAA9",
+            "\uAE08",
+            "\uD1A0",
+        ];
         const date = new Date(`${dateText}T00:00:00`);
         return Number.isNaN(date.getTime()) ? "-" : weekdays[date.getDay()];
     };
@@ -940,8 +960,8 @@ export default function TimesheetDateGroupDetailSidePanel({
         let normalMinutes = rawNormalMinutes;
 
         const shouldDeductLunch =
-            entry.descType === "대기" ||
-            (entry.descType === "작업" && !entry.lunchWorked);
+            entry.descType === "\uB300\uAE30" ||
+            (entry.descType === "\uC791\uC5C5" && !entry.lunchWorked);
 
         if (shouldDeductLunch) {
             normalMinutes -= getOverlapMinutes(start, end, lunchStart, lunchEnd);
@@ -950,7 +970,7 @@ export default function TimesheetDateGroupDetailSidePanel({
         normalMinutes = Math.max(0, normalMinutes);
         const afterMinutes = Math.max(0, totalMinutes - rawNormalMinutes);
 
-        if (entry.descType === "대기") {
+        if (entry.descType === "\uB300\uAE30") {
             const waitingMinutes = normalMinutes + afterMinutes;
             return waitingMinutes > 0
                 ? `W=${formatHoursLabel(waitingMinutes / 60)}`
@@ -969,15 +989,15 @@ export default function TimesheetDateGroupDetailSidePanel({
         const primaryLocation = location?.split(",")[0].trim() ?? "";
 
         if (
-            primaryLocation === "HD중공업(해양)" ||
-            primaryLocation === "HD미포" ||
+            primaryLocation === "HD\uC911\uACF5\uC5C5(\uD574\uC591)" ||
+            primaryLocation === "HD\uBBF8\uD3EC" ||
             primaryLocation === "HHI" ||
             primaryLocation === "HMD"
         ) {
             return 2;
         }
 
-        if (primaryLocation === "HD삼호" || primaryLocation === "HSHI") {
+        if (primaryLocation === "HD\uC0BC\uD638" || primaryLocation === "HSHI") {
             return 4;
         }
 
@@ -1001,8 +1021,8 @@ export default function TimesheetDateGroupDetailSidePanel({
         allEntries: TimesheetSourceEntryData[],
         entryIndex: number,
         opts?: { manualBillableHours?: number }
-    ): "4▼" | "8▼" | null => {
-        if (entry.descType !== "작업") {
+    ): "4\u25BC" | "8\u25BC" | null => {
+        if (entry.descType !== "\uC791\uC5C5") {
             return null;
         }
         const cluster = buildConsecutiveWorkClusterIndices(
@@ -1011,7 +1031,7 @@ export default function TimesheetDateGroupDetailSidePanel({
         );
         const hours = sumClusterWorkBillableHours(cluster, (i) => {
             const e = allEntries[i];
-            if (e.descType !== "작업") {
+            if (e.descType !== "\uC791\uC5C5") {
                 return null;
             }
             let manual: number | undefined;
@@ -1033,11 +1053,78 @@ export default function TimesheetDateGroupDetailSidePanel({
             return null;
         }
         if (hours < 4) {
-            return "4▼";
+            return "4\u25BC";
         }
-        /** 인보이스 타임시트 분할 합계와 동일: 4 ≤ h < 8 → 8▼ (정확히 4h도 포함) */
         if (hours >= 4 && hours < 8) {
-            return "8▼";
+            return "8\u25BC";
+        }
+        return null;
+    };
+
+    type WorkChargeBadgeDisplay =
+        | { source: "manual"; label: "4h \uCCAD\uAD6C" | "8h \uCCAD\uAD6C" }
+        | { source: "auto"; label: "4\u25BC" | "8\u25BC" };
+
+    /** \uD0C0\uC784\uC2DC\uD2B8 \uADF8\uB9AC\uB4DC\uC640 \uB3D9\uC77C: \uC62C\uB9BC \uCCAD\uAD6C\uB294 \uD30C\uB791, \uC790\uB3D9 \uAD6C\uAC04\uC740 \uC8FC\uD669 */
+    const getWorkChargeBadgeDisplay = (
+        entry: TimesheetSourceEntryData,
+        allEntries: TimesheetSourceEntryData[],
+        entryIndex: number,
+        opts?: { manualBillableHours?: number }
+    ): WorkChargeBadgeDisplay | null => {
+        if (entry.descType !== "\uC791\uC5C5") {
+            return null;
+        }
+        let manualForSelf: number | undefined;
+        if (
+            opts &&
+            Object.prototype.hasOwnProperty.call(opts, "manualBillableHours")
+        ) {
+            manualForSelf = opts.manualBillableHours;
+        } else {
+            manualForSelf = manualBillableHoursByEntryId[entry.id];
+        }
+        if (isManualRoundedBillableFourOrEight(manualForSelf)) {
+            return {
+                source: "manual",
+                label:
+                    roundHours(manualForSelf!) === 4
+                        ? "4h \uCCAD\uAD6C"
+                        : "8h \uCCAD\uAD6C",
+            };
+        }
+        const cluster = buildConsecutiveWorkClusterIndices(
+            allEntries as WorkEntryClusterable[],
+            entryIndex
+        );
+        const hours = sumClusterWorkBillableHours(cluster, (i) => {
+            const e = allEntries[i];
+            if (e.descType !== "\uC791\uC5C5") {
+                return null;
+            }
+            let manual: number | undefined;
+            if (
+                opts &&
+                Object.prototype.hasOwnProperty.call(opts, "manualBillableHours") &&
+                i === entryIndex
+            ) {
+                manual = opts.manualBillableHours;
+            } else {
+                manual = manualBillableHoursByEntryId[e.id];
+            }
+            if (manual !== undefined) {
+                return roundHours(manual);
+            }
+            return getWorkEntryAutoBillableTotalHours(e);
+        });
+        if (hours === null || hours <= 0) {
+            return null;
+        }
+        if (hours < 4) {
+            return { source: "auto", label: "4\u25BC" };
+        }
+        if (hours >= 4 && hours < 8) {
+            return { source: "auto", label: "8\u25BC" };
         }
         return null;
     };
@@ -1045,15 +1132,15 @@ export default function TimesheetDateGroupDetailSidePanel({
     const hasHomeInTravel = (entry: TimesheetSourceEntryData): boolean => {
         const details = entry.details ?? "";
         return (
-            details.includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택"
+            details.includes("\uC790\uD0DD") ||
+            entry.moveFrom === "\uC790\uD0DD" ||
+            entry.moveTo === "\uC790\uD0DD"
         );
     };
 
     const calculateRawTravelHours = (entry: TimesheetSourceEntryData): number => {
         if (
-            entry.descType !== "이동" ||
+            entry.descType !== "\uC774\uB3D9" ||
             !entry.dateFrom ||
             !entry.dateTo ||
             !entry.timeFrom ||
@@ -1091,7 +1178,7 @@ export default function TimesheetDateGroupDetailSidePanel({
             ? normalizeLocationName(getFinalDestination(lastBeforeTravelEntry))
             : "";
 
-        if (leadingDestination && leadingDestination !== "자택") {
+        if (leadingDestination && leadingDestination !== "\uC790\uD0DD") {
             return leadingDestination;
         }
 
@@ -1100,7 +1187,7 @@ export default function TimesheetDateGroupDetailSidePanel({
             ? normalizeLocationName(getTravelEntryOrigin(firstAfterTravelEntry))
             : "";
 
-        if (trailingOrigin && trailingOrigin !== "자택") {
+        if (trailingOrigin && trailingOrigin !== "\uC790\uD0DD") {
             return trailingOrigin;
         }
 
@@ -1220,7 +1307,7 @@ export default function TimesheetDateGroupDetailSidePanel({
         let interBlockTravelEntries: TimesheetSourceEntryData[] = [];
 
         personEntries.forEach((entry) => {
-            if (entry.descType === "이동") {
+            if (entry.descType === "\uC774\uB3D9") {
                 interBlockTravelEntries.push(entry);
                 return;
             }
@@ -1346,7 +1433,9 @@ export default function TimesheetDateGroupDetailSidePanel({
             }
 
             return summarizeTravelEntries(
-                personEntries.filter((candidate) => candidate.descType === "이동"),
+                personEntries.filter(
+                    (candidate) => candidate.descType === "\uC774\uB3D9"
+                ),
                 true
             );
         }
@@ -1513,20 +1602,26 @@ export default function TimesheetDateGroupDetailSidePanel({
                 ? explicitManual
                 : manualBillableHoursByEntryId[entry.id];
             if (manual !== undefined) {
-                if (entry.descType === "대기") {
+                if (entry.descType === "\uB300\uAE30") {
                     return `W=${formatHoursLabel(manual)}`;
                 }
-                if (entry.descType === "작업" || entry.descType === "이동") {
+                if (
+                    entry.descType === "\uC791\uC5C5" ||
+                    entry.descType === "\uC774\uB3D9"
+                ) {
                     return formatHoursLabel(manual);
                 }
             }
         }
 
-        if (entry.descType === "작업" || entry.descType === "대기") {
+        if (
+            entry.descType === "\uC791\uC5C5" ||
+            entry.descType === "\uB300\uAE30"
+        ) {
             return getWorkingChargeLabel(entry);
         }
 
-        if (entry.descType !== "이동") {
+        if (entry.descType !== "\uC774\uB3D9") {
             return durationLabel || "-";
         }
 
@@ -1542,8 +1637,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                     return null;
                 }
 
-                // 상세 패널의 청구시간은 행 단위 값이어야 하므로,
-                // 일반 이동(travel)은 이동 묶음 합계 대신 현재 엔트리의 시간만 표시한다.
+                // Travel rows: keep raw window hours; work uses computed charge hours.
                 return chargeResult.kind === "travel"
                     ? rawTravelHours
                     : chargeResult.hours;
@@ -1570,9 +1664,9 @@ export default function TimesheetDateGroupDetailSidePanel({
 
         const details = entry.details ?? "";
         const containsHome =
-            details.includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택";
+            details.includes("\uC790\uD0DD") ||
+            entry.moveFrom === "\uC790\uD0DD" ||
+            entry.moveTo === "\uC790\uD0DD";
 
         if (!containsHome) {
             return durationLabel || "-";
@@ -1584,26 +1678,26 @@ export default function TimesheetDateGroupDetailSidePanel({
     const getTravelDescriptionBadges = (
         entry: TimesheetSourceEntryData
     ): TravelDescriptionBadgeData[] => {
-        if (entry.descType !== "이동") {
+        if (entry.descType !== "\uC774\uB3D9") {
             return [];
         }
 
         const details = entry.details ?? "";
-        const containsLodging = details.includes("숙소");
+        const containsLodging = details.includes("\uC219\uC18C");
         const containsHome =
-            details.includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택";
+            details.includes("\uC790\uD0DD") ||
+            entry.moveFrom === "\uC790\uD0DD" ||
+            entry.moveTo === "\uC790\uD0DD";
         const travelOrigin = normalizeLocationName(getTravelEntryOrigin(entry));
         const travelDestination = normalizeLocationName(getFinalDestination(entry));
         const direction: TravelBadgeDirection | null =
-            travelDestination === "자택"
+            travelDestination === "\uC790\uD0DD"
                 ? "arrival"
-                : travelOrigin === "자택"
+                : travelOrigin === "\uC790\uD0DD"
                   ? "departure"
-                  : travelDestination === "숙소"
+                  : travelDestination === "\uC219\uC18C"
                     ? "arrival"
-                    : travelOrigin === "숙소"
+                    : travelOrigin === "\uC219\uC18C"
                       ? "departure"
                       : null;
 
@@ -1751,9 +1845,9 @@ export default function TimesheetDateGroupDetailSidePanel({
             person
         );
         const cards = [
-            { label: "직전", item: previous },
-            { label: "당일", item: current },
-            { label: "직후", item: next },
+            { label: "\uC9C1\uC804", item: previous },
+            { label: "\uB2F9\uC77C", item: current },
+            { label: "\uC9C1\uD6C4", item: next },
         ];
 
         return (
@@ -1881,7 +1975,9 @@ export default function TimesheetDateGroupDetailSidePanel({
             </div>
             <div className="flex min-h-12 flex-wrap gap-2">
                 {people.length === 0 ? (
-                    <span className="text-xs text-gray-400">인원 없음</span>
+                    <span className="text-xs text-gray-400">
+                        {"\uC9C0\uC815\uB41C \uC778\uC6D0\uC774 \uC5C6\uC2B5\uB2C8\uB2E4"}
+                    </span>
                 ) : (
                     people.map((person) => (
                         <button
@@ -1919,8 +2015,7 @@ export default function TimesheetDateGroupDetailSidePanel({
             if (t.closest('[data-db-entry-context-menu="true"]')) {
                 return;
             }
-            // mousedown이 tr의 click보다 먼저 와서 메뉴를 지운 뒤 click이 다시 열리는 깜빡임 방지.
-            // 행 내부 버튼·비고·이동배지는 행 click과 무관하므로 기존처럼 mousedown에서 닫음.
+            // Keep the menu open when interacting with a DB row (row click opens it).
             const inDbRow = t.closest("[data-db-entry-row]");
             if (
                 inDbRow &&
@@ -1964,18 +2059,28 @@ export default function TimesheetDateGroupDetailSidePanel({
                     manualBillableStored !== undefined
                         ? roundHours(manualBillableStored)
                         : undefined;
+                const revertAutoBillableHours = contextEntry
+                    ? getWorkEntryAutoBillableTotalHours(contextEntry)
+                    : null;
+                const revertManualBillableMenuLabel =
+                    revertAutoBillableHours !== null && revertAutoBillableHours > 0
+                        ? `\uB418\uB3CC\uB9AC\uAE30 (${formatHoursLabel(
+                              roundHours(revertAutoBillableHours)
+                          )}h)`
+                        : "\uB418\uB3CC\uB9AC\uAE30";
                 const showRevertManualBillable =
                     Boolean(onUpdateTimesheetEntry) &&
-                    contextEntry?.descType === "작업" &&
+                    contextEntry?.descType === "\uC791\uC5C5" &&
                     (manualBillableRounded === 4 || manualBillableRounded === 8);
                 const showWorkCharge8h =
                     Boolean(onUpdateTimesheetEntry) &&
-                    contextEntry?.descType === "작업" &&
-                    (workBracketBadge === "4▼" || workBracketBadge === "8▼");
+                    contextEntry?.descType === "\uC791\uC5C5" &&
+                    (workBracketBadge === "4\u25BC" ||
+                        workBracketBadge === "8\u25BC");
                 const showWorkCharge4h =
                     Boolean(onUpdateTimesheetEntry) &&
-                    contextEntry?.descType === "작업" &&
-                    workBracketBadge === "4▼";
+                    contextEntry?.descType === "\uC791\uC5C5" &&
+                    workBracketBadge === "4\u25BC";
                 const menuRowCount =
                     (showRevertManualBillable ? 1 : 0) +
                     (showWorkCharge8h ? 1 : 0) +
@@ -2046,7 +2151,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
                                 onClick={applyRevertManualBillableToAuto}
                             >
-                                되돌리기 (3h)
+                                {revertManualBillableMenuLabel}
                             </button>
                         ) : null}
                         {showWorkCharge8h ? (
@@ -2056,7 +2161,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
                                 onClick={() => applyWorkManualBillableHours(8)}
                             >
-                                8h 청구
+                                {"8h \uCCAD\uAD6C"}
                             </button>
                         ) : null}
                         {showWorkCharge4h ? (
@@ -2066,7 +2171,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
                                 onClick={() => applyWorkManualBillableHours(4)}
                             >
-                                4h 청구
+                                {"4h \uCCAD\uAD6C"}
                             </button>
                         ) : null}
                         {onDuplicateTimesheetEntry ? (
@@ -2081,7 +2186,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                     setDbEntryContextMenu(null);
                                 }}
                             >
-                                복사
+                                {"\uBCF5\uC0AC"}
                             </button>
                         ) : null}
                         {onUpdateTimesheetEntry ? (
@@ -2095,7 +2200,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                     openEntryEdit(`full-group:edit:${id}`);
                                 }}
                             >
-                                수정
+                                {"\uC218\uC815"}
                             </button>
                         ) : (
                             <button
@@ -2103,7 +2208,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 disabled
                                 className="block w-full cursor-not-allowed px-3 py-2 text-left text-gray-400"
                             >
-                                수정
+                                {"\uC218\uC815"}
                             </button>
                         )}
                         {onDeleteTimesheetEntry ? (
@@ -2118,7 +2223,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                     setDbEntryContextMenu(null);
                                 }}
                             >
-                                삭제
+                                {"\uC0AD\uC81C"}
                             </button>
                         ) : (
                             <button
@@ -2126,16 +2231,9 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 disabled
                                 className="block w-full cursor-not-allowed px-3 py-2 text-left text-gray-400"
                             >
-                                삭제
+                                {"\uC0AD\uC81C"}
                             </button>
                         )}
-                        <button
-                            type="button"
-                            disabled
-                            className="block w-full cursor-not-allowed px-3 py-2 text-left text-gray-400"
-                        >
-                            메모
-                        </button>
                     </div>,
                     document.body
                 );
@@ -2213,7 +2311,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                         onMouseDown={(e) => e.stopPropagation()}
                                         onClick={onFullGroupResetToDefault}
                                     >
-                                        기본값
+                                        {"\uCD08\uAE30\uD654"}
                                     </button>
                                 ) : null}
                             </div>
@@ -2221,7 +2319,9 @@ export default function TimesheetDateGroupDetailSidePanel({
 
                         {fullGroupEntries.length === 0 ? (
                             <div className="px-4 py-6 text-sm text-gray-500">
-                                선택된 기간의 원본 엔트리가 없습니다.
+                                {
+                                    "\uC774 \uADF8\uB8F9\uC5D0 \uD45C\uC2DC\uD560 DB \uC5D4\uD2B8\uB9AC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4."
+                                }
                             </div>
                         ) : (
                             (() => {
@@ -2247,24 +2347,40 @@ export default function TimesheetDateGroupDetailSidePanel({
                                     </colgroup>
                                     <thead className="bg-gray-50 text-gray-600">
                                         <tr>
-                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">월</th>
-                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">일</th>
-                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">요일</th>
-                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">구분</th>
+                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">
+                                                {"\uC6D4"}
+                                            </th>
+                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">
+                                                {"\uC77C"}
+                                            </th>
+                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">
+                                                {"\uC694\uC77C"}
+                                            </th>
+                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">
+                                                {"\uAD6C\uBD84"}
+                                            </th>
                                             <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">From</th>
                                             <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold">To</th>
-                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold whitespace-pre-line">실제{"\n"}시간</th>
-                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold whitespace-pre-line">청구{"\n"}시간</th>
-                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-left font-semibold">작업내용(Description)</th>
-                                            <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold">비고(Remark)</th>
+                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold whitespace-pre-line">
+                                                {"\uC18C\uC694\n\uC2DC\uAC04"}
+                                            </th>
+                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-center font-semibold whitespace-pre-line">
+                                                {"\uCCAD\uAD6C\n\uC2DC\uAC04"}
+                                            </th>
+                                            <th className="border-b border-r border-gray-200 px-3 py-2 text-left font-semibold">
+                                                {"\uC0C1\uC138 \uB0B4\uC6A9(Description)"}
+                                            </th>
+                                            <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold">
+                                                {"\uBE44\uACE0(Remark)"}
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {fullGroupEntries.map((entry, index, entries) => {
                                             const [, month, dayOfMonth] = entry.dateFrom.split("-");
                                             const chargeLabel = getChargeLabel(entry);
-                                            const workChargeBracketBadge =
-                                                getWorkChargeBracketBadgeLabel(
+                                            const workChargeBadgeDisplay =
+                                                getWorkChargeBadgeDisplay(
                                                     entry,
                                                     fullGroupEntries,
                                                     index
@@ -2341,6 +2457,15 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                             String(baselineChargeLabel)
                                                         )
                                             );
+                                            const manualRoundedForEntry =
+                                                manualBillableHoursByEntryId[entry.id];
+                                            const chargeManualRoundedHighlight =
+                                                entry.descType === "\uC791\uC5C5" &&
+                                                isManualRoundedBillableFourOrEight(
+                                                    manualRoundedForEntry
+                                                );
+                                            const chargeCellHighlightClass =
+                                                chargeManualRoundedHighlight || chargeChanged;
                                             const isSameDateAsPrevious =
                                                 index > 0 &&
                                                 entries[index - 1]?.dateFrom === entry.dateFrom;
@@ -2559,17 +2684,22 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                     : ""
                                                             } ${dateBoundaryTopClass}`}
                                                         >
-                                                            {workChargeBracketBadge ? (
+                                                            {workChargeBadgeDisplay ? (
                                                                 <span
-                                                                    className="pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                                                                    className={
+                                                                        workChargeBadgeDisplay.source ===
+                                                                        "manual"
+                                                                            ? "pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-blue-600 px-0.5 py-px text-[8px] font-bold leading-none text-white shadow-sm"
+                                                                            : "pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                                                                    }
                                                                     aria-hidden="true"
                                                                 >
-                                                                    {workChargeBracketBadge}
+                                                                    {workChargeBadgeDisplay.label}
                                                                 </span>
                                                             ) : null}
                                                             <span
                                                                 className={
-                                                                    chargeChanged
+                                                                    chargeCellHighlightClass
                                                                         ? `${fieldEditedClass} whitespace-pre-line inline-block`
                                                                         : "whitespace-pre-line inline-block"
                                                                 }
@@ -2653,14 +2783,16 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                                 }
                                                                                 className="rounded-full px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
                                                                             >
-                                                                                기본값
+                                                                                {
+                                                                                    "\uC7AC\uC124\uC815"
+                                                                                }
                                                                             </button>
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={closeEditor}
                                                                                 className="rounded-full px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
                                                                             >
-                                                                                닫기
+                                                                                {"\uB2EB\uAE30"}
                                                                             </button>
                                                                         </div>
                                                                         <div className="grid gap-3 md:grid-cols-2">
@@ -2743,8 +2875,8 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                         }
                                                                         formTitle={
                                                                             entry.clientDuplicated
-                                                                                ? "복사된 엔트리 수정"
-                                                                                : "엔트리 수정"
+                                                                                ? "\uBCF5\uC0AC \uC5D4\uD2B8\uB9AC \uD3B8\uC9D1"
+                                                                                : "\uC5D4\uD2B8\uB9AC \uD3B8\uC9D1"
                                                                         }
                                                                     />
                                                                 </TravelOverrideEditorAnimatedShell>
@@ -2920,8 +3052,9 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                                                         </div>
                                                                                                     ) : (
                                                                                                         <span className="text-xs text-gray-500">
-                                                                                                            교체 가능한 인원이
-                                                                                                            없습니다.
+                                                                                                            {
+                                                                                                                "\uAD50\uCCB4\uD560 \uC778\uC6D0\uC744 \uC120\uD0DD\uD574 \uC8FC\uC138\uC694."
+                                                                                                            }
                                                                                                         </span>
                                                                                                     );
                                                                                                 })()
@@ -2936,7 +3069,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                                     }
                                                                                     className="shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
                                                                                 >
-                                                                                    닫기
+                                                                                    {"\uB2EB\uAE30"}
                                                                                 </button>
                                                                             </div>
                                                                             {selectedRemarkPerson ? (
@@ -2978,7 +3111,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 <details className="rounded-xl border border-gray-200 bg-white">
                                     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-gray-900 [&::-webkit-details-marker]:hidden">
                                         <span className="flex min-w-0 flex-1 items-center gap-2">
-                                            삭제된 엔트리 보기{" "}
+                                            {"\uC0AD\uC81C\uB41C \uC5D4\uD2B8\uB9AC"}{" "}
                                             <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
                                                 {scoped.length}
                                             </span>
@@ -2996,7 +3129,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                     );
                                                 }}
                                             >
-                                                모두 되돌리기
+                                                {"\uBAA8\uB450 \uBCF5\uC6D0"}
                                             </button>
                                         ) : null}
                                     </summary>
@@ -3009,12 +3142,12 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                 >
                                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                                         <div className="text-xs font-semibold text-gray-900">
-                                                            #{e.id} · {e.descType}
+                                                            #{e.id} {"\u00B7"} {e.descType}
                                                         </div>
                                                         <div className="flex flex-wrap items-center gap-2">
                                                             <div className="text-xs text-gray-600">
                                                                 {e.dateFrom}{" "}
-                                                                {e.timeFrom || "--:--"}–
+                                                                {e.timeFrom || "--:--"} ~{" "}
                                                                 {e.timeTo || "--:--"}
                                                             </div>
                                                             {onRestoreDeletedTimesheetEntry ? (
@@ -3029,14 +3162,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                         );
                                                                     }}
                                                                 >
-                                                                    되돌리기
+                                                                    {"\uBCF5\uC6D0"}
                                                                 </button>
                                                             ) : null}
                                                         </div>
                                                     </div>
                                                     <div className="mt-1 text-xs text-gray-700">
                                                         {(e.persons ?? []).join(", ") ||
-                                                            "인원 없음"}
+                                                            "\uC778\uC6D0 \uC5C6\uC74C"}
                                                     </div>
                                                     {e.details ? (
                                                         <div className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-700">
