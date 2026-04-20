@@ -15,6 +15,10 @@ import {
     SKILLED_FITTER_KOREAN_NAMES,
     SKILLED_FITTER_NAME_SET,
 } from "../../constants/skilledFitter";
+import {
+    getWorkEntryAutoBillableTotalHours,
+    isManualRoundedBillableFourOrEight,
+} from "../../utils/workEntryBillableHours";
 
 interface TimesheetRow {
     rowId: string;
@@ -37,6 +41,21 @@ interface TimesheetRow {
     sourceEntries: TimesheetSourceEntryData[];
     chargeWindowStart?: string;
     chargeWindowEnd?: string;
+    /**
+     * 4h/8h 올림 청구 시 타임시트 그리드에만 자동(N+A) 분할 표시.
+     * 인보이스 합산·행 weekdayNormal 등은 올림 반영 값 유지.
+     */
+    timesheetChargeDisplay?: {
+        weekdayNormal: number;
+        weekdayAfter: number;
+        weekendNormal: number;
+        weekendAfter: number;
+    };
+    /**
+     * 타임시트 총시간 열·해당 합계 행용: 실제 근무·구간 합(자동 분류 합 + 이동 등).
+     * `totalHours`는 인보이스/수동 올림 청구 반영 값일 수 있음.
+     */
+    timesheetTotalHoursDisplay?: number;
 }
 
 interface TimesheetSourceEntryData {
@@ -187,8 +206,10 @@ const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
         const travelWeekendCell =
             row.travelWeekendDisplay ||
             (row.travelWeekend > 0 ? String(round1(row.travelWeekend)) : "");
+        const totalForGrid =
+            row.timesheetTotalHoursDisplay ?? row.totalHours;
         return [
-            String(round1(row.totalHours)),
+            String(round1(totalForGrid)),
             row.weekdayNormal > 0 ? String(round1(row.weekdayNormal)) : "",
             row.weekdayAfter > 0 ? String(round1(row.weekdayAfter)) : "",
             row.weekendNormal > 0 ? String(round1(row.weekendNormal)) : "",
@@ -217,6 +238,12 @@ const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
             prev.description = Array.from(new Set([...prevNames, ...nextNames]))
                 .sort((a, b) => a.localeCompare(b, "ko"))
                 .join(", ");
+
+            prev.timesheetChargeDisplay =
+                prev.timesheetChargeDisplay ?? row.timesheetChargeDisplay;
+            prev.timesheetTotalHoursDisplay =
+                prev.timesheetTotalHoursDisplay ??
+                row.timesheetTotalHoursDisplay;
 
             const entryById = new Map<number, TimesheetSourceEntryData>();
             for (const e of prev.sourceEntries) {
@@ -1699,6 +1726,9 @@ export default function InvoiceCreatePage() {
                             : [entry.id];
                     let hasManualOverride = false;
                     let hours = 0;
+                    const fixedWindowHours = entry.fixedHomeTravelWindowApplied
+                        ? calculateRawTravelHours(entry)
+                        : null;
 
                     sourceIds.forEach((sourceEntryId) => {
                         const manual = entryManualBillableHours[sourceEntryId];
@@ -1713,6 +1743,10 @@ export default function InvoiceCreatePage() {
                             ? calculateRawTravelHours(rawSourceEntry)
                             : calculateRawTravelHours(entry);
                     });
+
+                    if (fixedWindowHours !== null && !hasManualOverride) {
+                        hours = fixedWindowHours;
+                    }
 
                     return {
                         hours: roundHours(hours),
@@ -1736,6 +1770,33 @@ export default function InvoiceCreatePage() {
 
                 // 날짜별로 그룹화
                 const entriesByDate = new Map<string, InvoiceTimesheetEntry[]>();
+                const getSourceEntryIdsForSegment = (
+                    parentEntry: InvoiceTimesheetEntry,
+                    segmentStartMs: number,
+                    segmentEndMs: number
+                ): number[] => {
+                    const sourceIds =
+                        parentEntry.sourceEntryIds.length > 0
+                            ? parentEntry.sourceEntryIds
+                            : [parentEntry.id];
+                    const overlapped = sourceIds.filter((sourceEntryId) => {
+                        const rawSource = rawEntryById.get(sourceEntryId);
+                        if (!rawSource) {
+                            return false;
+                        }
+                        const adjustedSource = {
+                            ...rawSource,
+                            ...getAdjustedTravelDateTimes(rawSource),
+                        } as InvoiceTimesheetEntry;
+                        const sourceStart = getEntryStartTime(adjustedSource);
+                        const sourceEnd = getEntryEndTime(adjustedSource);
+                        if (sourceStart === null || sourceEnd === null) {
+                            return false;
+                        }
+                        return sourceEnd > segmentStartMs && sourceStart < segmentEndMs;
+                    });
+                    return overlapped.length > 0 ? overlapped : sourceIds;
+                };
                 allEntries.forEach(entry => {
                     if (!entry.dateFrom) return;
                     const adjustedEntry = {
@@ -1762,6 +1823,11 @@ export default function InvoiceCreatePage() {
                         }
                         entriesByDate.get(date)!.push({
                             ...adjustedEntry,
+                            sourceEntryIds: getSourceEntryIdsForSegment(
+                                adjustedEntry,
+                                startTime,
+                                endTime
+                            ),
                         });
                     } else {
                         // 여러 날짜에 걸치는 경우 각 날짜별로 분할
@@ -1817,6 +1883,11 @@ export default function InvoiceCreatePage() {
 
                             entriesByDate.get(dateStr)!.push({
                                 ...segmentedEntry,
+                                sourceEntryIds: getSourceEntryIdsForSegment(
+                                    adjustedEntry,
+                                    segmentStart,
+                                    segmentEnd
+                                ),
                             });
 
                             currentDate.setDate(currentDate.getDate() + 1);
@@ -2250,6 +2321,7 @@ export default function InvoiceCreatePage() {
                             timeFrom: travel.start.split(":")[0],
                             timeTo: travel.end.split(":")[0],
                             totalHours: roundHours(travel.hours),
+                            timesheetTotalHoursDisplay: roundHours(travel.hours),
                             weekdayNormal: 0,
                             weekdayAfter: 0,
                             weekendNormal: 0,
@@ -2389,6 +2461,30 @@ export default function InvoiceCreatePage() {
                             const manual = entryManualBillableHours[entry.id];
                             if (manual !== undefined) {
                                 normal += manual;
+                                return;
+                            }
+
+                            const classified = classifyWorkingHours(entry);
+                            normal += classified.normalHours;
+                            after += classified.afterHours;
+                        });
+
+                        return {
+                            normal: roundHours(normal),
+                            after: roundHours(after),
+                            total: roundHours(normal + after),
+                        };
+                    };
+
+                    /** 올림 청구(4h/8h) 시 타임시트 분할 열 표시용 — 항상 자동 N+A 분류 */
+                    const getWorkingMetricsForEntriesDisplay = (
+                        entries: InvoiceTimesheetEntry[]
+                    ) => {
+                        let normal = 0;
+                        let after = 0;
+
+                        entries.forEach((entry) => {
+                            if (entry.descType !== "작업") {
                                 return;
                             }
 
@@ -2895,6 +2991,13 @@ export default function InvoiceCreatePage() {
                         label: string;
                         chargeWindowStart?: string;
                         chargeWindowEnd?: string;
+                        timesheetChargeDisplay?: {
+                            weekdayNormal: number;
+                            weekdayAfter: number;
+                            weekendNormal: number;
+                            weekendAfter: number;
+                        };
+                        timesheetTotalHoursDisplay?: number;
                     };
 
                     const splitFirstBlockLeadingTravelEntries = (
@@ -3018,6 +3121,7 @@ export default function InvoiceCreatePage() {
                             timeFrom: travel.start.split(":")[0],
                             timeTo: travel.end.split(":")[0],
                             totalHours: roundHours(travel.hours),
+                            timesheetTotalHoursDisplay: roundHours(travel.hours),
                             weekdayNormal: 0,
                             weekdayAfter: 0,
                             weekendNormal: 0,
@@ -3115,6 +3219,18 @@ export default function InvoiceCreatePage() {
                                 const working = getWorkingMetricsForEntries(
                                     block.workEntries
                                 );
+                                const workingDisplay =
+                                    getWorkingMetricsForEntriesDisplay(
+                                        block.workEntries
+                                    );
+                                const hasRoundedManualWorkInBlock =
+                                    block.workEntries.some(
+                                        (e) =>
+                                            e.descType === "작업" &&
+                                            isManualRoundedBillableFourOrEight(
+                                                entryManualBillableHours[e.id]
+                                            )
+                                    );
                                 const waitingHours = getWaitingHoursForEntries(
                                     block.workEntries
                                 );
@@ -3240,6 +3356,19 @@ export default function InvoiceCreatePage() {
                                           ? 2
                                           : 1;
 
+                                const displayWeekdayNormal = isWeekendDay
+                                    ? 0
+                                    : workingDisplay.normal;
+                                const displayWeekdayAfter = isWeekendDay
+                                    ? 0
+                                    : workingDisplay.after;
+                                const displayWeekendNormal = isWeekendDay
+                                    ? workingDisplay.normal
+                                    : 0;
+                                const displayWeekendAfter = isWeekendDay
+                                    ? workingDisplay.after
+                                    : 0;
+
                                     const blockRow: PersonDayRow = {
                                         person,
                                         rowKey: [
@@ -3270,6 +3399,9 @@ export default function InvoiceCreatePage() {
                                         totalHours: roundHours(
                                             working.total + travelHours
                                         ),
+                                        timesheetTotalHoursDisplay: roundHours(
+                                            workingDisplay.total + travelHours
+                                        ),
                                         weekdayNormal: isWeekendDay
                                             ? 0
                                             : working.normal,
@@ -3299,6 +3431,19 @@ export default function InvoiceCreatePage() {
                                         label,
                                         chargeWindowStart,
                                         chargeWindowEnd,
+                                        timesheetChargeDisplay:
+                                            hasRoundedManualWorkInBlock
+                                                ? {
+                                                      weekdayNormal:
+                                                          displayWeekdayNormal,
+                                                      weekdayAfter:
+                                                          displayWeekdayAfter,
+                                                      weekendNormal:
+                                                          displayWeekendNormal,
+                                                      weekendAfter:
+                                                          displayWeekendAfter,
+                                                  }
+                                                : undefined,
                                     };
 
                                     return [blockRow, ...detachedTrailingTravelRows];
@@ -3409,6 +3554,10 @@ export default function InvoiceCreatePage() {
                                 })),
                             chargeWindowStart: group.row.chargeWindowStart,
                             chargeWindowEnd: group.row.chargeWindowEnd,
+                            timesheetChargeDisplay:
+                                group.row.timesheetChargeDisplay,
+                            timesheetTotalHoursDisplay:
+                                group.row.timesheetTotalHoursDisplay,
                         });
                     });
                 });
@@ -4101,16 +4250,39 @@ export default function InvoiceCreatePage() {
             }
         );
 
-    /** 노말·애프터·주말 노말·주말 애프터 합으로 식사 구간 배지 (타임시트 분할 셀) */
-    const getTimesheetSplitBracketBadgeLabel = (
+    const roundHoursForInvoice = (value: number) => Math.round(value * 10) / 10;
+
+    /** 타임시트 분할 열에 올림(4h/8h) 배지 — 소스 작업 엔트리 기준 */
+    const getInvoiceTimesheetRoundedManualBadgeLabel = (
+        row: TimesheetRow
+    ): "4h 청구" | "8h 청구" | null => {
+        for (const e of row.sourceEntries) {
+            if (e.descType !== "작업") {
+                continue;
+            }
+            const m = entryManualBillableHours[e.id];
+            if (isManualRoundedBillableFourOrEight(m)) {
+                return roundHoursForInvoice(m) === 4 ? "4h 청구" : "8h 청구";
+            }
+        }
+        return null;
+    };
+
+    /** 노말·애프터·주말 합으로 자동 구간 배지 (주황). 올림 청구 파란 배지가 있으면 비표시 */
+    const getTimesheetSplitAutoBracketBadgeLabel = (
         row: TimesheetRow
     ): "4▼" | "8▼" | null => {
-        const sum =
-            row.weekdayNormal +
-            row.weekdayAfter +
-            row.weekendNormal +
-            row.weekendAfter;
-        const rounded = Math.round(sum * 10) / 10;
+        const tc = row.timesheetChargeDisplay;
+        const sum = tc
+            ? tc.weekdayNormal +
+              tc.weekdayAfter +
+              tc.weekendNormal +
+              tc.weekendAfter
+            : row.weekdayNormal +
+              row.weekdayAfter +
+              row.weekendNormal +
+              row.weekendAfter;
+        const rounded = roundHoursForInvoice(sum);
         if (rounded <= 0) {
             return null;
         }
@@ -4129,14 +4301,24 @@ export default function InvoiceCreatePage() {
         sizeClassName: string
     ) => {
         const changed = getTimesheetRowChangedFlags(row);
-        const splitBracketLabel = getTimesheetSplitBracketBadgeLabel(row);
+        const manualSplitBadge =
+            getInvoiceTimesheetRoundedManualBadgeLabel(row);
+        const autoSplitBadge = manualSplitBadge
+            ? null
+            : getTimesheetSplitAutoBracketBadgeLabel(row);
+        const splitBracketLabel = manualSplitBadge ?? autoSplitBadge;
+        const splitBadgeIsManual = manualSplitBadge !== null;
+        const manualRoundedSplitHighlight = manualSplitBadge !== null;
+        const tc = row.timesheetChargeDisplay;
+        const wn = tc ? tc.weekdayNormal : row.weekdayNormal;
+        const wa = tc ? tc.weekdayAfter : row.weekdayAfter;
+        const wkn = tc ? tc.weekendNormal : row.weekendNormal;
+        const wka = tc ? tc.weekendAfter : row.weekendAfter;
         const values = {
-            weekdayNormal:
-                row.weekdayNormal > 0 ? String(row.weekdayNormal) : "",
-            weekdayAfter: row.weekdayAfter > 0 ? String(row.weekdayAfter) : "",
-            weekendNormal:
-                row.weekendNormal > 0 ? String(row.weekendNormal) : "",
-            weekendAfter: row.weekendAfter > 0 ? String(row.weekendAfter) : "",
+            weekdayNormal: wn > 0 ? String(wn) : "",
+            weekdayAfter: wa > 0 ? String(wa) : "",
+            weekendNormal: wkn > 0 ? String(wkn) : "",
+            weekendAfter: wka > 0 ? String(wka) : "",
             travelWeekday:
                 row.travelWeekdayDisplay ||
                 (row.travelWeekday > 0 ? String(row.travelWeekday) : ""),
@@ -4164,9 +4346,13 @@ export default function InvoiceCreatePage() {
                     className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
-                    {splitBracketLabel !== null && row.weekdayNormal > 0 ? (
+                    {splitBracketLabel !== null && values.weekdayNormal !== "" ? (
                         <span
-                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            className={
+                                splitBadgeIsManual
+                                    ? "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-blue-600 px-0.5 py-px text-[8px] font-bold leading-none text-white shadow-sm"
+                                    : "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            }
                             aria-hidden="true"
                         >
                             {splitBracketLabel}
@@ -4174,7 +4360,8 @@ export default function InvoiceCreatePage() {
                     ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
-                            changed.weekdayNormal,
+                            (changed.weekdayNormal || manualRoundedSplitHighlight) &&
+                                values.weekdayNormal !== "",
                             values.weekdayNormal
                         )}
                     >
@@ -4185,9 +4372,13 @@ export default function InvoiceCreatePage() {
                     className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
-                    {splitBracketLabel !== null && row.weekdayAfter > 0 ? (
+                    {splitBracketLabel !== null && values.weekdayAfter !== "" ? (
                         <span
-                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            className={
+                                splitBadgeIsManual
+                                    ? "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-blue-600 px-0.5 py-px text-[8px] font-bold leading-none text-white shadow-sm"
+                                    : "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            }
                             aria-hidden="true"
                         >
                             {splitBracketLabel}
@@ -4195,7 +4386,8 @@ export default function InvoiceCreatePage() {
                     ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
-                            changed.weekdayAfter,
+                            (changed.weekdayAfter || manualRoundedSplitHighlight) &&
+                                values.weekdayAfter !== "",
                             values.weekdayAfter
                         )}
                     >
@@ -4206,9 +4398,13 @@ export default function InvoiceCreatePage() {
                     className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
-                    {splitBracketLabel !== null && row.weekendNormal > 0 ? (
+                    {splitBracketLabel !== null && values.weekendNormal !== "" ? (
                         <span
-                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            className={
+                                splitBadgeIsManual
+                                    ? "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-blue-600 px-0.5 py-px text-[8px] font-bold leading-none text-white shadow-sm"
+                                    : "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            }
                             aria-hidden="true"
                         >
                             {splitBracketLabel}
@@ -4216,7 +4412,8 @@ export default function InvoiceCreatePage() {
                     ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
-                            changed.weekendNormal,
+                            (changed.weekendNormal || manualRoundedSplitHighlight) &&
+                                values.weekendNormal !== "",
                             values.weekendNormal
                         )}
                     >
@@ -4227,9 +4424,13 @@ export default function InvoiceCreatePage() {
                     className={`relative ${getCellClassName()}`}
                     {...interactiveCellProps}
                 >
-                    {splitBracketLabel !== null && row.weekendAfter > 0 ? (
+                    {splitBracketLabel !== null && values.weekendAfter !== "" ? (
                         <span
-                            className="pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            className={
+                                splitBadgeIsManual
+                                    ? "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-blue-600 px-0.5 py-px text-[8px] font-bold leading-none text-white shadow-sm"
+                                    : "pointer-events-none absolute right-0.5 top-0.5 z-[1] rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                            }
                             aria-hidden="true"
                         >
                             {splitBracketLabel}
@@ -4237,7 +4438,8 @@ export default function InvoiceCreatePage() {
                     ) : null}
                     <span
                         className={getTimesheetChangedValueTextClass(
-                            changed.weekendAfter,
+                            (changed.weekendAfter || manualRoundedSplitHighlight) &&
+                                values.weekendAfter !== "",
                             values.weekendAfter
                         )}
                     >
@@ -4492,12 +4694,16 @@ export default function InvoiceCreatePage() {
         return match?.[1] ?? "?";
     };
 
+    /** 타임시트 그리드 총시간 열: 실제 구간 합(올림 청구 미반영). */
+    const getTimesheetRowTotalHoursForGrid = (row: TimesheetRow) =>
+        row.timesheetTotalHoursDisplay ?? row.totalHours;
+
     const getNormalTimesheetSignature = (row: TimesheetRow) =>
         [
             row.date,
             row.timeFrom,
             row.timeTo,
-            row.totalHours,
+            getTimesheetRowTotalHoursForGrid(row),
             row.weekdayNormal,
             row.weekdayAfter,
             row.weekendNormal,
@@ -4850,9 +5056,48 @@ export default function InvoiceCreatePage() {
                 0
             );
 
+    const getManualRoundedOneTimeJobInvoiceComments = (
+        section: NormalTimesheetSection
+    ): string[] => {
+        const entryById = new Map<number, TimesheetSourceEntryData>();
+        for (const row of section.rows) {
+            for (const entry of row.sourceEntries) {
+                if (!entryById.has(entry.id)) {
+                    entryById.set(entry.id, entry);
+                }
+            }
+        }
+        const lines: string[] = [];
+        for (const entry of entryById.values()) {
+            if (entry.descType !== "작업") {
+                continue;
+            }
+            const manual = entryManualBillableHours[entry.id];
+            if (!isManualRoundedBillableFourOrEight(manual)) {
+                continue;
+            }
+            const autoHours = getWorkEntryAutoBillableTotalHours(entry);
+            if (autoHours === null || autoHours <= 0) {
+                continue;
+            }
+            const invoicedH = Math.round(manual * 10) / 10;
+            const originalH = Math.round(autoHours * 10) / 10;
+            if (invoicedH === originalH) {
+                continue;
+            }
+            const dateLabel = formatDate(entry.dateFrom);
+            lines.push(
+                `(${invoicedH}) hours will be invoiced instead of (${originalH}) hours on (${dateLabel}) since the work was non-consecutive job.`
+            );
+        }
+        return lines;
+    };
+
     const getNormalTimesheetComments = (
         section: NormalTimesheetSection
     ): string[] => {
+        const oneTimeJobComments = getManualRoundedOneTimeJobInvoiceComments(section);
+
         const currentVessel = shipNameDisplay.trim();
         const tripLocation = workLogDataList[0]?.workLog.location ?? null;
         const tripCity =
@@ -4860,7 +5105,7 @@ export default function InvoiceCreatePage() {
             resolvePlaceToCity(getPrimaryLocation(tripLocation), tripLocation);
 
         if (!currentVessel || !tripCity) {
-            return [];
+            return Array.from(new Set(oneTimeJobComments));
         }
 
         const dates = Array.from(
@@ -5006,7 +5251,7 @@ export default function InvoiceCreatePage() {
             }
         });
 
-        return Array.from(new Set(comments));
+        return Array.from(new Set([...comments, ...oneTimeJobComments]));
     };
     const rndTimesheetComments = getNormalTimesheetComments({
         key: "R&D TIMESHEET",
@@ -5729,14 +5974,20 @@ export default function InvoiceCreatePage() {
                 .sort((a, b) => a - b)
                 .join(","),
         ].join("::");
-    const getTimesheetRowDisplayedValueSnapshot = (row: TimesheetRow) => ({
+    const getTimesheetRowDisplayedValueSnapshot = (row: TimesheetRow) => {
+        const tc = row.timesheetChargeDisplay;
+        const wn = tc?.weekdayNormal ?? row.weekdayNormal;
+        const wa = tc?.weekdayAfter ?? row.weekdayAfter;
+        const wkn = tc?.weekendNormal ?? row.weekendNormal;
+        const wka = tc?.weekendAfter ?? row.weekendAfter;
+        return {
         timeFrom: row.timeFrom,
         timeTo: row.timeTo,
-        totalHours: String(row.totalHours),
-        weekdayNormal: row.weekdayNormal > 0 ? String(row.weekdayNormal) : "",
-        weekdayAfter: row.weekdayAfter > 0 ? String(row.weekdayAfter) : "",
-        weekendNormal: row.weekendNormal > 0 ? String(row.weekendNormal) : "",
-        weekendAfter: row.weekendAfter > 0 ? String(row.weekendAfter) : "",
+        totalHours: String(getTimesheetRowTotalHoursForGrid(row)),
+        weekdayNormal: wn > 0 ? String(wn) : "",
+        weekdayAfter: wa > 0 ? String(wa) : "",
+        weekendNormal: wkn > 0 ? String(wkn) : "",
+        weekendAfter: wka > 0 ? String(wka) : "",
         travelWeekday:
             row.travelWeekdayDisplay ||
             (row.travelWeekday > 0 ? String(row.travelWeekday) : ""),
@@ -5744,7 +5995,8 @@ export default function InvoiceCreatePage() {
             row.travelWeekendDisplay ||
             (row.travelWeekend > 0 ? String(row.travelWeekend) : ""),
         travelChargeOverrideSignature: getTravelChargeOverrideSignatureForRow(row),
-    });
+    };
+    };
 
     const getOriginalTimesheetEntryPersons = useCallback(
         (entryId: number) => originalEntryPersonsByIdRef.current[entryId] ?? [],
@@ -7113,7 +7365,7 @@ export default function InvoiceCreatePage() {
                                                                 <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{row.timeTo}</span>
                                                             </td>
                                                             <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
-                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(row.totalHours))}>{row.totalHours}</span>
+                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(getTimesheetRowTotalHoursForGrid(row)))}>{getTimesheetRowTotalHoursForGrid(row)}</span>
                                                             </td>
                                                             {renderSplitHoursCells(
                                                                 row,
@@ -7190,7 +7442,7 @@ export default function InvoiceCreatePage() {
                                                                 Total
                                                             </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.totalHours, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowTotalHoursForGrid(row), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                             {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}
@@ -7655,7 +7907,7 @@ export default function InvoiceCreatePage() {
                                                                                 <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{row.timeTo}</span>
                                                                             </td>
                                                                             <td className={`px-2 py-3 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>
-                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(row.totalHours))}>{row.totalHours}</span>
+                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(getTimesheetRowTotalHoursForGrid(row)))}>{getTimesheetRowTotalHoursForGrid(row)}</span>
                                                                             </td>
                                                                             {renderSplitHoursCells(
                                                                                 row,
@@ -7686,7 +7938,7 @@ export default function InvoiceCreatePage() {
                                                                                 Total
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.totalHours, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowTotalHoursForGrid(row), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                                                 {Math.round(section.rows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}

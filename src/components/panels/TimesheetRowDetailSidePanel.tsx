@@ -17,6 +17,7 @@ import { getDatesMissingSkilledFitterRemark } from "../../constants/skilledFitte
 import {
     buildConsecutiveWorkClusterIndices,
     getWorkEntryAutoBillableTotalHours,
+    isManualRoundedBillableFourOrEight,
     sumClusterWorkBillableHours,
     type WorkEntryClusterable,
 } from "../../utils/workEntryBillableHours";
@@ -1048,12 +1049,27 @@ export default function TimesheetRowDetailSidePanel({
                         <tbody>
                             {entriesData.map((entry, index, entries) => {
                                 const [, month, dayOfMonth] = entry.dateFrom.split("-");
-                                const correctionLabel =
-                                    getCorrectionLabel(
-                                        entry,
-                                        travelChargeContextEntries,
-                                        zeroBillingTravelIds
-                                    );
+                                const manualRoundedForEntry =
+                                    manualBillableHoursByEntryId[entry.id];
+                                const correctionLabelForDisplay =
+                                    entry.descType === "작업" &&
+                                    isManualRoundedBillableFourOrEight(
+                                        manualRoundedForEntry
+                                    )
+                                        ? getCorrectionLabel(
+                                              entry,
+                                              travelChargeContextEntries,
+                                              zeroBillingTravelIds,
+                                              true,
+                                              {
+                                                  ignoreTravelOverrides: true,
+                                              }
+                                          )
+                                        : getCorrectionLabel(
+                                              entry,
+                                              travelChargeContextEntries,
+                                              zeroBillingTravelIds
+                                          );
                                 const durationLabel = getDurationLabel(
                                     entry.dateFrom,
                                     entry.timeFrom,
@@ -1088,19 +1104,33 @@ export default function TimesheetRowDetailSidePanel({
                                         : formatHoursLabel(baselineDurationHours);
                                 const currentDurationLabel =
                                     durationLabel || "-";
-                                const baselineCorrectionLabel = baselineSynth
-                                    ? getCorrectionLabel(
-                                          baselineSynth,
-                                          travelChargeContextEntries,
-                                          zeroBillingTravelIds,
-                                          false,
-                                          {
-                                              manualBillableHours:
-                                                  editBaseline!.manualBillableHours,
-                                              ignoreTravelOverrides: true,
-                                          }
-                                      )
-                                    : "";
+                                const baselineCorrectionLabelForDisplay =
+                                    baselineSynth
+                                        ? isManualRoundedBillableFourOrEight(
+                                              editBaseline!.manualBillableHours
+                                          )
+                                            ? getCorrectionLabel(
+                                                  baselineSynth,
+                                                  travelChargeContextEntries,
+                                                  zeroBillingTravelIds,
+                                                  true,
+                                                  {
+                                                      ignoreTravelOverrides: true,
+                                                  }
+                                              )
+                                            : getCorrectionLabel(
+                                                  baselineSynth,
+                                                  travelChargeContextEntries,
+                                                  zeroBillingTravelIds,
+                                                  false,
+                                                  {
+                                                      manualBillableHours:
+                                                          editBaseline!
+                                                              .manualBillableHours,
+                                                      ignoreTravelOverrides: true,
+                                                  }
+                                              )
+                                        : "";
                                 const descTypeChanged = Boolean(
                                     editBaseline &&
                                         entry.descType !== editBaseline.descType
@@ -1124,12 +1154,21 @@ export default function TimesheetRowDetailSidePanel({
                                 const chargeChanged = Boolean(
                                     editBaseline &&
                                         normalizeMultilineCompare(
-                                            String(correctionLabel)
+                                            String(correctionLabelForDisplay)
                                         ) !==
                                             normalizeMultilineCompare(
-                                                String(baselineCorrectionLabel)
+                                                String(
+                                                    baselineCorrectionLabelForDisplay
+                                                )
                                             )
                                 );
+                                const chargeManualRoundedHighlight =
+                                    entry.descType === "작업" &&
+                                    isManualRoundedBillableFourOrEight(
+                                        manualRoundedForEntry
+                                    );
+                                const chargeCellHighlightClass =
+                                    chargeManualRoundedHighlight || chargeChanged;
                                 const isSameDateAsPrevious =
                                     index > 0 &&
                                     entries[index - 1]?.dateFrom === entry.dateFrom;
@@ -1149,8 +1188,8 @@ export default function TimesheetRowDetailSidePanel({
                                 ]
                                     .filter(Boolean)
                                     .join("\n");
-                                const workChargeBracketBadge =
-                                    getWorkChargeBracketBadgeLabel(
+                                const workChargeBadgeDisplay =
+                                    getWorkChargeBadgeDisplay(
                                         entry,
                                         entries,
                                         index
@@ -1291,22 +1330,27 @@ export default function TimesheetRowDetailSidePanel({
                                                         : ""
                                                 } ${dateBoundaryTopClass}`}
                                             >
-                                                {workChargeBracketBadge ? (
+                                                {workChargeBadgeDisplay ? (
                                                     <span
-                                                        className="pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                                                        className={
+                                                            workChargeBadgeDisplay.source ===
+                                                            "manual"
+                                                                ? "pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-blue-600 px-0.5 py-px text-[8px] font-bold leading-none text-white shadow-sm"
+                                                                : "pointer-events-none absolute right-0.5 top-0 z-[1] -translate-y-1 rounded bg-amber-500 px-0.5 py-px text-[9px] font-bold leading-none text-white shadow-sm"
+                                                        }
                                                         aria-hidden="true"
                                                     >
-                                                        {workChargeBracketBadge}
+                                                        {workChargeBadgeDisplay.label}
                                                     </span>
                                                 ) : null}
                                                 <span
                                                     className={
-                                                        chargeChanged
+                                                        chargeCellHighlightClass
                                                             ? `${fieldEditedClass} whitespace-pre-line inline-block`
                                                             : "whitespace-pre-line inline-block"
                                                     }
                                                 >
-                                                    {correctionLabel}
+                                                    {correctionLabelForDisplay}
                                                 </span>
                                             </td>
                                             <td
@@ -1792,14 +1836,33 @@ export default function TimesheetRowDetailSidePanel({
 
     const roundHours = (value: number) => Math.round(value * 10) / 10;
 
-    const getWorkChargeBracketBadgeLabel = (
+    type WorkChargeBadgeDisplay =
+        | { source: "manual"; label: "4h 청구" | "8h 청구" }
+        | { source: "auto"; label: "4▼" | "8▼" };
+
+    const getWorkChargeBadgeDisplay = (
         entry: PanelEntry,
         allEntries: PanelEntry[],
         entryIndex: number,
         opts?: { manualBillableHours?: number }
-    ): "4▼" | "8▼" | null => {
+    ): WorkChargeBadgeDisplay | null => {
         if (entry.descType !== "작업") {
             return null;
+        }
+        let manualForSelf: number | undefined;
+        if (
+            opts &&
+            Object.prototype.hasOwnProperty.call(opts, "manualBillableHours")
+        ) {
+            manualForSelf = opts.manualBillableHours;
+        } else {
+            manualForSelf = manualBillableHoursByEntryId[entry.id];
+        }
+        if (isManualRoundedBillableFourOrEight(manualForSelf)) {
+            return {
+                source: "manual",
+                label: roundHours(manualForSelf!) === 4 ? "4h 청구" : "8h 청구",
+            };
         }
         const cluster = buildConsecutiveWorkClusterIndices(
             allEntries as WorkEntryClusterable[],
@@ -1829,11 +1892,11 @@ export default function TimesheetRowDetailSidePanel({
             return null;
         }
         if (hours < 4) {
-            return "4▼";
+            return { source: "auto", label: "4▼" };
         }
         /** 인보이스 타임시트 분할 합계와 동일: 4 ≤ h < 8 → 8▼ (정확히 4h도 포함) */
         if (hours >= 4 && hours < 8) {
-            return "8▼";
+            return { source: "auto", label: "8▼" };
         }
         return null;
     };
@@ -2274,6 +2337,52 @@ export default function TimesheetRowDetailSidePanel({
         return { hours: null, kind: "none" };
     };
 
+    const allocateGroupedHomeChargeHours = (
+        entry: PanelEntry,
+        person: string,
+        contextEntries: PanelEntry[],
+        totalHours: number
+    ): number => {
+        if (totalHours <= 0) {
+            return 0;
+        }
+        const personTravelEntries = sortEntriesByStart(
+            contextEntries.filter(
+                (candidate) =>
+                    candidate.descType === "이동" &&
+                    (candidate.persons ?? []).includes(person)
+            )
+        );
+        if (personTravelEntries.length <= 1) {
+            return roundHours(totalHours);
+        }
+
+        const targetGroup = splitTravelEntriesByGap(personTravelEntries, 2).find((group) =>
+            group.some((candidate) => candidate.id === entry.id)
+        );
+        if (!targetGroup || targetGroup.length <= 1) {
+            return roundHours(totalHours);
+        }
+
+        let remaining = roundHours(totalHours);
+        const allocationByEntryId = new Map<number, number>();
+        targetGroup.forEach((groupEntry, index) => {
+            if (remaining <= 0) {
+                allocationByEntryId.set(groupEntry.id, 0);
+                return;
+            }
+            const rawHours = roundHours(calculateRawTravelHours(groupEntry));
+            const isLast = index === targetGroup.length - 1;
+            const allocated = isLast
+                ? remaining
+                : Math.min(rawHours > 0 ? rawHours : remaining, remaining);
+            allocationByEntryId.set(groupEntry.id, roundHours(allocated));
+            remaining = roundHours(Math.max(0, remaining - allocated));
+        });
+
+        return allocationByEntryId.get(entry.id) ?? roundHours(totalHours);
+    };
+
     const getCorrectionLabel = (
         entry: PanelEntry,
         contextEntries: PanelEntry[],
@@ -2328,9 +2437,21 @@ export default function TimesheetRowDetailSidePanel({
 
                 // 상세 패널의 청구시간은 행 단위 값이어야 하므로,
                 // 일반 이동(travel)은 이동 묶음 합계 대신 현재 엔트리의 시간만 표시한다.
-                return chargeResult.kind === "travel"
-                    ? rawTravelHours
-                    : chargeResult.hours;
+                if (chargeResult.kind === "travel") {
+                    return rawTravelHours;
+                }
+                const isHomeKind =
+                    chargeResult.kind === "home" ||
+                    chargeResult.kind.endsWith("-home");
+                if (isHomeKind) {
+                    return allocateGroupedHomeChargeHours(
+                        entry,
+                        person,
+                        contextEntries,
+                        chargeResult.hours
+                    );
+                }
+                return chargeResult.hours;
             })
             .filter((value): value is number => value !== null);
 

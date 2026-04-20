@@ -2,6 +2,17 @@
 
 export const roundHours = (value: number) => Math.round(value * 10) / 10;
 
+/** 컨텍스트 메뉴 `4h/8h 청구`(올림 청구)로 저장된 수동 청구시간인지 */
+export function isManualRoundedBillableFourOrEight(
+    hours: number | undefined | null
+): hours is 4 | 8 {
+    if (hours === undefined || hours === null) {
+        return false;
+    }
+    const r = roundHours(hours);
+    return r === 4 || r === 8;
+}
+
 function getOverlapMinutes(
     rangeStart: Date,
     rangeEnd: Date,
