@@ -8,12 +8,12 @@ import Input from "../../components/common/Input";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import Avatar from "../../components/common/Avatar";
-import Chip from "../../components/ui/Chip";
 import { IconInvoice } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
 import { getWorkLogs, type WorkLog } from "../../lib/workLogApi";
 import { supabase } from "../../lib/supabase";
 import { PATHS } from "../../utils/paths";
+import { formatInvoiceReportTableTitle } from "../../utils/invoiceReportDisplayTitle";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -37,34 +37,6 @@ function formatDate(dateString: string) {
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}.${m}.${day}.`;
-}
-
-// 기간 표기용 (한국어)
-function formatKoreanDate(dateString: string) {
-    const d = new Date(dateString);
-    const month = d.getMonth() + 1;
-    const day = d.getDate();
-    return { month, day };
-}
-
-function formatKoreanPeriod(start?: string, end?: string) {
-    if (!start && !end) return "";
-    if (start && !end) {
-        const s = formatKoreanDate(start);
-        return `${s.month}월${s.day}일`;
-    }
-    if (!start && end) {
-        const e = formatKoreanDate(end);
-        return `${e.month}월${e.day}일`;
-    }
-
-    const s = formatKoreanDate(start as string);
-    const e = formatKoreanDate(end as string);
-    if (s.month === e.month) {
-        if (s.day === e.day) return `${s.month}월${s.day}일`;
-        return `${s.month}월${s.day}일~${e.day}일`;
-    }
-    return `${s.month}월${s.day}일~${e.month}월${e.day}일`;
 }
 
 export default function InvoicePage() {
@@ -181,10 +153,12 @@ export default function InvoicePage() {
                 const purpose = wl?.subject?.trim() ? wl.subject.trim() : "";
 
                 const p = periodMap.get(item.id);
-                const period = formatKoreanPeriod(p?.start, p?.end);
-
-                const parts = [period, vessel, purpose].filter(Boolean);
-                const combinedTitle = parts.length ? parts.join(" ") : "(제목 없음)";
+                const combinedTitle = formatInvoiceReportTableTitle({
+                    periodStart: p?.start,
+                    periodEnd: p?.end,
+                    vessel,
+                    subject: purpose,
+                });
 
                 return {
                     ...item,
@@ -439,7 +413,7 @@ export default function InvoicePage() {
                                                 label: "참관감독",
                                                 width: "14%",
                                                 render: (value: string) =>
-                                                    value?.trim ? (
+                                                    value?.trim() ? (
                                                         <span className="text-gray-500">
                                                             {value}
                                                         </span>

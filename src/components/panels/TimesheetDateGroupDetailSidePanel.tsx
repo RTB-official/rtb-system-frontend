@@ -125,6 +125,10 @@ interface TimesheetDateGroupDetailSidePanelProps {
     onRestoreAllDeletedTimesheetEntriesInScope?: (entryIds: number[]) => void;
     /** Panel calendar dates (YYYY-MM-DD) used to scope deleted/visible rows. */
     panelCalendarDates?: string[];
+    /** Scroll "Actual DB Entries - Full Group" to the first row whose work day matches (YYYY-MM-DD). */
+    scrollToFullGroupDate?: string;
+    /** Bump so the same date can scroll again on repeated row clicks. */
+    scrollToFullGroupNonce?: number;
 }
 
 type TravelChargeOverrideTarget = "home" | "lodging";
@@ -173,6 +177,19 @@ function scopeDeletedEntriesForInvoiceDateGroupPanel(
 /** Diagonal stripe for rows flagged as client-duplicated. */
 const DUPLICATED_ENTRY_ROW_STRIPE_IMAGE =
     "repeating-linear-gradient(135deg, transparent 0px, transparent 6px, rgba(15, 23, 42, 0.08) 6px, rgba(15, 23, 42, 0.08) 7px)";
+
+const entryTouchesCalendarDay = (
+    entry: TimesheetSourceEntryData,
+    calendarYmd: string
+) => {
+    if (!calendarYmd) {
+        return false;
+    }
+    if (!entry.dateFrom || !entry.dateTo) {
+        return entry.dateFrom === calendarYmd;
+    }
+    return calendarYmd >= entry.dateFrom && calendarYmd <= entry.dateTo;
+};
 
 const sortPeopleByKoreanOrder = (people: string[]) =>
     [...people].sort((a, b) => a.localeCompare(b, "ko"));
@@ -527,6 +544,8 @@ export default function TimesheetDateGroupDetailSidePanel({
     onRestoreDeletedTimesheetEntry,
     onRestoreAllDeletedTimesheetEntriesInScope,
     panelCalendarDates = [],
+    scrollToFullGroupDate,
+    scrollToFullGroupNonce,
 }: TimesheetDateGroupDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
@@ -555,6 +574,80 @@ export default function TimesheetDateGroupDetailSidePanel({
     const expandedRemarkKeyRef = useRef<string | null>(null);
     expandedRemarkKeyRef.current = expandedRemarkKey;
     const closeRemarkTimerRef = useRef<number | null>(null);
+
+    useLayoutEffect(() => {
+        if (!isOpen || !scrollToFullGroupDate) {
+            return;
+        }
+        const body = scrollBodyRef.current;
+        if (!body) {
+            return;
+        }
+        const run = () => {
+            const matchingEntries = fullGroupEntries.filter((e) =>
+                entryTouchesCalendarDay(e, scrollToFullGroupDate)
+            );
+            if (matchingEntries.length === 0) {
+                return;
+            }
+            const bodyRect = body.getBoundingClientRect();
+            let blockTop = Infinity;
+            let blockBottom = -Infinity;
+
+            const accumulateEntryRowChain = (mainTr: HTMLElement) => {
+                let el: Element | null = mainTr;
+                while (el && el.tagName === "TR") {
+                    const rect = el.getBoundingClientRect();
+                    const top = body.scrollTop + (rect.top - bodyRect.top);
+                    const bottom = top + rect.height;
+                    blockTop = Math.min(blockTop, top);
+                    blockBottom = Math.max(blockBottom, bottom);
+                    const nextEl: Element | null = el.nextElementSibling;
+                    if (
+                        nextEl instanceof HTMLTableRowElement &&
+                        !nextEl.hasAttribute("data-full-group-entry-id")
+                    ) {
+                        el = nextEl;
+                    } else {
+                        break;
+                    }
+                }
+            };
+
+            for (const entry of matchingEntries) {
+                const mainTr = body.querySelector<HTMLElement>(
+                    `[data-full-group-entry-id="${entry.id}"]`
+                );
+                if (mainTr) {
+                    accumulateEntryRowChain(mainTr);
+                }
+            }
+
+            if (!Number.isFinite(blockTop) || !Number.isFinite(blockBottom)) {
+                return;
+            }
+
+            const blockCenter = (blockTop + blockBottom) / 2;
+            const nextTop = blockCenter - body.clientHeight / 2;
+            const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
+            const clampedTop = Math.min(maxScroll, Math.max(0, nextTop));
+            const prefersReducedMotion =
+                typeof window !== "undefined" &&
+                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            body.scrollTo({
+                top: clampedTop,
+                behavior: prefersReducedMotion ? "auto" : "smooth",
+            });
+        };
+        requestAnimationFrame(() => {
+            requestAnimationFrame(run);
+        });
+    }, [
+        isOpen,
+        scrollToFullGroupDate,
+        scrollToFullGroupNonce,
+        fullGroupEntries,
+    ]);
 
     useEffect(() => {
         setRemarkPersonReplacePickerKey(null);
@@ -2271,7 +2364,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                 </div>
 
                 <div ref={scrollBodyRef} className="flex-1 overflow-y-auto px-6 py-6">
-                    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                    <div className="rounded-xl border border-gray-200 bg-white overflow-visible">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-blue-50 px-4 py-3">
                             <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
                                 Actual DB Entries - Full Group
@@ -2535,10 +2628,39 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                     onDeleteTimesheetEntry ||
                                                     onUpdateTimesheetEntry
                                             );
+                                            const isTimesheetFocusedDateRow = Boolean(
+                                                scrollToFullGroupDate &&
+                                                    entryTouchesCalendarDay(
+                                                        entry,
+                                                        scrollToFullGroupDate
+                                                    )
+                                            );
+                                            /** ???? ?? ??: ? ??? ?? + ?? ????? */
+                                            const focusedBlockTrClass = isTimesheetFocusedDateRow
+                                                ? "relative z-[1] -translate-y-px shadow-[0_1px_2px_rgba(15,23,42,0.05),0_4px_14px_-4px_rgba(15,23,42,0.07)] ring-1 ring-slate-900/[0.04]"
+                                                : "";
+                                            const rowSurfaceClass = rowPink
+                                                ? isTimesheetFocusedDateRow
+                                                    ? "align-top bg-pink-100"
+                                                    : "align-top bg-pink-50"
+                                                : isTimesheetFocusedDateRow
+                                                  ? "align-top bg-slate-100"
+                                                  : "align-top bg-white";
+                                            const expandedRowSurfaceClass = rowPink
+                                                ? isTimesheetFocusedDateRow
+                                                    ? "bg-pink-100"
+                                                    : "bg-pink-50"
+                                                : isTimesheetFocusedDateRow
+                                                  ? "bg-slate-100"
+                                                  : "bg-slate-50/60";
                                             const dbRowHoverClass = dbRowInteractive
                                                 ? rowPink
-                                                    ? "cursor-pointer transition-colors hover:bg-pink-100/90"
-                                                    : "cursor-pointer transition-colors hover:bg-gray-50"
+                                                    ? isTimesheetFocusedDateRow
+                                                        ? "cursor-pointer transition-colors hover:bg-pink-200/85"
+                                                        : "cursor-pointer transition-colors hover:bg-pink-100/90"
+                                                    : isTimesheetFocusedDateRow
+                                                      ? "cursor-pointer transition-colors hover:bg-slate-200/90"
+                                                      : "cursor-pointer transition-colors hover:bg-gray-50"
                                                 : "";
 
                                             const duplicatedStripeStyle =
@@ -2552,16 +2674,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                                             return (
                                                 <Fragment key={`full-group-${entry.id}-${index}`}>
                                                     <tr
+                                                        data-full-group-entry-id={entry.id}
+                                                        data-full-group-row-date={entry.dateFrom}
                                                         data-db-entry-row={
                                                             dbRowInteractive
                                                                 ? "true"
                                                                 : undefined
                                                         }
-                                                        className={`${
-                                                            rowPink
-                                                                ? "align-top bg-pink-50"
-                                                                : "align-top bg-white"
-                                                        } ${dbRowHoverClass}`}
+                                                        className={`${rowSurfaceClass} ${dbRowHoverClass} ${focusedBlockTrClass}`}
                                                         style={duplicatedStripeStyle}
                                                         onClick={
                                                             dbRowInteractive
@@ -2753,11 +2873,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                     </tr>
                                                     {travelEditorData && isEditorRowVisible ? (
                                                         <tr
-                                                            className={
-                                                                rowPink
-                                                                    ? "bg-pink-50"
-                                                                    : "bg-slate-50/60"
-                                                            }
+                                                            className={`${expandedRowSurfaceClass} ${focusedBlockTrClass}`}
                                                             style={duplicatedStripeStyle}
                                                         >
                                                             <td
@@ -2819,11 +2935,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                     {onUpdateTimesheetEntry &&
                                                     isEntryEditRowVisible ? (
                                                         <tr
-                                                            className={
-                                                                rowPink
-                                                                    ? "bg-pink-50"
-                                                                    : "bg-slate-50/60"
-                                                            }
+                                                            className={`${expandedRowSurfaceClass} ${focusedBlockTrClass}`}
                                                         >
                                                             <td
                                                                 colSpan={10}
@@ -2885,11 +2997,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                     ) : null}
                                                     {isRemarkEditorRowVisible ? (
                                                         <tr
-                                                            className={
-                                                                rowPink
-                                                                    ? "bg-pink-50"
-                                                                    : "bg-slate-50/60"
-                                                            }
+                                                            className={`${expandedRowSurfaceClass} ${focusedBlockTrClass}`}
                                                             style={duplicatedStripeStyle}
                                                         >
                                                             <td

@@ -1,6 +1,7 @@
 // src/pages/Report/ReportPdfPage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import html2canvas from "html2canvas";
 import {
     getReportPdfData,
     PdfEntry,
@@ -8,6 +9,9 @@ import {
     PdfMaterial,
     PdfReceipt,
 } from "../../lib/reportPdfData";
+import { saveCanvasAsMultiPagePdf } from "../../lib/reportPdfCanvasToPdf";
+import { prepareReportPdfHtml2CanvasClone } from "../../lib/reportPdfHtml2Canvas";
+import { formatReportPdfFilename } from "../../utils/reportPdfFilename";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
 
@@ -55,36 +59,6 @@ function formatWon(n: number) {
     return n.toLocaleString("ko-KR");
 }
 
-function formatPdfFilename(
-    start?: string | null,
-    end?: string | null,
-    vessel?: string | null,
-    subject?: string | null
-) {
-    if (!start) return "출장보고서";
-
-    const fmt = (ymd: string) => {
-        const d = new Date(ymd);
-        if (Number.isNaN(d.getTime())) return "";
-        const m = d.getMonth() + 1;
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${m}월${day}일`;
-    };
-
-    const s = fmt(start);
-    const e = end ? fmt(end) : s;
-
-    const vesselText = vessel ? `${vessel}` : "";
-    const subjectText = subject ? subject.trim() : "";
-
-    // ✅ 하루짜리면 "~" 구간 제거
-    const datePart = !end || start === end ? `${s}` : `${s}~${e}`;
-
-    return `${datePart} ${vesselText} ${subjectText}`.trim();
-}
-
-
-
 // ✅ 고정 양력 공휴일(음력은 브라우저에서 계산이 어려워 제외)
 function kr_fixed_holidays(year: number) {
     const y = year;
@@ -104,6 +78,8 @@ function kr_fixed_holidays(year: number) {
 export default function ReportPdfPage() {
     const [params] = useSearchParams();
     const id = Number(params.get("id") ?? 0);
+    /** 인보이스 등: 인쇄 없이 파일로 바로 저장 */
+    const fileDownload = params.get("download") === "file";
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -475,13 +451,142 @@ export default function ReportPdfPage() {
         return totals;
     }, [expenses]);
 
+    const receiptImgs = useMemo(() => {
+        return (receipts ?? [])
+            .map((r, index) => {
+                const uniqueId = r.id ?? (index + 1000000);
+                const fileUrl = (r.file_url ?? "").trim();
+                const storagePath = r.storage_path ?? r.path ?? "";
+
+                if (process.env.NODE_ENV === "development") {
+                    console.log(`Receipt ${uniqueId}:`, {
+                        id: r.id,
+                        uniqueId,
+                        fileUrl,
+                        storagePath,
+                        fileName: r.file_name,
+                    });
+                }
+
+                return {
+                    id: uniqueId,
+                    url: fileUrl,
+                    name: (r.file_name ?? "").trim(),
+                    storagePath: storagePath,
+                    category: r.category ?? "",
+                };
+            })
+            .filter((x) => Boolean(x.url));
+    }, [receipts]);
+
+    // ✅ 인보이스 등: `?download=file` 이면 인쇄 대신 html2canvas → jsPDF로 바로 저장
+    useEffect(() => {
+        if (!fileDownload || loading || error || !log) return;
+
+        let cancelled = false;
+
+        const run = async () => {
+            const filenameBase = formatReportPdfFilename(
+                workPeriodText.split(" ~ ")[0] || log?.date_from,
+                workPeriodText.split(" ~ ")[1] || log?.date_to,
+                log?.vessel,
+                log?.subject
+            );
+            setIsPreparingPrint(true);
+            try {
+                const map = await buildPrintReceiptMap(
+                    receiptImgs.map((r) => ({ id: r.id, url: r.url })),
+                    1200,
+                    0.7
+                );
+                if (cancelled) return;
+                setPrintReceiptSrcMap(map);
+                await new Promise((r) => setTimeout(r, 100));
+                if ("fonts" in document) {
+                    await (document as any).fonts.ready;
+                }
+                await new Promise((r) => setTimeout(r, 200));
+                if (cancelled) return;
+
+                const sheet = document.querySelector(
+                    ".sheet"
+                ) as HTMLElement | null;
+                if (!sheet) {
+                    throw new Error("PDF 렌더 영역을 찾지 못했습니다.");
+                }
+
+                const canvas = await html2canvas(sheet, {
+                    scale: 2,
+                    backgroundColor: "#ffffff",
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false,
+                    /** oklch 등은 html2canvas CSS 파서가 처리 못 함 → SVG foreignObject로 렌더(파싱 우회) */
+                    foreignObjectRendering: true,
+                    onclone(clonedDoc, clonedSheet) {
+                        prepareReportPdfHtml2CanvasClone(
+                            clonedDoc,
+                            clonedSheet,
+                            sheet
+                        );
+                    },
+                });
+                if (cancelled) return;
+
+                saveCanvasAsMultiPagePdf(canvas, filenameBase);
+
+                if (window.parent !== window) {
+                    window.parent.postMessage(
+                        {
+                            type: "rtb-report-pdf-download",
+                            status: "ok",
+                            workLogId: id,
+                        },
+                        "*"
+                    );
+                }
+            } catch (e: any) {
+                if (window.parent !== window) {
+                    window.parent.postMessage(
+                        {
+                            type: "rtb-report-pdf-download",
+                            status: "error",
+                            workLogId: id,
+                            message: e?.message ?? String(e),
+                        },
+                        "*"
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setIsPreparingPrint(false);
+                    setPrintReceiptSrcMap({});
+                }
+            }
+        };
+
+        const timer = window.setTimeout(() => void run(), 50);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [
+        fileDownload,
+        loading,
+        error,
+        log,
+        id,
+        workPeriodText,
+        receiptImgs,
+    ]);
+
     // ✅ 웹페이지 제목을 PDF 파일명 규칙과 동일하게 설정
     useEffect(() => {
         if (!log || !workPeriodText) return;
 
         const [start, end] = workPeriodText.split(" ~ ");
 
-        const title = formatPdfFilename(
+        const title = formatReportPdfFilename(
             start,
             end || start,
             log.vessel,
@@ -494,35 +599,6 @@ export default function ReportPdfPage() {
     if (loading) return <div className="p-6 text-sm text-gray-600">PDF 로딩중…</div>;
     if (error || !log) return <div className="p-6 text-sm text-red-600">{error ?? "오류"}</div>;
 
-    // 영수증 URL 결정(테이블에 file_url이 있으면 그걸 우선 사용)
-    const receiptImgs = (receipts ?? [])
-        .map((r, index) => {
-            // 각 영수증이 고유한 id를 가지도록 보장
-            const uniqueId = r.id ?? (index + 1000000); // id가 없으면 큰 숫자로 고유값 생성
-            const fileUrl = (r.file_url ?? "").trim();
-            const storagePath = r.storage_path ?? r.path ?? "";
-            
-            // 디버깅: 같은 URL이 여러 영수증에 할당되는지 확인
-            if (process.env.NODE_ENV === 'development') {
-                console.log(`Receipt ${uniqueId}:`, {
-                    id: r.id,
-                    uniqueId,
-                    fileUrl,
-                    storagePath,
-                    fileName: r.file_name,
-                });
-            }
-            
-            return {
-                id: uniqueId,
-                url: fileUrl,
-                name: (r.file_name ?? "").trim(),
-                storagePath: storagePath,
-                category: r.category ?? "",
-            };
-        })
-        .filter((x) => Boolean(x.url));
-
     // 이미지 로드 에러 핸들러
     const handleImageError = (receiptId: number) => {
         setImageErrors((prev) => new Set(prev).add(receiptId));
@@ -531,12 +607,13 @@ export default function ReportPdfPage() {
         return (
             <div>
                 {/* ✅ 브라우저 우측 상단 고정 버튼 (내용과 완전 분리) */}
+                {!fileDownload && (
                 <div className="pdf-save-fixed">
                 <button
                 className="pdf-save-btn"
                 onClick={async () => {
                     // ✅ 파일명 규칙 적용
-                    const filename = formatPdfFilename(
+                    const filename = formatReportPdfFilename(
                     workPeriodText.split(" ~ ")[0] || log?.date_from,
                     workPeriodText.split(" ~ ")[1] || log?.date_to,
                     log?.vessel,
@@ -607,6 +684,7 @@ export default function ReportPdfPage() {
                         <span>PDF로 저장</span>
                     </button>
                 </div>
+                )}
 
                 {/* ✅ 신형 PDF CSS (public 기준으로 폰트 경로만 조정) */}
                 <style>{`
