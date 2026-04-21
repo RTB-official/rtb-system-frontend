@@ -10,6 +10,7 @@ import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import { IconMore, IconPlus } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
+import { useUser } from "../../hooks/useUser";
 import { deleteTbm, getTbmList, TbmRecord } from "../../lib/tbmApi";
 import { generateTbmPdf } from "../../lib/pdfUtils";
 import Chip from "../../components/ui/Chip";
@@ -19,6 +20,60 @@ import useIsMobile from "../../hooks/useIsMobile";
 interface TbmListItem extends TbmRecord {
     participant_total: number;
     participant_signed: number;
+    participantRows: Array<{ user_id: string; signed_at: string | null }>;
+}
+
+function isUserInvolvedInTbm(
+    row: TbmListItem,
+    currentUserId: string | null
+): boolean {
+    if (!currentUserId) {
+        return false;
+    }
+    if (row.created_by === currentUserId) {
+        return true;
+    }
+    return row.participantRows.some((r) => r.user_id === currentUserId);
+}
+
+function getTbmListStatusChip(
+    row: TbmListItem,
+    currentUserId: string | null,
+    isAdmin: boolean,
+    isStaff: boolean
+): { label: string; color: string } | null {
+    if (isStaff && !isAdmin && !isUserInvolvedInTbm(row, currentUserId)) {
+        return null;
+    }
+
+    const allSigned =
+        row.participant_total > 0 &&
+        row.participant_total === row.participant_signed;
+
+    const useAuthorStyle =
+        (currentUserId && row.created_by === currentUserId) || isAdmin;
+
+    if (useAuthorStyle) {
+        return allSigned
+            ? { label: "완료", color: "blue-500" }
+            : { label: "진행중", color: "gray-400" };
+    }
+
+    const mine = row.participantRows.find((r) => r.user_id === currentUserId);
+    const userSigned = Boolean(mine?.signed_at);
+    return userSigned
+        ? { label: "서명 완료", color: "green-500" }
+        : { label: "진행중", color: "gray-400" };
+}
+
+function isTbmListRowInProgress(
+    row: TbmListItem,
+    currentUserId: string | null,
+    isAdmin: boolean,
+    isStaff: boolean
+): boolean {
+    const chip = getTbmListStatusChip(row, currentUserId, isAdmin, isStaff);
+    return chip?.label === "진행중";
 }
 
 export default function TbmListPage() {
@@ -26,6 +81,7 @@ export default function TbmListPage() {
     const [search, setSearch] = useState("");
     const [year, setYear] = useState("년도 전체");
     const [month, setMonth] = useState("월 전체");
+    const [inProgressOnly, setInProgressOnly] = useState(false);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
@@ -34,6 +90,7 @@ export default function TbmListPage() {
     const { showError, showSuccess } = useToast();
     const [loading, setLoading] = useState(true);
     const [tbmList, setTbmList] = useState<TbmListItem[]>([]);
+    const { currentUserId, userPermissions } = useUser();
     const isMobile = useIsMobile();
     const handleDownloadPdf = async (tbmId: string) => {
         await generateTbmPdf({
@@ -51,12 +108,26 @@ export default function TbmListPage() {
                     string,
                     { total: number; signed: number }
                 >();
+                const rowsByTbm = new Map<
+                    string,
+                    Array<{ user_id: string; signed_at: string | null }>
+                >();
 
                 (participants || []).forEach((p: any) => {
                     const entry = countMap.get(p.tbm_id) || { total: 0, signed: 0 };
                     entry.total += 1;
                     if (p.signed_at) entry.signed += 1;
                     countMap.set(p.tbm_id, entry);
+
+                    const uid = String(p.user_id ?? "");
+                    if (uid) {
+                        const arr = rowsByTbm.get(p.tbm_id) ?? [];
+                        arr.push({
+                            user_id: uid,
+                            signed_at: p.signed_at ?? null,
+                        });
+                        rowsByTbm.set(p.tbm_id, arr);
+                    }
                 });
 
                 const mapped = list.map((t) => {
@@ -65,6 +136,7 @@ export default function TbmListPage() {
                         ...t,
                         participant_total: counts.total,
                         participant_signed: counts.signed,
+                        participantRows: rowsByTbm.get(t.id) ?? [],
                     };
                 });
                 setTbmList(mapped);
@@ -111,9 +183,31 @@ export default function TbmListPage() {
                 matchMonth = dateParts.length > 1 && dateParts[1] === monthNum.padStart(2, "0");
             }
 
-            return matchSearch && matchYear && matchMonth;
+            if (!matchSearch || !matchYear || !matchMonth) {
+                return false;
+            }
+
+            if (inProgressOnly) {
+                return isTbmListRowInProgress(
+                    r,
+                    currentUserId,
+                    userPermissions.isAdmin,
+                    userPermissions.isStaff
+                );
+            }
+
+            return true;
         });
-    }, [tbmList, search, year, month]);
+    }, [
+        tbmList,
+        search,
+        year,
+        month,
+        inProgressOnly,
+        currentUserId,
+        userPermissions.isAdmin,
+        userPermissions.isStaff,
+    ]);
 
     const totalPages = Math.ceil(filtered.length / itemsPerPage);
     const currentData = useMemo(() => {
@@ -177,7 +271,20 @@ export default function TbmListPage() {
                                     iconPosition="left"
                                     className="w-full"
                                 />
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <Button
+                                        type="button"
+                                        variant={inProgressOnly ? "primary" : "outline"}
+                                        size="md"
+                                        className="shrink-0"
+                                        aria-pressed={inProgressOnly}
+                                        onClick={() => {
+                                            setInProgressOnly((v) => !v);
+                                            setCurrentPage(1);
+                                        }}
+                                    >
+                                        진행중인 TBM
+                                    </Button>
                                     <YearMonthSelector
                                         className="flex-1 min-w-0"
                                         year={year}
@@ -219,7 +326,12 @@ export default function TbmListPage() {
                             ) : (
                                 <ul className="flex flex-col gap-3 pb-2">
                                     {filtered.map((row) => {
-                                        const isComplete = row.participant_total > 0 && row.participant_total === row.participant_signed;
+                                        const statusChip = getTbmListStatusChip(
+                                            row,
+                                            currentUserId,
+                                            userPermissions.isAdmin,
+                                            userPermissions.isStaff
+                                        );
                                         const dateText = row.tbm_date ? String(row.tbm_date).replace(/-/g, ".") + "." : "-";
                                         const hasLine = Boolean(row.line_name);
                                         return (
@@ -238,14 +350,16 @@ export default function TbmListPage() {
                                                 >
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            {/* 진행 상태 배지 → 제목 바로 앞 */}
-                                                            <Chip
-                                                                color={isComplete ? "blue-500" : "gray-400"}
-                                                                variant="solid"
-                                                                size="sm"
-                                                            >
-                                                                {isComplete ? "완료" : "진행중"}
-                                                            </Chip>
+                                                            {/* 진행 상태 배지 → 제목 바로 앞 (staff는 본인 작성·참여 건만) */}
+                                                            {statusChip ? (
+                                                                <Chip
+                                                                    color={statusChip.color}
+                                                                    variant="solid"
+                                                                    size="sm"
+                                                                >
+                                                                    {statusChip.label}
+                                                                </Chip>
+                                                            ) : null}
                                                             {/* 제목: 출장보고서 목록과 동일하게 폰트 크기 줄이고 두 줄까지 표시 */}
                                                             <span className="text-[13px] md:text-[16px] font-semibold text-gray-900 line-clamp-2 break-words">
                                                                 {row.work_name || "-"}
@@ -319,6 +433,19 @@ export default function TbmListPage() {
                                         iconPosition="left"
                                         className="min-w-[300px] flex-1"
                                     />
+                                    <Button
+                                        type="button"
+                                        variant={inProgressOnly ? "primary" : "outline"}
+                                        size="md"
+                                        className="shrink-0"
+                                        aria-pressed={inProgressOnly}
+                                        onClick={() => {
+                                            setInProgressOnly((v) => !v);
+                                            setCurrentPage(1);
+                                        }}
+                                    >
+                                        진행중인 TBM
+                                    </Button>
                                     <YearMonthSelector
                                         className="shrink-0"
                                         year={year}
@@ -382,14 +509,22 @@ export default function TbmListPage() {
                                             width: "100px",
                                             align: "center",
                                             render: (_, row: TbmListItem) => {
-                                                const isComplete = row.participant_total > 0 && row.participant_total === row.participant_signed;
+                                                const statusChip = getTbmListStatusChip(
+                                                    row,
+                                                    currentUserId,
+                                                    userPermissions.isAdmin,
+                                                    userPermissions.isStaff
+                                                );
+                                                if (!statusChip) {
+                                                    return null;
+                                                }
                                                 return (
                                                     <Chip
-                                                        color={isComplete ? "blue-500" : "gray-400"}
+                                                        color={statusChip.color}
                                                         variant="solid"
                                                         size="md"
                                                     >
-                                                        {isComplete ? "완료" : "진행중"}
+                                                        {statusChip.label}
                                                     </Chip>
                                                 );
                                             },

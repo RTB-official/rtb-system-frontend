@@ -359,7 +359,7 @@ export async function getTbmList() {
 
     const { data: participants } = await supabase
         .from("tbm_participants")
-        .select("tbm_id, signed_at");
+        .select("tbm_id, user_id, signed_at");
 
     return {
         tbmList: (data || []) as TbmRecord[],

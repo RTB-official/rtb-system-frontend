@@ -8,6 +8,10 @@ import BaseModal from "../../components/ui/BaseModal";
 import TimesheetDateGroupDetailSidePanel from "../../components/panels/TimesheetDateGroupDetailSidePanel";
 import TimesheetRowDetailSidePanel from "../../components/panels/TimesheetRowDetailSidePanel";
 import { getWorkLogById, type WorkLogFullData } from "../../lib/workLogApi";
+import {
+    getWorkLogSplitChainMemberIds,
+    propagateWorkLogSplitChainPatch,
+} from "../../lib/workLogSplitChain";
 import { getCalendarEvents } from "../../lib/dashboardApi";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -75,6 +79,8 @@ interface TimesheetSourceEntryData {
     lunchWorked?: boolean;
     /** 사이드패널에서 복사로 만든 행(빨간 테두리 등) */
     clientDuplicated?: boolean;
+    /** 자정 분할 세그먼트 연동(work_log.split_group_id) */
+    splitGroupId?: string | null;
 }
 
 /** 동일 시작 시각일 때 정렬 안정화(복사·원본 행 순서 뒤바뀜 방지) */
@@ -118,6 +124,7 @@ function timesheetSourceToWorkLogEntry(
         moveTo: src.moveTo,
         lunch_worked: src.lunchWorked,
         clientDuplicated: src.clientDuplicated === true,
+        splitGroupId: src.splitGroupId,
     };
 }
 
@@ -6109,12 +6116,21 @@ export default function InvoiceCreatePage() {
 
     const replaceTimesheetEntryPerson = useCallback(
         (args: { entryId: number; fromPerson: string; toPerson: string }) => {
-            pushInvoiceUndoSnapshot();
             const { entryId, fromPerson, toPerson } = args;
+            const prevList = latestInvoiceStateRef.current?.workLogDataList ?? [];
+            pushInvoiceUndoSnapshot();
+            let chainIds = new Set<number>([entryId]);
+            for (const wl of prevList) {
+                if (wl.entries.some((e) => e.id === entryId)) {
+                    chainIds = new Set(getWorkLogSplitChainMemberIds(wl.entries, entryId));
+                    break;
+                }
+            }
+
             const patchEntryPersons = (
                 entry: TimesheetSourceEntryData
             ): TimesheetSourceEntryData =>
-                entry.id !== entryId
+                !chainIds.has(entry.id)
                     ? entry
                     : {
                           ...entry,
@@ -6127,7 +6143,7 @@ export default function InvoiceCreatePage() {
                 prev.map((wl) => ({
                     ...wl,
                     entries: wl.entries.map((en) =>
-                        en.id !== entryId
+                        !chainIds.has(en.id)
                             ? en
                             : {
                                   ...en,
@@ -6144,8 +6160,8 @@ export default function InvoiceCreatePage() {
                     return prev;
                 }
                 const touches =
-                    prev.sourceEntries.some((e) => e.id === entryId) ||
-                    prev.groupSourceEntries.some((e) => e.id === entryId);
+                    prev.sourceEntries.some((e) => chainIds.has(e.id)) ||
+                    prev.groupSourceEntries.some((e) => chainIds.has(e.id));
                 if (!touches) {
                     return prev;
                 }
@@ -6161,7 +6177,7 @@ export default function InvoiceCreatePage() {
                 if (!prev) {
                     return prev;
                 }
-                if (!prev.fullGroupEntries.some((e) => e.id === entryId)) {
+                if (!prev.fullGroupEntries.some((e) => chainIds.has(e.id))) {
                     return prev;
                 }
                 return {
@@ -6172,15 +6188,19 @@ export default function InvoiceCreatePage() {
             });
 
             setTravelChargeOverrides((prev) => {
-                const oldKey = `${entryId}:${fromPerson}`;
-                const newKey = `${entryId}:${toPerson}`;
-                if (!prev[oldKey]) {
-                    return prev;
-                }
+                let touched = false;
                 const next = { ...prev };
-                next[newKey] = next[oldKey];
-                delete next[oldKey];
-                return next;
+                for (const eid of chainIds) {
+                    const oldKey = `${eid}:${fromPerson}`;
+                    const newKey = `${eid}:${toPerson}`;
+                    if (!prev[oldKey]) {
+                        continue;
+                    }
+                    touched = true;
+                    next[newKey] = next[oldKey];
+                    delete next[oldKey];
+                }
+                return touched ? next : prev;
             });
         },
         [pushInvoiceUndoSnapshot]
@@ -6207,6 +6227,7 @@ export default function InvoiceCreatePage() {
             location,
             lunchWorked: entry.lunch_worked,
             clientDuplicated: entry.clientDuplicated === true,
+            splitGroupId: entry.splitGroupId,
         }),
         []
     );
@@ -6225,34 +6246,46 @@ export default function InvoiceCreatePage() {
     const updateTimesheetEntry = useCallback(
         (payload: TimesheetEntryUpdatePayload) => {
             const prevList = latestInvoiceStateRef.current?.workLogDataList ?? [];
-            let mapped: TimesheetSourceEntryData | null = null;
+            const panelMappedById = new Map<number, TimesheetSourceEntryData>();
             const nextList = prevList.map((wl) => {
                 const idx = wl.entries.findIndex((e) => e.id === payload.entryId);
                 if (idx === -1) {
                     return wl;
                 }
-                const prevEn = wl.entries[idx];
-                const nextEn: WorkLogFullData["entries"][number] = {
-                    ...prevEn,
+                const patch = {
                     descType: payload.descType,
                     dateFrom: payload.dateFrom,
                     dateTo: payload.dateTo,
                     timeFrom: payload.timeFrom,
                     timeTo: payload.timeTo,
                     persons: [...payload.persons],
-                    clientDuplicated: prevEn.clientDuplicated === true,
                 };
-                const entries = [...wl.entries];
-                entries[idx] = nextEn;
-                mapped = mapWorkLogEntryToTimesheetSource(
-                    nextEn,
-                    wl.workLog.id,
-                    wl.workLog.location ?? null
+                const entries = propagateWorkLogSplitChainPatch(
+                    wl.entries,
+                    payload.entryId,
+                    patch
                 );
+                const memberIds = getWorkLogSplitChainMemberIds(
+                    entries,
+                    payload.entryId
+                );
+                for (const mid of memberIds) {
+                    const u = entries.find((e) => e.id === mid);
+                    if (u) {
+                        panelMappedById.set(
+                            mid,
+                            mapWorkLogEntryToTimesheetSource(
+                                u,
+                                wl.workLog.id,
+                                wl.workLog.location ?? null
+                            )
+                        );
+                    }
+                }
                 return { ...wl, entries };
             });
 
-            if (!mapped) {
+            if (panelMappedById.size === 0) {
                 showError("엔트리를 찾을 수 없습니다.");
                 return;
             }
@@ -6271,7 +6304,7 @@ export default function InvoiceCreatePage() {
             });
 
             const mergePanel = (arr: TimesheetSourceEntryData[]) =>
-                arr.map((e) => (e.id === payload.entryId ? mapped! : e));
+                arr.map((e) => panelMappedById.get(e.id) ?? e);
 
             setSelectedTimesheetRow((p) =>
                 p
@@ -6284,7 +6317,7 @@ export default function InvoiceCreatePage() {
             );
 
             setSelectedTimesheetDateGroupPanel((p) =>
-                p && p.fullGroupEntries.some((e) => e.id === payload.entryId)
+                p && p.fullGroupEntries.some((e) => panelMappedById.has(e.id))
                     ? {
                           ...p,
                           fullGroupEntries: mergePanel(p.fullGroupEntries),
