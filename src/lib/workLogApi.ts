@@ -100,6 +100,8 @@ export interface CreateWorkLogInput {
         moveFrom?: string;
         moveTo?: string;
         lunch_worked?: boolean;
+        /** 자정 분할로 묶인 세그먼트 공통 id (DB `split_group_id`) */
+        splitGroupId?: string | null;
     }>;
     expenses?: Array<{
         id?: number;
@@ -144,6 +146,8 @@ export interface WorkLogFullData {
         lunch_worked?: boolean;
         /** 인보이스 생성 화면에서 복사로 만든 항목(저장 payload에는 미사용) */
         clientDuplicated?: boolean;
+        /** 자정 분할 세그먼트 연동용 (같은 값이면 상세·인원·유형 동기화) */
+        splitGroupId?: string | null;
     }>;
     expenses: Array<{
         id: number;
@@ -171,6 +175,13 @@ export interface WorkLogFullData {
 
 // ==================== 유틸리티 함수 ====================
 
+function newWorkLogSplitGroupId(): string {
+    if (typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID) {
+        return globalThis.crypto.randomUUID();
+    }
+    return `split_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+}
+
 /**
  * 날짜가 넘어가는 entry를 분할 (24시(00시) 기준으로 나눔)
  * 예: 2월 28일 18시 ~ 3월 1일 06시
@@ -189,6 +200,7 @@ function splitEntryByDate(entry: {
     moveFrom?: string;
     moveTo?: string;
     lunch_worked?: boolean;
+    splitGroupId?: string | null;
 }): {
     segments: Array<{
         id?: number;
@@ -203,6 +215,7 @@ function splitEntryByDate(entry: {
         moveFrom?: string;
         moveTo?: string;
         lunch_worked?: boolean;
+        splitGroupId?: string | null;
     }>;
     originalId?: number; // 분할된 경우 원본 id (삭제용)
 } {
@@ -211,8 +224,23 @@ function splitEntryByDate(entry: {
         return { segments: [entry] };
     }
 
-    const segments: Array<typeof entry> = [];
+    const segments: Array<{
+        id?: number;
+        dateFrom: string;
+        timeFrom?: string;
+        dateTo: string;
+        timeTo?: string;
+        descType: string;
+        details?: string;
+        persons?: string[];
+        note?: string;
+        moveFrom?: string;
+        moveTo?: string;
+        lunch_worked?: boolean;
+        splitGroupId?: string | null;
+    }> = [];
     const originalId = entry.id;
+    const splitGroupId = newWorkLogSplitGroupId();
 
     // 첫 번째 세그먼트: dateFrom ~ dateFrom의 24:00
     segments.push({
@@ -220,6 +248,7 @@ function splitEntryByDate(entry: {
         id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
         dateTo: entry.dateFrom,
         timeTo: "24:00",
+        splitGroupId,
     });
 
     // 중간 날짜들 (있는 경우): 각 날짜의 00:00 ~ 24:00
@@ -237,6 +266,7 @@ function splitEntryByDate(entry: {
             timeFrom: "00:00",
             dateTo: dateStr,
             timeTo: "24:00",
+            splitGroupId,
         });
         currentDate.setDate(currentDate.getDate() + 1);
     }
@@ -247,6 +277,7 @@ function splitEntryByDate(entry: {
         id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
         dateFrom: entry.dateTo,
         timeFrom: "00:00",
+        splitGroupId,
     });
 
     return { segments, originalId };
@@ -333,6 +364,7 @@ export async function createWorkLog(
                                 move_from: segment.moveFrom || null,
                                 move_to: segment.moveTo || null,
                                 lunch_worked: segment.lunch_worked ?? false,
+                                split_group_id: segment.splitGroupId ?? null,
                             },
                         ])
                         .select()
@@ -733,6 +765,7 @@ export async function getWorkLogById(
                 moveFrom: entry.move_from || undefined,
                 moveTo: entry.move_to || undefined,
                 lunch_worked: entry.lunch_worked ?? false,
+                splitGroupId: (entry as { split_group_id?: string | null }).split_group_id ?? undefined,
             });
         }
     }
@@ -1055,6 +1088,7 @@ for (const r of curRows ?? []) {
           move_from: e.moveFrom || null,
           move_to: e.moveTo || null,
           lunch_worked: e.lunch_worked ?? false,
+          split_group_id: (e as { splitGroupId?: string | null }).splitGroupId ?? null,
         };
     
         const incomingId = Number((e as any).id);
@@ -1452,3 +1486,8 @@ export async function deleteWorkLog(workLogId: number): Promise<void> {
         throw error;
     }
 }
+
+export {
+    getWorkLogSplitChainMemberIds,
+    propagateWorkLogSplitChainPatch,
+} from "./workLogSplitChain";
