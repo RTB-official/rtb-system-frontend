@@ -1,5 +1,12 @@
 // src/pages/Invoice/InvoiceCreatePage.tsx
-import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode,
+} from "react";
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -23,6 +30,10 @@ import {
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
 } from "../../utils/workEntryBillableHours";
+import {
+    aggregateWorkLogEntryDateRange,
+    formatInvoiceReportTableTitle,
+} from "../../utils/invoiceReportDisplayTitle";
 
 interface TimesheetRow {
     rowId: string;
@@ -312,6 +323,10 @@ interface TimesheetDateGroupPanelData {
     workLocationsByDate: Record<string, Record<string, string[]>>;
     /** 패널이 다루는 행 날짜(YYYY-MM-DD) — 엔트리가 모두 삭제된 뒤에도 삭제 목록 스코프 유지 */
     panelCalendarDates?: string[];
+    /** Full Group 테이블에서 해당 달력 날짜(YYYY-MM-DD)가 보이도록 스크롤 */
+    scrollToFullGroupDate?: string;
+    /** 동일 날짜로 다시 스크롤해야 할 때 구분 */
+    scrollToFullGroupNonce?: number;
 }
 
 type PersonVesselHistoryItem = {
@@ -639,6 +654,22 @@ export default function InvoiceCreatePage() {
     >(null);
     const [hoveredTimesheetDateGroupKey, setHoveredTimesheetDateGroupKey] =
         useState<string | null>(null);
+    const [invoicePdfMenuOpen, setInvoicePdfMenuOpen] = useState(false);
+    const [invoicePdfSelectedIds, setInvoicePdfSelectedIds] = useState<number[]>(
+        []
+    );
+    /** 인보이스 PDF: 숨김 iframe으로 순차 파일 다운로드 (팝업/인쇄 없음) */
+    const invoicePdfDownloadQueueRef = useRef<number[]>([]);
+    const [invoicePdfDownloadIframeId, setInvoicePdfDownloadIframeId] =
+        useState<number | null>(null);
+    const [invoicePdfDownloadIframeNonce, setInvoicePdfDownloadIframeNonce] =
+        useState(0);
+    const invoicePdfDownloadIframeRef = useRef<HTMLIFrameElement | null>(null);
+    const invoicePdfMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+    const invoicePdfMenuPanelRef = useRef<HTMLDivElement | null>(null);
+    /** 타임시트 행 클릭으로 Date Group 패널을 연 경우 행 하이라이트 */
+    const [timesheetRowSidebarHighlightKey, setTimesheetRowSidebarHighlightKey] =
+        useState<string | null>(null);
     const [timesheetView, setTimesheetView] = useState<"rnd" | "normal">("rnd");
     const [normalTimesheetIndex, setNormalTimesheetIndex] = useState(0);
     const [normalTimesheetGrouping, setNormalTimesheetGrouping] = useState<
@@ -676,6 +707,9 @@ export default function InvoiceCreatePage() {
     >({});
     const [invoiceResetConfirmOpen, setInvoiceResetConfirmOpen] =
         useState(false);
+    const [invoicePdfDownloadConfirmOpen, setInvoicePdfDownloadConfirmOpen] =
+        useState(false);
+    const invoicePdfDownloadPendingIdsRef = useRef<number[]>([]);
     const [timesheetEntryEditorRemountTickById, setTimesheetEntryEditorRemountTickById] =
         useState<Record<number, number>>({});
     const [deletedTimesheetEntries, setDeletedTimesheetEntries] = useState<
@@ -3635,6 +3669,15 @@ export default function InvoiceCreatePage() {
     const workOrderFromDisplay = "Everllence ELU KOREA";
     const engineTypeDisplay = workLogDataList[0]?.workLog.engine || "";
     const workItemDisplay = workLogDataList[0]?.workLog.subject || "";
+    /** PDF 메뉴 목록: 짧을 때는 기존과 동일, 항목이 많으면 max-height만 완만히 증가 */
+    const invoicePdfMenuListMaxHeight = useMemo(() => {
+        const n = workLogDataList.length;
+        if (n <= 10) {
+            return "min(60vh, 22rem)";
+        }
+        const extraRem = Math.min((n - 10) * 0.52, 11);
+        return `min(78vh, ${22 + extraRem}rem)`;
+    }, [workLogDataList.length]);
     const formatBoundaryTime = (value: string) => {
         if (!value) return "";
         return value.includes(":")
@@ -5697,6 +5740,7 @@ export default function InvoiceCreatePage() {
         const groupKey = getTimesheetDateGroupKey(sectionTitle, row);
         const orderedKeys = getOrderedTimesheetDateGroupKeys(sectionTitle);
         setSelectedTimesheetDateGroupPanel(null);
+        setTimesheetRowSidebarHighlightKey(null);
 
         setSelectedTimesheetDateGroupKeys((previousKeys) => {
             const anchorKey =
@@ -5910,7 +5954,11 @@ export default function InvoiceCreatePage() {
 
     const openTimesheetTotalPanel = (
         sectionTitle: string,
-        rows: TimesheetRow[]
+        rows: TimesheetRow[],
+        options?: {
+            scrollToFullGroupDate?: string;
+            timesheetSidebarHighlightRowKey?: string;
+        }
     ) => {
         const workLocationContextByDate =
             buildWorkLocationContextByDate(timesheetRows);
@@ -5921,12 +5969,26 @@ export default function InvoiceCreatePage() {
             new Set(rows.map((r) => r.date))
         ).sort();
 
+        if (
+            options?.scrollToFullGroupDate &&
+            options.timesheetSidebarHighlightRowKey
+        ) {
+            setTimesheetRowSidebarHighlightKey(
+                options.timesheetSidebarHighlightRowKey
+            );
+        } else if (!options?.scrollToFullGroupDate) {
+            setTimesheetRowSidebarHighlightKey(null);
+        }
+
+        const scrollDate = options?.scrollToFullGroupDate;
         setSelectedTimesheetDateGroupPanel({
             blockKey: `${sectionTitle}-total`,
             sectionTitle,
             fullGroupEntries: getFullGroupEntriesForRows(rows),
             workLocationsByDate: workLocationContextByDate,
             panelCalendarDates,
+            scrollToFullGroupDate: scrollDate,
+            scrollToFullGroupNonce: scrollDate ? Date.now() : undefined,
         });
     };
 
@@ -6847,14 +6909,34 @@ export default function InvoiceCreatePage() {
         [timesheetRows]
     );
 
+    const ALL_DATE_GROUP_DETAIL_BLOCK_KEY = "ALL DATE GROUP DETAIL-total";
+
     const openTimesheetRowModal = (sectionTitle: string, row: TimesheetRow) => {
-        const data = buildTimesheetRowModalData(sectionTitle, row);
-        if (!data) {
+        if (!isTimesheetRowInteractive(row)) {
             return;
         }
-
-        setSelectedTimesheetDateGroupPanel(null);
-        setSelectedTimesheetRow(data);
+        const rowKey = getTimesheetRowKey(sectionTitle, row);
+        if (
+            selectedTimesheetDateGroupPanel?.blockKey ===
+                ALL_DATE_GROUP_DETAIL_BLOCK_KEY &&
+            timesheetRowSidebarHighlightKey === rowKey
+        ) {
+            setTimesheetRowSidebarHighlightKey(null);
+            setSelectedTimesheetDateGroupPanel((prev) =>
+                prev && prev.blockKey === ALL_DATE_GROUP_DETAIL_BLOCK_KEY
+                    ? {
+                          ...prev,
+                          scrollToFullGroupDate: undefined,
+                          scrollToFullGroupNonce: undefined,
+                      }
+                    : prev
+            );
+            return;
+        }
+        openTimesheetTotalPanel("ALL DATE GROUP DETAIL", timesheetRows, {
+            scrollToFullGroupDate: row.date,
+            timesheetSidebarHighlightRowKey: rowKey,
+        });
     };
 
     useEffect(() => {
@@ -6947,6 +7029,10 @@ export default function InvoiceCreatePage() {
         const rowKey = getTimesheetRowKey(sectionTitle, row);
 
         if (selectedTimesheetRow?.rowKey === rowKey) {
+            return "bg-blue-100";
+        }
+
+        if (timesheetRowSidebarHighlightKey === rowKey) {
             return "bg-blue-100";
         }
 
@@ -7074,14 +7160,123 @@ export default function InvoiceCreatePage() {
             setSelectedTimesheetDateGroupKeys([]);
             setSelectedTimesheetDateGroupAnchorKey(null);
             setSelectedTimesheetDateGroupPanel(null);
+            setTimesheetRowSidebarHighlightKey(null);
         };
 
         document.addEventListener("mousedown", handlePointerDown);
         return () => document.removeEventListener("mousedown", handlePointerDown);
     }, [selectedTimesheetDateGroupKeys.length]);
 
+    useEffect(() => {
+        if (!invoicePdfMenuOpen) {
+            return;
+        }
+        const onPointerDown = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (
+                invoicePdfMenuPanelRef.current?.contains(target) ||
+                invoicePdfMenuButtonRef.current?.contains(target)
+            ) {
+                return;
+            }
+            setInvoicePdfMenuOpen(false);
+        };
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setInvoicePdfMenuOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("keydown", onKeyDown);
+        return () => {
+            document.removeEventListener("mousedown", onPointerDown);
+            document.removeEventListener("keydown", onKeyDown);
+        };
+    }, [invoicePdfMenuOpen]);
+
+    useEffect(() => {
+        if (!invoicePdfMenuOpen) {
+            setInvoicePdfSelectedIds([]);
+        }
+    }, [invoicePdfMenuOpen]);
+
+    const advanceInvoicePdfDownload = useCallback(() => {
+        const next = invoicePdfDownloadQueueRef.current.shift();
+        if (next == null) {
+            setInvoicePdfDownloadIframeId(null);
+            return;
+        }
+        setInvoicePdfDownloadIframeId(next);
+        setInvoicePdfDownloadIframeNonce((n) => n + 1);
+    }, []);
+
+    const startInvoicePdfFileDownloads = useCallback((ids: number[]) => {
+        if (ids.length === 0) return;
+        invoicePdfDownloadQueueRef.current = ids.slice(1);
+        setInvoicePdfDownloadIframeId(ids[0]);
+        setInvoicePdfDownloadIframeNonce((n) => n + 1);
+    }, []);
+
+    useEffect(() => {
+        const onMsg = (e: MessageEvent) => {
+            if (e.data?.type !== "rtb-report-pdf-download") return;
+            if (e.source !== invoicePdfDownloadIframeRef.current?.contentWindow) {
+                return;
+            }
+            if (e.data.status === "error") {
+                showError(e.data.message ?? "PDF 다운로드에 실패했습니다.");
+            }
+            advanceInvoicePdfDownload();
+        };
+        window.addEventListener("message", onMsg);
+        return () => window.removeEventListener("message", onMsg);
+    }, [advanceInvoicePdfDownload, showError]);
+
+    const toggleInvoicePdfSelectedId = useCallback((id: number) => {
+        setInvoicePdfSelectedIds((prev) =>
+            prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+        );
+    }, []);
+
+    const handleInvoicePdfToggleSelectAll = useCallback(() => {
+        const allIds = workLogDataList.map((wl) => wl.workLog.id);
+        if (allIds.length === 0) return;
+        setInvoicePdfSelectedIds((prev) =>
+            prev.length === allIds.length ? [] : allIds
+        );
+    }, [workLogDataList]);
+
+    const handleInvoicePdfDownloadIconClick = useCallback(() => {
+        if (invoicePdfSelectedIds.length === 0) {
+            showError("다운로드할 보고서를 선택하세요.");
+            return;
+        }
+        invoicePdfDownloadPendingIdsRef.current = [...invoicePdfSelectedIds];
+        setInvoicePdfDownloadConfirmOpen(true);
+    }, [invoicePdfSelectedIds, showError]);
+
+    const handleConfirmInvoicePdfDownload = useCallback(() => {
+        setInvoicePdfDownloadConfirmOpen(false);
+        const ids = invoicePdfDownloadPendingIdsRef.current;
+        invoicePdfDownloadPendingIdsRef.current = [];
+        if (ids.length === 0) return;
+        startInvoicePdfFileDownloads(ids);
+        setInvoicePdfMenuOpen(false);
+        setInvoicePdfSelectedIds([]);
+    }, [startInvoicePdfFileDownloads]);
+
     return (
         <div className="flex h-screen bg-white overflow-hidden font-pretendard">
+            {invoicePdfDownloadIframeId != null ? (
+                <iframe
+                    ref={invoicePdfDownloadIframeRef}
+                    key={`${invoicePdfDownloadIframeId}-${invoicePdfDownloadIframeNonce}`}
+                    title="PDF 다운로드"
+                    src={`/report/pdf?id=${invoicePdfDownloadIframeId}&download=file`}
+                    className="fixed left-0 top-0 w-px h-px opacity-0 pointer-events-none border-0"
+                    aria-hidden
+                />
+            ) : null}
             {/* Overlay - 사이드바가 열려있을 때만 표시 */}
             {sidebarOpen && (
                 <div
@@ -7109,7 +7304,249 @@ export default function InvoiceCreatePage() {
                     title="인보이스 생성"
                     onMenuClick={handleMenuClick}
                     showMenuOnDesktop={true}
+                    rightContent={
+                        !loading && workLogDataList.length > 0 ? (
+                            <div className="flex items-center gap-1.5 md:gap-2">
+                                <button
+                                    ref={invoicePdfMenuButtonRef}
+                                    type="button"
+                                    onClick={() =>
+                                        setInvoicePdfMenuOpen((open) => !open)
+                                    }
+                                    className={[
+                                        "h-12 min-w-[3rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100",
+                                        invoicePdfMenuOpen ? "bg-gray-100" : null,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                    aria-expanded={invoicePdfMenuOpen}
+                                    aria-haspopup="menu"
+                                    aria-label="보고서 PDF 목록"
+                                    title="PDF"
+                                >
+                                    PDF
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (
+                                            selectedTimesheetDateGroupPanel?.blockKey ===
+                                            "ALL DATE GROUP DETAIL-total"
+                                        ) {
+                                            setTimesheetRowSidebarHighlightKey(null);
+                                            setSelectedTimesheetDateGroupPanel(null);
+                                            return;
+                                        }
+                                        openTimesheetTotalPanel(
+                                            "ALL DATE GROUP DETAIL",
+                                            timesheetRows
+                                        );
+                                    }}
+                                    className={[
+                                        "h-12 w-12 rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 flex items-center justify-center",
+                                        selectedTimesheetDateGroupPanel?.blockKey ===
+                                        "ALL DATE GROUP DETAIL-total"
+                                            ? "bg-gray-100"
+                                            : null,
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                    aria-label="open all date group detail panel"
+                                    title="전체 Date Group"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        width="24"
+                                        height="24"
+                                        className="block shrink-0"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        aria-hidden="true"
+                                    >
+                                        <rect
+                                            x="4"
+                                            y="5"
+                                            width="16"
+                                            height="16"
+                                            rx="2"
+                                        />
+                                        <path d="M8 9h12" />
+                                        <path d="M8 13h12" />
+                                        <path d="M8 17h12" />
+                                        <path d="M6.5 9h.01" />
+                                        <path d="M6.5 13h.01" />
+                                        <path d="M6.5 17h.01" />
+                                    </svg>
+                                </button>
+                            </div>
+                        ) : null
+                    }
                 />
+
+                {invoicePdfMenuOpen && workLogDataList.length > 0 ? (
+                    <div
+                        ref={invoicePdfMenuPanelRef}
+                        role="menu"
+                        className="fixed right-4 top-16 z-[100] w-[min(32.89rem,calc(1.495*(100vw-2rem)))] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_10px_40px_-10px_rgba(15,23,42,0.18),0_2px_8px_-4px_rgba(15,23,42,0.08)] md:top-20"
+                    >
+                        <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 bg-gray-50/80 px-3 py-2.5 sm:px-4 sm:py-3">
+                            <p className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                보고서 PDF
+                            </p>
+                            <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                                <button
+                                    type="button"
+                                    className={[
+                                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors",
+                                        workLogDataList.length > 0 &&
+                                            invoicePdfSelectedIds.length ===
+                                                workLogDataList.length
+                                            ? "border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100/90"
+                                            : "border-gray-200 bg-white text-gray-800 hover:bg-gray-100",
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleInvoicePdfToggleSelectAll();
+                                    }}
+                                    title={
+                                        workLogDataList.length > 0 &&
+                                        invoicePdfSelectedIds.length ===
+                                            workLogDataList.length
+                                            ? "전체 해제"
+                                            : "전체선택"
+                                    }
+                                    aria-label={
+                                        workLogDataList.length > 0 &&
+                                        invoicePdfSelectedIds.length ===
+                                            workLogDataList.length
+                                            ? "전체 해제"
+                                            : "전체선택"
+                                    }
+                                >
+                                    <svg
+                                        width="28"
+                                        height="18"
+                                        viewBox="0 0 32 20"
+                                        className="block"
+                                        aria-hidden
+                                    >
+                                        <text
+                                            x="16"
+                                            y="10"
+                                            dominantBaseline="middle"
+                                            textAnchor="middle"
+                                            fontSize="11"
+                                            fontWeight="700"
+                                            fontFamily="ui-sans-serif, system-ui, sans-serif"
+                                            letterSpacing="0.08em"
+                                            fill="currentColor"
+                                        >
+                                            ALL
+                                        </text>
+                                    </svg>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-800 transition-colors hover:bg-gray-100"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleInvoicePdfDownloadIconClick();
+                                    }}
+                                    aria-label="선택한 보고서 PDF 다운로드"
+                                    title="다운로드"
+                                >
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        aria-hidden
+                                    >
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <polyline points="7 10 12 15 17 10" />
+                                        <line x1="12" y1="15" x2="12" y2="3" />
+                                    </svg>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-800 transition-colors hover:bg-gray-100"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setInvoicePdfMenuOpen(false);
+                                    }}
+                                    aria-label="닫기"
+                                    title="닫기"
+                                >
+                                    <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        aria-hidden
+                                    >
+                                        <line x1="18" y1="6" x2="6" y2="18" />
+                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <ul
+                            className="overflow-y-auto py-1"
+                            style={{ maxHeight: invoicePdfMenuListMaxHeight }}
+                        >
+                            {workLogDataList.map((wl, idx) => {
+                                const id = wl.workLog.id;
+                                const range = aggregateWorkLogEntryDateRange(
+                                    wl.entries
+                                );
+                                const label = formatInvoiceReportTableTitle({
+                                    periodStart: range.start,
+                                    periodEnd: range.end,
+                                    vessel: wl.workLog.vessel,
+                                    subject: wl.workLog.subject,
+                                });
+                                const checked = invoicePdfSelectedIds.includes(
+                                    id
+                                );
+                                return (
+                                    <li key={`${id}-${idx}`}>
+                                        <label
+                                            role="menuitem"
+                                            className="flex cursor-pointer items-start gap-3 px-4 py-2.5 text-left text-[14px] text-gray-900 transition-colors hover:bg-gray-50"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() =>
+                                                    toggleInvoicePdfSelectedId(
+                                                        id
+                                                    )
+                                                }
+                                                className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="min-w-0 flex-1">
+                                                {label}
+                                            </span>
+                                        </label>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </div>
+                ) : null}
                 
                 {/* Content Area */}
                 <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
@@ -7129,7 +7566,7 @@ export default function InvoiceCreatePage() {
                                     {/* R&D / NORMAL TIMESHEET (좌측 상단 토글) */}
                                     {timesheetView === "rnd" ? (
                                     <div className="flex flex-col gap-6 bg-white border border-gray-200 rounded-xl p-6">
-                                        <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3">
                                             <button
                                                 type="button"
                                                 onClick={() => setTimesheetView("normal")}
@@ -7143,66 +7580,6 @@ export default function InvoiceCreatePage() {
                                                     NORMAL로 전환
                                                 </span>
                                             </button>
-
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if (
-                                                            selectedTimesheetDateGroupPanel?.blockKey ===
-                                                            "ALL DATE GROUP DETAIL-total"
-                                                        ) {
-                                                            setSelectedTimesheetDateGroupPanel(
-                                                                null
-                                                            );
-                                                            return;
-                                                        }
-
-                                                        openTimesheetTotalPanel(
-                                                            "ALL DATE GROUP DETAIL",
-                                                            timesheetRows
-                                                        );
-                                                    }}
-                                                    className={[
-                                                        "h-9 w-9 rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100",
-                                                        selectedTimesheetDateGroupPanel?.blockKey ===
-                                                        "ALL DATE GROUP DETAIL-total"
-                                                            ? "bg-gray-100"
-                                                            : null,
-                                                    ]
-                                                        .filter(Boolean)
-                                                        .join(" ")}
-                                                    aria-label="open all date group detail panel"
-                                                    title="전체 Date Group"
-                                                >
-                                                    <svg
-                                                        viewBox="0 0 24 24"
-                                                        width="18"
-                                                        height="18"
-                                                        className="mx-auto block"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        strokeWidth="2"
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                        aria-hidden="true"
-                                                    >
-                                                        <rect
-                                                            x="4"
-                                                            y="5"
-                                                            width="16"
-                                                            height="16"
-                                                            rx="2"
-                                                        />
-                                                        <path d="M8 9h12" />
-                                                        <path d="M8 13h12" />
-                                                        <path d="M8 17h12" />
-                                                        <path d="M6.5 9h.01" />
-                                                        <path d="M6.5 13h.01" />
-                                                        <path d="M6.5 17h.01" />
-                                                    </svg>
-                                                </button>
-                                            </div>
                                         </div>
                                     
                                     {/* Job Information Table */}
@@ -7605,64 +7982,6 @@ export default function InvoiceCreatePage() {
                                             </button>
 
                                             <div className="flex items-center gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (
-                                                                selectedTimesheetDateGroupPanel?.blockKey ===
-                                                                "ALL DATE GROUP DETAIL-total"
-                                                            ) {
-                                                                setSelectedTimesheetDateGroupPanel(
-                                                                    null
-                                                                );
-                                                                return;
-                                                            }
-
-                                                            openTimesheetTotalPanel(
-                                                                "ALL DATE GROUP DETAIL",
-                                                                timesheetRows
-                                                            );
-                                                        }}
-                                                        className={[
-                                                            "h-9 w-9 rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100",
-                                                            selectedTimesheetDateGroupPanel?.blockKey ===
-                                                            "ALL DATE GROUP DETAIL-total"
-                                                                ? "bg-gray-100"
-                                                                : null,
-                                                        ]
-                                                            .filter(Boolean)
-                                                            .join(" ")}
-                                                        aria-label="open all date group detail panel"
-                                                        title="전체 Date Group"
-                                                    >
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            width="18"
-                                                            height="18"
-                                                            className="mx-auto block"
-                                                            fill="none"
-                                                            stroke="currentColor"
-                                                            strokeWidth="2"
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                            aria-hidden="true"
-                                                        >
-                                                            {/* 전체 Date Group(전체 날짜 테이블) 아이콘 */}
-                                                            <rect
-                                                                x="4"
-                                                                y="5"
-                                                                width="16"
-                                                                height="16"
-                                                                rx="2"
-                                                            />
-                                                            <path d="M8 9h12" />
-                                                            <path d="M8 13h12" />
-                                                            <path d="M8 17h12" />
-                                                            <path d="M6.5 9h.01" />
-                                                            <path d="M6.5 13h.01" />
-                                                            <path d="M6.5 17h.01" />
-                                                        </svg>
-                                                    </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => {
@@ -8548,6 +8867,37 @@ export default function InvoiceCreatePage() {
                     </p>
                 </BaseModal>
 
+                <BaseModal
+                    isOpen={invoicePdfDownloadConfirmOpen}
+                    onClose={() => setInvoicePdfDownloadConfirmOpen(false)}
+                    title="PDF 다운로드"
+                    maxWidth="max-w-md"
+                    footer={
+                        <>
+                            <button
+                                type="button"
+                                className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                                onClick={() =>
+                                    setInvoicePdfDownloadConfirmOpen(false)
+                                }
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                                onClick={handleConfirmInvoicePdfDownload}
+                            >
+                                다운로드
+                            </button>
+                        </>
+                    }
+                >
+                    <p className="text-sm leading-relaxed text-gray-700">
+                        선택한 보고서 PDF를 다운로드하시겠습니까?
+                    </p>
+                </BaseModal>
+
                 <PersonnelSelectionModal
                     isOpen={personnelEditor !== null}
                     onClose={() => setPersonnelEditor(null)}
@@ -8642,7 +8992,10 @@ export default function InvoiceCreatePage() {
                 />
                 <TimesheetDateGroupDetailSidePanel
                     isOpen={selectedTimesheetDateGroupPanel !== null}
-                    onClose={() => setSelectedTimesheetDateGroupPanel(null)}
+                    onClose={() => {
+                        setTimesheetRowSidebarHighlightKey(null);
+                        setSelectedTimesheetDateGroupPanel(null);
+                    }}
                     sectionTitle={selectedTimesheetDateGroupPanel?.sectionTitle ?? ""}
                     disableOutsideClose={
                         selectedTimesheetDateGroupPanel?.blockKey ===
@@ -8695,6 +9048,12 @@ export default function InvoiceCreatePage() {
                     }
                     panelCalendarDates={
                         selectedTimesheetDateGroupPanel?.panelCalendarDates ?? []
+                    }
+                    scrollToFullGroupDate={
+                        selectedTimesheetDateGroupPanel?.scrollToFullGroupDate
+                    }
+                    scrollToFullGroupNonce={
+                        selectedTimesheetDateGroupPanel?.scrollToFullGroupNonce
                     }
                 />
             </div>

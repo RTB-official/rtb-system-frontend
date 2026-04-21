@@ -57,8 +57,10 @@ export default function WorkloadReasonSection({
             ].filter(Boolean).join(" ")}
         >
             {reasonTargetName && (
-                <div className="flex flex-col gap-6 md:gap-8">
-                    <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-3 md:gap-4">
+                    <div
+                        className={`flex flex-col ${reasonExpanded ? "gap-4" : "gap-0"}`}
+                    >
                         <div className="flex items-start justify-between gap-3">
                             <button
                                 type="button"
@@ -137,7 +139,7 @@ export default function WorkloadReasonSection({
                         </div>
                     </div>
 
-                    <div className="pt-4 md:pt-6 border-t border-gray-200">
+                    <div className="pt-3 md:pt-4 border-t border-gray-200">
                         <WorkloadDailyDetailAnalysis
                             entries={reasonDetailEntries}
                             isMobile={isMobile}
