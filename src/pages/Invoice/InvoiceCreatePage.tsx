@@ -8839,7 +8839,7 @@ export default function InvoiceCreatePage() {
                 <BaseModal
                     isOpen={invoiceResetConfirmOpen}
                     onClose={() => setInvoiceResetConfirmOpen(false)}
-                    title="초기화"
+                    title="기본값으로 되돌리기"
                     maxWidth="max-w-md"
                     footer={
                         <>
@@ -8855,7 +8855,7 @@ export default function InvoiceCreatePage() {
                                 className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
                                 onClick={handleConfirmInvoiceResetToInitial}
                             >
-                                초기화
+                                기본값
                             </button>
                         </>
                     }
