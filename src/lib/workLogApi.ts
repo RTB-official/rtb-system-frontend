@@ -8,6 +8,18 @@ import {
 const workLogCache = new Map<number, WorkLogFullData>();
 const workLogInFlight = new Map<number, Promise<WorkLogFullData | null>>();
 
+/**
+ * `split_group_id` 컬럼이 없는 DB(마이그레이션 미적용)에서는 `null`로 보내는 것도
+ * 스키마에 없는 키로 인해 PostgREST 오류가 난다. 값이 있을 때만 컬럼을 포함한다.
+ * (자정 분할 id가 케이스면 원격 `work_log_entries`에 `split_group_id` 컬럼이 있어야 저장된다.)
+ */
+function workLogEntrySplitGroupIdPayload(splitGroupId: string | null | undefined) {
+    if (typeof splitGroupId === "string" && splitGroupId.length > 0) {
+        return { split_group_id: splitGroupId };
+    }
+    return {};
+}
+
 // ==================== 타입 정의 ====================
 
 export interface WorkLog {
@@ -364,7 +376,7 @@ export async function createWorkLog(
                                 move_from: segment.moveFrom || null,
                                 move_to: segment.moveTo || null,
                                 lunch_worked: segment.lunch_worked ?? false,
-                                split_group_id: segment.splitGroupId ?? null,
+                                ...workLogEntrySplitGroupIdPayload(segment.splitGroupId),
                             },
                         ])
                         .select()
@@ -1088,7 +1100,9 @@ for (const r of curRows ?? []) {
           move_from: e.moveFrom || null,
           move_to: e.moveTo || null,
           lunch_worked: e.lunch_worked ?? false,
-          split_group_id: (e as { splitGroupId?: string | null }).splitGroupId ?? null,
+          ...workLogEntrySplitGroupIdPayload(
+            (e as { splitGroupId?: string | null }).splitGroupId
+          ),
         };
     
         const incomingId = Number((e as any).id);
