@@ -13,35 +13,7 @@ import {
     VEHICLES,
 } from "../../store/workReportStore";
 import CopyPreviousWorkInfoSection from "./CopyPreviousWorkInfoSection";
-
-// 출장 목적 자동완성 단어 목록
-const PURPOSE_OPTIONS = [
-    "Replacement",
-    "R&D",
-    "FBIV-A",
-    "Atomizer",
-    "Spindle Guide",
-    "Support",
-    "valve",
-    "Cylinder",
-    "Installation",
-    "cover",
-    "Inspection",
-    "Leakage",
-    "Update",
-    "Top Cover",
-    "Exhasut valve",
-    "Introduction",
-    "Gasket",
-    "Piston",
-    "FBIV-M",
-    "Conponent",
-    "Recovery",
-    "Modification",
-    "Cyl' #",
-    "platform",
-    "Troubleshooting",
-];
+import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocompleteOptions";
 
 export default function BasicInfoSection() {
     const {
@@ -175,7 +147,7 @@ export default function BasicInfoSection() {
             return [];
         }
         
-        return PURPOSE_OPTIONS.filter((option) =>
+        return PURPOSE_AUTOCOMPLETE_OPTIONS.filter((option) =>
             option.toLowerCase().startsWith(searchText)
         );
     }, [subject]);
