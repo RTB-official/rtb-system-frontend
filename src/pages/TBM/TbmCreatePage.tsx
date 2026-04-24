@@ -123,10 +123,12 @@ export default function TbmCreatePage() {
             setParticipants((prev) => {
                 if (prev.some((p) => p.userId === user.id)) return prev;
                 const idx = prev.findIndex((p) => !(p.name || "").trim());
-                if (idx === -1) return prev;
-                const next = [...prev];
-                next[idx] = { name: nm, userId: user.id };
-                return next;
+                if (idx !== -1) {
+                    const next = [...prev];
+                    next[idx] = { name: nm, userId: user.id };
+                    return next;
+                }
+                return [...prev, { name: nm, userId: user.id }];
             });
         })();
         return () => {
@@ -263,17 +265,14 @@ export default function TbmCreatePage() {
                 setDuringResult(record.during_result || "");
                 setAfterMeeting(record.after_meeting || "");
 
-                const baseParticipants = Array.from({ length: 12 }, () => ({
-                    name: "",
-                    userId: null as string | null,
+                const fromServer = data.participants.map((p) => ({
+                    name: p.name || "",
+                    userId: p.user_id,
                 }));
-                data.participants.forEach((p, i) => {
-                    if (i >= baseParticipants.length) return;
-                    baseParticipants[i] = {
-                        name: p.name || "",
-                        userId: p.user_id,
-                    };
-                });
+                const baseParticipants = [...fromServer];
+                while (baseParticipants.length < 12) {
+                    baseParticipants.push({ name: "", userId: null });
+                }
                 setParticipants(baseParticipants);
 
                 // 코드 접두사 제거 함수 (TbmDetailSheet와 동일하게)
@@ -449,13 +448,12 @@ export default function TbmCreatePage() {
                 );
             }
             const emptyIdx = prev.findIndex((p) => !(p.name || "").trim());
-            if (emptyIdx === -1) {
-                showError("참석자는 최대 12명까지 선택할 수 있습니다.");
-                return prev;
+            if (emptyIdx !== -1) {
+                const next = [...prev];
+                next[emptyIdx] = { name, userId: id };
+                return next;
             }
-            const next = [...prev];
-            next[emptyIdx] = { name, userId: id };
-            return next;
+            return [...prev, { name, userId: id }];
         });
     };
 
@@ -464,6 +462,12 @@ export default function TbmCreatePage() {
 
     const isAuthorSignatureRow = (row: { name: string; userId: string | null } | undefined) =>
         !!(authUser?.id && row?.userId && row.userId === authUser.id);
+
+    /** 최소 6행(12칸), 인원 증가 시 행 추가 */
+    const participantTableRowCount = useMemo(
+        () => Math.max(6, Math.ceil(participants.length / 2)),
+        [participants.length]
+    );
 
     const handleAddProcess = (value: string) => {
         setProcessId(value);
@@ -1050,7 +1054,7 @@ export default function TbmCreatePage() {
                                             구성원 정보를 불러오는 중...
                                         </p>
                                     ) : (
-                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 items-start">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-2 gap-y-1.5 items-start">
                                             {staffGroupsByRank.map(({ rank, members }) => (
                                                 <div
                                                     key={rank}
@@ -1150,7 +1154,7 @@ export default function TbmCreatePage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {Array.from({ length: 6 }).map((_, rowIndex) => {
+                                        {Array.from({ length: participantTableRowCount }).map((_, rowIndex) => {
                                             const leftIndex = rowIndex * 2;
                                             const rightIndex = rowIndex * 2 + 1;
                                             const leftRow = participants[leftIndex];
