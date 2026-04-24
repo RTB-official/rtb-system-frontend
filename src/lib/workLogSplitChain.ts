@@ -38,6 +38,28 @@ function parseEndMs(e: WorkLogSplitChainEntry): number | null {
     return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * 자정에서 잘린 두 세그먼트만 "한 엔트리"로 묶는다.
+ * 같은 달력 날의 연속 구간(10:00→10:00 등)은 `end`와 `start`의 ms가 같아도
+ * **체인이 아님** — 잘못 붙이면(예: 올림 청구) 이동·대기까지 descType이 전파된다.
+ * `a`는 직전 구간(보통 time_to=24:00, date_to=그날), `b`는 이어지는 구간(date_from=다음날 00:00 등).
+ */
+function isTrueMidnightContiguous(
+    a: WorkLogSplitChainEntry,
+    b: WorkLogSplitChainEntry
+): boolean {
+    const tta = (a.timeTo ?? "").trim();
+    if (tta !== "24:00") {
+        return false;
+    }
+    if (!(a.dateTo < b.dateFrom)) {
+        return false;
+    }
+    const endA = parseEndMs(a);
+    const startB = parseStartMs(b);
+    return endA !== null && startB !== null && endA === startB;
+}
+
 function pickLinkedPatch<T extends WorkLogSplitChainEntry>(patch: Partial<T>): Partial<T> {
     const out: Partial<T> = {};
     for (const k of LINKED_KEYS) {
@@ -86,14 +108,10 @@ function boundaryChainMemberIds(
             if (i === j) continue;
             const a = withIds[i];
             const b = withIds[j];
-            const endA = parseEndMs(a);
-            const startB = parseStartMs(b);
-            const endB = parseEndMs(b);
-            const startA = parseStartMs(a);
-            if (endA !== null && startB !== null && endA === startB) {
+            if (isTrueMidnightContiguous(a, b)) {
                 addEdge(a.id, b.id);
             }
-            if (endB !== null && startA !== null && endB === startA) {
+            if (isTrueMidnightContiguous(b, a)) {
                 addEdge(a.id, b.id);
             }
         }

@@ -1,32 +1,56 @@
 // src/pages/TBM/TbmCreatePage.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
-import { IconArrowBack } from "../../components/icons/Icons";
+import { IconArrowBack, IconClose } from "../../components/icons/Icons";
 import DatePicker from "../../components/ui/DatePicker";
 import Select from "../../components/common/Select";
 import { useToast } from "../../components/ui/ToastProvider";
 import { supabase } from "../../lib/supabase";
-import { createTbm, getTbmDetail, updateTbm } from "../../lib/tbmApi";
+import { createTbm, getTbmDetail, getTbmListForImport, type TbmRecord, updateTbm } from "../../lib/tbmApi";
 import Chip from "../../components/ui/Chip";
+import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocompleteOptions";
+import { useWorkReportStore, type StaffProfile } from "../../store/workReportStore";
+import { useAuth } from "../../store/auth";
+
+const LOCATION_QUICK_INSERTS = ["EMD #", "ECR", "E/R"] as const;
+
+/** WorkerSection과 동일 — 직급 정렬 */
+const STAFF_ROLE_ORDER: Record<string, number> = {
+    대표: 1,
+    감사: 2,
+    부장: 3,
+    차장: 4,
+    과장: 5,
+    대리: 6,
+    주임: 7,
+    사원: 8,
+    인턴: 9,
+};
 
 export default function TbmCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { showError, showSuccess } = useToast();
+    const allStaff = useWorkReportStore((s) => s.allStaff);
+    const staffLoading = useWorkReportStore((s) => s.staffLoading);
+    const fetchAllStaff = useWorkReportStore((s) => s.fetchAllStaff);
+    const { user: authUser } = useAuth();
     const [isSaving, setIsSaving] = useState(false);
     const [tbmDate, setTbmDate] = useState("");
     const [lineName, setLineName] = useState("");
     const [workName, setWorkName] = useState("");
+    const workNameInputRef = useRef<HTMLInputElement>(null);
     const [workContent, setWorkContent] = useState("");
+    /** TBM 불러오기로 채운 작업내용일 때 테두리·지우기 버튼 표시 */
+    const [workContentFromImport, setWorkContentFromImport] = useState(false);
     const [location, setLocation] = useState("");
     const [riskAssessment, setRiskAssessment] = useState<boolean | null>(null);
     const [processId, setProcessId] = useState("");
     const [hazardId, setHazardId] = useState("");
-    const [measureId, setMeasureId] = useState("");
     const [processOptions, setProcessOptions] = useState<
         Array<{ id: string; code: string; name: string; label: string; colorClass: string }>
     >([]);
@@ -64,47 +88,120 @@ export default function TbmCreatePage() {
     const [duringResult, setDuringResult] = useState("");
     const [afterMeeting, setAfterMeeting] = useState("");
 
+    const [tbmImportOptions, setTbmImportOptions] = useState<TbmRecord[]>([]);
+    const [tbmImportLoading, setTbmImportLoading] = useState(false);
+    const [selectedTbmImportId, setSelectedTbmImportId] = useState("");
+
     const editId = searchParams.get("edit");
     const isEdit = !!editId;
 
-    const [allMembers, setAllMembers] = useState<
-        Array<{ id: string; name: string; username: string }>
-    >([]);
-    const [showResults, setShowResults] = useState(false);
-    const [activeRow, setActiveRow] = useState<number | null>(null);
     const [participants, setParticipants] = useState<
         Array<{ name: string; userId: string | null }>
     >(() => Array.from({ length: 12 }, () => ({ name: "", userId: null })));
+    const [adminTeamOpen, setAdminTeamOpen] = useState(false);
 
     useEffect(() => {
-        const fetchMembers = async () => {
+        fetchAllStaff();
+    }, [fetchAllStaff]);
+
+    /** 신규 작성 시 작성자 본인을 참석자에 자동 포함 */
+    useEffect(() => {
+        if (isEdit) return;
+        let cancelled = false;
+        (async () => {
+            const {
+                data: { user },
+            } = await supabase.auth.getUser();
+            if (!user || cancelled) return;
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("name")
+                .eq("id", user.id)
+                .single();
+            if (cancelled || !profile?.name?.trim()) return;
+            const nm = profile.name.trim();
+            setParticipants((prev) => {
+                if (prev.some((p) => p.userId === user.id)) return prev;
+                const idx = prev.findIndex((p) => !(p.name || "").trim());
+                if (idx === -1) return prev;
+                const next = [...prev];
+                next[idx] = { name: nm, userId: user.id };
+                return next;
+            });
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [isEdit]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            setTbmImportLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from("profiles")
-                    .select("id, name, username")
-                    .order("name", { ascending: true });
-
-                if (error) {
-                    console.error("members fetch error:", error);
-                    return;
-                }
-
-                if (data) {
-                    setAllMembers(
-                        data.map((p) => ({
-                            id: p.id,
-                            name: p.name || "",
-                            username: p.username || "",
-                        }))
-                    );
-                }
+                const list = await getTbmListForImport(isEdit ? editId : null);
+                if (!cancelled) setTbmImportOptions(list);
             } catch (e) {
-                console.error("members fetch error:", e);
+                console.error("TBM 불러오기 목록:", e);
+                if (!cancelled) setTbmImportOptions([]);
+            } finally {
+                if (!cancelled) setTbmImportLoading(false);
             }
         };
+        load();
+        return () => {
+            cancelled = true;
+        };
+    }, [isEdit, editId]);
 
-        fetchMembers();
-    }, []);
+    const tbmImportSelectOptions = useMemo(
+        () =>
+            tbmImportOptions.map((r) => {
+                const date = (r.tbm_date || "").trim();
+                const line = (r.line_name || "").trim();
+                const work = (r.work_name || "").trim();
+                const parts = [date, line, work].filter(Boolean);
+                const label =
+                    parts.length > 0 ? parts.join(" · ") : `TBM ${String(r.id).slice(0, 8)}…`;
+                return { value: r.id, label };
+            }),
+        [tbmImportOptions]
+    );
+
+    const appendLocationQuickInsert = (token: string) => {
+        setLocation((prev) => {
+            const t = prev.trim();
+            if (!t) return token;
+            return `${t} ${token}`;
+        });
+    };
+
+    const handleWorkNameAutocompleteClick = (purpose: string) => {
+        if (workName && workName.trim().includes(" ")) {
+            const parts = workName.trim().split(/\s+/);
+            parts[parts.length - 1] = purpose;
+            setWorkName(parts.join(" "));
+        } else {
+            setWorkName(purpose);
+        }
+        setTimeout(() => {
+            workNameInputRef.current?.focus();
+        }, 0);
+    };
+
+    const filteredWorkNameAutocompleteOptions = useMemo(() => {
+        if (!workName || workName.trim() === "") {
+            return [];
+        }
+        const parts = workName.trim().split(/\s+/);
+        const searchText = parts[parts.length - 1].toLowerCase();
+        if (searchText === "") {
+            return [];
+        }
+        return PURPOSE_AUTOCOMPLETE_OPTIONS.filter((option) =>
+            option.toLowerCase().startsWith(searchText)
+        );
+    }, [workName]);
 
     const processColorMap: Record<string, string> = {
         P1: "orange-500",
@@ -157,9 +254,10 @@ export default function TbmCreatePage() {
                 const data = await getTbmDetail(editId);
                 const record = data.tbm;
                 setTbmDate(record.tbm_date || "");
-                setLineName(record.line_name || "");
+                setLineName((record.line_name || "").toUpperCase());
                 setWorkName(record.work_name || "");
                 setWorkContent(record.work_content || "");
+                setWorkContentFromImport(false);
                 setLocation(record.location || "");
                 setRiskAssessment(record.risk_assessment ?? null);
                 setDuringResult(record.during_result || "");
@@ -230,7 +328,6 @@ export default function TbmCreatePage() {
                 setHazardOptions([]);
                 setHazardId("");
                 setMeasureOptions([]);
-                setMeasureId("");
                 return;
             }
 
@@ -263,7 +360,6 @@ export default function TbmCreatePage() {
             );
             setHazardId("");
             setMeasureOptions([]);
-            setMeasureId("");
         };
 
         fetchHazards();
@@ -272,7 +368,6 @@ export default function TbmCreatePage() {
         const fetchMeasures = async () => {
             if (!hazardId) {
                 setMeasureOptions([]);
-                setMeasureId("");
                 return;
             }
 
@@ -303,93 +398,120 @@ export default function TbmCreatePage() {
                     colorClass: hazardColorById.get(row.hazard_id) || "bg-gray-100 text-gray-700",
                 }))
             );
-            setMeasureId("");
         };
 
         fetchMeasures();
     }, [hazardId, hazardOptions, showError]);
 
-    const activeInput = activeRow === null ? "" : participants[activeRow]?.name || "";
-    const filteredMembers = useMemo(() => {
-        if (!activeInput.trim()) return [];
-        const selectedIds = new Set(
-            participants.map((p) => p.userId).filter(Boolean) as string[]
-        );
-        const selectedNames = new Set(
-            participants.map((p) => p.name).filter(Boolean)
-        );
-        return allMembers.filter(
-            (m) =>
-                (m.name.includes(activeInput) ||
-                    m.username.includes(activeInput)) &&
-                !selectedIds.has(m.id) &&
-                !selectedNames.has(m.name)
-        );
-    }, [activeInput, allMembers, participants]);
-
-    const handleSelectMember = (rowIndex: number, member: { id: string; name: string }) => {
-        setParticipants((prev) =>
-            prev.map((row, idx) =>
-                idx === rowIndex
-                    ? { name: member.name, userId: member.id }
-                    : row
+    const { adminTeamMembers, sortedAdminTeamMembers, staffGroupsByRank } = useMemo(() => {
+        const adminTeam = allStaff.filter((m) => m.department === "공무팀");
+        const regular = allStaff.filter((m) => m.department !== "공무팀");
+        const sortedAdmin = [...adminTeam].sort((a, b) => {
+            const orderA = STAFF_ROLE_ORDER[a.position] ?? 999;
+            const orderB = STAFF_ROLE_ORDER[b.position] ?? 999;
+            if (orderA !== orderB) return orderA - orderB;
+            return a.name.localeCompare(b.name);
+        });
+        const byRole = new Map<string, StaffProfile[]>();
+        for (const member of regular) {
+            const role = member.position || "";
+            if (!role) continue;
+            if (!byRole.has(role)) byRole.set(role, []);
+            byRole.get(role)!.push(member);
+        }
+        const groups = Array.from(byRole.entries())
+            .filter(([, members]) => members.length > 0)
+            .sort(
+                ([roleA], [roleB]) =>
+                    (STAFF_ROLE_ORDER[roleA] ?? 999) - (STAFF_ROLE_ORDER[roleB] ?? 999)
             )
-        );
-        setShowResults(false);
-        setActiveRow(null);
+            .map(([rank, members]) => ({
+                rank,
+                members: [...members].sort((a, b) => a.name.localeCompare(b.name, "ko")),
+            }));
+        return {
+            adminTeamMembers: adminTeam,
+            sortedAdminTeamMembers: sortedAdmin,
+            staffGroupsByRank: groups,
+        };
+    }, [allStaff]);
+
+    const toggleStaffParticipant = (member: StaffProfile) => {
+        const id = member.id;
+        const name = (member.name || "").trim();
+        if (!id || !name) return;
+
+        setParticipants((prev) => {
+            const idx = prev.findIndex((p) => p.userId === id);
+            if (idx !== -1) {
+                return prev.map((row, i) =>
+                    i === idx ? { name: "", userId: null } : row
+                );
+            }
+            const emptyIdx = prev.findIndex((p) => !(p.name || "").trim());
+            if (emptyIdx === -1) {
+                showError("참석자는 최대 12명까지 선택할 수 있습니다.");
+                return prev;
+            }
+            const next = [...prev];
+            next[emptyIdx] = { name, userId: id };
+            return next;
+        });
     };
 
-    const handleParticipantChange = (rowIndex: number, value: string) => {
-        setParticipants((prev) =>
-            prev.map((row, idx) =>
-                idx === rowIndex ? { name: value, userId: null } : row
-            )
-        );
-    };
+    const isStaffParticipantSelected = (member: StaffProfile) =>
+        participants.some((p) => p.userId === member.id);
+
+    const isAuthorSignatureRow = (row: { name: string; userId: string | null } | undefined) =>
+        !!(authUser?.id && row?.userId && row.userId === authUser.id);
 
     const handleAddProcess = (value: string) => {
         setProcessId(value);
         setHazardId("");
-        setMeasureId("");
     };
 
     const handleAddHazard = (value: string) => {
         setHazardId(value);
-        setMeasureId("");
     };
 
-    const handleAddMeasure = (value: string) => {
-        setMeasureId(value);
-        if (!value || !processId || !hazardId) return;
+    const toggleMeasureForCurrentCombo = (measureIdValue: string) => {
+        if (!processId || !hazardId || !measureIdValue) return;
 
         const process = processOptions.find((p) => p.id === processId);
         const hazard = hazardOptions.find((h) => h.id === hazardId);
-        const measure = measureOptions.find((m) => m.id === value);
+        const measure = measureOptions.find((m) => m.id === measureIdValue);
         if (!process || !hazard || !measure) return;
 
-        setSelectedCombos((prev) =>
-            prev.some(
+        setSelectedCombos((prev) => {
+            const exists = prev.some(
                 (c) =>
                     c.processId === process.id &&
                     c.hazardId === hazard.id &&
                     c.measureId === measure.id
-            )
-                ? prev
-                : [
-                    ...prev,
-                    {
-                        processId: process.id,
-                        processLabel: process.label,
-                        hazardId: hazard.id,
-                        hazardLabel: hazard.label,
-                        measureId: measure.id,
-                        measureLabel: measure.label,
-                        colorClass: process.colorClass,
-                    },
-                ]
-        );
-        setHazardId("");
-        setMeasureId("");
+            );
+            if (exists) {
+                return prev.filter(
+                    (c) =>
+                        !(
+                            c.processId === process.id &&
+                            c.hazardId === hazard.id &&
+                            c.measureId === measure.id
+                        )
+                );
+            }
+            return [
+                ...prev,
+                {
+                    processId: process.id,
+                    processLabel: process.label,
+                    hazardId: hazard.id,
+                    hazardLabel: hazard.label,
+                    measureId: measure.id,
+                    measureLabel: measure.label,
+                    colorClass: process.colorClass,
+                },
+            ];
+        });
     };
 
     const handleRemoveCombo = (processIdValue: string, hazardIdValue: string, measureIdValue: string) => {
@@ -502,20 +624,19 @@ export default function TbmCreatePage() {
                     leftContent={
                         <button
                             onClick={() => navigate("/tbm")}
-                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                            className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
                             title="목록으로 돌아가기"
                         >
-                            <IconArrowBack />
+                            <IconArrowBack className="w-5 h-5" />
                         </button>
                     }
                     rightContent={
                         <div className="flex gap-2">
                             <Button
                                 variant="primary"
-                                size="md"
+                                size="sm"
                                 onClick={handleSave}
                                 disabled={isSaving}
-                                className="md:h-12 md:px-4 md:text-base"
                             >
                                 {isEdit ? "수정" : "제출하기"}
                             </Button>
@@ -537,16 +658,73 @@ export default function TbmCreatePage() {
                                 </colgroup>
                                 <tbody>
                                     <tr className="border-b border-gray-300">
+                                        <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap align-top">
+                                            TBM 불러오기
+                                        </th>
+                                        <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
+                                            <Select
+                                                size="sm"
+                                                placeholder={
+                                                    tbmImportLoading
+                                                        ? "로딩 중..."
+                                                        : tbmImportSelectOptions.length === 0
+                                                          ? "불러올 TBM 없음"
+                                                          : "이전 TBM 선택"
+                                                }
+                                                fullWidth
+                                                options={tbmImportSelectOptions}
+                                                value={selectedTbmImportId}
+                                                onChange={(value) => {
+                                                    if (!value || tbmImportSelectOptions.length === 0) return;
+                                                    setSelectedTbmImportId(value);
+                                                    const rec = tbmImportOptions.find((x) => x.id === value);
+                                                    if (rec) {
+                                                        setLineName((rec.line_name || "").toUpperCase());
+                                                        setWorkName(rec.work_name || "");
+                                                        setWorkContent(rec.work_content || "");
+                                                        setWorkContentFromImport(!!(rec.work_content || "").trim());
+                                                    }
+                                                    setTimeout(() => setSelectedTbmImportId(""), 800);
+                                                }}
+                                                disabled={
+                                                    tbmImportLoading || tbmImportSelectOptions.length === 0
+                                                }
+                                            />
+                                        </td>
+                                    </tr>
+                                    <tr className="border-b border-gray-300">
                                         <th className="bg-gray-50 text-left px-2 py-2 md:px-3 md:py-2 border-r border-gray-300 whitespace-nowrap">
                                             TBM 일시
                                         </th>
                                         <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
-                                            <DatePicker
-                                                value={tbmDate}
-                                                onChange={setTbmDate}
-                                                placeholder="날짜 선택"
-                                                className="w-full"
-                                            />
+                                            <div className="flex items-stretch sm:items-center gap-2 min-w-0">
+                                                <div className="flex-1 min-w-0">
+                                                    <DatePicker
+                                                        value={tbmDate}
+                                                        onChange={setTbmDate}
+                                                        placeholder="날짜 선택"
+                                                        className="w-full"
+                                                    />
+                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="shrink-0 self-center"
+                                                    onClick={() => {
+                                                        const today = new Date();
+                                                        setTbmDate(
+                                                            `${today.getFullYear()}-${String(
+                                                                today.getMonth() + 1
+                                                            ).padStart(2, "0")}-${String(
+                                                                today.getDate()
+                                                            ).padStart(2, "0")}`
+                                                        );
+                                                    }}
+                                                >
+                                                    오늘
+                                                </Button>
+                                            </div>
                                         </td>
                                     </tr>
 
@@ -560,7 +738,9 @@ export default function TbmCreatePage() {
                                                 className="w-full bg-transparent outline-none min-w-0"
                                                 placeholder={"\uD638\uC120\uBA85\uC744 \uC785\uB825\uD558\uC138\uC694"}
                                                 value={lineName}
-                                                onChange={(e) => setLineName(e.target.value)}
+                                                onChange={(e) =>
+                                                    setLineName(e.target.value.toUpperCase())
+                                                }
                                             />
                                         </td>
                                     </tr>
@@ -571,12 +751,40 @@ export default function TbmCreatePage() {
                                         </th>
                                         <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
                                             <input
+                                                ref={workNameInputRef}
                                                 type="text"
                                                 className="w-full bg-transparent outline-none"
                                                 placeholder="작업명을 입력하세요"
                                                 value={workName}
                                                 onChange={(e) => setWorkName(e.target.value)}
+                                                autoComplete="off"
                                             />
+                                        </td>
+                                    </tr>
+
+                                    <tr className="border-b border-gray-300">
+                                        <td
+                                            colSpan={2}
+                                            className="px-2 py-2 md:px-3 md:py-2 min-w-0 align-top"
+                                        >
+                                            <div className="min-h-[44px] flex flex-wrap gap-1.5 py-1.5">
+                                                {filteredWorkNameAutocompleteOptions.map((purpose) => (
+                                                    <button
+                                                        key={purpose}
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            handleWorkNameAutocompleteClick(purpose);
+                                                        }}
+                                                        onMouseDown={(e) => {
+                                                            e.preventDefault();
+                                                        }}
+                                                        className="px-2 py-1 rounded-md bg-sky-100 text-blue-700 font-medium text-xs hover:bg-sky-200 transition-colors"
+                                                    >
+                                                        {purpose}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </td>
                                     </tr>
 
@@ -585,13 +793,39 @@ export default function TbmCreatePage() {
                                             작업내용
                                         </th>
                                         <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
-                                            <textarea
-                                                rows={3}
-                                                className="w-full bg-transparent outline-none resize-none"
-                                                placeholder="작업내용을 입력하세요"
-                                                value={workContent}
-                                                onChange={(e) => setWorkContent(e.target.value)}
-                                            />
+                                            <div
+                                                className={
+                                                    workContentFromImport && workContent.trim()
+                                                        ? "relative rounded-lg border border-blue-200 bg-sky-50 p-2 pr-8"
+                                                        : ""
+                                                }
+                                            >
+                                                {workContentFromImport && workContent.trim() ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setWorkContent("");
+                                                            setWorkContentFromImport(false);
+                                                        }}
+                                                        className="absolute top-1 right-1 z-10 p-0.5 rounded-md text-blue-600 hover:bg-blue-100 hover:text-blue-800 transition-colors"
+                                                        title="작업내용 전체 삭제"
+                                                        aria-label="작업내용 전체 삭제"
+                                                    >
+                                                        <IconClose className="w-3.5 h-3.5" />
+                                                    </button>
+                                                ) : null}
+                                                <textarea
+                                                    rows={3}
+                                                    className="w-full bg-transparent outline-none resize-none min-w-0"
+                                                    placeholder="작업내용을 입력하세요"
+                                                    value={workContent}
+                                                    onChange={(e) => {
+                                                        const v = e.target.value;
+                                                        setWorkContent(v);
+                                                        if (!v) setWorkContentFromImport(false);
+                                                    }}
+                                                />
+                                            </div>
                                         </td>
                                     </tr>
 
@@ -600,13 +834,29 @@ export default function TbmCreatePage() {
                                             TBM 장소
                                         </th>
                                         <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
-                                            <input
-                                                type="text"
-                                                className="w-full bg-transparent outline-none"
-                                                placeholder="장소를 입력하세요"
-                                                value={location}
-                                                onChange={(e) => setLocation(e.target.value)}
-                                            />
+                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
+                                                <input
+                                                    type="text"
+                                                    className="w-full flex-1 min-w-0 bg-transparent outline-none"
+                                                    placeholder="장소를 입력하세요"
+                                                    value={location}
+                                                    onChange={(e) => setLocation(e.target.value)}
+                                                />
+                                                <div className="flex flex-wrap gap-1.5 shrink-0 justify-end sm:justify-start">
+                                                    {LOCATION_QUICK_INSERTS.map((label) => (
+                                                        <Button
+                                                            key={label}
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="xs"
+                                                            className="!h-[26px] px-2 text-[11px]"
+                                                            onClick={() => appendLocationQuickInsert(label)}
+                                                        >
+                                                            {label}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </div>
                                         </td>
                                     </tr>
 
@@ -647,6 +897,7 @@ export default function TbmCreatePage() {
                                         <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
                                             <div className="flex flex-col gap-2 min-w-0">
                                                 <Select
+                                                    size="sm"
                                                     options={processOptions.map((p) => ({
                                                         value: p.id,
                                                         label: p.label,
@@ -667,6 +918,7 @@ export default function TbmCreatePage() {
                                         <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
                                             <div className="flex flex-col gap-2 min-w-0">
                                                 <Select
+                                                    size="sm"
                                                     options={hazardOptions.map((h) => ({
                                                         value: h.id,
                                                         label: h.label,
@@ -687,17 +939,49 @@ export default function TbmCreatePage() {
                                         </th>
                                         <td className="px-2 py-2 md:px-3 md:py-2 min-w-0">
                                             <div className="flex flex-col gap-2 min-w-0">
-                                                <Select
-                                                    options={measureOptions.map((m) => ({
-                                                        value: m.id,
-                                                        label: m.label,
-                                                    }))}
-                                                    value={measureId}
-                                                    onChange={handleAddMeasure}
-                                                    fullWidth
-                                                    placeholder="대책을 선택하세요"
-                                                    disabled={!hazardId}
-                                                />
+                                                {!hazardId ? (
+                                                    <p className="text-xs text-gray-400 py-1">
+                                                        잠재적 위험요인을 먼저 선택하세요
+                                                    </p>
+                                                ) : measureOptions.length === 0 ? (
+                                                    <p className="text-xs text-gray-400 py-1">
+                                                        선택한 위험요인에 등록된 대책이 없습니다
+                                                    </p>
+                                                ) : (
+                                                    <div className="rounded-lg border border-gray-200 bg-gray-50/50 px-2 py-2">
+                                                        <p className="text-[11px] text-gray-500 px-0.5 pb-2">
+                                                            대책을 여러 개 선택할 수 있습니다
+                                                        </p>
+                                                        <div className="flex flex-col gap-y-1">
+                                                            {measureOptions.map((m) => {
+                                                                const checked = selectedCombos.some(
+                                                                    (c) =>
+                                                                        c.processId === processId &&
+                                                                        c.hazardId === hazardId &&
+                                                                        c.measureId === m.id
+                                                                );
+                                                                return (
+                                                                    <label
+                                                                        key={m.id}
+                                                                        className="flex items-start gap-2 cursor-pointer rounded-md px-1.5 py-1 hover:bg-white/80 text-sm text-gray-900 min-w-0"
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            className="mt-0.5 shrink-0"
+                                                                            checked={checked}
+                                                                            onChange={() =>
+                                                                                toggleMeasureForCurrentCombo(m.id)
+                                                                            }
+                                                                        />
+                                                                        <span className="leading-snug min-w-0 break-words">
+                                                                            {m.label}
+                                                                        </span>
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 {selectedCombos.length > 0 && (
                                                     <div className="flex flex-wrap gap-2 min-w-0">
                                                         {selectedCombos.map((c) => (
@@ -705,7 +989,7 @@ export default function TbmCreatePage() {
                                                                 key={`${c.processId}-${c.hazardId}-${c.measureId}`}
                                                                 color={c.colorClass}
                                                                 variant="filled"
-                                                                size="md"
+                                                                size="sm"
                                                                 onRemove={() =>
                                                                     handleRemoveCombo(
                                                                         c.processId,
@@ -760,13 +1044,109 @@ export default function TbmCreatePage() {
                                 <div className="text-center font-semibold py-2 border-b border-gray-300">
                                     참석자 확인
                                 </div>
-                                <table className="w-full text-sm border-collapse">
+                                <div className="px-2 py-2 border-b border-gray-200 bg-gray-50/60">
+                                    {staffLoading ? (
+                                        <p className="text-[11px] text-gray-500 text-center py-1">
+                                            구성원 정보를 불러오는 중...
+                                        </p>
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 items-start">
+                                            {staffGroupsByRank.map(({ rank, members }) => (
+                                                <div
+                                                    key={rank}
+                                                    className="flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0"
+                                                >
+                                                    <span className="text-[10px] font-semibold text-gray-600 shrink-0 w-9 leading-tight">
+                                                        {rank}
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                                                        {members.map((m) => (
+                                                            <Button
+                                                                key={m.id}
+                                                                type="button"
+                                                                size="xs"
+                                                                variant={
+                                                                    isStaffParticipantSelected(m)
+                                                                        ? "primary"
+                                                                        : "outline"
+                                                                }
+                                                                className="!h-[24px] !px-1.5 !text-[11px] !rounded-md"
+                                                                onClick={() => toggleStaffParticipant(m)}
+                                                            >
+                                                                {m.name}
+                                                            </Button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {adminTeamMembers.length > 0 && (
+                                                <div className="pt-1 mt-1 border-t border-dashed border-gray-200">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAdminTeamOpen((v) => !v)}
+                                                        className="flex w-full items-center justify-between text-left text-[11px] font-semibold text-blue-800 py-0.5"
+                                                    >
+                                                        <span>공무팀</span>
+                                                        <span className="font-normal text-blue-600">
+                                                            {adminTeamOpen
+                                                                ? "접기"
+                                                                : `펼치기 (${adminTeamMembers.length})`}
+                                                        </span>
+                                                    </button>
+                                                    {adminTeamOpen && (
+                                                        <div className="flex flex-wrap gap-1 pt-1">
+                                                            {sortedAdminTeamMembers.map((m) => (
+                                                                <Button
+                                                                    key={m.id}
+                                                                    type="button"
+                                                                    size="xs"
+                                                                    variant={
+                                                                        isStaffParticipantSelected(m)
+                                                                            ? "primary"
+                                                                            : "outline"
+                                                                    }
+                                                                    className="!h-[24px] !px-1.5 !text-[11px] !rounded-md"
+                                                                    onClick={() => toggleStaffParticipant(m)}
+                                                                >
+                                                                    {m.name}
+                                                                </Button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <p className="text-xs font-medium text-gray-700 pt-0.5">
+                                                참여인원 :{" "}
+                                                {
+                                                    participants.filter((p) => (p.name || "").trim().length > 0)
+                                                        .length
+                                                }
+                                                명
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                                <table className="w-full table-fixed text-sm border-collapse">
+                                    <colgroup>
+                                        <col style={{ width: "38%" }} />
+                                        <col style={{ width: "12%" }} />
+                                        <col style={{ width: "38%" }} />
+                                        <col style={{ width: "12%" }} />
+                                    </colgroup>
                                     <thead>
                                         <tr className="border-b border-gray-300 bg-gray-50">
-                                            <th className="py-2 border-r border-gray-300">이름</th>
-                                            <th className="py-2 border-r border-gray-300">서명</th>
-                                            <th className="py-2 border-r border-gray-300">이름</th>
-                                            <th className="py-2">서명</th>
+                                            <th className="py-1.5 px-2 text-xs font-medium border-r border-gray-300 align-middle">
+                                                이름
+                                            </th>
+                                            <th className="py-1.5 px-1 text-xs font-medium border-r border-gray-300 align-middle text-center">
+                                                서명
+                                            </th>
+                                            <th className="py-1.5 px-2 text-xs font-medium border-r border-gray-300 align-middle">
+                                                이름
+                                            </th>
+                                            <th className="py-1.5 px-1 text-xs font-medium align-middle text-center">
+                                                서명
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -776,90 +1156,47 @@ export default function TbmCreatePage() {
                                             const leftRow = participants[leftIndex];
                                             const rightRow = participants[rightIndex];
                                             return (
-                                                <tr key={rowIndex} className="border-b border-gray-300 last:border-b-0">
-                                                    <td className="px-3 py-2 border-r border-gray-300 relative">
+                                                <tr
+                                                    key={rowIndex}
+                                                    className="border-b border-gray-300 last:border-b-0"
+                                                >
+                                                    <td className="px-2 py-1.5 border-r border-gray-300 align-top min-w-0">
+                                                        <span
+                                                            className={`block text-xs leading-snug break-words ${
+                                                                (leftRow?.name || "").trim()
+                                                                    ? "text-gray-900"
+                                                                    : "text-gray-300"
+                                                            }`}
+                                                        >
+                                                            {(leftRow?.name || "").trim() || "—"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-1 py-1.5 border-r border-gray-300 text-center align-middle">
                                                         <input
-                                                            type="text"
-                                                            className="w-full bg-transparent outline-none"
-                                                            placeholder="이름 입력"
-                                                            value={leftRow?.name || ""}
-                                                            onChange={(e) =>
-                                                                handleParticipantChange(leftIndex, e.target.value)
-                                                            }
-                                                            onFocus={() => {
-                                                                setActiveRow(leftIndex);
-                                                                setShowResults(true);
-                                                            }}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === "Enter" && filteredMembers.length > 0) {
-                                                                    e.preventDefault();
-                                                                    handleSelectMember(leftIndex, filteredMembers[0]);
-                                                                }
-                                                            }}
+                                                            type="checkbox"
+                                                            disabled
+                                                            checked={isAuthorSignatureRow(leftRow)}
+                                                            className="align-middle"
                                                         />
-                                                        {showResults && activeRow === leftIndex && filteredMembers.length > 0 && (
-                                                            <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                                                                {filteredMembers.map((member) => (
-                                                                    <div
-                                                                        key={member.id}
-                                                                        className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
-                                                                        onClick={() => handleSelectMember(leftIndex, member)}
-                                                                    >
-                                                                        {member.name}
-                                                                        {member.username && (
-                                                                            <span className="text-gray-400 ml-2">
-                                                                                ({member.username})
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
                                                     </td>
-                                                    <td className="px-3 py-2 border-r border-gray-300 text-center">
-                                                        <input type="checkbox" disabled />
+                                                    <td className="px-2 py-1.5 border-r border-gray-300 align-top min-w-0">
+                                                        <span
+                                                            className={`block text-xs leading-snug break-words ${
+                                                                (rightRow?.name || "").trim()
+                                                                    ? "text-gray-900"
+                                                                    : "text-gray-300"
+                                                            }`}
+                                                        >
+                                                            {(rightRow?.name || "").trim() || "—"}
+                                                        </span>
                                                     </td>
-                                                    <td className="px-3 py-2 border-r border-gray-300 relative">
+                                                    <td className="px-1 py-1.5 text-center align-middle">
                                                         <input
-                                                            type="text"
-                                                            className="w-full bg-transparent outline-none"
-                                                            placeholder="이름 입력"
-                                                            value={rightRow?.name || ""}
-                                                            onChange={(e) =>
-                                                                handleParticipantChange(rightIndex, e.target.value)
-                                                            }
-                                                            onFocus={() => {
-                                                                setActiveRow(rightIndex);
-                                                                setShowResults(true);
-                                                            }}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === "Enter" && filteredMembers.length > 0) {
-                                                                    e.preventDefault();
-                                                                    handleSelectMember(rightIndex, filteredMembers[0]);
-                                                                }
-                                                            }}
+                                                            type="checkbox"
+                                                            disabled
+                                                            checked={isAuthorSignatureRow(rightRow)}
+                                                            className="align-middle"
                                                         />
-                                                        {showResults && activeRow === rightIndex && filteredMembers.length > 0 && (
-                                                            <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                                                                {filteredMembers.map((member) => (
-                                                                    <div
-                                                                        key={member.id}
-                                                                        className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
-                                                                        onClick={() => handleSelectMember(rightIndex, member)}
-                                                                    >
-                                                                        {member.name}
-                                                                        {member.username && (
-                                                                            <span className="text-gray-400 ml-2">
-                                                                                ({member.username})
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-3 py-2 text-center">
-                                                        <input type="checkbox" disabled />
                                                     </td>
                                                 </tr>
                                             );

@@ -347,6 +347,63 @@ export async function updateTbm(input: UpdateTbmInput) {
     return tbm as TbmRecord;
 }
 
+/** 작성 화면에서 이전 TBM 선택용. admin은 전체, 그 외에는 본인 작성 또는 참여(tbm_participants)만 */
+export async function getTbmListForImport(excludeId?: string | null) {
+    const {
+        data: { user },
+        error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        throw new Error("로그인이 필요합니다.");
+    }
+
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+    const isAdmin = profile?.role === "admin";
+
+    const { data: rows, error } = await supabase
+        .from("tbm")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+    if (error) {
+        throw new Error(`TBM 목록 조회 실패: ${error.message}`);
+    }
+
+    let list = (rows || []) as TbmRecord[];
+
+    if (excludeId) {
+        list = list.filter((r) => r.id !== excludeId);
+    }
+
+    if (!isAdmin) {
+        const { data: partRows, error: partError } = await supabase
+            .from("tbm_participants")
+            .select("tbm_id")
+            .eq("user_id", user.id);
+
+        if (partError) {
+            throw new Error(`TBM 참여 목록 조회 실패: ${partError.message}`);
+        }
+
+        const participatedIds = new Set(
+            (partRows || []).map((p) => p.tbm_id).filter(Boolean) as string[]
+        );
+
+        list = list.filter(
+            (r) => r.created_by === user.id || participatedIds.has(r.id)
+        );
+    }
+
+    return list.slice(0, 50) as TbmRecord[];
+}
+
 export async function getTbmList() {
     const { data, error } = await supabase
         .from("tbm")
