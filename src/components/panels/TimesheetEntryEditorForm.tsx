@@ -29,6 +29,14 @@ export type TimesheetEntryUpdatePayload = {
     timeTo: string;
     persons: string[];
     manualBillableHours: number | null;
+    manualBillableSplitHours?: ManualBillableSplitHours | null;
+};
+
+export type ManualBillableSplitHours = {
+    weekdayNormal: number;
+    weekdayAfter: number;
+    weekendNormal: number;
+    weekendAfter: number;
 };
 
 function parseInstantMs(dateStr: string, timeStr: string): number | null {
@@ -222,7 +230,8 @@ type EditorBaselineSnapshot = {
 
 function buildEditorBaseline(
     entry: TimesheetEntryEditorEntry,
-    manual: number | undefined
+    manual: number | undefined,
+    manualSplit: ManualBillableSplitHours | undefined
 ): EditorBaselineSnapshot {
     const timeFromRaw =
         (entry.timeFrom || "").length >= 5
@@ -244,7 +253,11 @@ function buildEditorBaseline(
         dateTo: entry.dateTo,
         timeFromNorm,
         timeToNorm,
-        manualInput: manual !== undefined ? String(manual) : "",
+        manualInput: manualSplit
+            ? serializeBillableSplitHours(manualSplit)
+            : manual !== undefined
+              ? String(manual)
+              : "",
         persons: [...(entry.persons ?? [])],
     };
 }
@@ -282,7 +295,7 @@ function parseManualBillableHoursInput(
 
     const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const rows = lines.length > 0 ? lines : [trimmed];
-    const segmentRe = /^(?:N|W|A)\s*=\s*(\d+(?:[.,]\d+)?)\s*$/i;
+    const segmentRe = /^(?:N|W|A|RN|RA)\s*=\s*(\d+(?:[.,]\d+)?)\s*$/i;
     const nums: number[] = [];
     for (const row of rows) {
         const m = row.match(segmentRe);
@@ -297,6 +310,131 @@ function parseManualBillableHoursInput(
     }
     const sum = nums.reduce((a, b) => a + b, 0);
     return roundBillable(sum);
+}
+
+type BillableSegmentKey = "normal" | "after" | "redNormal" | "redAfter";
+
+const BILLABLE_SEGMENT_CONFIG: Array<{
+    key: BillableSegmentKey;
+    token: "N" | "A" | "RN" | "RA";
+    label: string;
+    red?: boolean;
+}> = [
+    { key: "normal", token: "N", label: "N" },
+    { key: "after", token: "A", label: "A" },
+    { key: "redNormal", token: "RN", label: "N", red: true },
+    { key: "redAfter", token: "RA", label: "A", red: true },
+];
+
+function parseBillableSegmentInputs(
+    raw: string,
+    preferHolidayColumns = false
+): Record<BillableSegmentKey, string> {
+    const values: Record<BillableSegmentKey, string> = {
+        normal: "",
+        after: "",
+        redNormal: "",
+        redAfter: "",
+    };
+    const compactPlain = raw.trim().replace(/\s/g, "").replace(",", ".");
+    if (/^\d+(?:\.\d+)?$/.test(compactPlain)) {
+        values.normal = compactPlain;
+        return values;
+    }
+
+    raw.split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .forEach((line) => {
+            const match = line.match(/^(N|A|RN|RA)\s*=\s*(\d+(?:[.,]\d+)?)\s*$/i);
+            if (!match) {
+                return;
+            }
+            const token = match[1].toUpperCase();
+            const value = match[2].replace(",", ".");
+            const normalizedToken =
+                preferHolidayColumns && token === "N"
+                    ? "RN"
+                    : preferHolidayColumns && token === "A"
+                      ? "RA"
+                      : token;
+            const config = BILLABLE_SEGMENT_CONFIG.find(
+                (item) => item.token === normalizedToken
+            );
+            if (config) {
+                values[config.key] = value;
+            }
+        });
+
+    return values;
+}
+
+function serializeBillableSegmentInputs(
+    values: Record<BillableSegmentKey, string>
+): string {
+    return BILLABLE_SEGMENT_CONFIG.map((config) => {
+        const value = values[config.key].trim().replace(",", ".");
+        return value === "" ? "" : `${config.token}=${value}`;
+    })
+        .filter(Boolean)
+        .join("\n");
+}
+
+function serializeBillableSplitHours(split: ManualBillableSplitHours): string {
+    return serializeBillableSegmentInputs({
+        normal: split.weekdayNormal > 0 ? String(split.weekdayNormal) : "",
+        after: split.weekdayAfter > 0 ? String(split.weekdayAfter) : "",
+        redNormal: split.weekendNormal > 0 ? String(split.weekendNormal) : "",
+        redAfter: split.weekendAfter > 0 ? String(split.weekendAfter) : "",
+    });
+}
+
+function parseManualBillableSplitHoursInput(
+    raw: string
+): ManualBillableSplitHours | null | "invalid" {
+    if (raw.trim() === "") {
+        return null;
+    }
+    const segments = parseBillableSegmentInputs(raw);
+    const result: ManualBillableSplitHours = {
+        weekdayNormal: 0,
+        weekdayAfter: 0,
+        weekendNormal: 0,
+        weekendAfter: 0,
+    };
+    const map: Array<[BillableSegmentKey, keyof ManualBillableSplitHours]> = [
+        ["normal", "weekdayNormal"],
+        ["after", "weekdayAfter"],
+        ["redNormal", "weekendNormal"],
+        ["redAfter", "weekendAfter"],
+    ];
+    let hasValue = false;
+    for (const [segmentKey, splitKey] of map) {
+        const rawValue = segments[segmentKey].trim().replace(",", ".");
+        if (rawValue === "") {
+            continue;
+        }
+        if (!/^\d+(?:\.\d+)?$/.test(rawValue)) {
+            return "invalid";
+        }
+        const value = Number(rawValue);
+        if (!Number.isFinite(value) || value < 0) {
+            return "invalid";
+        }
+        hasValue = true;
+        result[splitKey] = roundBillable(value);
+    }
+
+    return hasValue ? result : null;
+}
+
+function sumManualBillableSplitHours(split: ManualBillableSplitHours): number {
+    return roundBillable(
+        split.weekdayNormal +
+            split.weekdayAfter +
+            split.weekendNormal +
+            split.weekendAfter
+    );
 }
 
 function getNumericBillableBaseForStepper(
@@ -336,6 +474,8 @@ export type TimesheetEntryEditorFormProps = {
     contextEntries: TimesheetEntryEditorEntry[];
     invoiceTimesheetPeople: string[];
     manualBillableHours: number | undefined;
+    manualBillableSplitHours?: ManualBillableSplitHours;
+    isHolidayChargeDate?: (date: string) => boolean;
     getDurationLabel: (
         startDate: string,
         startTime: string,
@@ -358,6 +498,8 @@ export function TimesheetEntryEditorForm({
     contextEntries,
     invoiceTimesheetPeople,
     manualBillableHours,
+    manualBillableSplitHours,
+    isHolidayChargeDate,
     getDurationLabel,
     getChargeLabelForDraft,
     onSave,
@@ -375,7 +517,11 @@ export function TimesheetEntryEditorForm({
     ) {
         baselineEntryIdRef.current = entry.id;
         baselineRemountRef.current = remountTick;
-        baselineRef.current = buildEditorBaseline(entry, manualBillableHours);
+        baselineRef.current = buildEditorBaseline(
+            entry,
+            manualBillableHours,
+            manualBillableSplitHours
+        );
     }
     const baseline = baselineRef.current!;
 
@@ -398,7 +544,11 @@ export function TimesheetEntryEditorForm({
         entry.clientDuplicated ? [] : [...(entry.persons ?? [])]
     );
     const [manualInput, setManualInput] = useState(
-        manualBillableHours !== undefined ? String(manualBillableHours) : ""
+        manualBillableSplitHours
+            ? serializeBillableSplitHours(manualBillableSplitHours)
+            : manualBillableHours !== undefined
+              ? String(manualBillableHours)
+              : ""
     );
 
     useEffect(() => {
@@ -418,7 +568,13 @@ export function TimesheetEntryEditorForm({
         setSelectedPersons(
             entry.clientDuplicated ? [] : [...(entry.persons ?? [])]
         );
-        setManualInput(manualBillableHours !== undefined ? String(manualBillableHours) : "");
+        setManualInput(
+            manualBillableSplitHours
+                ? serializeBillableSplitHours(manualBillableSplitHours)
+                : manualBillableHours !== undefined
+                  ? String(manualBillableHours)
+                  : ""
+        );
     }, [
         entry.id,
         entry.clientDuplicated,
@@ -429,6 +585,7 @@ export function TimesheetEntryEditorForm({
         entry.timeTo,
         entry.persons,
         manualBillableHours,
+        manualBillableSplitHours,
     ]);
 
     const normalizedTimeFrom = normalizeHHMM(timeFrom) ?? "";
@@ -496,9 +653,26 @@ export function TimesheetEntryEditorForm({
     );
 
     const autoChargeLabel = getChargeLabelForDraft(draftEntry);
+    const preferHolidayBillableColumns =
+        descType === "작업" && (isHolidayChargeDate?.(dateFrom) ?? false);
     /** 비어 있으면 자동 청구(저장 시 null)이지만, 입력란에는 자동 산출 문구를 표시 */
     const displayManualCharge =
         manualInput.trim() === "" ? autoChargeLabel || "-" : manualInput;
+    const billableSegmentInputs = parseBillableSegmentInputs(
+        manualInput.trim() === "" ? autoChargeLabel || "" : manualInput,
+        manualInput.trim() === "" ? preferHolidayBillableColumns : false
+    );
+    const handleBillableSegmentChange = (
+        key: BillableSegmentKey,
+        value: string
+    ) => {
+        const normalized = value.replace(/[^\d.,]/g, "");
+        const next = {
+            ...billableSegmentInputs,
+            [key]: normalized,
+        };
+        setManualInput(serializeBillableSegmentInputs(next));
+    };
 
     const baselineDraftEntry: TimesheetEntryEditorEntry = useMemo(
         () => ({
@@ -611,10 +785,18 @@ export function TimesheetEntryEditorForm({
             window.alert("인원을 한 명 이상 선택해 주세요.");
             return;
         }
-        const parsedBillable = parseManualBillableHoursInput(
-            manualInput,
-            autoChargeLabel
-        );
+        const parsedSplitBillable =
+            descType === "작업"
+                ? parseManualBillableSplitHoursInput(manualInput)
+                : null;
+        if (parsedSplitBillable === "invalid") {
+            window.alert("청구 시간은 0 이상의 숫자로 입력해 주세요.");
+            return;
+        }
+        const parsedBillable =
+            parsedSplitBillable && typeof parsedSplitBillable === "object"
+                ? sumManualBillableSplitHours(parsedSplitBillable)
+                : parseManualBillableHoursInput(manualInput, autoChargeLabel);
         if (parsedBillable === "invalid") {
             window.alert("청구 시간은 0 이상의 숫자로 입력해 주세요.");
             return;
@@ -629,6 +811,10 @@ export function TimesheetEntryEditorForm({
             timeTo: normalizedTimeTo,
             persons: [...selectedPersons].sort((a, b) => a.localeCompare(b, "ko")),
             manualBillableHours: manualBillableHoursPayload,
+            manualBillableSplitHours:
+                parsedSplitBillable && typeof parsedSplitBillable === "object"
+                    ? parsedSplitBillable
+                    : null,
         });
         onCancel();
     };
@@ -816,36 +1002,81 @@ export function TimesheetEntryEditorForm({
                 </div>
                 <div>
                     <div className="text-xs font-semibold text-gray-500">청구 시간</div>
-                    <div className="relative mt-1">
-                        <input
-                            type="text"
-                            inputMode="decimal"
-                            value={displayManualCharge}
-                            onChange={(e) => setManualInput(e.target.value)}
-                            onFocus={(e) => {
-                                if (
-                                    manualInput.trim() === "" &&
-                                    (autoChargeLabel ?? "").length > 0
-                                ) {
-                                    requestAnimationFrame(() => e.target.select());
-                                }
-                            }}
+                    {descType === "작업" ? (
+                        <div
                             className={[
-                                "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-7 text-sm",
-                                chargeChanged ? fieldChangedClass : "",
+                                "mt-1 grid grid-cols-8 overflow-hidden rounded-lg border border-gray-200 text-sm",
+                                chargeChanged ? "border-blue-500 text-blue-700" : "",
                             ]
                                 .filter(Boolean)
                                 .join(" ")}
-                        />
-                        <div className="absolute right-0.5 top-1/2 -translate-y-1/2">
-                            <HourStepper
-                                ariaLabelUp="청구 시간 1시간 증가"
-                                ariaLabelDown="청구 시간 1시간 감소"
-                                onUp={() => adjustBillableByHours(1)}
-                                onDown={() => adjustBillableByHours(-1)}
-                            />
+                        >
+                            {BILLABLE_SEGMENT_CONFIG.map((config) => (
+                                <div
+                                    key={config.key}
+                                    className="contents"
+                                >
+                                    <div
+                                        className={[
+                                            "flex items-center justify-center border-r border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-bold",
+                                            config.red ? "text-red-600" : "text-gray-700",
+                                        ].join(" ")}
+                                    >
+                                        {config.label}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={billableSegmentInputs[config.key]}
+                                        onChange={(e) =>
+                                            handleBillableSegmentChange(
+                                                config.key,
+                                                e.target.value
+                                            )
+                                        }
+                                        className={[
+                                            "min-w-0 border-r border-gray-200 px-2 py-1.5 text-center outline-none last:border-r-0",
+                                            config.red
+                                                ? "text-red-600 focus:bg-red-50"
+                                                : "text-gray-900 focus:bg-blue-50",
+                                        ].join(" ")}
+                                        aria-label={`청구 시간 ${config.token}`}
+                                    />
+                                </div>
+                            ))}
                         </div>
-                    </div>
+                    ) : (
+                        <div className="relative mt-1">
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={displayManualCharge}
+                                onChange={(e) => setManualInput(e.target.value)}
+                                onFocus={(e) => {
+                                    if (
+                                        manualInput.trim() === "" &&
+                                        (autoChargeLabel ?? "").length > 0
+                                    ) {
+                                        requestAnimationFrame(() => e.target.select());
+                                    }
+                                }}
+                                className={[
+                                    "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-7 text-sm",
+                                    chargeChanged ? fieldChangedClass : "",
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                            />
+                            <div className="absolute right-0.5 top-1/2 -translate-y-1/2">
+                                <HourStepper
+                                    ariaLabelUp="청구 시간 1시간 증가"
+                                    ariaLabelDown="청구 시간 1시간 감소"
+                                    onUp={() => adjustBillableByHours(1)}
+                                    onDown={() => adjustBillableByHours(-1)}
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
