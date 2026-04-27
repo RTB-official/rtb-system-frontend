@@ -83,12 +83,6 @@ interface ActionMenuProps {
     onResetPassword?: () => void;
     onLogout?: () => void;
     onDownload?: () => void;
-
-    // ✅ 추가: URL만 넘기면 ActionMenu가 새 창으로 열어줌
-    downloadUrl?: string;
-    downloadWindowName?: string;
-    downloadWindowFeatures?: string;
-
     downloadLabel?: string;
     showDelete?: boolean;
     headerContent?: React.ReactNode;
@@ -113,25 +107,6 @@ export default function ActionMenu({
     onResetPassword,
     onLogout,
     onDownload,
-
-    // ✅ 추가
-    downloadUrl,
-    downloadWindowName = "report_pdf_window",
-    downloadWindowFeatures = [
-        "width=980",
-        "height=820",
-        "left=120",
-        "top=60",
-        "scrollbars=yes",
-        "resizable=yes",
-        "toolbar=yes",
-        "menubar=yes",
-        "location=yes",
-        "status=no",
-        "noopener=yes",
-        "noreferrer=yes",
-    ].join(","),
-
     downloadLabel = "PDF",
     showDelete = true,
     headerContent,
@@ -295,15 +270,11 @@ export default function ActionMenu({
                     비밀번호 재설정
                 </ActionMenuButton>
             )}
-            {(downloadUrl || onDownload) && (
+            {onDownload && (
                 <ActionMenuButton
                     icon={<IconDownload />}
                     onClick={() => {
-                        if (downloadUrl) {
-                            window.open(downloadUrl, downloadWindowName, downloadWindowFeatures);
-                        } else {
-                            onDownload?.();
-                        }
+                        onDownload();
                         onClose();
                     }}
                 >

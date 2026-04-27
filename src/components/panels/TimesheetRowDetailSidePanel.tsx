@@ -110,6 +110,15 @@ interface TimesheetRowDetailSidePanelProps {
     }) => void;
     /** 엔트리별 수동 청구시간(시) — 비어 있으면 자동 계산 */
     manualBillableHoursByEntryId?: Record<number, number>;
+    manualBillableSplitHoursByEntryId?: Record<
+        number,
+        {
+            weekdayNormal: number;
+            weekdayAfter: number;
+            weekendNormal: number;
+            weekendAfter: number;
+        }
+    >;
     /** 인보이스 페이지에서 삭제한 엔트리 목록(조회용) */
     deletedEntries?: Array<{
         id: number;
@@ -158,6 +167,51 @@ const DUPLICATED_ENTRY_ROW_STRIPE_IMAGE =
 const sortPeopleByKoreanOrder = (people: string[]) =>
     [...people].sort((a, b) => a.localeCompare(b, "ko"));
 
+const toDateSafe = (date: string, time: string): Date => {
+    const [hhStr, mmStr] = time.split(":");
+    const hh = Number(hhStr);
+    const mm = Number(mmStr ?? "0");
+
+    if (hh === 24) {
+        const nextDay = new Date(`${date}T00:00:00`);
+        nextDay.setDate(nextDay.getDate() + 1);
+        nextDay.setHours(0, mm, 0, 0);
+        return nextDay;
+    }
+
+    return new Date(
+        `${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`
+    );
+};
+
+const getEntryStartTime = (
+    entry: Pick<
+        TimesheetRowDetailSidePanelProps["sourceEntries"][number],
+        "dateFrom" | "timeFrom"
+    >
+): number | null => {
+    if (!entry.dateFrom || !entry.timeFrom) {
+        return null;
+    }
+
+    const time = toDateSafe(entry.dateFrom, entry.timeFrom).getTime();
+    return Number.isNaN(time) ? null : time;
+};
+
+const getEntryEndTime = (
+    entry: Pick<
+        TimesheetRowDetailSidePanelProps["sourceEntries"][number],
+        "dateTo" | "timeTo"
+    >
+): number | null => {
+    if (!entry.dateTo || !entry.timeTo) {
+        return null;
+    }
+
+    const time = toDateSafe(entry.dateTo, entry.timeTo).getTime();
+    return Number.isNaN(time) ? null : time;
+};
+
 const getEntryTimeRange = (
     entry: TimesheetRowDetailSidePanelProps["sourceEntries"][number]
 ) => {
@@ -165,14 +219,8 @@ const getEntryTimeRange = (
         return null;
     }
 
-    const start = new Date(`${entry.dateFrom}T${entry.timeFrom}`);
-    const end =
-        entry.timeTo === "24:00"
-            ? new Date(
-                  new Date(`${entry.dateTo}T00:00:00`).getTime() +
-                      24 * 60 * 60 * 1000
-              )
-            : new Date(`${entry.dateTo}T${entry.timeTo}`);
+    const start = toDateSafe(entry.dateFrom, entry.timeFrom);
+    const end = toDateSafe(entry.dateTo, entry.timeTo);
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
         return null;
@@ -311,12 +359,8 @@ function sortEntriesByStart(
     entries: TimesheetRowDetailSidePanelProps["sourceEntries"]
 ) {
     return [...entries].sort((a, b) => {
-        const aStart = new Date(
-            `${a.dateFrom}T${a.timeFrom || "00:00"}`
-        ).getTime();
-        const bStart = new Date(
-            `${b.dateFrom}T${b.timeFrom || "00:00"}`
-        ).getTime();
+        const aStart = getEntryStartTime(a) ?? Number.MAX_SAFE_INTEGER;
+        const bStart = getEntryStartTime(b) ?? Number.MAX_SAFE_INTEGER;
         return aStart - bStart;
     });
 }
@@ -622,6 +666,7 @@ export default function TimesheetRowDetailSidePanel({
     getTimesheetEntryEditBaseline,
     onReplaceTimesheetEntryPerson,
     manualBillableHoursByEntryId = {},
+    manualBillableSplitHoursByEntryId = {},
     deletedEntries = [],
     onRestoreDeletedTimesheetEntry,
     onRestoreAllDeletedTimesheetEntriesInScope,
@@ -947,6 +992,12 @@ export default function TimesheetRowDetailSidePanel({
                                 const isReplacedRemarkPerson =
                                     hasPersonsBaseline &&
                                     !originalPersonSet.has(person);
+                                const isSettledByEarlierLodging =
+                                    isTravelEntrySettledByEarlierLodgingOverride(
+                                        entry,
+                                        person,
+                                        travelChargeContextEntries
+                                    );
                                 return (
                                     <Fragment
                                         key={`${entry.id}-${person}-${lineIdx}-${i}`}
@@ -983,6 +1034,9 @@ export default function TimesheetRowDetailSidePanel({
                                                         )
                                                         ? "font-bold text-gray-900"
                                                         : "text-gray-700",
+                                                isSettledByEarlierLodging
+                                                    ? "text-gray-400 line-through decoration-gray-500 decoration-2"
+                                                    : "",
                                             ]
                                                 .filter(Boolean)
                                                 .join(" ")}
@@ -1324,11 +1378,7 @@ export default function TimesheetRowDetailSidePanel({
                                                 </span>
                                             </td>
                                             <td
-                                                className={`relative border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${
-                                                    isChargeHighlightDate(entry.dateFrom)
-                                                        ? "font-semibold text-red-600"
-                                                        : ""
-                                                } ${dateBoundaryTopClass}`}
+                                                className={`relative border-b border-r border-gray-200 px-3 py-2 text-center whitespace-pre-line ${dateBoundaryTopClass}`}
                                             >
                                                 {workChargeBadgeDisplay ? (
                                                     <span
@@ -1350,7 +1400,10 @@ export default function TimesheetRowDetailSidePanel({
                                                             : "whitespace-pre-line inline-block"
                                                     }
                                                 >
-                                                    {correctionLabelForDisplay}
+                                                    {renderChargeLabelContent(
+                                                        entry,
+                                                        correctionLabelForDisplay
+                                                    )}
                                                 </span>
                                             </td>
                                             <td
@@ -1707,11 +1760,8 @@ export default function TimesheetRowDetailSidePanel({
             return null;
         }
 
-        const start = new Date(`${startDate}T${startTime}`);
-        const end =
-            endTime === "24:00"
-                ? new Date(new Date(`${endDate}T00:00:00`).getTime() + 24 * 60 * 60 * 1000)
-                : new Date(`${endDate}T${endTime}`);
+        const start = toDateSafe(startDate, startTime);
+        const end = toDateSafe(endDate, endTime);
 
         if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
             return null;
@@ -1751,14 +1801,8 @@ export default function TimesheetRowDetailSidePanel({
             return "-";
         }
 
-        const start = new Date(`${entry.dateFrom}T${entry.timeFrom}`);
-        const end =
-            entry.timeTo === "24:00"
-                ? new Date(
-                      new Date(`${entry.dateTo}T00:00:00`).getTime() +
-                          24 * 60 * 60 * 1000
-                  )
-                : new Date(`${entry.dateTo}T${entry.timeTo}`);
+        const start = toDateSafe(entry.dateFrom, entry.timeFrom);
+        const end = toDateSafe(entry.dateTo, entry.timeTo);
 
         if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
             return "-";
@@ -1921,14 +1965,8 @@ export default function TimesheetRowDetailSidePanel({
             return 0;
         }
 
-        const start = new Date(`${entry.dateFrom}T${entry.timeFrom}`);
-        const end =
-            entry.timeTo === "24:00"
-                ? new Date(
-                      new Date(`${entry.dateTo}T00:00:00`).getTime() +
-                          24 * 60 * 60 * 1000
-                  )
-                : new Date(`${entry.dateTo}T${entry.timeTo}`);
+        const start = toDateSafe(entry.dateFrom, entry.timeFrom);
+        const end = toDateSafe(entry.dateTo, entry.timeTo);
 
         if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
             return 0;
@@ -2044,14 +2082,8 @@ export default function TimesheetRowDetailSidePanel({
             }
 
             const previousEntry = sortedEntries[index - 1];
-            const previousEnd =
-                previousEntry.dateTo && previousEntry.timeTo
-                    ? new Date(`${previousEntry.dateTo}T${previousEntry.timeTo}`).getTime()
-                    : null;
-            const currentStart =
-                entry.dateFrom && entry.timeFrom
-                    ? new Date(`${entry.dateFrom}T${entry.timeFrom}`).getTime()
-                    : null;
+            const previousEnd = getEntryEndTime(previousEntry);
+            const currentStart = getEntryStartTime(entry);
             const shouldSplit =
                 previousEnd !== null &&
                 currentStart !== null &&
@@ -2219,6 +2251,51 @@ export default function TimesheetRowDetailSidePanel({
         return summarizeTravelEntries(afterTravelEntries, true);
     };
 
+    const isTravelEntrySettledByEarlierLodgingOverride = (
+        entry: PanelEntry,
+        person: string,
+        contextEntries: PanelEntry[]
+    ): boolean => {
+        if (entry.descType !== "이동") {
+            return false;
+        }
+
+        if (
+            travelChargeOverrides[getTravelChargeOverrideKey(entry.id, person)]
+                ?.target === "lodging"
+        ) {
+            return false;
+        }
+
+        const personTravelEntries = sortEntriesByStart(
+            contextEntries.filter(
+                (candidate) =>
+                    candidate.descType === "이동" &&
+                    (candidate.persons ?? []).includes(person)
+            )
+        );
+        const targetGroup = splitTravelEntriesByGap(personTravelEntries, 2).find((group) =>
+            group.some((candidate) => candidate.id === entry.id)
+        );
+        if (!targetGroup) {
+            return false;
+        }
+
+        const currentIndex = targetGroup.findIndex(
+            (candidate) => candidate.id === entry.id
+        );
+        if (currentIndex <= 0) {
+            return false;
+        }
+
+        return targetGroup.slice(0, currentIndex).some((candidate) => {
+            return (
+                travelChargeOverrides[getTravelChargeOverrideKey(candidate.id, person)]
+                    ?.target === "lodging"
+            );
+        });
+    };
+
     const getTravelChargeResultForPerson = (
         entry: PanelEntry,
         person: string,
@@ -2238,6 +2315,17 @@ export default function TimesheetRowDetailSidePanel({
 
         if (override?.target === "home" && fixedHours > 0) {
             return { hours: fixedHours, kind: "home" };
+        }
+
+        if (
+            !opts?.ignoreOverride &&
+            isTravelEntrySettledByEarlierLodgingOverride(
+                entry,
+                person,
+                contextEntries
+            )
+        ) {
+            return { hours: null, kind: "none" };
         }
 
         const blocks = getPersonBlocks(person, contextEntries);
@@ -2399,6 +2487,23 @@ export default function TimesheetRowDetailSidePanel({
         );
 
         if (!ignoreEntryManual) {
+            const splitManual = manualBillableSplitHoursByEntryId[entry.id];
+            if (entry.descType === "작업" && splitManual) {
+                const lines: string[] = [];
+                if (splitManual.weekdayNormal > 0) {
+                    lines.push(`N=${formatHoursLabel(splitManual.weekdayNormal)}`);
+                }
+                if (splitManual.weekdayAfter > 0) {
+                    lines.push(`A=${formatHoursLabel(splitManual.weekdayAfter)}`);
+                }
+                if (splitManual.weekendNormal > 0) {
+                    lines.push(`N=${formatHoursLabel(splitManual.weekendNormal)}`);
+                }
+                if (splitManual.weekendAfter > 0) {
+                    lines.push(`A=${formatHoursLabel(splitManual.weekendAfter)}`);
+                }
+                return lines.join("\n");
+            }
             const manual =
                 opts && Object.prototype.hasOwnProperty.call(opts, "manualBillableHours")
                     ? opts.manualBillableHours
@@ -2464,6 +2569,19 @@ export default function TimesheetRowDetailSidePanel({
                 : personLabels.join(",");
         }
 
+        if (
+            !opts?.ignoreTravelOverrides &&
+            entry.persons.some((person) =>
+                isTravelEntrySettledByEarlierLodgingOverride(
+                    entry,
+                    person,
+                    contextEntries
+                )
+            )
+        ) {
+            return formatHoursLabel(0);
+        }
+
         if (zeroBillingTravelIds.has(entry.id)) {
             return formatHoursLabel(0);
         }
@@ -2484,6 +2602,55 @@ export default function TimesheetRowDetailSidePanel({
         }
 
         return formatHoursLabel(fixedHours);
+    };
+
+    const renderChargeLabelContent = (entry: PanelEntry, chargeLabel: string) => {
+        const splitManual = manualBillableSplitHoursByEntryId[entry.id];
+        if (entry.descType !== "작업" || !splitManual) {
+            return chargeLabel;
+        }
+
+        const lines: Array<{ text: string; isRed: boolean }> = [];
+        if (splitManual.weekdayNormal > 0) {
+            lines.push({
+                text: `N=${formatHoursLabel(splitManual.weekdayNormal)}`,
+                isRed: false,
+            });
+        }
+        if (splitManual.weekdayAfter > 0) {
+            lines.push({
+                text: `A=${formatHoursLabel(splitManual.weekdayAfter)}`,
+                isRed: false,
+            });
+        }
+        if (splitManual.weekendNormal > 0) {
+            lines.push({
+                text: `N=${formatHoursLabel(splitManual.weekendNormal)}`,
+                isRed: true,
+            });
+        }
+        if (splitManual.weekendAfter > 0) {
+            lines.push({
+                text: `A=${formatHoursLabel(splitManual.weekendAfter)}`,
+                isRed: true,
+            });
+        }
+        if (lines.length === 0) {
+            return chargeLabel;
+        }
+
+        return (
+            <>
+                {lines.map((line, idx) => (
+                    <span
+                        key={`${entry.id}-charge-line-${idx}`}
+                        className={`block ${line.isRed ? "text-red-600" : "text-gray-900"}`}
+                    >
+                        {line.text}
+                    </span>
+                ))}
+            </>
+        );
     };
 
     const getTravelDescriptionBadges = (
@@ -2533,11 +2700,13 @@ export default function TimesheetRowDetailSidePanel({
             const isHomeCharge =
                 chargeResult.kind === "home" ||
                 chargeResult.kind.endsWith("-home");
+            if (isHomeCharge) {
+                return "home";
+            }
+
             return chargeResult.hours === 1 && (containsLodging || containsHome)
                 ? "lodging"
-                : isHomeCharge
-                  ? "home"
-                  : null;
+                : null;
         };
 
         entry.persons.forEach((person) => {

@@ -343,10 +343,18 @@ type TravelChargeOverrideValue = {
 
 type TravelChargeOverrideMap = Record<string, TravelChargeOverrideValue>;
 
+type ManualBillableSplitHours = {
+    weekdayNormal: number;
+    weekdayAfter: number;
+    weekendNormal: number;
+    weekendAfter: number;
+};
+
 type InvoiceUndoSnapshot = {
     workLogDataList: WorkLogFullData[];
     travelChargeOverrides: TravelChargeOverrideMap;
     entryManualBillableHours: Record<number, number>;
+    entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
     deletedTimesheetEntries: TimesheetSourceEntryData[];
     selectedTimesheetDateGroupPanel: TimesheetDateGroupPanelData | null;
     selectedTimesheetRow: TimesheetRowModalData | null;
@@ -359,6 +367,9 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
         workLogDataList: JSON.parse(JSON.stringify(s.workLogDataList)) as WorkLogFullData[],
         travelChargeOverrides: { ...s.travelChargeOverrides },
         entryManualBillableHours: { ...s.entryManualBillableHours },
+        entryManualBillableSplitHours: JSON.parse(
+            JSON.stringify(s.entryManualBillableSplitHours ?? {})
+        ) as Record<number, ManualBillableSplitHours>,
         deletedTimesheetEntries: JSON.parse(
             JSON.stringify(s.deletedTimesheetEntries ?? [])
         ) as TimesheetSourceEntryData[],
@@ -641,6 +652,8 @@ export default function InvoiceCreatePage() {
     const [entryManualBillableHours, setEntryManualBillableHours] = useState<
         Record<number, number>
     >({});
+    const [entryManualBillableSplitHours, setEntryManualBillableSplitHours] =
+        useState<Record<number, ManualBillableSplitHours>>({});
     const invoiceUndoPastRef = useRef<InvoiceUndoSnapshot[]>([]);
     const invoiceUndoFutureRef = useRef<InvoiceUndoSnapshot[]>([]);
     const latestInvoiceStateRef = useRef<InvoiceUndoSnapshot | null>(null);
@@ -721,6 +734,7 @@ export default function InvoiceCreatePage() {
         workLogDataList,
         travelChargeOverrides,
         entryManualBillableHours,
+        entryManualBillableSplitHours,
         deletedTimesheetEntries,
         selectedTimesheetDateGroupPanel,
         selectedTimesheetRow,
@@ -797,6 +811,40 @@ export default function InvoiceCreatePage() {
         return linkedEntryIds;
     };
 
+    const getDefaultTravelChargeTargetForEntry = (
+        entry: TimesheetSourceEntryData | undefined
+    ): TravelChargeOverrideTarget | null => {
+        if (!entry || entry.descType !== "이동") {
+            return null;
+        }
+
+        const fixedHours = getHomeTravelHours(entry.location ?? null) ?? 0;
+        const containsLodging = (entry.details ?? "").includes("숙소");
+        const containsHome =
+            (entry.details ?? "").includes("자택") ||
+            entry.moveFrom === "자택" ||
+            entry.moveTo === "자택";
+        const travelHours = calculateTravelHours({
+            ...entry,
+            location: entry.location ?? null,
+            sourceEntryIds: [entry.id],
+        } as InvoiceTimesheetEntry);
+
+        if (travelHours === 1 && containsLodging) {
+            return "lodging";
+        }
+
+        if (travelHours === 1 && containsHome) {
+            return "home";
+        }
+
+        if (containsHome && fixedHours > 0) {
+            return "home";
+        }
+
+        return null;
+    };
+
     const setTravelChargeOverrideTarget = (
         entryId: number,
         person: string,
@@ -805,24 +853,32 @@ export default function InvoiceCreatePage() {
         pushInvoiceUndoSnapshotRef.current();
         setTravelChargeOverrides((previous) => {
             const updatedAt = Date.now();
-            const next: TravelChargeOverrideMap = {
-                ...previous,
-                [getTravelChargeOverrideKey(entryId, person)]: {
-                    target,
-                    updatedAt,
-                },
-            };
+            const baseEntry = timesheetRows
+                .flatMap((row) => row.sourceEntries)
+                .find((entry) => entry.id === entryId);
+            const linkedEntryIds = getLinkedTravelOverrideEntryIdsForPerson(
+                entryId,
+                person
+            );
+            const shouldResetToDefault =
+                getDefaultTravelChargeTargetForEntry(baseEntry) === target;
+            const next: TravelChargeOverrideMap = { ...previous };
+
+            if (shouldResetToDefault) {
+                linkedEntryIds.forEach((linkedEntryId) => {
+                    delete next[getTravelChargeOverrideKey(linkedEntryId, person)];
+                });
+                return next;
+            }
 
             // 자택/숙소 변경은 전날 말미 이동(trailing travel)까지만 동기화한다.
             // 다음날 첫 이동까지 복사하면 실제 숙소 출발이 자택 출발로 오염될 수 있다.
-            getLinkedTravelOverrideEntryIdsForPerson(entryId, person).forEach(
-                (linkedEntryId) => {
-                    next[getTravelChargeOverrideKey(linkedEntryId, person)] = {
-                        target,
-                        updatedAt,
-                    };
-                }
-            );
+            linkedEntryIds.forEach((linkedEntryId) => {
+                next[getTravelChargeOverrideKey(linkedEntryId, person)] = {
+                    target,
+                    updatedAt,
+                };
+            });
 
             return next;
         });
@@ -893,6 +949,9 @@ export default function InvoiceCreatePage() {
         setWorkLogDataList(snapshot.workLogDataList);
         setTravelChargeOverrides(snapshot.travelChargeOverrides);
         setEntryManualBillableHours(snapshot.entryManualBillableHours ?? {});
+        setEntryManualBillableSplitHours(
+            snapshot.entryManualBillableSplitHours ?? {}
+        );
         setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
@@ -914,6 +973,9 @@ export default function InvoiceCreatePage() {
         setWorkLogDataList(snapshot.workLogDataList);
         setTravelChargeOverrides(snapshot.travelChargeOverrides);
         setEntryManualBillableHours(snapshot.entryManualBillableHours ?? {});
+        setEntryManualBillableSplitHours(
+            snapshot.entryManualBillableSplitHours ?? {}
+        );
         setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
@@ -951,6 +1013,7 @@ export default function InvoiceCreatePage() {
         setWorkLogDataList(restored);
         setTravelChargeOverrides({});
         setEntryManualBillableHours({});
+        setEntryManualBillableSplitHours({});
         setDeletedTimesheetEntries([]);
         duplicateTimesheetEntryIdRef.current = -1;
         setSelectedFitterRepresentatives({});
@@ -1041,6 +1104,13 @@ export default function InvoiceCreatePage() {
     ): string => {
         const shifted = toDateSafe(date, time);
         shifted.setMinutes(shifted.getMinutes() + hours * 60);
+
+        const nextDateStart = new Date(`${date}T00:00:00`);
+        nextDateStart.setDate(nextDateStart.getDate() + 1);
+        if (shifted.getTime() === nextDateStart.getTime()) {
+            return "24:00";
+        }
+
         return formatTimeHHMM(shifted);
     };
 
@@ -1285,14 +1355,19 @@ export default function InvoiceCreatePage() {
         let latestOverride: TravelChargeOverrideValue | null = null;
 
         entries.forEach((entry) => {
-            const override = getTravelChargeOverride(entry.id, person);
-            if (!override) {
-                return;
-            }
+            const overrideIds =
+                entry.sourceEntryIds.length > 0 ? entry.sourceEntryIds : [entry.id];
 
-            if (!latestOverride || override.updatedAt > latestOverride.updatedAt) {
-                latestOverride = override;
-            }
+            overrideIds.forEach((entryId) => {
+                const override = getTravelChargeOverride(entryId, person);
+                if (!override) {
+                    return;
+                }
+
+                if (!latestOverride || override.updatedAt > latestOverride.updatedAt) {
+                    latestOverride = override;
+                }
+            });
         });
 
         return latestOverride;
@@ -2499,6 +2574,18 @@ export default function InvoiceCreatePage() {
                                 return;
                             }
 
+                            const splitManual =
+                                entryManualBillableSplitHours[entry.id];
+                            if (splitManual) {
+                                normal +=
+                                    splitManual.weekdayNormal +
+                                    splitManual.weekendNormal;
+                                after +=
+                                    splitManual.weekdayAfter +
+                                    splitManual.weekendAfter;
+                                return;
+                            }
+
                             const manual = entryManualBillableHours[entry.id];
                             if (manual !== undefined) {
                                 normal += manual;
@@ -2514,6 +2601,44 @@ export default function InvoiceCreatePage() {
                             normal: roundHours(normal),
                             after: roundHours(after),
                             total: roundHours(normal + after),
+                        };
+                    };
+
+                    const getManualWorkSplitForEntries = (
+                        entries: InvoiceTimesheetEntry[]
+                    ): ManualBillableSplitHours | null => {
+                        let found = false;
+                        const result: ManualBillableSplitHours = {
+                            weekdayNormal: 0,
+                            weekdayAfter: 0,
+                            weekendNormal: 0,
+                            weekendAfter: 0,
+                        };
+
+                        entries.forEach((entry) => {
+                            if (entry.descType !== "작업") {
+                                return;
+                            }
+                            const split = entryManualBillableSplitHours[entry.id];
+                            if (!split) {
+                                return;
+                            }
+                            found = true;
+                            result.weekdayNormal += split.weekdayNormal;
+                            result.weekdayAfter += split.weekdayAfter;
+                            result.weekendNormal += split.weekendNormal;
+                            result.weekendAfter += split.weekendAfter;
+                        });
+
+                        if (!found) {
+                            return null;
+                        }
+
+                        return {
+                            weekdayNormal: roundHours(result.weekdayNormal),
+                            weekdayAfter: roundHours(result.weekdayAfter),
+                            weekendNormal: roundHours(result.weekendNormal),
+                            weekendAfter: roundHours(result.weekendAfter),
                         };
                     };
 
@@ -2651,7 +2776,10 @@ export default function InvoiceCreatePage() {
 
                         const override =
                             person !== undefined
-                                ? getLatestTravelChargeOverrideForEntries(entries, person)
+                                ? getLatestTravelChargeOverrideForEntries(
+                                      entries,
+                                      person
+                                  )
                                 : null;
 
                         if (override?.target === "lodging") {
@@ -3264,7 +3392,10 @@ export default function InvoiceCreatePage() {
                                     getWorkingMetricsForEntriesDisplay(
                                         block.workEntries
                                     );
+                                const manualWorkSplit =
+                                    getManualWorkSplitForEntries(block.workEntries);
                                 const hasRoundedManualWorkInBlock =
+                                    !manualWorkSplit &&
                                     block.workEntries.some(
                                         (e) =>
                                             e.descType === "작업" &&
@@ -3441,20 +3572,30 @@ export default function InvoiceCreatePage() {
                                             working.total + travelHours
                                         ),
                                         timesheetTotalHoursDisplay: roundHours(
-                                            workingDisplay.total + travelHours
+                                            (manualWorkSplit
+                                                ? working.total
+                                                : workingDisplay.total) + travelHours
                                         ),
-                                        weekdayNormal: isWeekendDay
-                                            ? 0
-                                            : working.normal,
-                                        weekdayAfter: isWeekendDay
-                                            ? 0
-                                            : working.after,
-                                        weekendNormal: isWeekendDay
-                                            ? working.normal
-                                            : 0,
-                                        weekendAfter: isWeekendDay
-                                            ? working.after
-                                            : 0,
+                                        weekdayNormal: manualWorkSplit
+                                            ? manualWorkSplit.weekdayNormal
+                                            : isWeekendDay
+                                              ? 0
+                                              : working.normal,
+                                        weekdayAfter: manualWorkSplit
+                                            ? manualWorkSplit.weekdayAfter
+                                            : isWeekendDay
+                                              ? 0
+                                              : working.after,
+                                        weekendNormal: manualWorkSplit
+                                            ? manualWorkSplit.weekendNormal
+                                            : isWeekendDay
+                                              ? working.normal
+                                              : 0,
+                                        weekendAfter: manualWorkSplit
+                                            ? manualWorkSplit.weekendAfter
+                                            : isWeekendDay
+                                              ? working.after
+                                              : 0,
                                         travelWeekday: isWeekendDay ? 0 : travelHours,
                                         travelWeekend: isWeekendDay ? travelHours : 0,
                                         travelWeekdayDisplay: isWeekendDay
@@ -3608,7 +3749,13 @@ export default function InvoiceCreatePage() {
                         applyChargedTimeWindowToTimesheetRows(rows)
                     );
                 setTimesheetRows(finalTimesheetRows);
-                if (!shouldReuseLoadedData) {
+                const isPristineInvoiceState =
+                    invoiceUndoPastRef.current.length === 0 &&
+                    Object.keys(travelChargeOverrides).length === 0 &&
+                    Object.keys(entryManualBillableHours).length === 0 &&
+                    Object.keys(entryManualBillableSplitHours).length === 0 &&
+                    deletedTimesheetEntries.length === 0;
+                if (!shouldReuseLoadedData || isPristineInvoiceState) {
                     initialTimesheetRowValueByIdentityRef.current =
                         Object.fromEntries(
                             finalTimesheetRows.map((row) => [
@@ -3634,6 +3781,8 @@ export default function InvoiceCreatePage() {
         travelChargeOverrides,
         workLogDataList,
         entryManualBillableHours,
+        entryManualBillableSplitHours,
+        deletedTimesheetEntries,
     ]);
 
     const handleMenuClick = () => {
@@ -4260,38 +4409,47 @@ export default function InvoiceCreatePage() {
                 if (rowPeople.length === 0) {
                     return summary;
                 }
-
-                const billedSkilledFitterCount = 1;
-                const billedFitterCount = Math.max(
-                    rowPeople.length - billedSkilledFitterCount,
-                    0
+                const lodgingSettledPeople =
+                    getLodgingSettledPersonNamesForRow(row);
+                const travelBillablePeople = rowPeople.filter(
+                    (person) => !lodgingSettledPeople.has(person)
                 );
 
+                const getBilledCounts = (peopleCount: number) => {
+                    const skilled = peopleCount > 0 ? 1 : 0;
+                    return {
+                        skilled,
+                        fitter: Math.max(peopleCount - skilled, 0),
+                    };
+                };
+                const workCounts = getBilledCounts(rowPeople.length);
+                const travelCounts = getBilledCounts(travelBillablePeople.length);
+
                 summary.skilled.weekdayNormal +=
-                    row.weekdayNormal * billedSkilledFitterCount;
+                    row.weekdayNormal * workCounts.skilled;
                 summary.skilled.weekdayAfter +=
-                    row.weekdayAfter * billedSkilledFitterCount;
+                    row.weekdayAfter * workCounts.skilled;
                 summary.skilled.weekendNormal +=
-                    row.weekendNormal * billedSkilledFitterCount;
+                    row.weekendNormal * workCounts.skilled;
                 summary.skilled.weekendAfter +=
-                    row.weekendAfter * billedSkilledFitterCount;
+                    row.weekendAfter * workCounts.skilled;
                 summary.skilled.travelWeekday +=
-                    row.travelWeekday * billedSkilledFitterCount;
+                    row.travelWeekday * travelCounts.skilled;
                 summary.skilled.travelWeekend +=
-                    row.travelWeekend * billedSkilledFitterCount;
+                    row.travelWeekend * travelCounts.skilled;
 
                 summary.fitter.weekdayNormal +=
-                    row.weekdayNormal * billedFitterCount;
+                    row.weekdayNormal * workCounts.fitter;
                 summary.fitter.weekdayAfter +=
-                    row.weekdayAfter * billedFitterCount;
+                    row.weekdayAfter * workCounts.fitter;
                 summary.fitter.weekendNormal +=
-                    row.weekendNormal * billedFitterCount;
+                    row.weekendNormal * workCounts.fitter;
                 summary.fitter.weekendAfter +=
-                    row.weekendAfter * billedFitterCount;
+                    row.weekendAfter * workCounts.fitter;
                 summary.fitter.travelWeekday +=
-                    row.travelWeekday * billedFitterCount;
+                    row.travelWeekday * travelCounts.fitter;
                 summary.fitter.travelWeekend +=
-                    row.travelWeekend * billedFitterCount;
+                    row.travelWeekend * travelCounts.fitter;
                 return summary;
             },
             {
@@ -4308,6 +4466,9 @@ export default function InvoiceCreatePage() {
     ): "4h 청구" | "8h 청구" | null => {
         for (const e of row.sourceEntries) {
             if (e.descType !== "작업") {
+                continue;
+            }
+            if (entryManualBillableSplitHours[e.id]) {
                 continue;
             }
             const m = entryManualBillableHours[e.id];
@@ -4544,6 +4705,104 @@ export default function InvoiceCreatePage() {
             .split(",")
             .map((value) => value.trim())
             .filter(Boolean);
+    const getLodgingSettledPersonNamesForRow = (row: TimesheetRow) => {
+        const rowStart = toDateSafe(row.date, row.timeFrom || "00:00").getTime();
+        if (Number.isNaN(rowStart)) {
+            return new Set<string>();
+        }
+
+        const visiblePeople = getRowPersons(row);
+        const allTravelEntriesById = new Map<number, TimesheetSourceEntryData>();
+        timesheetRows.forEach((candidateRow) => {
+            candidateRow.sourceEntries.forEach((entry) => {
+                if (entry.descType === "이동") {
+                    allTravelEntriesById.set(entry.id, entry);
+                }
+            });
+        });
+        row.sourceEntries.forEach((entry) => {
+            if (entry.descType === "이동") {
+                allTravelEntriesById.set(entry.id, entry);
+            }
+        });
+
+        const allTravelEntries = Array.from(allTravelEntriesById.values()).sort(
+            compareTimesheetSourceEntriesByTimeThenId
+        );
+        const settledPeople = new Set<string>();
+
+        visiblePeople.forEach((person) => {
+            const rowTravelEntries = row.sourceEntries.filter(
+                (entry) =>
+                    entry.descType === "이동" &&
+                    (entry.persons ?? []).includes(person)
+            );
+            if (rowTravelEntries.length === 0) {
+                return;
+            }
+
+            const rowEntryIds = new Set(rowTravelEntries.map((entry) => entry.id));
+            const personTravelEntries = allTravelEntries.filter((entry) =>
+                (entry.persons ?? []).includes(person)
+            );
+            const groups: TimesheetSourceEntryData[][] = [];
+            let currentGroup: TimesheetSourceEntryData[] = [];
+
+            personTravelEntries.forEach((entry, index) => {
+                if (index === 0) {
+                    currentGroup = [entry];
+                    return;
+                }
+
+                const previousEntry = personTravelEntries[index - 1];
+                const previousEnd = getEntryEndTime(
+                    previousEntry as InvoiceTimesheetEntry
+                );
+                const currentStart = getEntryStartTime(
+                    entry as InvoiceTimesheetEntry
+                );
+                const shouldSplit =
+                    previousEnd !== null &&
+                    currentStart !== null &&
+                    currentStart - previousEnd >= 2 * 60 * 60 * 1000;
+
+                if (shouldSplit) {
+                    groups.push(currentGroup);
+                    currentGroup = [entry];
+                    return;
+                }
+
+                currentGroup.push(entry);
+            });
+
+            if (currentGroup.length > 0) {
+                groups.push(currentGroup);
+            }
+
+            const targetGroup = groups.find((group) =>
+                group.some((entry) => rowEntryIds.has(entry.id))
+            );
+            if (!targetGroup) {
+                return;
+            }
+
+            const hasEarlierLodging = targetGroup.some((entry) => {
+                const override = getTravelChargeOverride(entry.id, person);
+                if (override?.target !== "lodging") {
+                    return false;
+                }
+
+                const entryStart = getEntryStartTime(entry as InvoiceTimesheetEntry);
+                return entryStart !== null && entryStart < rowStart;
+            });
+
+            if (hasEarlierLodging) {
+                settledPeople.add(person);
+            }
+        });
+
+        return settledPeople;
+    };
     const getUniquePersonsFromRows = (rows: TimesheetRow[]) =>
         Array.from(
             new Set(
@@ -5368,7 +5627,7 @@ export default function InvoiceCreatePage() {
         return () => {
             cancelled = true;
         };
-    }, [allInvoicePeopleKey]);
+    }, [allInvoicePeopleKey, workLogDataList]);
 
     useEffect(() => {
         if (allInvoicePeople.length === 0) {
@@ -5410,9 +5669,32 @@ export default function InvoiceCreatePage() {
                             : "",
                 }))
                 .filter((row) => Number.isFinite(row.entryId) && row.person);
+            const localPairs = workLogDataList.flatMap((data) =>
+                data.entries.flatMap((entry) =>
+                    (entry.persons ?? [])
+                        .map((person) => ({
+                            entryId: entry.id,
+                            person: person.trim(),
+                        }))
+                        .filter(
+                            (row) =>
+                                Number.isFinite(row.entryId) &&
+                                row.person &&
+                                allInvoicePeople.includes(row.person)
+                        )
+                )
+            );
+            const allPairs = Array.from(
+                new Map(
+                    [...normalizedPairs, ...localPairs].map((row) => [
+                        `${row.entryId}:${row.person}`,
+                        row,
+                    ])
+                ).values()
+            );
 
             const entryIds = Array.from(
-                new Set(normalizedPairs.map((row) => row.entryId))
+                new Set(allPairs.map((row) => row.entryId))
             );
 
             if (entryIds.length === 0) {
@@ -5492,13 +5774,28 @@ export default function InvoiceCreatePage() {
                     },
                 ])
             );
+            workLogDataList.forEach((data) => {
+                data.entries.forEach((entry) => {
+                    entryMetaById.set(entry.id, {
+                        workLogId: data.workLog.id,
+                        dateFrom: entry.dateFrom,
+                        timeFrom: entry.timeFrom ?? null,
+                    });
+                });
+            });
             const vesselByWorkLogId = new Map<number, string>(
                 workLogRows
                     .filter((row) => !row.is_draft && row.vessel?.trim())
                     .map((row) => [row.id, row.vessel!.trim()])
             );
+            workLogDataList.forEach((data) => {
+                const vessel = data.workLog.vessel?.trim();
+                if (vessel) {
+                    vesselByWorkLogId.set(data.workLog.id, vessel);
+                }
+            });
 
-            const sortedPairs = [...normalizedPairs].sort((a, b) => {
+            const sortedPairs = [...allPairs].sort((a, b) => {
                 const metaA = entryMetaById.get(a.entryId);
                 const metaB = entryMetaById.get(b.entryId);
                 const dateA = metaA?.dateFrom ?? "";
@@ -6110,8 +6407,8 @@ export default function InvoiceCreatePage() {
                 initialTimesheetRowValueByIdentityRef.current[identity];
             const normOverrideSig = (v: string | undefined) => v ?? "";
             const overrideSigNow = getTravelChargeOverrideSignatureForRow(row);
+            const fallbackChanged = isTimesheetRowEditedFromBaseline(row);
             if (!baseline) {
-                const fallbackChanged = isTimesheetRowEditedFromBaseline(row);
                 const travelOverrideDirty = overrideSigNow !== "";
                 return {
                     timeFrom: fallbackChanged,
@@ -6135,6 +6432,19 @@ export default function InvoiceCreatePage() {
                         }
                     ).travelChargeOverrideSignature
                 );
+            if (!fallbackChanged && !overrideChanged) {
+                return {
+                    timeFrom: false,
+                    timeTo: false,
+                    totalHours: false,
+                    weekdayNormal: false,
+                    weekdayAfter: false,
+                    weekendNormal: false,
+                    weekendAfter: false,
+                    travelWeekday: false,
+                    travelWeekend: false,
+                };
+            }
             return {
                 timeFrom: current.timeFrom !== baseline.timeFrom,
                 timeTo: current.timeTo !== baseline.timeTo,
@@ -6303,6 +6613,7 @@ export default function InvoiceCreatePage() {
         timeTo: string;
         persons: string[];
         manualBillableHours: number | null;
+        manualBillableSplitHours?: ManualBillableSplitHours | null;
     };
 
     const updateTimesheetEntry = useCallback(
@@ -6361,6 +6672,15 @@ export default function InvoiceCreatePage() {
                     delete next[payload.entryId];
                 } else {
                     next[payload.entryId] = payload.manualBillableHours;
+                }
+                return next;
+            });
+            setEntryManualBillableSplitHours((prev) => {
+                const next = { ...prev };
+                if (!payload.manualBillableSplitHours) {
+                    delete next[payload.entryId];
+                } else {
+                    next[payload.entryId] = payload.manualBillableSplitHours;
                 }
                 return next;
             });
@@ -6465,6 +6785,14 @@ export default function InvoiceCreatePage() {
             setWorkLogDataList(nextList);
 
             setEntryManualBillableHours((prev) => {
+                if (!(entryId in prev)) {
+                    return prev;
+                }
+                const next = { ...prev };
+                delete next[entryId];
+                return next;
+            });
+            setEntryManualBillableSplitHours((prev) => {
                 if (!(entryId in prev)) {
                     return prev;
                 }
@@ -6656,6 +6984,14 @@ export default function InvoiceCreatePage() {
             delete originalEntryPersonsByIdRef.current[entryId];
             delete timesheetEntryEditBaselineByIdRef.current[entryId];
             setEntryManualBillableHours((prev) => {
+                if (!(entryId in prev)) {
+                    return prev;
+                }
+                const next = { ...prev };
+                delete next[entryId];
+                return next;
+            });
+            setEntryManualBillableSplitHours((prev) => {
                 if (!(entryId in prev)) {
                     return prev;
                 }
@@ -7799,6 +8135,10 @@ export default function InvoiceCreatePage() {
                                                                         getReplacedRemarkPersonNamesForRow(
                                                                             row
                                                                         );
+                                                                    const lodgingSettled =
+                                                                        getLodgingSettledPersonNamesForRow(
+                                                                            row
+                                                                        );
                                                                     return getRowPersons(
                                                                         row
                                                                     ).map(
@@ -7817,11 +8157,20 @@ export default function InvoiceCreatePage() {
                                                                                 ) : null}
                                                                                 <span
                                                                                     className={
-                                                                                        replaced.has(
-                                                                                            person
-                                                                                        )
-                                                                                            ? "inline-block rounded border border-blue-500 px-1 py-0.5 font-bold text-blue-700"
-                                                                                            : ""
+                                                                                        [
+                                                                                            replaced.has(
+                                                                                                person
+                                                                                            )
+                                                                                                ? "inline-block rounded border border-blue-500 px-1 py-0.5 font-bold text-blue-700"
+                                                                                                : "",
+                                                                                            lodgingSettled.has(
+                                                                                                person
+                                                                                            )
+                                                                                                ? "text-gray-400 line-through decoration-gray-500 decoration-2"
+                                                                                                : "",
+                                                                                        ]
+                                                                                            .filter(Boolean)
+                                                                                            .join(" ")
                                                                                     }
                                                                                 >
                                                                                     {
@@ -8979,6 +9328,9 @@ export default function InvoiceCreatePage() {
                     getTimesheetEntryEditBaseline={getTimesheetEntryEditBaseline}
                     onReplaceTimesheetEntryPerson={replaceTimesheetEntryPerson}
                     manualBillableHoursByEntryId={entryManualBillableHours}
+                    manualBillableSplitHoursByEntryId={
+                        entryManualBillableSplitHours
+                    }
                     deletedEntries={deletedTimesheetEntries}
                     onRestoreDeletedTimesheetEntry={(entryId) =>
                         restoreDeletedTimesheetEntriesBatch([entryId])
@@ -9032,6 +9384,9 @@ export default function InvoiceCreatePage() {
                     undoDisabled={invoiceUndoRedoCounts.past === 0}
                     redoDisabled={invoiceUndoRedoCounts.future === 0}
                     manualBillableHoursByEntryId={entryManualBillableHours}
+                    manualBillableSplitHoursByEntryId={
+                        entryManualBillableSplitHours
+                    }
                     onUpdateTimesheetEntry={updateTimesheetEntry}
                     onResetSingleTimesheetEntryToInitial={
                         resetSingleTimesheetEntryToInitial
