@@ -26,6 +26,7 @@ import {
     SKILLED_FITTER_KOREAN_NAMES,
     SKILLED_FITTER_NAME_SET,
 } from "../../constants/skilledFitter";
+import { INVOICE_MANPOWER_UNIT_PRICE_KRW } from "../../constants/invoiceManpowerUnitPriceKrw";
 import {
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
@@ -4056,6 +4057,15 @@ export default function InvoiceCreatePage() {
     };
     const shouldShowInvoiceManpowerHourRow = (value: number) =>
         Math.round(value * 10) / 10 !== 0;
+    const formatInvoiceManpowerKrwWithCommas = (value: number) =>
+        Math.round(value).toLocaleString("ko-KR");
+    const formatInvoiceManpowerLineTotalKrw = (
+        hours: number,
+        unitKrw: number
+    ) =>
+        formatInvoiceManpowerKrwWithCommas(
+            Math.round((Math.round(hours * 10) / 10) * unitKrw)
+        );
     /** R&D는 항상 행(그룹) 단위. 노말은 "날짜별 보기"(`date:` 키)일 때만 행 단위 — 인원별 보기는 날짜 합산 유지 */
     const usesRowScopedMealGroups = (
         sectionTitle: string,
@@ -4402,8 +4412,24 @@ export default function InvoiceCreatePage() {
         travelWeekday: 0,
         travelWeekend: 0,
     });
-    const getInvoiceManpowerSummaries = () =>
-        timesheetRows.reduce(
+    const getInvoiceManpowerSummaries = () => {
+        const skilledAllocatedWorkKeys = new Set<string>();
+        const skilledAllocatedTravelKeys = new Set<string>();
+
+        const buildManpowerBillingBlockKey = (row: TimesheetRow) => {
+            const sourceEntryKey = row.sourceEntries
+                .map((entry) => entry.id)
+                .sort((a, b) => a - b)
+                .join(",");
+            return [
+                row.date,
+                row.timeFrom,
+                row.timeTo,
+                sourceEntryKey,
+            ].join("|");
+        };
+
+        return timesheetRows.reduce(
             (summary, row) => {
                 const rowPeople = getRowPersons(row);
                 if (rowPeople.length === 0) {
@@ -4414,16 +4440,31 @@ export default function InvoiceCreatePage() {
                 const travelBillablePeople = rowPeople.filter(
                     (person) => !lodgingSettledPeople.has(person)
                 );
-
-                const getBilledCounts = (peopleCount: number) => {
-                    const skilled = peopleCount > 0 ? 1 : 0;
-                    return {
-                        skilled,
-                        fitter: Math.max(peopleCount - skilled, 0),
-                    };
+                const blockKey = buildManpowerBillingBlockKey(row);
+                const workSkilledAlreadyAllocated =
+                    skilledAllocatedWorkKeys.has(blockKey);
+                const travelSkilledAlreadyAllocated =
+                    skilledAllocatedTravelKeys.has(blockKey);
+                const workSkilled =
+                    rowPeople.length > 0 && !workSkilledAlreadyAllocated ? 1 : 0;
+                const travelSkilled =
+                    travelBillablePeople.length > 0 && !travelSkilledAlreadyAllocated
+                        ? 1
+                        : 0;
+                if (workSkilled > 0) {
+                    skilledAllocatedWorkKeys.add(blockKey);
+                }
+                if (travelSkilled > 0) {
+                    skilledAllocatedTravelKeys.add(blockKey);
+                }
+                const workCounts = {
+                    skilled: workSkilled,
+                    fitter: Math.max(rowPeople.length - workSkilled, 0),
                 };
-                const workCounts = getBilledCounts(rowPeople.length);
-                const travelCounts = getBilledCounts(travelBillablePeople.length);
+                const travelCounts = {
+                    skilled: travelSkilled,
+                    fitter: Math.max(travelBillablePeople.length - travelSkilled, 0),
+                };
 
                 summary.skilled.weekdayNormal +=
                     row.weekdayNormal * workCounts.skilled;
@@ -4457,6 +4498,7 @@ export default function InvoiceCreatePage() {
                 fitter: createEmptyInvoiceHourSummary(),
             }
         );
+    };
 
     const roundHoursForInvoice = (value: number) => Math.round(value * 10) / 10;
 
@@ -4479,20 +4521,148 @@ export default function InvoiceCreatePage() {
         return null;
     };
 
-    /** 노말·애프터·주말 합으로 자동 구간 배지 (주황). 올림 청구 파란 배지가 있으면 비표시 */
-    const getTimesheetSplitAutoBracketBadgeLabel = (
-        row: TimesheetRow
-    ): "4▼" | "8▼" | null => {
-        const tc = row.timesheetChargeDisplay;
-        const sum = tc
+    /** 자정 분할로 나뉜 연속 작업 행: 자동 구간(4▼/8▼) 판정 시 청구 합을 한 덩어리로 본다(사이드패널 단일 엔트리와 동일). */
+    const getRowSplitChargeSumForAutoBracketBadge = (r: TimesheetRow) => {
+        const tc = r.timesheetChargeDisplay;
+        return tc
             ? tc.weekdayNormal +
               tc.weekdayAfter +
               tc.weekendNormal +
               tc.weekendAfter
-            : row.weekdayNormal +
-              row.weekdayAfter +
-              row.weekendNormal +
-              row.weekendAfter;
+            : r.weekdayNormal +
+              r.weekdayAfter +
+              r.weekendNormal +
+              r.weekendAfter;
+    };
+
+    const normalizeTimesheetPersonnelKey = (description: string) =>
+        description
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b, "ko"))
+            .join("\0");
+
+    const rowHasWorkSourceEntry = (r: TimesheetRow) =>
+        r.sourceEntries.some((e) => e.descType === "작업");
+
+    const isRowRelevantForMidnightWorkBadgeLink = (r: TimesheetRow) =>
+        getRowSplitChargeSumForAutoBracketBadge(r) > 0 || rowHasWorkSourceEntry(r);
+
+    const rowEndsAtCalendarMidnight = (r: TimesheetRow) => {
+        const t = (r.timeTo ?? "").trim();
+        return t === "24";
+    };
+
+    const rowStartsAtMidnightHour = (r: TimesheetRow) => {
+        const t = (r.timeFrom ?? "").trim();
+        return t === "00" || t === "0";
+    };
+
+    const collectWorkSplitGroupIdsFromRow = (r: TimesheetRow): string[] => {
+        const ids = new Set<string>();
+        r.sourceEntries.forEach((e) => {
+            if (e.descType === "작업" && e.splitGroupId) {
+                ids.add(e.splitGroupId);
+            }
+        });
+        return Array.from(ids);
+    };
+
+    const getMidnightSplitWorkClusterForAutoBracketBadge = (
+        row: TimesheetRow
+    ): TimesheetRow[] => {
+        const splitIds = collectWorkSplitGroupIdsFromRow(row);
+        if (splitIds.length > 0) {
+            const byId = new Map<string, TimesheetRow>();
+            timesheetRows.forEach((candidate) => {
+                if (
+                    candidate.sourceEntries.some(
+                        (e) =>
+                            e.descType === "작업" &&
+                            e.splitGroupId &&
+                            splitIds.includes(e.splitGroupId)
+                    )
+                ) {
+                    byId.set(candidate.rowId, candidate);
+                }
+            });
+            return Array.from(byId.values());
+        }
+
+        const personnelKey = normalizeTimesheetPersonnelKey(row.description);
+        const cluster = new Map<string, TimesheetRow>([[row.rowId, row]]);
+
+        const pickPred = (cur: TimesheetRow): TimesheetRow | null => {
+            const predDate = shiftDateByDays(cur.date, -1);
+            const candidates = timesheetRows.filter(
+                (r) =>
+                    r.date === predDate &&
+                    normalizeTimesheetPersonnelKey(r.description) ===
+                        personnelKey &&
+                    rowEndsAtCalendarMidnight(r) &&
+                    rowStartsAtMidnightHour(cur) &&
+                    isRowRelevantForMidnightWorkBadgeLink(r) &&
+                    isRowRelevantForMidnightWorkBadgeLink(cur)
+            );
+            if (candidates.length === 0) {
+                return null;
+            }
+            candidates.sort((a, b) => b.timeFrom.localeCompare(a.timeFrom));
+            return candidates[0] ?? null;
+        };
+
+        const pickSucc = (cur: TimesheetRow): TimesheetRow | null => {
+            const succDate = shiftDateByDays(cur.date, 1);
+            const candidates = timesheetRows.filter(
+                (r) =>
+                    r.date === succDate &&
+                    normalizeTimesheetPersonnelKey(r.description) ===
+                        personnelKey &&
+                    rowEndsAtCalendarMidnight(cur) &&
+                    rowStartsAtMidnightHour(r) &&
+                    isRowRelevantForMidnightWorkBadgeLink(cur) &&
+                    isRowRelevantForMidnightWorkBadgeLink(r)
+            );
+            if (candidates.length === 0) {
+                return null;
+            }
+            candidates.sort((a, b) => a.timeFrom.localeCompare(b.timeFrom));
+            return candidates[0] ?? null;
+        };
+
+        let cur: TimesheetRow | null = row;
+        while (cur) {
+            const pred = pickPred(cur);
+            if (!pred || cluster.has(pred.rowId)) {
+                break;
+            }
+            cluster.set(pred.rowId, pred);
+            cur = pred;
+        }
+
+        cur = row;
+        while (cur) {
+            const succ = pickSucc(cur);
+            if (!succ || cluster.has(succ.rowId)) {
+                break;
+            }
+            cluster.set(succ.rowId, succ);
+            cur = succ;
+        }
+
+        return Array.from(cluster.values());
+    };
+
+    /** 노말·애프터·주말 합으로 자동 구간 배지 (주황). 올림 청구 파란 배지가 있으면 비표시 */
+    const getTimesheetSplitAutoBracketBadgeLabel = (
+        row: TimesheetRow
+    ): "4▼" | "8▼" | null => {
+        const cluster = getMidnightSplitWorkClusterForAutoBracketBadge(row);
+        const sum = cluster.reduce(
+            (acc, r) => acc + getRowSplitChargeSumForAutoBracketBadge(r),
+            0
+        );
         const rounded = roundHoursForInvoice(sum);
         if (rounded <= 0) {
             return null;
@@ -4500,7 +4670,7 @@ export default function InvoiceCreatePage() {
         if (rounded < 4) {
             return "4▼";
         }
-        if (rounded >= 4 && rounded < 8) {
+        if (rounded >= 5 && rounded < 8) {
             return "8▼";
         }
         return null;
@@ -5396,7 +5566,7 @@ export default function InvoiceCreatePage() {
             }
             const dateLabel = formatDate(entry.dateFrom);
             lines.push(
-                `(${invoicedH}) hours will be invoiced instead of (${originalH}) hours on (${dateLabel}) since the work was non-consecutive job.`
+                `${invoicedH} hours will be invoiced instead of ${originalH} hours on ${dateLabel} since the work was non-consecutive job.`
             );
         }
         return lines;
@@ -5568,15 +5738,11 @@ export default function InvoiceCreatePage() {
         people: allTimesheetPeople,
         rows: timesheetRows,
     });
-    const invoiceRoleRepresentative =
-        sortPeopleForMention(jobDescriptionPersonnel.engineerPeople)[0] ??
-        sortPeopleForMention(allTimesheetPeople)[0] ??
-        "";
-    const invoiceSkilledFitterPeople = invoiceRoleRepresentative
-        ? [invoiceRoleRepresentative]
-        : [];
-    const invoiceFitterPeople = sortPeopleForMention(allTimesheetPeople).filter(
-        (person) => person !== invoiceRoleRepresentative
+    const invoiceSkilledFitterPeople = sortPeopleForMention(
+        jobDescriptionPersonnel.engineerPeople
+    );
+    const invoiceFitterPeople = sortPeopleForMention(
+        jobDescriptionPersonnel.mechanicPeople
     );
     const invoiceManpowerSummaries = getInvoiceManpowerSummaries();
     const skilledFitterInvoiceSummary = invoiceManpowerSummaries.skilled;
@@ -7982,6 +8148,10 @@ export default function InvoiceCreatePage() {
                                                     </th>
                                                     <th rowSpan={3} className="px-1 py-2 text-center font-semibold text-gray-900 border-b border-gray-300 leading-tight">
                                                         Meals
+                                                        <br />
+                                                        &amp;
+                                                        <br />
+                                                        숙박
                                                     </th>
                                                 </tr>
                                                 {/* 2행: Year/Day/Date/Time From/Time To + 상위 그룹 헤더 */}
@@ -8507,6 +8677,10 @@ export default function InvoiceCreatePage() {
                                                                         </th>
                                                                         <th rowSpan={3} className="px-1 py-2 text-center font-semibold text-gray-900 border-b border-gray-300 leading-tight">
                                                                             Meals
+                                                                            <br />
+                                                                            &amp;
+                                                                            <br />
+                                                                            숙박
                                                                         </th>
                                                                     </tr>
                                                                     <tr>
@@ -8848,7 +9022,7 @@ export default function InvoiceCreatePage() {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Currency unit:</span>
-                                                <span className="text-sm text-gray-900">EUR</span>
+                                                <span className="text-sm text-gray-900">KRW</span>
                                             </div>
                                         </div>
                                     </div>
@@ -8919,8 +9093,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekdayNormal
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                skilledFitterInvoiceSummary.weekdayNormal,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekdayNormal
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -8934,8 +9119,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekdayAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                skilledFitterInvoiceSummary.weekdayAfter,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekdayAfter
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -8949,8 +9145,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekendNormal
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                skilledFitterInvoiceSummary.weekendNormal,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekendNormal
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -8964,8 +9171,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekendAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                skilledFitterInvoiceSummary.weekendAfter,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .weekendAfter
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -8979,8 +9197,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .travelWeekday
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                skilledFitterInvoiceSummary.travelWeekday,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .travelWeekday
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -8994,8 +9223,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .travelWeekend
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                skilledFitterInvoiceSummary.travelWeekend,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                    .travelWeekend
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {/* 1.2 Fitters */}
@@ -9042,8 +9282,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekdayNormal
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                fitterInvoiceSummary.weekdayNormal,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekdayNormal
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -9057,8 +9308,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekdayAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                fitterInvoiceSummary.weekdayAfter,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekdayAfter
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -9072,8 +9334,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekendNormal
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                fitterInvoiceSummary.weekendNormal,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekendNormal
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -9087,8 +9360,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekendAfter
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                fitterInvoiceSummary.weekendAfter,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .weekendAfter
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -9102,8 +9386,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .travelWeekday
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                fitterInvoiceSummary.travelWeekday,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .travelWeekday
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {shouldShowInvoiceManpowerHourRow(
@@ -9117,8 +9412,19 @@ export default function InvoiceCreatePage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
-                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300"></td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerKrwWithCommas(
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .travelWeekend
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
+                                                            {formatInvoiceManpowerLineTotalKrw(
+                                                                fitterInvoiceSummary.travelWeekend,
+                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                    .travelWeekend
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                     )}
                                                     {/* 2. Daily Allowance */}

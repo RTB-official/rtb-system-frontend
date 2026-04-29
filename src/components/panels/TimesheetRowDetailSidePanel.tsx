@@ -1938,8 +1938,8 @@ export default function TimesheetRowDetailSidePanel({
         if (hours < 4) {
             return { source: "auto", label: "4▼" };
         }
-        /** 인보이스 타임시트 분할 합계와 동일: 4 ≤ h < 8 → 8▼ (정확히 4h도 포함) */
-        if (hours >= 4 && hours < 8) {
+        /** 인보이스 타임시트 분할 합계와 동일: 5 ≤ h < 8 → 8▼ */
+        if (hours >= 5 && hours < 8) {
             return { source: "auto", label: "8▼" };
         }
         return null;
