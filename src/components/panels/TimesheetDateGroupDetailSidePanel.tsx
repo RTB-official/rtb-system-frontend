@@ -3,6 +3,7 @@ import {
     useCallback,
     useEffect,
     useLayoutEffect,
+    useMemo,
     useRef,
     useState,
     type ReactNode,
@@ -17,14 +18,25 @@ import {
     TimesheetEntryEditorForm,
     type ManualBillableSplitHours,
 } from "./TimesheetEntryEditorForm";
+import BaseModal from "../ui/BaseModal";
 import { getDatesMissingSkilledFitterRemark } from "../../constants/skilledFitter";
 import {
     buildConsecutiveWorkClusterIndices,
+    distributeWorkManualToFourBuckets,
+    getWorkEntryAutoBillableFourBuckets,
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
+    roundHours as roundBillableHours,
     sumClusterWorkBillableHours,
     type WorkEntryClusterable,
 } from "../../utils/workEntryBillableHours";
+import {
+    buildAfterRoundedBillableFourBuckets,
+    buildManpowerMoneyDetailRows,
+    formatInvoiceManpowerKrw,
+    getManpowerTierCountsForEntry,
+    sumManpowerSkilledFitterFromRows,
+} from "../../utils/invoiceManpowerEntryMoney";
 
 interface TimesheetSourceEntryData {
     id: number;
@@ -669,6 +681,78 @@ export default function TimesheetDateGroupDetailSidePanel({
         y: number;
         entryId: number;
     } | null>(null);
+    const [roundedBillableConfirm, setRoundedBillableConfirm] = useState<{
+        entryId: number;
+        hours: 4 | 8;
+    } | null>(null);
+
+    const roundedBillableMoneyPreview = useMemo(() => {
+        if (!roundedBillableConfirm) {
+            return null;
+        }
+        const entry = fullGroupEntries.find(
+            (e) => e.id === roundedBillableConfirm.entryId
+        );
+        if (!entry || entry.descType !== "\uC791\uC5C5") {
+            return null;
+        }
+
+        const isWeekendOrHolidayYmd = (ymd: string) => {
+            const d = new Date(`${ymd}T12:00:00`);
+            if (Number.isNaN(d.getTime())) {
+                return false;
+            }
+            const day = d.getDay();
+            const satSun = day === 0 || day === 6;
+            return satSun || (holidayDateKeys?.has(ymd) ?? false);
+        };
+
+        const autoBuckets = getWorkEntryAutoBillableFourBuckets(
+            entry,
+            isWeekendOrHolidayYmd
+        );
+        if (!autoBuckets) {
+            return null;
+        }
+
+        const curManual = manualBillableHoursByEntryId[entry.id];
+        const beforeBuckets =
+            curManual !== undefined
+                ? distributeWorkManualToFourBuckets(
+                      roundBillableHours(curManual),
+                      autoBuckets
+                  )
+                : autoBuckets;
+
+        const afterBuckets = buildAfterRoundedBillableFourBuckets(
+            roundedBillableConfirm.hours,
+            autoBuckets,
+            entry.dateFrom,
+            isWeekendOrHolidayYmd
+        );
+
+        const tier = getManpowerTierCountsForEntry(
+            (entry.persons ?? []).length
+        );
+        const beforeRows = buildManpowerMoneyDetailRows(beforeBuckets, tier);
+        const afterRows = buildManpowerMoneyDetailRows(afterBuckets, tier);
+        const beforeTotals = sumManpowerSkilledFitterFromRows(beforeRows);
+        const afterTotals = sumManpowerSkilledFitterFromRows(afterRows);
+
+        return {
+            tier,
+            beforeRows,
+            afterRows,
+            beforeTotals,
+            afterTotals,
+        };
+    }, [
+        roundedBillableConfirm,
+        fullGroupEntries,
+        holidayDateKeys,
+        manualBillableHoursByEntryId,
+    ]);
+
     const expandedRemarkKeyRef = useRef<string | null>(null);
     expandedRemarkKeyRef.current = expandedRemarkKey;
     const closeRemarkTimerRef = useRef<number | null>(null);
@@ -1235,7 +1319,7 @@ export default function TimesheetDateGroupDetailSidePanel({
         if (hours < 4) {
             return "4\u25BC";
         }
-        if (hours >= 4 && hours < 8) {
+        if (hours >= 5 && hours < 8) {
             return "8\u25BC";
         }
         return null;
@@ -1303,7 +1387,7 @@ export default function TimesheetDateGroupDetailSidePanel({
         if (hours < 4) {
             return { source: "auto", label: "4\u25BC" };
         }
-        if (hours >= 4 && hours < 8) {
+        if (hours >= 5 && hours < 8) {
             return { source: "auto", label: "8\u25BC" };
         }
         return null;
@@ -2370,6 +2454,7 @@ export default function TimesheetDateGroupDetailSidePanel({
     useEffect(() => {
         if (!isOpen) {
             setDbEntryContextMenu(null);
+            setRoundedBillableConfirm(null);
         }
     }, [isOpen]);
 
@@ -2397,6 +2482,29 @@ export default function TimesheetDateGroupDetailSidePanel({
         document.addEventListener("mousedown", onPointerDown);
         return () => document.removeEventListener("mousedown", onPointerDown);
     }, [dbEntryContextMenu]);
+
+    const applyWorkManualBillableHoursForEntryId = (
+        entryId: number,
+        hours: number
+    ) => {
+        if (!onUpdateTimesheetEntry) {
+            return;
+        }
+        const targetEntry = fullGroupEntries.find((e) => e.id === entryId);
+        if (!targetEntry) {
+            return;
+        }
+        onUpdateTimesheetEntry({
+            entryId: targetEntry.id,
+            descType: targetEntry.descType,
+            dateFrom: targetEntry.dateFrom,
+            dateTo: targetEntry.dateTo,
+            timeFrom: targetEntry.timeFrom,
+            timeTo: targetEntry.timeTo,
+            persons: [...targetEntry.persons],
+            manualBillableHours: hours,
+        });
+    };
 
     const dbEntryMenuPortal =
         dbEntryContextMenu &&
@@ -2439,11 +2547,11 @@ export default function TimesheetDateGroupDetailSidePanel({
                     Boolean(onUpdateTimesheetEntry) &&
                     contextEntry?.descType === "\uC791\uC5C5" &&
                     (manualBillableRounded === 4 || manualBillableRounded === 8);
+                /** 4시간 미만(4▼)일 때는 4h 청구만, 5~8시간 미만(8▼)일 때만 8h 청구 표시 */
                 const showWorkCharge8h =
                     Boolean(onUpdateTimesheetEntry) &&
                     contextEntry?.descType === "\uC791\uC5C5" &&
-                    (workBracketBadge === "4\u25BC" ||
-                        workBracketBadge === "8\u25BC");
+                    workBracketBadge === "8\u25BC";
                 const showWorkCharge4h =
                     Boolean(onUpdateTimesheetEntry) &&
                     contextEntry?.descType === "\uC791\uC5C5" &&
@@ -2457,22 +2565,6 @@ export default function TimesheetDateGroupDetailSidePanel({
                     1 +
                     1;
                 const MENU_H = menuRowCount * 40 + 16;
-                const applyWorkManualBillableHours = (hours: number) => {
-                    if (!onUpdateTimesheetEntry || !contextEntry) {
-                        return;
-                    }
-                    onUpdateTimesheetEntry({
-                        entryId: contextEntry.id,
-                        descType: contextEntry.descType,
-                        dateFrom: contextEntry.dateFrom,
-                        dateTo: contextEntry.dateTo,
-                        timeFrom: contextEntry.timeFrom,
-                        timeTo: contextEntry.timeTo,
-                        persons: [...contextEntry.persons],
-                        manualBillableHours: hours,
-                    });
-                    setDbEntryContextMenu(null);
-                };
                 const applyRevertManualBillableToAuto = () => {
                     if (!onUpdateTimesheetEntry || !contextEntry) {
                         return;
@@ -2526,7 +2618,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 type="button"
                                 role="menuitem"
                                 className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
-                                onClick={() => applyWorkManualBillableHours(8)}
+                                onClick={() => {
+                                    const id = dbEntryContextMenu.entryId;
+                                    setDbEntryContextMenu(null);
+                                    setRoundedBillableConfirm({
+                                        entryId: id,
+                                        hours: 8,
+                                    });
+                                }}
                             >
                                 {"8h \uCCAD\uAD6C"}
                             </button>
@@ -2536,7 +2635,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 type="button"
                                 role="menuitem"
                                 className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
-                                onClick={() => applyWorkManualBillableHours(4)}
+                                onClick={() => {
+                                    const id = dbEntryContextMenu.entryId;
+                                    setDbEntryContextMenu(null);
+                                    setRoundedBillableConfirm({
+                                        entryId: id,
+                                        hours: 4,
+                                    });
+                                }}
                             >
                                 {"4h \uCCAD\uAD6C"}
                             </button>
@@ -3587,6 +3693,224 @@ export default function TimesheetDateGroupDetailSidePanel({
         document.body
             )}
             {dbEntryMenuPortal}
+            <BaseModal
+                isOpen={roundedBillableConfirm !== null}
+                onClose={() => setRoundedBillableConfirm(null)}
+                title={
+                    roundedBillableConfirm?.hours === 8
+                        ? "8h 청구"
+                        : "4h 청구"
+                }
+                maxWidth="max-w-6xl"
+                footer={
+                    <>
+                        <button
+                            type="button"
+                            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                            onClick={() => setRoundedBillableConfirm(null)}
+                        >
+                            취소
+                        </button>
+                        <button
+                            type="button"
+                            className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+                            onClick={() => {
+                                if (!roundedBillableConfirm) {
+                                    return;
+                                }
+                                applyWorkManualBillableHoursForEntryId(
+                                    roundedBillableConfirm.entryId,
+                                    roundedBillableConfirm.hours
+                                );
+                                setRoundedBillableConfirm(null);
+                            }}
+                        >
+                            적용
+                        </button>
+                    </>
+                }
+            >
+                {roundedBillableMoneyPreview ? (
+                    <div className="grid max-h-[min(70vh,30rem)] grid-cols-2 gap-5 overflow-y-auto pr-1 text-sm text-gray-800">
+                        <div className="flex h-full flex-col">
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                Before
+                            </p>
+                            <div className="space-y-2">
+                                {roundedBillableMoneyPreview.beforeRows.length ===
+                                0 ? (
+                                    <p className="text-xs text-gray-500">
+                                        표시할 청구 시간 구간이 없습니다.
+                                    </p>
+                                ) : (
+                                    roundedBillableMoneyPreview.beforeRows.map(
+                                        (row) => (
+                                            <div
+                                                key={`b-${row.labelKo}`}
+                                                className="rounded-md border border-gray-100 bg-slate-50/80 px-3 py-2 text-xs"
+                                            >
+                                                <div className="font-medium text-gray-900">
+                                                    {row.labelKo}: {row.hours}h
+                                                </div>
+                                                <div className="mt-1 text-gray-700">
+                                                    Skilled Fitter:{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.unitSkilledKrw
+                                                    )}{" "}
+                                                    × {row.hours}h ×{" "}
+                                                    {
+                                                        roundedBillableMoneyPreview
+                                                            .tier.skilled
+                                                    }명{" "}
+                                                    →{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.skilledKrw
+                                                    )}
+                                                </div>
+                                                <div className="text-gray-700">
+                                                    Fitter:{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.unitFitterKrw
+                                                    )}{" "}
+                                                    × {row.hours}h ×{" "}
+                                                    {
+                                                        roundedBillableMoneyPreview
+                                                            .tier.fitter
+                                                    }명{" "}
+                                                    →{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.fitterKrw
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )
+                                    )
+                                )}
+                            </div>
+                            <div className="mt-auto space-y-1 border-t border-gray-200 pt-3 text-xs">
+                                <div className="flex justify-between gap-4 font-medium text-gray-900">
+                                    <span>Skilled Fitter</span>
+                                    <span className="tabular-nums">
+                                        {formatInvoiceManpowerKrw(
+                                            roundedBillableMoneyPreview
+                                                .beforeTotals.skilled
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-4 font-medium text-gray-900">
+                                    <span>Fitter</span>
+                                    <span className="tabular-nums">
+                                        {formatInvoiceManpowerKrw(
+                                            roundedBillableMoneyPreview
+                                                .beforeTotals.fitter
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-4 border-t border-gray-200 pt-2 font-semibold text-gray-900">
+                                    <span>Total</span>
+                                    <span className="tabular-nums">
+                                        {formatInvoiceManpowerKrw(
+                                            roundedBillableMoneyPreview
+                                                .beforeTotals.total
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex h-full flex-col">
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                After
+                            </p>
+                            <div className="space-y-2">
+                                {roundedBillableMoneyPreview.afterRows.length ===
+                                0 ? (
+                                    <p className="text-xs text-gray-500">
+                                        표시할 청구 시간 구간이 없습니다.
+                                    </p>
+                                ) : (
+                                    roundedBillableMoneyPreview.afterRows.map(
+                                        (row) => (
+                                            <div
+                                                key={`a-${row.labelKo}`}
+                                                className="rounded-md border border-gray-100 bg-slate-50/80 px-3 py-2 text-xs"
+                                            >
+                                                <div className="font-medium text-gray-900">
+                                                    {row.labelKo}: {row.hours}h
+                                                </div>
+                                                <div className="mt-1 text-gray-700">
+                                                    Skilled Fitter:{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.unitSkilledKrw
+                                                    )}{" "}
+                                                    × {row.hours}h ×{" "}
+                                                    {
+                                                        roundedBillableMoneyPreview
+                                                            .tier.skilled
+                                                    }명{" "}
+                                                    →{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.skilledKrw
+                                                    )}
+                                                </div>
+                                                <div className="text-gray-700">
+                                                    Fitter:{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.unitFitterKrw
+                                                    )}{" "}
+                                                    × {row.hours}h ×{" "}
+                                                    {
+                                                        roundedBillableMoneyPreview
+                                                            .tier.fitter
+                                                    }명{" "}
+                                                    →{" "}
+                                                    {formatInvoiceManpowerKrw(
+                                                        row.fitterKrw
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )
+                                    )
+                                )}
+                            </div>
+                            <div className="mt-auto space-y-1 border-t border-gray-200 pt-3 text-xs">
+                                <div className="flex justify-between gap-4 font-medium text-gray-900">
+                                    <span>Skilled Fitter</span>
+                                    <span className="tabular-nums">
+                                        {formatInvoiceManpowerKrw(
+                                            roundedBillableMoneyPreview
+                                                .afterTotals.skilled
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-4 font-medium text-gray-900">
+                                    <span>Fitter</span>
+                                    <span className="tabular-nums">
+                                        {formatInvoiceManpowerKrw(
+                                            roundedBillableMoneyPreview
+                                                .afterTotals.fitter
+                                        )}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-4 border-t border-gray-200 pt-2 font-semibold text-gray-900">
+                                    <span>Total</span>
+                                    <span className="tabular-nums">
+                                        {formatInvoiceManpowerKrw(
+                                            roundedBillableMoneyPreview
+                                                .afterTotals.total
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-sm leading-relaxed text-gray-700">
+                        금액 미리보기를 불러오지 못했습니다. 작업 엔트리와
+                        일정 정보를 확인해 주세요.
+                    </p>
+                )}
+            </BaseModal>
         </>
     );
 }
