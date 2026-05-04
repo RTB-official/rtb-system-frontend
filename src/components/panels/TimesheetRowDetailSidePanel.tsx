@@ -83,6 +83,11 @@ interface TimesheetRowDetailSidePanelProps {
         target: "home" | "lodging"
     ) => void;
     onTravelChargeOverrideResetEntry: (entryId: number) => void;
+    onTravelChargeOverrideMoveAll?: (
+        entryId: number,
+        people: string[],
+        target: "home" | "lodging"
+    ) => void;
     requiredSkilledFittersInRemarks: string[];
     personVesselHistoryByPerson: Record<
         string,
@@ -659,6 +664,7 @@ export default function TimesheetRowDetailSidePanel({
     travelChargeOverrides,
     onTravelChargeOverrideChange,
     onTravelChargeOverrideResetEntry,
+    onTravelChargeOverrideMoveAll,
     requiredSkilledFittersInRemarks,
     personVesselHistoryByPerson,
     invoiceTimesheetPeople = [],
@@ -981,7 +987,7 @@ export default function TimesheetRowDetailSidePanel({
                     {lines.map((line, lineIdx) => (
                         <div
                             key={`remark-line-${entry.id}-${lineIdx}`}
-                            className="flex flex-wrap items-baseline"
+                            className="flex flex-nowrap items-baseline whitespace-nowrap"
                         >
                             {line.map((person, i) => {
                                 const rk = getSourceTableRemarkEditorKey(
@@ -1012,7 +1018,7 @@ export default function TimesheetRowDetailSidePanel({
                                             data-remark-person="true"
                                             aria-pressed={isActive}
                                             className={[
-                                                "rounded px-0.5 py-0.5 text-left transition-colors",
+                                                "shrink-0 rounded px-px py-0.5 text-left leading-tight transition-colors",
                                                 "hover:bg-gray-100 hover:text-gray-900",
                                                 isActive
                                                     ? isReplacedRemarkPerson
@@ -1028,7 +1034,7 @@ export default function TimesheetRowDetailSidePanel({
                                                               .filter(Boolean)
                                                               .join(" ")
                                                     : isReplacedRemarkPerson
-                                                      ? "rounded border border-blue-500 px-0.5 font-bold text-blue-700"
+                                                      ? "rounded border border-blue-500 px-px font-bold text-blue-700"
                                                       : highlightedPersons.has(
                                                             person
                                                         )
@@ -2807,8 +2813,26 @@ export default function TimesheetRowDetailSidePanel({
                     : "border-sky-200 bg-sky-50/80"
             }`}
         >
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
-                {label}
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="min-w-0 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
+                    {label}
+                </div>
+                <button
+                    type="button"
+                    disabled={
+                        people.length === 0 || !onTravelChargeOverrideMoveAll
+                    }
+                    onClick={() =>
+                        onTravelChargeOverrideMoveAll?.(
+                            entry.id,
+                            people,
+                            nextTarget
+                        )
+                    }
+                    className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium text-gray-700 transition-colors hover:bg-black/5 disabled:pointer-events-none disabled:opacity-40"
+                >
+                    전체 이동
+                </button>
             </div>
             <div className="flex min-h-12 flex-wrap gap-2">
                 {people.length === 0 ? (

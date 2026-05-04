@@ -79,6 +79,12 @@ interface TimesheetDateGroupDetailSidePanelProps {
         target: "home" | "lodging"
     ) => void;
     onTravelChargeOverrideResetEntry: (entryId: number) => void;
+    /** Move every person in one column to the opposite (single undo step). */
+    onTravelChargeOverrideMoveAll?: (
+        entryId: number,
+        people: string[],
+        target: "home" | "lodging"
+    ) => void;
     /** Skilled fitter display names that must appear in remarks when required. */
     requiredSkilledFittersInRemarks: string[];
     personVesselHistoryByPerson: Record<
@@ -105,6 +111,14 @@ interface TimesheetDateGroupDetailSidePanelProps {
     /** Replace one assigned person on an entry (work-log sync). */
     onReplaceTimesheetEntryPerson?: (args: {
         entryId: number;
+        fromPerson: string;
+        toPerson: string;
+    }) => void;
+    /**
+     * Replace one name with another on entries whose `dateFrom === dateYmd` only.
+     */
+    onSwapPersonsForInvoiceDate?: (args: {
+        dateYmd: string;
         fromPerson: string;
         toPerson: string;
     }) => void;
@@ -189,6 +203,20 @@ function scopeDeletedEntriesForInvoiceDateGroupPanel(
         }
         return false;
     });
+}
+
+/** Format YYYY-MM-DD to M/D for labels (e.g. 2/24). */
+function formatYmdAsMdLabel(ymd: string): string | null {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+    if (!m) {
+        return null;
+    }
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    if (!Number.isFinite(month) || !Number.isFinite(day)) {
+        return null;
+    }
+    return `${month}/${day}`;
 }
 
 /** Diagonal stripe for rows flagged as client-duplicated. */
@@ -631,12 +659,14 @@ export default function TimesheetDateGroupDetailSidePanel({
     travelChargeOverrides,
     onTravelChargeOverrideChange,
     onTravelChargeOverrideResetEntry,
+    onTravelChargeOverrideMoveAll,
     requiredSkilledFittersInRemarks,
     personVesselHistoryByPerson,
     invoiceTimesheetPeople = [],
     getOriginalTimesheetEntryPersons,
     getTimesheetEntryEditBaseline,
     onReplaceTimesheetEntryPerson,
+    onSwapPersonsForInvoiceDate,
     onDuplicateTimesheetEntry,
     onDeleteTimesheetEntry,
     onUndo,
@@ -685,6 +715,49 @@ export default function TimesheetDateGroupDetailSidePanel({
         entryId: number;
         hours: 4 | 8;
     } | null>(null);
+    const [datePersonnelEditModal, setDatePersonnelEditModal] = useState<{
+        dateFromYmd: string;
+        entryId: number;
+    } | null>(null);
+    const [personnelDateSwapPickLeft, setPersonnelDateSwapPickLeft] = useState<
+        string | null
+    >(null);
+    const [personnelDateSwapPickRight, setPersonnelDateSwapPickRight] =
+        useState<string | null>(null);
+
+    const dateYmdForPersonnelModal = datePersonnelEditModal?.dateFromYmd ?? "";
+
+    const existingPersonNamesOnDate = useMemo(() => {
+        if (!dateYmdForPersonnelModal) {
+            return [] as string[];
+        }
+        const seen = new Set<string>();
+        const order: string[] = [];
+        for (const e of fullGroupEntries) {
+            if (e.dateFrom !== dateYmdForPersonnelModal) {
+                continue;
+            }
+            for (const p of e.persons ?? []) {
+                if (p && !seen.has(p)) {
+                    seen.add(p);
+                    order.push(p);
+                }
+            }
+        }
+        return order;
+    }, [fullGroupEntries, dateYmdForPersonnelModal]);
+
+    const replacementPersonNames = useMemo(() => {
+        const onDate = new Set(existingPersonNamesOnDate);
+        return invoiceTimesheetPeople.filter((p) => p && !onDate.has(p));
+    }, [invoiceTimesheetPeople, existingPersonNamesOnDate]);
+
+    useEffect(() => {
+        if (!datePersonnelEditModal) {
+            setPersonnelDateSwapPickLeft(null);
+            setPersonnelDateSwapPickRight(null);
+        }
+    }, [datePersonnelEditModal]);
 
     const roundedBillableMoneyPreview = useMemo(() => {
         if (!roundedBillableConfirm) {
@@ -2350,7 +2423,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                 {lines.map((line, lineIdx) => (
                     <div
                         key={`remark-line-${entry.id}-${lineIdx}`}
-                        className="flex flex-wrap items-baseline"
+                        className="flex flex-nowrap items-baseline whitespace-nowrap"
                     >
                         {line.map((person, i) => {
                             const rk = getFullGroupRemarkEditorKey(entry.id, person);
@@ -2373,14 +2446,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                                         data-remark-person="true"
                                         aria-pressed={isActive}
                                         className={[
-                                            "rounded px-0.5 py-0.5 text-left transition-colors",
+                                            "shrink-0 rounded px-px py-0.5 text-left leading-tight transition-colors",
                                             "hover:bg-gray-100 hover:text-gray-900",
                                             isActive
                                                 ? isReplacedRemarkPerson
                                                     ? "bg-blue-50 font-bold text-blue-800 ring-2 ring-blue-400"
                                                     : "bg-blue-50 text-blue-900 ring-1 ring-blue-200"
                                                 : isReplacedRemarkPerson
-                                                  ? "rounded border border-blue-500 px-0.5 font-bold text-blue-700"
+                                                  ? "rounded border border-blue-500 px-px font-bold text-blue-700"
                                                   : "text-gray-700",
                                             isSettledByEarlierLodging
                                                 ? "text-gray-400 line-through decoration-gray-500 decoration-2"
@@ -2421,8 +2494,26 @@ export default function TimesheetDateGroupDetailSidePanel({
                     : "border-sky-200 bg-sky-50/80"
             }`}
         >
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
-                {label}
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="min-w-0 text-[11px] font-semibold uppercase tracking-wide text-gray-700">
+                    {label}
+                </div>
+                <button
+                    type="button"
+                    disabled={
+                        people.length === 0 || !onTravelChargeOverrideMoveAll
+                    }
+                    onClick={() =>
+                        onTravelChargeOverrideMoveAll?.(
+                            entry.id,
+                            people,
+                            nextTarget
+                        )
+                    }
+                    className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium text-gray-700 transition-colors hover:bg-black/5 disabled:pointer-events-none disabled:opacity-40"
+                >
+                    전체 이동
+                </button>
             </div>
             <div className="flex min-h-12 flex-wrap gap-2">
                 {people.length === 0 ? (
@@ -2556,10 +2647,16 @@ export default function TimesheetDateGroupDetailSidePanel({
                     Boolean(onUpdateTimesheetEntry) &&
                     contextEntry?.descType === "\uC791\uC5C5" &&
                     workBracketBadge === "4\u25BC";
+                const datePersonnelEditMenuLabel =
+                    contextEntry?.dateFrom != null
+                        ? formatYmdAsMdLabel(contextEntry.dateFrom)
+                        : null;
+                const showDatePersonnelEdit = Boolean(datePersonnelEditMenuLabel);
                 const menuRowCount =
                     (showRevertManualBillable ? 1 : 0) +
                     (showWorkCharge8h ? 1 : 0) +
                     (showWorkCharge4h ? 1 : 0) +
+                    (showDatePersonnelEdit ? 1 : 0) +
                     (onDuplicateTimesheetEntry ? 1 : 0) +
                     1 +
                     1 +
@@ -2645,6 +2742,22 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 }}
                             >
                                 {"4h \uCCAD\uAD6C"}
+                            </button>
+                        ) : null}
+                        {showDatePersonnelEdit && contextEntry && datePersonnelEditMenuLabel ? (
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full px-3 py-2 text-left text-gray-900 hover:bg-gray-100"
+                                onClick={() => {
+                                    setDbEntryContextMenu(null);
+                                    setDatePersonnelEditModal({
+                                        dateFromYmd: contextEntry.dateFrom,
+                                        entryId: contextEntry.id,
+                                    });
+                                }}
+                            >
+                                {`${datePersonnelEditMenuLabel} \uC778\uC6D0\uC218\uC815`}
                             </button>
                         ) : null}
                         {onDuplicateTimesheetEntry ? (
@@ -3701,7 +3814,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                         ? "8h 청구"
                         : "4h 청구"
                 }
-                maxWidth="max-w-6xl"
+                maxWidth="max-w-4xl"
                 footer={
                     <>
                         <button
@@ -3910,6 +4023,176 @@ export default function TimesheetDateGroupDetailSidePanel({
                         일정 정보를 확인해 주세요.
                     </p>
                 )}
+            </BaseModal>
+            <BaseModal
+                isOpen={datePersonnelEditModal !== null}
+                onClose={() => setDatePersonnelEditModal(null)}
+                title={
+                    datePersonnelEditModal
+                        ? `${formatYmdAsMdLabel(datePersonnelEditModal.dateFromYmd) ?? datePersonnelEditModal.dateFromYmd} \uC778\uC6D0\uC218\uC815`
+                        : ""
+                }
+                maxWidth="max-w-4xl"
+                footer={
+                    <>
+                        <button
+                            type="button"
+                            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                            onClick={() => setDatePersonnelEditModal(null)}
+                        >
+                            취소
+                        </button>
+                        <button
+                            type="button"
+                            className="rounded-full bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+                            onClick={() => setDatePersonnelEditModal(null)}
+                        >
+                            확인
+                        </button>
+                    </>
+                }
+            >
+                {datePersonnelEditModal ? (
+                    <div className="space-y-3 text-sm text-gray-800">
+                        <p className="text-xs text-gray-500">
+                            기존인원과 교체인원을 각각 한 명씩 누르면, 그 날짜
+                            (시작일 기준) 엔트리에서만 이름이 바뀝니다.
+                        </p>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div className="flex min-h-0 flex-col">
+                                <p className="mb-2 text-xs font-semibold tracking-wide text-gray-600">
+                                    기존인원
+                                </p>
+                                <div className="max-h-[min(45vh,18rem)] space-y-1.5 overflow-y-auto rounded-xl border border-gray-100 bg-slate-50/70 p-2">
+                                    {existingPersonNamesOnDate.length === 0 ? (
+                                        <p className="px-2 py-3 text-xs text-gray-500">
+                                            해당 날짜에 배정된 인원이 없습니다.
+                                        </p>
+                                    ) : (
+                                        existingPersonNamesOnDate.map(
+                                            (name) => (
+                                                <button
+                                                    key={name}
+                                                    type="button"
+                                                    className={`block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                                                        personnelDateSwapPickLeft ===
+                                                        name
+                                                            ? "bg-gray-900 text-white ring-2 ring-gray-900 ring-offset-2"
+                                                            : "bg-white text-gray-900 hover:bg-gray-100"
+                                                    }`}
+                                                    disabled={
+                                                        !onSwapPersonsForInvoiceDate
+                                                    }
+                                                    onClick={() => {
+                                                        if (
+                                                            !onSwapPersonsForInvoiceDate
+                                                        ) {
+                                                            return;
+                                                        }
+                                                        if (
+                                                            personnelDateSwapPickRight
+                                                        ) {
+                                                            onSwapPersonsForInvoiceDate(
+                                                                {
+                                                                    dateYmd:
+                                                                        datePersonnelEditModal.dateFromYmd,
+                                                                    fromPerson:
+                                                                        name,
+                                                                    toPerson:
+                                                                        personnelDateSwapPickRight,
+                                                                }
+                                                            );
+                                                            setPersonnelDateSwapPickLeft(
+                                                                null
+                                                            );
+                                                            setPersonnelDateSwapPickRight(
+                                                                null
+                                                            );
+                                                        } else {
+                                                            setPersonnelDateSwapPickLeft(
+                                                                name
+                                                            );
+                                                            setPersonnelDateSwapPickRight(
+                                                                null
+                                                            );
+                                                        }
+                                                    }}
+                                                >
+                                                    {name}
+                                                </button>
+                                            )
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex min-h-0 flex-col">
+                                <p className="mb-2 text-xs font-semibold tracking-wide text-gray-600">
+                                    교체인원
+                                </p>
+                                <div className="max-h-[min(45vh,18rem)] space-y-1.5 overflow-y-auto rounded-xl border border-gray-100 bg-slate-50/70 p-2">
+                                    {replacementPersonNames.length === 0 ? (
+                                        <p className="px-2 py-3 text-xs text-gray-500">
+                                            인보이스 인원 중 여기에 표시할 교체
+                                            후보가 없습니다.
+                                        </p>
+                                    ) : (
+                                        replacementPersonNames.map((name) => (
+                                            <button
+                                                key={name}
+                                                type="button"
+                                                className={`block w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                                                    personnelDateSwapPickRight ===
+                                                    name
+                                                        ? "bg-gray-900 text-white ring-2 ring-gray-900 ring-offset-2"
+                                                        : "bg-white text-gray-900 hover:bg-gray-100"
+                                                }`}
+                                                disabled={
+                                                    !onSwapPersonsForInvoiceDate
+                                                }
+                                                onClick={() => {
+                                                    if (
+                                                        !onSwapPersonsForInvoiceDate
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    if (
+                                                        personnelDateSwapPickLeft
+                                                    ) {
+                                                        onSwapPersonsForInvoiceDate(
+                                                            {
+                                                                dateYmd:
+                                                                    datePersonnelEditModal.dateFromYmd,
+                                                                fromPerson:
+                                                                    personnelDateSwapPickLeft,
+                                                                toPerson:
+                                                                    name,
+                                                            }
+                                                        );
+                                                        setPersonnelDateSwapPickLeft(
+                                                            null
+                                                        );
+                                                        setPersonnelDateSwapPickRight(
+                                                            null
+                                                        );
+                                                    } else {
+                                                        setPersonnelDateSwapPickRight(
+                                                            name
+                                                        );
+                                                        setPersonnelDateSwapPickLeft(
+                                                            null
+                                                        );
+                                                    }
+                                                }}
+                                            >
+                                                {name}
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
             </BaseModal>
         </>
     );

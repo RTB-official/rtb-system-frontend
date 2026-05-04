@@ -1,5 +1,6 @@
 // src/components/icons/Icons.tsx
 // React import 제거: 최신 JSX 런타임 사용
+import { useId } from "react";
 
 export const IconRTBLogo = (props: { className?: string }) => (
     <svg
@@ -104,43 +105,56 @@ export const IconCard = (props: { className?: string }) => (
     </svg>
 );
 
-export const IconInvoice = (props: { className?: string }) => (
-    <svg
-        className={props.className || "w-6 h-6"}
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-    >
-        <rect
-            x="4"
-            y="3"
-            width="16"
-            height="18"
-            rx="2"
-            stroke="currentColor"
-            strokeWidth="1.4"
-        />
-        <path
-            d="M8 8H16"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-        />
-        <path
-            d="M8 12H14"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-        />
-        <path
-            d="M9 16H15"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-        />
-    </svg>
-);
+/**
+ * 펴진 명세 사각형 + 내부 유로(€). `currentColor`로 채우고 마스크로 글리프를 뚫어
+ * 배경이 비치게 해 사이드바 선택 시에도 € 실루엣이 보이게 한다.
+ */
+export function IconInvoice(props: { className?: string }) {
+    const maskId = `icon-invoice-euro-${useId().replace(/:/g, "")}`;
+    return (
+        <svg
+            className={props.className || "w-6 h-6"}
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+        >
+            <defs>
+                <mask
+                    id={maskId}
+                    maskUnits="userSpaceOnUse"
+                    x="0"
+                    y="0"
+                    width="24"
+                    height="24"
+                >
+                    <rect width="24" height="24" fill="white" />
+                    <text
+                        x="12"
+                        y="12"
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill="black"
+                        fontSize="12"
+                        fontWeight="700"
+                        fontFamily="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+                    >
+                        €
+                    </text>
+                </mask>
+            </defs>
+            <rect
+                x="4"
+                y="2"
+                width="16"
+                height="20"
+                rx="2"
+                fill="currentColor"
+                mask={`url(#${maskId})`}
+            />
+        </svg>
+    );
+}
 
 export const IconCar = (props: { className?: string }) => (
     <svg
