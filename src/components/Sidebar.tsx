@@ -123,18 +123,8 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
             stablePermissions.isStaff ||
             stablePermissions.isCEO ||
             isAdmin);
-    const normalizedLoginId = (
-        sidebarLoginId ||
-        currentUser?.email?.split("@")[0] ||
-        ""
-    )
-        .trim()
-        .toLowerCase();
     const canShowInvoiceMenu =
-        normalizedLoginId === "mw.park" ||
-        normalizedLoginId === "brian.ko" ||
-        normalizedLoginId === "hg.kim" ||
-        normalizedLoginId === "jay.kim";
+        permissionsReady && (stablePermissions.isAdmin || isAdmin);
 
     const {
         showNotifications,
@@ -487,7 +477,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         {canShowInvoiceMenu && (
                             <MenuButton
                                 icon={<IconInvoice className="w-5 h-5 md:w-6 md:h-6" />}
-                                label="인보이스(작업중)"
+                                label="인보이스"
                                 isActive={routeLocation.pathname.startsWith(PATHS.invoice) && !menuFocus}
                                 onClick={() => go(PATHS.invoice, null)}
                             />

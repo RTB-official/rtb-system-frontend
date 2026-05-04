@@ -30,6 +30,24 @@ import {
 import { useToast } from "../../components/ui/ToastProvider";
 import useIsMobile from "../../hooks/useIsMobile";
 
+/** DatePicker 등 `YYYY-MM-DD` 문자열에서 연·월(1–12) 파싱 (UTC 보정 이슈 회피) */
+function parseDateToCalendarYearMonth(
+    dateStr: string
+): { year: number; month: number } | null {
+    const s = (dateStr || "").trim();
+    if (!s) return null;
+    const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (iso) {
+        const y = parseInt(iso[1], 10);
+        const m = parseInt(iso[2], 10);
+        if (y >= 1900 && m >= 1 && m <= 12) return { year: y, month: m };
+        return null;
+    }
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return null;
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
 export default function PersonalExpensePage() {
     const { user } = useAuth();
     const { showSuccess, showError } = useToast();
@@ -180,7 +198,18 @@ export default function PersonalExpensePage() {
                 amount_won: calculatedCost,
             });
 
-            await loadData();
+            const addedYm = parseDateToCalendarYearMonth(item.date);
+            const selY = parseInt(year.replace("년", ""), 10);
+            const selM = parseInt(month.replace("월", ""), 10);
+            if (
+                addedYm &&
+                (addedYm.year !== selY || addedYm.month !== selM)
+            ) {
+                setYear(`${addedYm.year}년`);
+                setMonth(`${addedYm.month}월`);
+            } else {
+                await loadData();
+            }
         } catch (error: any) {
             console.error("마일리지 등록 실패:", error);
             showError(error.message || "마일리지 등록에 실패했습니다.");
@@ -233,7 +262,18 @@ export default function PersonalExpensePage() {
                 receipt_path: receiptPath,
             });
 
-            await loadData();
+            const addedYm = parseDateToCalendarYearMonth(item.date);
+            const selY = parseInt(year.replace("년", ""), 10);
+            const selM = parseInt(month.replace("월", ""), 10);
+            if (
+                addedYm &&
+                (addedYm.year !== selY || addedYm.month !== selM)
+            ) {
+                setYear(`${addedYm.year}년`);
+                setMonth(`${addedYm.month}월`);
+            } else {
+                await loadData();
+            }
         } catch (error: any) {
             console.error("지출 등록 실패:", error);
             showError(error.message || "지출 등록에 실패했습니다.");

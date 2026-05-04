@@ -157,11 +157,14 @@ export default function ExpenseFormCard({
                                 label="금액(원)"
                                 value={amount}
                                 onChange={(value) => {
-                                    setAmount(value);
+                                    setAmount(value.replace(/\D/g, ""));
                                     if (errors.amount) {
                                         setErrors((prev) => ({ ...prev, amount: undefined }));
                                     }
                                 }}
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                autoComplete="off"
                                 placeholder="예) 26000"
                             />
                             {errors.amount && (

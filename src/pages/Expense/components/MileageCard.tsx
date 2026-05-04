@@ -135,7 +135,12 @@ export default function MileageCard({
                         <Input
                             label="거리(km)"
                             value={distance}
-                            onChange={setDistance}
+                            onChange={(value) =>
+                                setDistance(value.replace(/\D/g, ""))
+                            }
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            autoComplete="off"
                             placeholder="예) 120"
                         />
                         <div className="mt-2 flex gap-2">

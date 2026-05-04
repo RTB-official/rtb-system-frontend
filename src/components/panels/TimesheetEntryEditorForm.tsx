@@ -158,7 +158,7 @@ function parseToEndMs(dateTo: string, timeStr: string): number | null {
 const roundBillable = (n: number) => Math.round(n * 10) / 10;
 
 function hourStepperButtonClassName() {
-    return "flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700";
+    return "flex min-h-0 min-w-0 flex-1 items-center justify-center rounded-sm border border-gray-200 bg-gray-50 p-0 text-gray-700 transition-colors hover:bg-white hover:text-gray-900 active:bg-gray-100";
 }
 
 function HourStepper({
@@ -174,15 +174,16 @@ function HourStepper({
 }) {
     const btn = hourStepperButtonClassName();
     return (
-        <div className="flex flex-col items-center gap-0">
+        <div className="flex h-full min-h-0 w-full flex-col gap-px">
             <button type="button" className={btn} onClick={onUp} aria-label={ariaLabelUp}>
                 <svg
                     viewBox="0 0 16 16"
-                    width="7"
-                    height="7"
+                    width="11"
+                    height="11"
+                    className="max-h-[11px] max-w-[11px] shrink-0"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.8"
+                    strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     aria-hidden="true"
@@ -193,11 +194,12 @@ function HourStepper({
             <button type="button" className={btn} onClick={onDown} aria-label={ariaLabelDown}>
                 <svg
                     viewBox="0 0 16 16"
-                    width="7"
-                    height="7"
+                    width="11"
+                    height="11"
+                    className="max-h-[11px] max-w-[11px] shrink-0"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.8"
+                    strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     aria-hidden="true"
@@ -262,26 +264,13 @@ function buildEditorBaseline(
     };
 }
 
-/** 자동 청구 문구(W=/N=/A=, 여러 줄)와 동일하면 null. 순수 숫자·접두어 형식은 수동 시간으로 해석 */
+/** 빈칸이면 기본값(null), 숫자·접두어 형식 입력은 명시적인 수동 시간으로 해석 */
 function parseManualBillableHoursInput(
     raw: string,
-    autoChargeLabel: string
+    _autoChargeLabel: string
 ): number | null | "invalid" {
     const trimmed = raw.trim();
     if (trimmed === "") {
-        return null;
-    }
-
-    const collapseLines = (s: string) =>
-        s
-            .replace(/\r\n/g, "\n")
-            .split("\n")
-            .map((line) => line.trim())
-            .filter((line) => line.length > 0)
-            .join("\n");
-
-    const autoN = collapseLines(autoChargeLabel || "");
-    if (autoN.length > 0 && collapseLines(trimmed) === autoN) {
         return null;
     }
 
@@ -674,6 +663,28 @@ export function TimesheetEntryEditorForm({
         setManualInput(serializeBillableSegmentInputs(next));
     };
 
+    const adjustBillableSegmentByHours = (
+        key: BillableSegmentKey,
+        deltaHours: number
+    ) => {
+        const raw = billableSegmentInputs[key].trim();
+        let current = 0;
+        if (raw !== "") {
+            const n = Number(raw.replace(",", "."));
+            if (!Number.isFinite(n) || n < 0) {
+                window.alert("청구 시간을 숫자 형식으로 맞춘 뒤 조정해 주세요.");
+                return;
+            }
+            current = roundBillable(n);
+        }
+        const nextVal = roundBillable(Math.max(0, current + deltaHours));
+        const next: Record<BillableSegmentKey, string> = {
+            ...billableSegmentInputs,
+            [key]: nextVal === 0 ? "" : String(nextVal),
+        };
+        setManualInput(serializeBillableSegmentInputs(next));
+    };
+
     const baselineDraftEntry: TimesheetEntryEditorEntry = useMemo(
         () => ({
             ...entry,
@@ -945,13 +956,13 @@ export function TimesheetEntryEditorForm({
                             onChange={(e) => setTimeFrom(e.target.value)}
                             placeholder="09:00"
                             className={[
-                                "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-7 text-sm font-mono",
+                                "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-10 text-sm font-mono",
                                 fromTimeChanged ? fieldChangedClass : "",
                             ]
                                 .filter(Boolean)
                                 .join(" ")}
                         />
-                        <div className="absolute right-0.5 top-1/2 -translate-y-1/2">
+                        <div className="absolute bottom-1 right-1.5 top-1 w-8">
                             <HourStepper
                                 ariaLabelUp="From 1시간 증가"
                                 ariaLabelDown="From 1시간 감소"
@@ -970,13 +981,13 @@ export function TimesheetEntryEditorForm({
                             onChange={(e) => setTimeTo(e.target.value)}
                             placeholder="18:00"
                             className={[
-                                "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-7 text-sm font-mono",
+                                "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-10 text-sm font-mono",
                                 toTimeChanged ? fieldChangedClass : "",
                             ]
                                 .filter(Boolean)
                                 .join(" ")}
                         />
-                        <div className="absolute right-0.5 top-1/2 -translate-y-1/2">
+                        <div className="absolute bottom-1 right-1.5 top-1 w-8">
                             <HourStepper
                                 ariaLabelUp="To 1시간 증가"
                                 ariaLabelDown="To 1시간 감소"
@@ -1005,7 +1016,8 @@ export function TimesheetEntryEditorForm({
                     {descType === "작업" ? (
                         <div
                             className={[
-                                "mt-1 grid grid-cols-8 overflow-hidden rounded-lg border border-gray-200 text-sm",
+                                "mt-1 grid overflow-hidden rounded-lg border border-gray-200 text-sm",
+                                "grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)]",
                                 chargeChanged ? "border-blue-500 text-blue-700" : "",
                             ]
                                 .filter(Boolean)
@@ -1018,30 +1030,50 @@ export function TimesheetEntryEditorForm({
                                 >
                                     <div
                                         className={[
-                                            "flex items-center justify-center border-r border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-bold",
+                                            "flex w-min min-w-0 shrink-0 items-center justify-center border-r border-gray-200 bg-gray-50 px-1 py-1.5 text-xs font-bold",
                                             config.red ? "text-red-600" : "text-gray-700",
                                         ].join(" ")}
                                     >
                                         {config.label}
                                     </div>
-                                    <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={billableSegmentInputs[config.key]}
-                                        onChange={(e) =>
-                                            handleBillableSegmentChange(
-                                                config.key,
-                                                e.target.value
-                                            )
-                                        }
-                                        className={[
-                                            "min-w-0 border-r border-gray-200 px-2 py-1.5 text-center outline-none last:border-r-0",
-                                            config.red
-                                                ? "text-red-600 focus:bg-red-50"
-                                                : "text-gray-900 focus:bg-blue-50",
-                                        ].join(" ")}
-                                        aria-label={`청구 시간 ${config.token}`}
-                                    />
+                                    <div className="relative min-w-0 border-r border-gray-200 last:border-r-0">
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={billableSegmentInputs[config.key]}
+                                            onChange={(e) =>
+                                                handleBillableSegmentChange(
+                                                    config.key,
+                                                    e.target.value
+                                                )
+                                            }
+                                            className={[
+                                                "w-full min-w-0 border-0 py-1.5 pl-1.5 pr-9 text-center text-sm outline-none",
+                                                config.red
+                                                    ? "text-red-600 focus:bg-red-50"
+                                                    : "text-gray-900 focus:bg-blue-50",
+                                            ].join(" ")}
+                                            aria-label={`청구 시간 ${config.token}`}
+                                        />
+                                        <div className="absolute bottom-0.5 right-0.5 top-0.5 w-7">
+                                            <HourStepper
+                                                ariaLabelUp={`청구 ${config.token} 1시간 증가`}
+                                                ariaLabelDown={`청구 ${config.token} 1시간 감소`}
+                                                onUp={() =>
+                                                    adjustBillableSegmentByHours(
+                                                        config.key,
+                                                        1
+                                                    )
+                                                }
+                                                onDown={() =>
+                                                    adjustBillableSegmentByHours(
+                                                        config.key,
+                                                        -1
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -1061,13 +1093,13 @@ export function TimesheetEntryEditorForm({
                                     }
                                 }}
                                 className={[
-                                    "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-7 text-sm",
+                                    "w-full rounded-lg border border-gray-200 py-1.5 pl-2 pr-10 text-sm",
                                     chargeChanged ? fieldChangedClass : "",
                                 ]
                                     .filter(Boolean)
                                     .join(" ")}
                             />
-                            <div className="absolute right-0.5 top-1/2 -translate-y-1/2">
+                            <div className="absolute bottom-1 right-1.5 top-1 w-8">
                                 <HourStepper
                                     ariaLabelUp="청구 시간 1시간 증가"
                                     ariaLabelDown="청구 시간 1시간 감소"
