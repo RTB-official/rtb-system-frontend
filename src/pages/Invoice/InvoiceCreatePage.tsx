@@ -46,6 +46,14 @@ import {
     invoiceExcelWorkbookToBlob,
     triggerExcelDownload,
 } from "../../lib/invoiceExcelExport";
+import {
+    createInvoiceDraft,
+    getInvoiceDraftById,
+    listInvoiceDraftsByUser,
+    updateInvoiceDraft,
+    type InvoiceDraftPayload,
+    type InvoiceDraftRow,
+} from "../../lib/invoiceDraftApi";
 
 interface TimesheetRow {
     rowId: string;
@@ -510,6 +518,19 @@ type ManualBillableSplitHours = {
     weekdayAfter: number;
     weekendNormal: number;
     weekendAfter: number;
+};
+
+type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
+    version: 1;
+    workLogDataList: WorkLogFullData[];
+    timesheetRows: TimesheetRow[];
+    selectedSkilledFitters: string[];
+    selectedFitterRepresentatives: Record<string, string>;
+    travelChargeOverrides: TravelChargeOverrideMap;
+    entryManualBillableHours: Record<number, number>;
+    entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
+    deletedTimesheetEntries: TimesheetSourceEntryData[];
+    selectedTimesheetDateGroupKeys: string[];
 };
 
 type InvoiceUndoSnapshot = {
@@ -1042,8 +1063,86 @@ function PersonnelSelectionModal({
     );
 }
 
+function InvoiceDraftLoadModal({
+    isOpen,
+    onClose,
+    drafts,
+    loading,
+    onRefresh,
+    onSelectDraft,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    drafts: InvoiceDraftRow[];
+    loading: boolean;
+    onRefresh: () => void;
+    onSelectDraft: (draftId: string) => void;
+}) {
+    return (
+        <BaseModal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="인보이스 드래프트 불러오기"
+            maxWidth="max-w-2xl"
+            footer={
+                <>
+                    <button
+                        type="button"
+                        className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                        onClick={onClose}
+                    >
+                        닫기
+                    </button>
+                    <button
+                        type="button"
+                        className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:pointer-events-none disabled:opacity-50"
+                        onClick={onRefresh}
+                        disabled={loading}
+                    >
+                        새로고침
+                    </button>
+                </>
+            }
+        >
+            {loading ? (
+                <div className="rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-500">
+                    드래프트를 불러오는 중입니다...
+                </div>
+            ) : drafts.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
+                    저장된 드래프트가 없습니다.
+                </div>
+            ) : (
+                <ul className="space-y-2">
+                    {drafts.map((draft) => (
+                        <li key={draft.id}>
+                            <button
+                                type="button"
+                                onClick={() => onSelectDraft(draft.id)}
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/60"
+                            >
+                                <div className="text-sm font-semibold text-gray-900">
+                                    {draft.title}
+                                </div>
+                                <div className="mt-1 text-xs text-gray-600">
+                                    보고서 {draft.work_log_ids.length}건 · 상태{" "}
+                                    {draft.status === "final" ? "Final" : "Draft"}
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-500">
+                                    수정: {new Date(draft.updated_at).toLocaleString("ko-KR")}
+                                </div>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </BaseModal>
+    );
+}
+
 export default function InvoiceCreatePage() {
     const [searchParams] = useSearchParams();
+    const invoiceDraftIdParam = searchParams.get("draftId");
     const workLogIdsParam =
         searchParams.get("workLogIds") ?? searchParams.get("workLogId");
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1119,12 +1218,14 @@ export default function InvoiceCreatePage() {
     >("person");
     const [mealCountAdjustmentsBySectionDate, setMealCountAdjustmentsBySectionDate] =
         useState<Record<string, MealCountAdjustmentEntry>>({});
+    const invoiceDraftAutoLoadRequestRef = useRef(0);
     const duplicateTimesheetEntryIdRef = useRef(-1);
     /** normalTimesheetSectionsByPerson 정의 이후 매 렌더에서 갱신 — 인원별 `::date::` 조정을 R&D 등에서 조회 */
     const resolveNormalPersonDateScopedMealAdjustmentRef = useRef<
         (row: TimesheetRow) => MealCountAdjustmentEntry | undefined
     >(() => undefined);
     const loadedWorkLogIdsParamRef = useRef<string | null>(null);
+    const loadedInvoiceDraftIdFromUrlRef = useRef<string | null>(null);
     const initialTimesheetRowValueByIdentityRef = useRef<
         Record<
             string,
@@ -1157,6 +1258,14 @@ export default function InvoiceCreatePage() {
     const [deletedTimesheetEntries, setDeletedTimesheetEntries] = useState<
         TimesheetSourceEntryData[]
     >([]);
+    const [invoiceDraftId, setInvoiceDraftId] = useState<string | null>(null);
+    const [invoiceDraftTitle, setInvoiceDraftTitle] = useState("");
+    const [invoiceDraftSaving, setInvoiceDraftSaving] = useState(false);
+    const [invoiceDraftLoadModalOpen, setInvoiceDraftLoadModalOpen] =
+        useState(false);
+    const [invoiceDraftListLoading, setInvoiceDraftListLoading] = useState(false);
+    const [invoiceDrafts, setInvoiceDrafts] = useState<InvoiceDraftRow[]>([]);
+    const loadedDraftBaselinePayloadRef = useRef<InvoiceDraftPayload | null>(null);
     const { showError, showSuccess } = useToast();
 
     latestInvoiceStateRef.current = {
@@ -1168,6 +1277,277 @@ export default function InvoiceCreatePage() {
         selectedTimesheetDateGroupPanel,
         selectedTimesheetRow,
     };
+
+    const resetInvoiceUndoRedoStacks = useCallback(() => {
+        invoiceUndoPastRef.current = [];
+        invoiceUndoFutureRef.current = [];
+        setInvoiceUndoRedoCounts({ past: 0, future: 0 });
+    }, []);
+
+    const buildDraftTitleFromWorkLogs = useCallback((rows: WorkLogFullData[]) => {
+        const first = rows[0];
+        if (!first) {
+            return "인보이스 드래프트";
+        }
+        const range = aggregateWorkLogEntryDateRange(first.entries);
+        const label = formatInvoiceReportTableTitle({
+            periodStart: range.start,
+            periodEnd: range.end,
+            vessel: first.workLog.vessel,
+            subject: first.workLog.subject,
+        }).trim();
+        return label || "인보이스 드래프트";
+    }, []);
+
+    const buildInvoiceDraftPayloadV1 = useCallback((): InvoiceDraftPayloadV1 => {
+        return {
+            version: 1,
+            workLogDataList: JSON.parse(
+                JSON.stringify(workLogDataList)
+            ) as WorkLogFullData[],
+            timesheetRows: JSON.parse(JSON.stringify(timesheetRows)) as TimesheetRow[],
+            selectedSkilledFitters: [...selectedSkilledFitters],
+            selectedFitterRepresentatives: { ...selectedFitterRepresentatives },
+            travelChargeOverrides: { ...travelChargeOverrides },
+            entryManualBillableHours: { ...entryManualBillableHours },
+            entryManualBillableSplitHours: JSON.parse(
+                JSON.stringify(entryManualBillableSplitHours)
+            ) as Record<number, ManualBillableSplitHours>,
+            deletedTimesheetEntries: JSON.parse(
+                JSON.stringify(deletedTimesheetEntries)
+            ) as TimesheetSourceEntryData[],
+            selectedTimesheetDateGroupKeys: [...selectedTimesheetDateGroupKeys],
+        };
+    }, [
+        workLogDataList,
+        timesheetRows,
+        selectedSkilledFitters,
+        selectedFitterRepresentatives,
+        travelChargeOverrides,
+        entryManualBillableHours,
+        entryManualBillableSplitHours,
+        deletedTimesheetEntries,
+        selectedTimesheetDateGroupKeys,
+    ]);
+
+    const applyInvoiceDraftPayload = useCallback(
+        (payload: InvoiceDraftPayload) => {
+            if (payload.version !== 1) {
+                throw new Error(
+                    `지원하지 않는 드래프트 버전입니다. (version=${String(payload.version)})`
+                );
+            }
+            const normalized = payload as InvoiceDraftPayloadV1;
+            const nextWorkLogs = JSON.parse(
+                JSON.stringify(normalized.workLogDataList ?? [])
+            ) as WorkLogFullData[];
+            originalEntryPersonsByIdRef.current = Object.fromEntries(
+                nextWorkLogs.flatMap((data) =>
+                    data.entries.map((entry) => [
+                        entry.id,
+                        [...(entry.persons ?? [])],
+                    ] as const)
+                )
+            );
+            timesheetEntryEditBaselineByIdRef.current =
+                buildTimesheetEntryEditBaselineMap(
+                    nextWorkLogs,
+                    normalized.entryManualBillableHours ?? {}
+                );
+            initialWorkLogSnapshotRef.current = JSON.parse(
+                JSON.stringify(nextWorkLogs)
+            ) as WorkLogFullData[];
+            setWorkLogDataList(nextWorkLogs);
+            setTimesheetRows(
+                JSON.parse(JSON.stringify(normalized.timesheetRows ?? [])) as TimesheetRow[]
+            );
+            setSelectedSkilledFitters(normalized.selectedSkilledFitters ?? []);
+            setSelectedFitterRepresentatives(
+                normalized.selectedFitterRepresentatives ?? {}
+            );
+            setTravelChargeOverrides(normalized.travelChargeOverrides ?? {});
+            setEntryManualBillableHours(normalized.entryManualBillableHours ?? {});
+            setEntryManualBillableSplitHours(
+                normalized.entryManualBillableSplitHours ?? {}
+            );
+            setDeletedTimesheetEntries(normalized.deletedTimesheetEntries ?? []);
+            setSelectedTimesheetDateGroupKeys(
+                normalized.selectedTimesheetDateGroupKeys ?? []
+            );
+            setSelectedTimesheetDateGroupAnchorKey(null);
+            setSelectedTimesheetDateGroupPanel(null);
+            setSelectedTimesheetRow(null);
+            setTimesheetRowSidebarHighlightKey(null);
+            setInvoicePdfMenuOpen(false);
+            setInvoicePdfSelectedIds([]);
+            resetInvoiceUndoRedoStacks();
+        },
+        [resetInvoiceUndoRedoStacks]
+    );
+
+    const refreshInvoiceDraftList = useCallback(async () => {
+        setInvoiceDraftListLoading(true);
+        try {
+            const rows = await listInvoiceDraftsByUser();
+            setInvoiceDrafts(rows);
+        } catch (error) {
+            console.error(error);
+            showError(
+                error instanceof Error
+                    ? error.message
+                    : "드래프트 목록을 불러오지 못했습니다."
+            );
+        } finally {
+            setInvoiceDraftListLoading(false);
+        }
+    }, [showError]);
+
+    const handleOpenInvoiceDraftLoadModal = useCallback(() => {
+        setInvoiceDraftLoadModalOpen(true);
+        void refreshInvoiceDraftList();
+    }, [refreshInvoiceDraftList]);
+
+    const handleSelectInvoiceDraft = useCallback(
+        async (draftId: string): Promise<boolean> => {
+            try {
+                const draft = await getInvoiceDraftById(draftId);
+                if (!draft) {
+                    showError("해당 드래프트를 찾을 수 없습니다.");
+                    return false;
+                }
+                applyInvoiceDraftPayload(draft.payload);
+                setInvoiceDraftId(draft.id);
+                setInvoiceDraftTitle(draft.title ?? "");
+                loadedDraftBaselinePayloadRef.current = JSON.parse(
+                    JSON.stringify(draft.payload)
+                ) as InvoiceDraftPayload;
+                setInvoiceDraftLoadModalOpen(false);
+                showSuccess("드래프트를 불러왔습니다.");
+                return true;
+            } catch (error) {
+                console.error(error);
+                showError(
+                    error instanceof Error
+                        ? error.message
+                        : "드래프트 불러오기에 실패했습니다."
+                );
+                return false;
+            }
+        },
+        [applyInvoiceDraftPayload, showError, showSuccess]
+    );
+
+    useEffect(() => {
+        if (!invoiceDraftIdParam) {
+            loadedInvoiceDraftIdFromUrlRef.current = null;
+            loadedDraftBaselinePayloadRef.current = null;
+            return;
+        }
+        if (loadedInvoiceDraftIdFromUrlRef.current === invoiceDraftIdParam) {
+            return;
+        }
+
+        const requestId = ++invoiceDraftAutoLoadRequestRef.current;
+        setLoading(true);
+
+        void (async () => {
+            try {
+                const draft = await getInvoiceDraftById(invoiceDraftIdParam);
+                if (requestId !== invoiceDraftAutoLoadRequestRef.current) {
+                    return;
+                }
+                if (!draft) {
+                    showError("해당 드래프트를 찾을 수 없습니다.");
+                    return;
+                }
+                applyInvoiceDraftPayload(draft.payload);
+                setInvoiceDraftId(draft.id);
+                setInvoiceDraftTitle(draft.title ?? "");
+                loadedDraftBaselinePayloadRef.current = JSON.parse(
+                    JSON.stringify(draft.payload)
+                ) as InvoiceDraftPayload;
+                loadedInvoiceDraftIdFromUrlRef.current = invoiceDraftIdParam;
+                loadedWorkLogIdsParamRef.current = null;
+            } catch (error) {
+                if (requestId !== invoiceDraftAutoLoadRequestRef.current) {
+                    return;
+                }
+                console.error(error);
+                showError(
+                    error instanceof Error
+                        ? error.message
+                        : "드래프트 불러오기에 실패했습니다."
+                );
+            } finally {
+                if (requestId === invoiceDraftAutoLoadRequestRef.current) {
+                    setLoading(false);
+                }
+            }
+        })();
+    }, [invoiceDraftIdParam, applyInvoiceDraftPayload, showError]);
+
+    const handleSaveInvoiceDraft = useCallback(async () => {
+        if (invoiceDraftSaving) {
+            return;
+        }
+        if (workLogDataList.length === 0) {
+            showError("저장할 인보이스 데이터가 없습니다.");
+            return;
+        }
+        const payload = buildInvoiceDraftPayloadV1();
+        const payloadSize = JSON.stringify(payload).length;
+        if (payloadSize > 1_500_000) {
+            showError("드래프트 크기가 너무 커 저장할 수 없습니다.");
+            return;
+        }
+        const draftTitle =
+            invoiceDraftTitle.trim() || buildDraftTitleFromWorkLogs(workLogDataList);
+        const workLogIds = Array.from(
+            new Set(
+                workLogDataList
+                    .map((row) => row.workLog.id)
+                    .filter((id) => Number.isFinite(id))
+            )
+        );
+
+        setInvoiceDraftSaving(true);
+        try {
+            const saved = invoiceDraftId
+                ? await updateInvoiceDraft(invoiceDraftId, {
+                      title: draftTitle,
+                      workLogIds,
+                      payload,
+                      status: "draft",
+                  })
+                : await createInvoiceDraft({
+                      title: draftTitle,
+                      workLogIds,
+                      payload,
+                      status: "draft",
+                  });
+            setInvoiceDraftId(saved.id);
+            setInvoiceDraftTitle(saved.title);
+            showSuccess("인보이스 드래프트를 저장했습니다.");
+        } catch (error) {
+            console.error(error);
+            showError(
+                error instanceof Error
+                    ? error.message
+                    : "드래프트 저장에 실패했습니다."
+            );
+        } finally {
+            setInvoiceDraftSaving(false);
+        }
+    }, [
+        invoiceDraftSaving,
+        workLogDataList,
+        buildInvoiceDraftPayloadV1,
+        invoiceDraftTitle,
+        buildDraftTitleFromWorkLogs,
+        invoiceDraftId,
+        showSuccess,
+        showError,
+    ]);
 
     const getTravelChargeOverrideKey = (entryId: number, person: string) =>
         `${entryId}:${person}`;
@@ -1607,6 +1987,20 @@ export default function InvoiceCreatePage() {
         setPersonnelEditor(null);
         showSuccess("최초 로드 상태로 되돌렸습니다.");
     }, [pushInvoiceUndoSnapshot, showError, showSuccess]);
+
+    const handleConfirmInvoiceResetToDraft = useCallback(() => {
+        setInvoiceResetConfirmOpen(false);
+        const draftPayload = loadedDraftBaselinePayloadRef.current;
+        if (!draftPayload) {
+            showError("드래프트 기본값 정보를 찾을 수 없습니다.");
+            return;
+        }
+        applyInvoiceDraftPayload(
+            JSON.parse(JSON.stringify(draftPayload)) as InvoiceDraftPayload
+        );
+        setPersonnelEditor(null);
+        showSuccess("드래프트 저장 상태로 되돌렸습니다.");
+    }, [applyInvoiceDraftPayload, showError, showSuccess]);
 
     useEffect(() => {
         const isLikelyTextFieldFocus = (target: EventTarget | null) => {
@@ -2344,27 +2738,45 @@ export default function InvoiceCreatePage() {
     // 보고서 데이터 로드 (다중 선택 지원)
     useEffect(() => {
         const loadWorkLogData = async () => {
-            if (!workLogIdsParam) {
+            const isDraftMode = Boolean(invoiceDraftIdParam);
+            if (!isDraftMode && !workLogIdsParam) {
                 return;
             }
+            if (!isDraftMode) {
+                loadedDraftBaselinePayloadRef.current = null;
+            }
 
-            const workLogIds = workLogIdsParam.split(",").map(id => Number(id.trim())).filter(id => !isNaN(id));
-            if (workLogIds.length === 0) {
+            const workLogIds = isDraftMode
+                ? []
+                : (workLogIdsParam ?? "")
+                      .split(",")
+                      .map((id) => Number(id.trim()))
+                      .filter((id) => !isNaN(id));
+            if (!isDraftMode && workLogIds.length === 0) {
                 return;
             }
 
             const shouldReuseLoadedData =
+                !isDraftMode &&
                 loadedWorkLogIdsParamRef.current === workLogIdsParam &&
                 workLogDataList.length > 0;
 
             if (!shouldReuseLoadedData) {
                 setLoading(true);
+                setInvoiceDraftId(null);
+                setInvoiceDraftTitle("");
             }
             try {
                 let validData: WorkLogFullData[];
                 let holidaySetForTimesheet: Set<string>;
 
-                if (shouldReuseLoadedData) {
+                if (isDraftMode) {
+                    if (workLogDataList.length === 0) {
+                        return;
+                    }
+                    validData = workLogDataList;
+                    holidaySetForTimesheet = new Set(holidayDateSet);
+                } else if (shouldReuseLoadedData) {
                     validData = workLogDataList;
                     holidaySetForTimesheet = new Set(holidayDateSet);
                 } else {
@@ -4484,7 +4896,9 @@ export default function InvoiceCreatePage() {
                     Object.keys(entryManualBillableHours).length === 0 &&
                     Object.keys(entryManualBillableSplitHours).length === 0 &&
                     deletedTimesheetEntries.length === 0;
-                if (!shouldReuseLoadedData || isPristineInvoiceState) {
+                const shouldInitializeInitialSnapshot =
+                    (!isDraftMode && !shouldReuseLoadedData) || isPristineInvoiceState;
+                if (shouldInitializeInitialSnapshot) {
                     initialTimesheetRowValueByIdentityRef.current =
                         Object.fromEntries(
                             finalTimesheetRows.map((row) => [
@@ -4505,6 +4919,7 @@ export default function InvoiceCreatePage() {
 
         loadWorkLogData();
     }, [
+        invoiceDraftIdParam,
         workLogIdsParam,
         showError,
         travelChargeOverrides,
@@ -7219,6 +7634,21 @@ export default function InvoiceCreatePage() {
         });
     }, [allTimesheetPeopleKey, workLogDataList]);
 
+    useEffect(() => {
+        if (workLogDataList.length === 0) {
+            return;
+        }
+        if (invoiceDraftId) {
+            return;
+        }
+        setInvoiceDraftTitle((previous) => {
+            if (previous.trim().length > 0) {
+                return previous;
+            }
+            return buildDraftTitleFromWorkLogs(workLogDataList);
+        });
+    }, [workLogDataList, invoiceDraftId, buildDraftTitleFromWorkLogs]);
+
     const getTimesheetRowsBySectionTitle = (sectionTitle: string) => {
         const normalSection = [
             ...normalTimesheetSectionsByPerson,
@@ -9121,6 +9551,34 @@ export default function InvoiceCreatePage() {
                     rightContent={
                         !loading && workLogDataList.length > 0 ? (
                             <div className="flex items-center gap-1.5 md:gap-2">
+                                <input
+                                    type="text"
+                                    value={invoiceDraftTitle}
+                                    onChange={(event) =>
+                                        setInvoiceDraftTitle(event.target.value)
+                                    }
+                                    placeholder="드래프트 제목"
+                                    className="h-12 w-40 rounded-full border border-gray-200 bg-white px-4 text-xs font-semibold text-gray-800 outline-none transition-colors focus:border-blue-400 md:w-56"
+                                    aria-label="인보이스 드래프트 제목"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => void handleSaveInvoiceDraft()}
+                                    disabled={invoiceDraftSaving}
+                                    className="h-12 min-w-[3.25rem] shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2.5 text-xs font-bold tracking-tight text-blue-700 transition-colors hover:bg-blue-100 disabled:pointer-events-none disabled:opacity-50"
+                                    title="드래프트 저장"
+                                    aria-busy={invoiceDraftSaving}
+                                >
+                                    {invoiceDraftSaving ? "…" : "저장"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenInvoiceDraftLoadModal}
+                                    className="h-12 min-w-[3.25rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100"
+                                    title="드래프트 불러오기"
+                                >
+                                    불러오기
+                                </button>
                                 <button
                                     type="button"
                                     disabled={invoiceExcelExporting}
@@ -10854,24 +11312,23 @@ export default function InvoiceCreatePage() {
                             <button
                                 type="button"
                                 className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
-                                onClick={() => setInvoiceResetConfirmOpen(false)}
+                                onClick={handleConfirmInvoiceResetToInitial}
                             >
-                                취소
+                                완전 초기화
                             </button>
                             <button
                                 type="button"
-                                className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
-                                onClick={handleConfirmInvoiceResetToInitial}
+                                className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={handleConfirmInvoiceResetToDraft}
+                                disabled={!loadedDraftBaselinePayloadRef.current}
                             >
-                                기본값
+                                드래프트 초기화
                             </button>
                         </>
                     }
                 >
                     <p className="text-sm leading-relaxed text-gray-700">
-                        보고서·타임시트·이동 청구 등 편집 내역을 모두
-                        버리고, 이 페이지를 처음 불러왔을 때 상태로
-                        되돌리시겠습니까?
+                        원하는 초기화 방식을 선택해 주세요.
                     </p>
                 </BaseModal>
 
@@ -10905,6 +11362,19 @@ export default function InvoiceCreatePage() {
                         선택한 보고서 PDF를 다운로드하시겠습니까?
                     </p>
                 </BaseModal>
+
+                <InvoiceDraftLoadModal
+                    isOpen={invoiceDraftLoadModalOpen}
+                    onClose={() => setInvoiceDraftLoadModalOpen(false)}
+                    drafts={invoiceDrafts}
+                    loading={invoiceDraftListLoading}
+                    onRefresh={() => {
+                        void refreshInvoiceDraftList();
+                    }}
+                    onSelectDraft={(draftId) => {
+                        void handleSelectInvoiceDraft(draftId);
+                    }}
+                />
 
                 <PersonnelSelectionModal
                     isOpen={personnelEditor !== null}

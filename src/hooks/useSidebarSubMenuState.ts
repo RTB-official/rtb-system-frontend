@@ -8,18 +8,22 @@ export function useSidebarSubMenuState(
     isReportRoute: boolean,
     isTbmRoute: boolean,
     isExpenseRoute: boolean,
+    isInvoiceRoute: boolean,
     prevReportRouteRef: React.RefObject<boolean>,
     prevTbmRouteRef: React.RefObject<boolean>,
-    prevExpenseRouteRef: React.RefObject<boolean>
+    prevExpenseRouteRef: React.RefObject<boolean>,
+    prevInvoiceRouteRef: React.RefObject<boolean>
 ) {
     const [reportOpen, setReportOpen, reportOpenRef] = useSubMenuState("sidebarReportOpen", false);
     const [tbmOpen, setTbmOpen, tbmOpenRef] = useSubMenuState("sidebarTbmOpen", false);
     const [expenseOpen, setExpenseOpen, expenseOpenRef] = useSubMenuState("sidebarExpenseOpen", false);
+    const [invoiceOpen, setInvoiceOpen, invoiceOpenRef] = useSubMenuState("sidebarInvoiceOpen", false);
 
     // SubMenu에 전달할 안정화된 isOpen 값 (같은 서브메뉴 내 이동 시 변경 방지)
     const stableReportOpenRef = useRef<boolean>(reportOpen);
     const stableTbmOpenRef = useRef<boolean>(tbmOpen);
     const stableExpenseOpenRef = useRef<boolean>(expenseOpen);
+    const stableInvoiceOpenRef = useRef<boolean>(invoiceOpen);
 
     const stableReportOpen = useMemo(() => {
         const isSameSubmenuNavigation = prevReportRouteRef.current && isReportRoute && reportOpenRef.current;
@@ -48,6 +52,16 @@ export function useSidebarSubMenuState(
         return tbmOpen;
     }, [tbmOpen, isTbmRoute, prevTbmRouteRef, tbmOpenRef]);
 
+    const stableInvoiceOpen = useMemo(() => {
+        const isSameSubmenuNavigation =
+            prevInvoiceRouteRef.current && isInvoiceRoute && invoiceOpenRef.current;
+        if (isSameSubmenuNavigation) {
+            return stableInvoiceOpenRef.current;
+        }
+        stableInvoiceOpenRef.current = invoiceOpen;
+        return invoiceOpen;
+    }, [invoiceOpen, isInvoiceRoute, prevInvoiceRouteRef, invoiceOpenRef]);
+
     return {
         reportOpen,
         setReportOpen,
@@ -58,9 +72,13 @@ export function useSidebarSubMenuState(
         expenseOpen,
         setExpenseOpen,
         expenseOpenRef,
+        invoiceOpen,
+        setInvoiceOpen,
+        invoiceOpenRef,
         stableReportOpen,
         stableTbmOpen,
         stableExpenseOpen,
+        stableInvoiceOpen,
     };
 }
 

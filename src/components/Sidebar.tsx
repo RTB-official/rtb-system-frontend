@@ -44,7 +44,7 @@ interface SidebarProps {
     showCloseOnDesktop?: boolean;
 }
 
-type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | null;
+type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | "INVOICE" | null;
 
 
 
@@ -145,11 +145,19 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
 
     const menuNotis = useMenuNotifications();
 
-    const { isReportRoute, isTbmRoute, isExpenseRoute, isReportEditRoute, location: routeLocation } = useSidebarRoutes();
+    const {
+        isReportRoute,
+        isTbmRoute,
+        isExpenseRoute,
+        isInvoiceRoute,
+        isReportEditRoute,
+        location: routeLocation,
+    } = useSidebarRoutes();
 
     const prevReportRouteRef = useRef<boolean>(isReportRoute);
     const prevTbmRouteRef = useRef<boolean>(isTbmRoute);
     const prevExpenseRouteRef = useRef<boolean>(isExpenseRoute);
+    const prevInvoiceRouteRef = useRef<boolean>(isInvoiceRoute);
 
     const {
         setReportOpen,
@@ -158,22 +166,32 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         tbmOpenRef,
         setExpenseOpen,
         expenseOpenRef,
+        setInvoiceOpen,
+        invoiceOpenRef,
         stableReportOpen,
         stableTbmOpen,
         stableExpenseOpen,
-    } = useSidebarSubMenuState(isReportRoute, isTbmRoute, isExpenseRoute, prevReportRouteRef, prevTbmRouteRef, prevExpenseRouteRef);
+        stableInvoiceOpen,
+    } = useSidebarSubMenuState(
+        isReportRoute,
+        isTbmRoute,
+        isExpenseRoute,
+        isInvoiceRoute,
+        prevReportRouteRef,
+        prevTbmRouteRef,
+        prevExpenseRouteRef,
+        prevInvoiceRouteRef
+    );
 
     const reportActive = isReportRoute || menuFocus === "REPORT";
     const tbmActive = isTbmRoute || menuFocus === "TBM";
+    const invoiceActive = isInvoiceRoute || menuFocus === "INVOICE";
     const canShowHome = stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin;
     const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
     const settingsActive = routeLocation.pathname.startsWith("/settings");
 
-    const { reportSubMenuItems, tbmSubMenuItems, expenseSubMenuItems } = useSidebarMenuItems(
-        stablePermissions,
-        isReportEditRoute,
-        routeLocation
-    );
+    const { reportSubMenuItems, tbmSubMenuItems, expenseSubMenuItems, invoiceSubMenuItems } =
+        useSidebarMenuItems(stablePermissions, isReportEditRoute, routeLocation);
 
     const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);
     const [tbmItemsForSubMenu, setTbmItemsForSubMenu] = useState(tbmSubMenuItems);
@@ -195,16 +213,20 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,
+        isInvoiceRoute,
         expenseSubMenuItems,
         prevReportRouteRef,
         prevTbmRouteRef,
         prevExpenseRouteRef,
+        prevInvoiceRouteRef,
         reportOpenRef,
         tbmOpenRef,
         expenseOpenRef,
+        invoiceOpenRef,
         setReportOpen,
         setTbmOpen,
         setExpenseOpen,
+        setInvoiceOpen,
         setMenuFocus,
         setShowNotifications,
     });
@@ -216,6 +238,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
             setReportOpen(false);
             setTbmOpen(false);
             setExpenseOpen(false);
+            setInvoiceOpen(false);
         }
         setShowNotifications(false);
     };
@@ -457,6 +480,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                 onClick={() => {
                                     setTbmOpen(false);
                                     setExpenseOpen(false);
+                                    setInvoiceOpen(false);
                                     if (!reportOpenRef.current) {
                                         setReportOpen(true);
                                     }
@@ -475,12 +499,29 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         </div>
 
                         {canShowInvoiceMenu && (
-                            <MenuButton
-                                icon={<IconInvoice className="w-5 h-5 md:w-6 md:h-6" />}
-                                label="인보이스"
-                                isActive={routeLocation.pathname.startsWith(PATHS.invoice) && !menuFocus}
-                                onClick={() => go(PATHS.invoice, null)}
-                            />
+                            <div className="-pb-1">
+                                <MenuButton
+                                    icon={<IconInvoice className="w-5 h-5 md:w-6 md:h-6" />}
+                                    label="인보이스"
+                                    isActive={invoiceActive}
+                                    onClick={() => {
+                                        setReportOpen(false);
+                                        setTbmOpen(false);
+                                        setExpenseOpen(false);
+                                        if (!invoiceOpenRef.current) {
+                                            setInvoiceOpen(true);
+                                        }
+                                        go(PATHS.invoice, "INVOICE");
+                                    }}
+                                />
+                                <SubMenu
+                                    isOpen={stableInvoiceOpen}
+                                    items={invoiceSubMenuItems}
+                                    focus="INVOICE"
+                                    onClose={onClose}
+                                    onMenuClick={handleMenuClick}
+                                />
+                            </div>
                         )}
 
                         <div className="-pb-1">
@@ -501,6 +542,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                 onClick={() => {
                                     setReportOpen(false);
                                     setExpenseOpen(false);
+                                    setInvoiceOpen(false);
                                     if (!tbmOpenRef.current) {
                                         setTbmOpen(true);
                                     }
@@ -540,6 +582,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                 onClick={() => {
                                     setReportOpen(false);
                                     setTbmOpen(false);
+                                    setInvoiceOpen(false);
 
                                     if (expenseSubMenuItems.length === 1) {
                                         setExpenseOpen(false);

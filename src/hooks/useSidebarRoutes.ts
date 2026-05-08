@@ -27,10 +27,13 @@ export function useSidebarRoutes() {
         !!matchPath({ path: "/tbm/:id", end: false }, location.pathname);
     const isExpenseRoute = isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
 
+    const isInvoiceRoute = isMatch(PATHS.invoice);
+
     return {
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,
+        isInvoiceRoute,
         isReportEditRoute,
         location,
     };

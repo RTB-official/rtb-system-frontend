@@ -270,7 +270,7 @@ export default function InvoicePage() {
             {/* Main */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
-                    title="인보이스"
+                    title="보고서"
                     onMenuClick={() => setSidebarOpen(true)}
                     rightContent={
                         hasSelection ? (
