@@ -224,6 +224,18 @@ export default function InvoicePage() {
         });
     }, [reports, search, year, month]);
 
+    /** 검색·년/월 필터 변경 시 이전 페이지 번호가 유지되면 빈 목록이 될 수 있음 */
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search, year, month]);
+
+    const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
+
+    /** 필터 결과 건수 변화로 총 페이지가 줄었을 때 보정 */
+    useEffect(() => {
+        setCurrentPage((p) => Math.min(p, Math.max(1, totalPages)));
+    }, [totalPages]);
+
     const toggleSelect = (row: InvoiceReportItem) => {
         setSelectedIds((prev) => {
             const next = new Set(prev);
@@ -237,8 +249,6 @@ export default function InvoicePage() {
     };
 
     const hasSelection = selectedIds.size > 0;
-
-    const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
 
     const currentData = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
