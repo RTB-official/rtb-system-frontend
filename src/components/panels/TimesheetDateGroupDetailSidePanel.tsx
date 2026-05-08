@@ -160,6 +160,14 @@ interface TimesheetDateGroupDetailSidePanelProps {
     scrollToFullGroupDate?: string;
     /** Bump so the same date can scroll again on repeated row clicks. */
     scrollToFullGroupNonce?: number;
+    /**
+     * 엔트리 `dateFrom`(YYYY-MM-DD) 기준 인보이스에서 실제 스킬드로 집계되는 참여자 이름 볼드.
+     * 타임시트 그리드 R&D 비고와 동일 기준.
+     */
+    isInvoiceEffectiveSkilledFitter?: (
+        calendarDateYmd: string,
+        personName: string
+    ) => boolean;
 }
 
 type TravelChargeOverrideTarget = "home" | "lodging";
@@ -686,6 +694,7 @@ export default function TimesheetDateGroupDetailSidePanel({
     panelCalendarDates = [],
     scrollToFullGroupDate,
     scrollToFullGroupNonce,
+    isInvoiceEffectiveSkilledFitter,
 }: TimesheetDateGroupDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
@@ -2431,6 +2440,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                             const isReplacedRemarkPerson =
                                 hasPersonsBaseline &&
                                 !originalPersonSet.has(person);
+                            const isInvoiceSkilled =
+                                Boolean(entry.dateFrom) &&
+                                Boolean(
+                                    isInvoiceEffectiveSkilledFitter?.(
+                                        entry.dateFrom,
+                                        person
+                                    )
+                                );
                             const isSettledByEarlierLodging =
                                 isTravelEntrySettledByEarlierLodgingOverride(
                                     entry,
@@ -2451,10 +2468,19 @@ export default function TimesheetDateGroupDetailSidePanel({
                                             isActive
                                                 ? isReplacedRemarkPerson
                                                     ? "bg-blue-50 font-bold text-blue-800 ring-2 ring-blue-400"
-                                                    : "bg-blue-50 text-blue-900 ring-1 ring-blue-200"
+                                                    : [
+                                                          "bg-blue-50 text-blue-900 ring-1 ring-blue-200",
+                                                          isInvoiceSkilled
+                                                              ? "font-bold"
+                                                              : "",
+                                                      ]
+                                                          .filter(Boolean)
+                                                          .join(" ")
                                                 : isReplacedRemarkPerson
                                                   ? "rounded border border-blue-500 px-px font-bold text-blue-700"
-                                                  : "text-gray-700",
+                                                  : isInvoiceSkilled
+                                                    ? "font-bold text-gray-900"
+                                                    : "text-gray-700",
                                             isSettledByEarlierLodging
                                                 ? "text-gray-400 line-through decoration-gray-500 decoration-2"
                                                 : "",

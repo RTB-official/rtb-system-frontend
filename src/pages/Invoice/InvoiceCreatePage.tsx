@@ -35,6 +35,17 @@ import {
     aggregateWorkLogEntryDateRange,
     formatInvoiceReportTableTitle,
 } from "../../utils/invoiceReportDisplayTitle";
+import {
+    fetchActiveInvoiceExcelTemplate,
+    downloadInvoiceExcelTemplateArrayBuffer,
+} from "../../lib/invoiceExcelTemplateApi";
+import {
+    buildInvoiceExcelMeta,
+    buildInvoiceExcelRowRecords,
+    fillInvoiceExcelWorkbook,
+    invoiceExcelWorkbookToBlob,
+    triggerExcelDownload,
+} from "../../lib/invoiceExcelExport";
 
 interface TimesheetRow {
     rowId: string;
@@ -212,6 +223,25 @@ const applyChargedTimeWindowToTimesheetRows = (
             return a.timeTo.localeCompare(b.timeTo);
         });
 
+function assignTimesheetRowSequentialIds(rows: TimesheetRow[]): TimesheetRow[] {
+    let lastDate: string | undefined;
+    let indexWithinDate = 0;
+    return rows.map((row) => {
+        if (row.date !== lastDate) {
+            lastDate = row.date;
+            indexWithinDate = 0;
+        }
+        const hideDayDate = indexWithinDate > 0;
+        const rowId = `${row.date}-${indexWithinDate}`;
+        indexWithinDate += 1;
+        return {
+            ...row,
+            rowId,
+            hideDayDate,
+        };
+    });
+}
+
 /** 타임시트 행 생성 로직 이후, 화면에 보이는 시간·청구 열이 같으면 인접 행만 병합 */
 const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
     rows: TimesheetRow[]
@@ -282,22 +312,153 @@ const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
         }
     }
 
-    let lastDate: string | undefined;
-    let indexWithinDate = 0;
-    return merged.map((row) => {
-        if (row.date !== lastDate) {
-            lastDate = row.date;
-            indexWithinDate = 0;
+    return assignTimesheetRowSequentialIds(merged);
+};
+
+/**
+ * 같은 날짜·같은 비고 인원 묶음에서, 종료 시각과 다음 행 시작 시각이 맞닿으면 한 행으로 합친다.
+ * (엔트리가 여러 줄로 쪼개져도 타임시트 그리드에는 연속 구간 하나로 보이게)
+ */
+const mergeConsecutiveTimesheetRowsSamePersonnel = (
+    rows: TimesheetRow[]
+): TimesheetRow[] => {
+    const round1 = (n: number) => Math.round(n * 10) / 10;
+
+    const personnelKeyFromDescription = (description: string) =>
+        description
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b, "ko"))
+            .join("\0");
+
+    const hourToken = (value: string) => {
+        const s = String(value ?? "").trim();
+        if (!s) {
+            return NaN;
         }
-        const hideDayDate = indexWithinDate > 0;
-        const rowId = `${row.date}-${indexWithinDate}`;
-        indexWithinDate += 1;
+        const head = s.includes(":") ? s.split(":")[0] : s;
+        const n = Number.parseInt(head, 10);
+        return Number.isFinite(n) ? n : NaN;
+    };
+
+    const mergeChargeDisplay = (
+        a: TimesheetRow["timesheetChargeDisplay"],
+        b: TimesheetRow["timesheetChargeDisplay"]
+    ): TimesheetRow["timesheetChargeDisplay"] | undefined => {
+        const weekdayNormal = round1((a?.weekdayNormal ?? 0) + (b?.weekdayNormal ?? 0));
+        const weekdayAfter = round1((a?.weekdayAfter ?? 0) + (b?.weekdayAfter ?? 0));
+        const weekendNormal = round1((a?.weekendNormal ?? 0) + (b?.weekendNormal ?? 0));
+        const weekendAfter = round1((a?.weekendAfter ?? 0) + (b?.weekendAfter ?? 0));
+        if (
+            weekdayNormal === 0 &&
+            weekdayAfter === 0 &&
+            weekendNormal === 0 &&
+            weekendAfter === 0
+        ) {
+            return undefined;
+        }
         return {
-            ...row,
-            rowId,
-            hideDayDate,
+            weekdayNormal,
+            weekdayAfter,
+            weekendNormal,
+            weekendAfter,
         };
+    };
+
+    const combineTwo = (a: TimesheetRow, b: TimesheetRow): TimesheetRow => {
+        const entryById = new Map<number, TimesheetSourceEntryData>();
+        for (const e of a.sourceEntries) {
+            entryById.set(e.id, e);
+        }
+        for (const e of b.sourceEntries) {
+            entryById.set(e.id, e);
+        }
+
+        const twSum = round1(a.travelWeekday + b.travelWeekday);
+        const teSum = round1(a.travelWeekend + b.travelWeekend);
+        /** 병합 시 각 행의 표시 문자열을 공백으로 이어 붙이면 "1 2"처럼 보이므로, 합산 숫자와 동일한 한 칸으로 표시 */
+        const travelDisplayFromHours = (hours: number): string | undefined =>
+            hours > 0 ? String(round1(hours)) : undefined;
+
+        const totalDispA = a.timesheetTotalHoursDisplay ?? a.totalHours;
+        const totalDispB = b.timesheetTotalHoursDisplay ?? b.totalHours;
+
+        return {
+            ...a,
+            timeTo: b.timeTo,
+            totalHours: round1(a.totalHours + b.totalHours),
+            weekdayNormal: round1(a.weekdayNormal + b.weekdayNormal),
+            weekdayAfter: round1(a.weekdayAfter + b.weekdayAfter),
+            weekendNormal: round1(a.weekendNormal + b.weekendNormal),
+            weekendAfter: round1(a.weekendAfter + b.weekendAfter),
+            travelWeekday: twSum,
+            travelWeekend: teSum,
+            travelWeekdayDisplay: travelDisplayFromHours(twSum),
+            travelWeekendDisplay: travelDisplayFromHours(teSum),
+            timesheetChargeDisplay: mergeChargeDisplay(
+                a.timesheetChargeDisplay,
+                b.timesheetChargeDisplay
+            ),
+            timesheetTotalHoursDisplay: round1(totalDispA + totalDispB),
+            sourceEntries: Array.from(entryById.values()).sort(
+                compareTimesheetSourceEntriesByTimeThenId
+            ),
+            chargeWindowEnd: b.chargeWindowEnd ?? a.chargeWindowEnd,
+        };
+    };
+
+    const byGroup = new Map<string, TimesheetRow[]>();
+    for (const row of rows) {
+        const key = `${row.date}\x1f${personnelKeyFromDescription(row.description)}`;
+        const list = byGroup.get(key);
+        if (list) {
+            list.push(row);
+        } else {
+            byGroup.set(key, [row]);
+        }
+    }
+
+    const merged: TimesheetRow[] = [];
+    for (const list of byGroup.values()) {
+        const sorted = [...list].sort((a, b) => {
+            const ah = hourToken(a.timeFrom);
+            const bh = hourToken(b.timeFrom);
+            if (ah !== bh) {
+                return ah - bh;
+            }
+            return hourToken(a.timeTo) - hourToken(b.timeTo);
+        });
+
+        let cur = sorted[0];
+        for (let i = 1; i < sorted.length; i++) {
+            const next = sorted[i];
+            const consecutive =
+                hourToken(cur.timeTo) === hourToken(next.timeFrom) &&
+                Number.isFinite(hourToken(cur.timeTo));
+            if (consecutive) {
+                cur = combineTwo(cur, next);
+            } else {
+                merged.push(cur);
+                cur = next;
+            }
+        }
+        merged.push(cur);
+    }
+
+    merged.sort((a, b) => {
+        if (a.date !== b.date) {
+            return a.date.localeCompare(b.date);
+        }
+        const ah = hourToken(a.timeFrom);
+        const bh = hourToken(b.timeFrom);
+        if (ah !== bh) {
+            return ah - bh;
+        }
+        return hourToken(a.timeTo) - hourToken(b.timeTo);
     });
+
+    return assignTimesheetRowSequentialIds(merged);
 };
 
 interface TimesheetRowModalData {
@@ -467,6 +628,33 @@ const DEFAULT_SKILLED_FITTER_TIER1 = [
 const DEFAULT_SKILLED_FITTER_TIER1_SET = new Set<string>(
     DEFAULT_SKILLED_FITTER_TIER1
 );
+
+/**
+ * 잡 디스크립션 지정 스킬드가 해당 날짜의 작업에 없을 때만 인보이스 스킬드 겹침 풀에 넣는 후보.
+ * A티어가 B티어보다 우선(총 작업분 동점 시).
+ */
+const TEMP_INVOICE_SKILLED_FALLBACK_TIER_B_NAMES = ["이효익", "정상민"] as const;
+const TEMP_INVOICE_SKILLED_FALLBACK_TIER_B_SET = new Set<string>(
+    TEMP_INVOICE_SKILLED_FALLBACK_TIER_B_NAMES.filter((n) =>
+        SKILLED_FITTER_NAME_SET.has(n)
+    )
+);
+const TEMP_INVOICE_SKILLED_FALLBACK_POOL_SET = new Set<string>([
+    ...DEFAULT_SKILLED_FITTER_TIER1_SET,
+    ...TEMP_INVOICE_SKILLED_FALLBACK_TIER_B_SET,
+]);
+
+/** 겹침 승자 정렬: 총 작업분 → A/B 티어 → 이름. */
+const getInvoiceSkilledOverlapTierRank = (name: string): number => {
+    if (DEFAULT_SKILLED_FITTER_TIER1_SET.has(name)) {
+        return 0;
+    }
+    if (TEMP_INVOICE_SKILLED_FALLBACK_TIER_B_SET.has(name)) {
+        return 1;
+    }
+    return 2;
+};
+
 const SKILLED_FITTER_ENTRY_COUNT_DESC_TYPES = new Set([
     "이동",
     "작업",
@@ -558,6 +746,242 @@ const MONTH_LABELS = [
     "Nov",
     "Dec",
 ];
+
+type InvoiceWorkInterval = { startMs: number; endMs: number; minutes: number };
+
+type SkilledOverlapSourceEntry = Pick<
+    TimesheetSourceEntryData,
+    "id" | "dateFrom" | "dateTo" | "timeFrom" | "timeTo" | "descType" | "persons"
+>;
+
+const isWorkOrWaitForSkilledOverlap = (descType: string | undefined) => {
+    const t = (descType ?? "").trim();
+    return t === "작업" || t === "대기";
+};
+
+function intervalFromWorkWaitEntry(
+    entry: SkilledOverlapSourceEntry,
+    toDateSafe: (date: string, time: string) => Date
+): InvoiceWorkInterval | null {
+    if (!entry.dateFrom || !entry.dateTo || !entry.timeFrom || !entry.timeTo) {
+        return null;
+    }
+    const startMs = toDateSafe(entry.dateFrom, entry.timeFrom).getTime();
+    const endMs = toDateSafe(entry.dateTo, entry.timeTo).getTime();
+    if (
+        Number.isNaN(startMs) ||
+        Number.isNaN(endMs) ||
+        endMs <= startMs
+    ) {
+        return null;
+    }
+    return {
+        startMs,
+        endMs,
+        minutes: Math.floor((endMs - startMs) / 60000),
+    };
+}
+
+/** 해당 행의 작업·대기 엔트리 전체를 덮는 최소 외곽 구간(비고만 있는 스킬드용). */
+function mergeRowWorkWaitEnvelope(
+    entries: readonly SkilledOverlapSourceEntry[],
+    toDateSafe: (date: string, time: string) => Date
+): InvoiceWorkInterval | null {
+    let minStart = Number.POSITIVE_INFINITY;
+    let maxEnd = Number.NEGATIVE_INFINITY;
+    for (const e of entries) {
+        const iv = intervalFromWorkWaitEntry(e, toDateSafe);
+        if (!iv) {
+            continue;
+        }
+        minStart = Math.min(minStart, iv.startMs);
+        maxEnd = Math.max(maxEnd, iv.endMs);
+    }
+    if (
+        !Number.isFinite(minStart) ||
+        !Number.isFinite(maxEnd) ||
+        maxEnd <= minStart
+    ) {
+        return null;
+    }
+    return {
+        startMs: minStart,
+        endMs: maxEnd,
+        minutes: Math.floor((maxEnd - minStart) / 60000),
+    };
+}
+
+/** 인보이스 인력 합계·표시와 동일: 날짜별 실제 스킬드 청구 대상 인원 집합(겹침 시 총 작업분 우선 등). */
+function buildEffectiveSkilledByDateForInvoice(
+    rows: readonly TimesheetRow[],
+    selectedSkilledFitters: readonly string[],
+    toDateSafe: (date: string, time: string) => Date
+): Map<string, Set<string>> {
+    const selectedSkilledSet = new Set(
+        selectedSkilledFitters.filter((person) => SKILLED_FITTER_SET.has(person))
+    );
+
+    const datesWithJobSkilledInWork = new Set<string>();
+    for (const row of rows) {
+        for (const entry of row.sourceEntries) {
+            if (entry.descType !== "작업" || !entry.dateFrom) {
+                continue;
+            }
+            for (const person of entry.persons ?? []) {
+                if (selectedSkilledSet.has(person)) {
+                    datesWithJobSkilledInWork.add(entry.dateFrom);
+                    break;
+                }
+            }
+        }
+    }
+
+    const workIntervalsByDatePerson = new Map<
+        string,
+        Map<string, InvoiceWorkInterval[]>
+    >();
+    const seenWorkIntervalKeys = new Set<string>();
+
+    for (const row of rows) {
+        const workWaitEntries = row.sourceEntries.filter(
+            (e): e is TimesheetSourceEntryData =>
+                isWorkOrWaitForSkilledOverlap(e.descType) &&
+                Boolean(e.dateFrom && e.dateTo && e.timeFrom && e.timeTo)
+        );
+        if (workWaitEntries.length === 0) {
+            continue;
+        }
+        const rowEnvelope = mergeRowWorkWaitEnvelope(workWaitEntries, toDateSafe);
+        const dateKey = row.date;
+        const allowFallbackCandidates =
+            !datesWithJobSkilledInWork.has(dateKey);
+
+        const rowPeople = row.description
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+
+        for (const person of rowPeople) {
+            const inJobPool = selectedSkilledSet.has(person);
+            const inFallbackPool =
+                allowFallbackCandidates &&
+                TEMP_INVOICE_SKILLED_FALLBACK_POOL_SET.has(person);
+            if (!inJobPool && !inFallbackPool) {
+                continue;
+            }
+            let addedForPerson = false;
+            for (const entry of workWaitEntries) {
+                if (!(entry.persons ?? []).includes(person)) {
+                    continue;
+                }
+                const interval = intervalFromWorkWaitEntry(entry, toDateSafe);
+                if (!interval) {
+                    continue;
+                }
+                const dedupeKey = `${dateKey}|${entry.id}|${person}`;
+                if (seenWorkIntervalKeys.has(dedupeKey)) {
+                    continue;
+                }
+                seenWorkIntervalKeys.add(dedupeKey);
+                let byPerson = workIntervalsByDatePerson.get(dateKey);
+                if (!byPerson) {
+                    byPerson = new Map<string, InvoiceWorkInterval[]>();
+                    workIntervalsByDatePerson.set(dateKey, byPerson);
+                }
+                if (!byPerson.has(person)) {
+                    byPerson.set(person, []);
+                }
+                byPerson.get(person)!.push(interval);
+                addedForPerson = true;
+            }
+            if (!addedForPerson && rowEnvelope) {
+                const dedupeKey = `${dateKey}|${row.rowId}|env|${person}`;
+                if (seenWorkIntervalKeys.has(dedupeKey)) {
+                    continue;
+                }
+                seenWorkIntervalKeys.add(dedupeKey);
+                let byPerson = workIntervalsByDatePerson.get(dateKey);
+                if (!byPerson) {
+                    byPerson = new Map<string, InvoiceWorkInterval[]>();
+                    workIntervalsByDatePerson.set(dateKey, byPerson);
+                }
+                if (!byPerson.has(person)) {
+                    byPerson.set(person, []);
+                }
+                byPerson.get(person)!.push(rowEnvelope);
+            }
+        }
+    }
+
+    const effectiveSkilledByDate = new Map<string, Set<string>>();
+    workIntervalsByDatePerson.forEach((byPerson, date) => {
+        const people = Array.from(byPerson.keys());
+        if (people.length === 0) {
+            return;
+        }
+        if (people.length === 1) {
+            effectiveSkilledByDate.set(date, new Set(people));
+            return;
+        }
+        const overlaps = (left: string, right: string) =>
+            (byPerson.get(left) ?? []).some((li) =>
+                (byPerson.get(right) ?? []).some(
+                    (ri) => li.startMs < ri.endMs && ri.startMs < li.endMs
+                )
+            );
+        const visited = new Set<string>();
+        const winners = new Set<string>();
+        people.forEach((person) => {
+            if (visited.has(person)) {
+                return;
+            }
+            const stack = [person];
+            visited.add(person);
+            const component: string[] = [];
+            while (stack.length > 0) {
+                const current = stack.pop()!;
+                component.push(current);
+                people.forEach((candidate) => {
+                    if (visited.has(candidate) || candidate === current) {
+                        return;
+                    }
+                    if (overlaps(current, candidate)) {
+                        visited.add(candidate);
+                        stack.push(candidate);
+                    }
+                });
+            }
+            if (component.length === 1) {
+                winners.add(component[0]);
+                return;
+            }
+            const winner = [...component].sort((a, b) => {
+                const aMinutes = (byPerson.get(a) ?? []).reduce(
+                    (sum, interval) => sum + interval.minutes,
+                    0
+                );
+                const bMinutes = (byPerson.get(b) ?? []).reduce(
+                    (sum, interval) => sum + interval.minutes,
+                    0
+                );
+                if (aMinutes !== bMinutes) {
+                    return bMinutes - aMinutes;
+                }
+                const tierDiff =
+                    getInvoiceSkilledOverlapTierRank(a) -
+                    getInvoiceSkilledOverlapTierRank(b);
+                if (tierDiff !== 0) {
+                    return tierDiff;
+                }
+                return a.localeCompare(b, "ko");
+            })[0];
+            winners.add(winner);
+        });
+        effectiveSkilledByDate.set(date, winners);
+    });
+
+    return effectiveSkilledByDate;
+}
 
 function PersonnelSelectionModal({
     isOpen,
@@ -681,6 +1105,7 @@ export default function InvoiceCreatePage() {
     const invoicePdfDownloadIframeRef = useRef<HTMLIFrameElement | null>(null);
     const invoicePdfMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const invoicePdfMenuPanelRef = useRef<HTMLDivElement | null>(null);
+    const [invoiceExcelExporting, setInvoiceExcelExporting] = useState(false);
     /** 타임시트 행 클릭으로 Date Group 패널을 연 경우 행 하이라이트 */
     const [timesheetRowSidebarHighlightKey, setTimesheetRowSidebarHighlightKey] =
         useState<string | null>(null);
@@ -3119,6 +3544,39 @@ export default function InvoiceCreatePage() {
                         return { anchorDate, anchorTime };
                     };
 
+                    const getInitialBeforeTravelChargeEndAnchor = (
+                        entries: InvoiceTimesheetEntry[],
+                        blockStartTime: string
+                    ): { anchorDate: string; anchorTime: string } => {
+                        const travelEndAnchor = getBeforeTravelChainEndAnchor(
+                            entries,
+                            date,
+                            blockStartTime
+                        );
+                        if (dayWorkEntries.length === 0) {
+                            return travelEndAnchor;
+                        }
+
+                        const travelEndMs = toDateSafe(
+                            travelEndAnchor.anchorDate,
+                            travelEndAnchor.anchorTime
+                        ).getTime();
+                        const workStartMs = toDateSafe(
+                            date,
+                            blockStartTime
+                        ).getTime();
+
+                        if (
+                            Number.isNaN(travelEndMs) ||
+                            Number.isNaN(workStartMs) ||
+                            workStartMs - travelEndMs >= 3 * 60 * 60 * 1000
+                        ) {
+                            return travelEndAnchor;
+                        }
+
+                        return { anchorDate: date, anchorTime: blockStartTime };
+                    };
+
                     /** 자택 도착 방향 고정시간: 구간 시작은 작업 종료가 아니라 이동 엔트리들의 첫 출발(From). end = From + 고정시간. */
                     const getAfterTravelChainStartAnchor = (
                         entries: InvoiceTimesheetEntry[],
@@ -3181,22 +3639,34 @@ export default function InvoiceCreatePage() {
                             getHomeTravelHours(beforeTravelEntries[0].location) ?? 0;
 
                         if (override?.target === "lodging") {
+                            const { anchorDate, anchorTime } =
+                                blockIndex === 0
+                                    ? getInitialBeforeTravelChargeEndAnchor(
+                                          beforeTravelEntries,
+                                          blockStartTime
+                                      )
+                                    : { anchorDate: date, anchorTime: blockStartTime };
                             return {
                                 kind: "continued",
                                 hours: 1,
-                                start: shiftTimeByHours(date, blockStartTime, -1),
-                                end: blockStartTime,
+                                start: shiftTimeByHours(anchorDate, anchorTime, -1),
+                                end: anchorTime,
                                 label: blockIndex === 0 ? "최초투입" : "이동",
                             };
                         }
 
                         if (override?.target === "home" && overrideFixedHours > 0) {
                             const { anchorDate, anchorTime } =
-                                getBeforeTravelChainEndAnchor(
-                                    beforeTravelEntries,
-                                    date,
-                                    blockStartTime
-                                );
+                                blockIndex === 0
+                                    ? getInitialBeforeTravelChargeEndAnchor(
+                                          beforeTravelEntries,
+                                          blockStartTime
+                                      )
+                                    : getBeforeTravelChainEndAnchor(
+                                          beforeTravelEntries,
+                                          date,
+                                          blockStartTime
+                                      );
                             return {
                                 kind: blockIndex === 0 ? "initial-home" : "이동-home",
                                 hours: overrideFixedHours,
@@ -3229,9 +3699,8 @@ export default function InvoiceCreatePage() {
 
                                 if (hasHome && fixedHours > 0) {
                                     const { anchorDate, anchorTime } =
-                                        getBeforeTravelChainEndAnchor(
+                                        getInitialBeforeTravelChargeEndAnchor(
                                             beforeTravelEntries,
-                                            date,
                                             blockStartTime
                                         );
                                     return {
@@ -3255,11 +3724,16 @@ export default function InvoiceCreatePage() {
                                 );
                             }
 
+                            const { anchorDate, anchorTime } =
+                                getInitialBeforeTravelChargeEndAnchor(
+                                    beforeTravelEntries,
+                                    blockStartTime
+                                );
                             return {
                                 kind: "continued",
                                 hours: 1,
-                                start: shiftTimeByHours(date, blockStartTime, -1),
-                                end: blockStartTime,
+                                start: shiftTimeByHours(anchorDate, anchorTime, -1),
+                                end: anchorTime,
                                 label: "작업지속",
                             };
                         }
@@ -3998,10 +4472,11 @@ export default function InvoiceCreatePage() {
                     });
                 });
 
-                const finalTimesheetRows =
+                const finalTimesheetRows = mergeConsecutiveTimesheetRowsSamePersonnel(
                     mergeAdjacentTimesheetRowsByVisibleTimeAndCharge(
                         applyChargedTimeWindowToTimesheetRows(rows)
-                    );
+                    )
+                );
                 setTimesheetRows(finalTimesheetRows);
                 const isPristineInvoiceState =
                     invoiceUndoPastRef.current.length === 0 &&
@@ -4697,6 +5172,17 @@ export default function InvoiceCreatePage() {
             </td>
         );
     };
+
+    const effectiveInvoiceSkilledByDate = useMemo(
+        () =>
+            buildEffectiveSkilledByDateForInvoice(
+                timesheetRows,
+                selectedSkilledFitters,
+                toDateSafe
+            ),
+        [timesheetRows, selectedSkilledFitters, toDateSafe]
+    );
+
     const createEmptyInvoiceHourSummary = () => ({
         weekdayNormal: 0,
         weekdayAfter: 0,
@@ -4771,9 +5257,9 @@ export default function InvoiceCreatePage() {
                     entry.descType === "이동" &&
                     entryManualBillableHours[entry.id] !== undefined
             );
-        const isSelectedSkilledFitterPerson = (person: string) =>
-            SKILLED_FITTER_SET.has(person) &&
-            selectedSkilledFitters.includes(person);
+        const effectiveSkilledByDate = effectiveInvoiceSkilledByDate;
+        const isSelectedSkilledFitterPerson = (person: string, date: string) =>
+            effectiveSkilledByDate.get(date)?.has(person) ?? false;
 
         /** 해당 일에 작업 엔트리가 하나라도 있는지 */
         const dateHasWorkEntry = new Map<string, boolean>();
@@ -4785,10 +5271,7 @@ export default function InvoiceCreatePage() {
                 dateHasWorkEntry.set(d, true);
             }
             for (const person of getRowPersons(r)) {
-                if (
-                    SKILLED_FITTER_SET.has(person) &&
-                    selectedSkilledFitters.includes(person)
-                ) {
+                if (isSelectedSkilledFitterPerson(person, d)) {
                     dateHasJobSkilledFitter.set(d, true);
                 }
             }
@@ -4826,8 +5309,18 @@ export default function InvoiceCreatePage() {
                     skilledAllocatedWorkKeys.has(blockKey);
                 const travelSkilledAlreadyAllocated =
                     skilledAllocatedTravelKeys.has(blockKey);
+                const hasSelectedSkilledInRow =
+                    rowPeople.some((person) =>
+                        isSelectedSkilledFitterPerson(person, row.date)
+                    );
+                const hasSelectedSkilledInTravelBillablePeople =
+                    travelBillablePeople.some((person) =>
+                        isSelectedSkilledFitterPerson(person, row.date)
+                    );
                 const workSkilled =
-                    rowPeople.length > 0 && !workSkilledAlreadyAllocated ? 1 : 0;
+                    hasSelectedSkilledInRow && !workSkilledAlreadyAllocated
+                        ? 1
+                        : 0;
                 if (hasWorkEntry) {
                     activeSkilledCarry = workSkilled > 0;
                 } else if (!isContinuousWithPrevious) {
@@ -4837,10 +5330,12 @@ export default function InvoiceCreatePage() {
                 let travelSkilled =
                     travelBillablePeople.length > 0 && !travelSkilledAlreadyAllocated
                         ? manualBillableTravel
-                            ? travelBillablePeople.some(isSelectedSkilledFitterPerson)
+                            ? hasSelectedSkilledInTravelBillablePeople
                                 ? 1
                                 : 0
-                            : 1
+                            : hasSelectedSkilledInTravelBillablePeople
+                              ? 1
+                              : 0
                         : 0;
                 const dayHasWork = dateHasWorkEntry.get(row.date) ?? false;
                 const dayHasSkilled = dateHasJobSkilledFitter.get(row.date) ?? false;
@@ -5272,6 +5767,8 @@ export default function InvoiceCreatePage() {
             .split(",")
             .map((value) => value.trim())
             .filter(Boolean);
+    const isSelectedSkilledFitterForDate = (date: string, person: string) =>
+        effectiveInvoiceSkilledByDate.get(date)?.has(person) ?? false;
     const getLodgingSettledPersonNamesForRow = (row: TimesheetRow) => {
         const rowStart = toDateSafe(row.date, row.timeFrom || "00:00").getTime();
         if (Number.isNaN(rowStart)) {
@@ -5505,18 +6002,23 @@ export default function InvoiceCreatePage() {
     };
 
     /** R&D TIMESHEET 참여자 표시 순: Skilled fitter → 잡디 Mechanic(Fitter 대표) → 가나다 */
-    const orderRdTimesheetParticipantNames = (names: string[]) => {
+    const orderRdTimesheetParticipantNames = (
+        names: string[],
+        rowCalendarDate: string
+    ) => {
         const uniquePeople = Array.from(
             new Set(names.map((n) => n.trim()).filter(Boolean))
         );
         if (uniquePeople.length === 0) {
             return [];
         }
+        const effectiveSkilledToday =
+            effectiveInvoiceSkilledByDate.get(rowCalendarDate) ?? null;
         const engineerPeople = sortPeopleForMention(
             uniquePeople.filter(
                 (person) =>
                     SKILLED_FITTER_SET.has(person) &&
-                    selectedSkilledFitters.includes(person)
+                    (effectiveSkilledToday?.has(person) ?? false)
             )
         );
         const skilledOrdered = [
@@ -5577,7 +6079,8 @@ export default function InvoiceCreatePage() {
             uniquePeople.filter(
                 (person) =>
                     SKILLED_FITTER_SET.has(person) &&
-                    selectedSkilledFitters.includes(person)
+                    (effectiveInvoiceSkilledByDate.get(row.date)?.has(person) ??
+                        false)
             )
         );
         const skilledOrdered = [
@@ -6116,15 +6619,10 @@ export default function InvoiceCreatePage() {
         ).sort();
         const comments: string[] = [];
 
-        dates.forEach((date) => {
-            const dayEntries = Array.from(
-                new Map(
-                    section.rows
-                        .filter((row) => row.date === date)
-                        .flatMap((row) => row.sourceEntries)
-                        .map((entry) => [entry.id, entry] as const)
-                ).values()
-            ).sort((a, b) => {
+        const sortEntriesChronologically = (
+            entries: TimesheetSourceEntryData[]
+        ): TimesheetSourceEntryData[] =>
+            [...entries].sort((a, b) => {
                 const aStart = new Date(
                     `${a.dateFrom}T${a.timeFrom ?? "00:00"}`
                 ).getTime();
@@ -6143,6 +6641,115 @@ export default function InvoiceCreatePage() {
                 ).getTime();
                 return aEnd - bEnd;
             });
+
+        const entriesForSectionDate = (d: string): TimesheetSourceEntryData[] =>
+            sortEntriesChronologically(
+                Array.from(
+                    new Map(
+                        section.rows
+                            .filter((row) => row.date === d)
+                            .flatMap((row) => row.sourceEntries)
+                            .map((entry) => [entry.id, entry] as const)
+                    ).values()
+                )
+            );
+
+        /** 타임시트 그리드와 동일하게 종료 시각이 24시(자정 넘김)인 작업 세그먼트 */
+        const entryEndsAtCalendarMidnight = (
+            entry: TimesheetSourceEntryData
+        ): boolean => {
+            if (entry.descType !== "작업") {
+                return false;
+            }
+            const t = (entry.timeTo ?? "").trim();
+            const hourPart = t.includes(":") ? (t.split(":")[0] ?? "") : t;
+            if (hourPart === "24") {
+                return true;
+            }
+            if (
+                entry.dateFrom &&
+                entry.dateTo === shiftDateByDays(entry.dateFrom, 1)
+            ) {
+                return hourPart === "00" || hourPart === "0";
+            }
+            return false;
+        };
+
+        const entryStartsAtCalendarMidnight = (
+            entry: TimesheetSourceEntryData,
+            expectedDateFrom: string
+        ): boolean => {
+            if (entry.descType !== "작업") {
+                return false;
+            }
+            if (entry.dateFrom !== expectedDateFrom) {
+                return false;
+            }
+            const t = (entry.timeFrom ?? "").trim();
+            const hourPart = t.includes(":") ? (t.split(":")[0] ?? "") : t;
+            return hourPart === "00" || hourPart === "0";
+        };
+
+        /** 전날 마지막 작업이 자정까지 이어지고 다음날 00:00 작업이 같은 이어짐이면 당일에는 ‘작업 후 이동 없음’ 코멘트를 내지 않음 */
+        const workContinuesNextCalendarDay = (
+            date: string,
+            person: string,
+            lastWorkEntry: TimesheetSourceEntryData
+        ): boolean => {
+            const nextDate = shiftDateByDays(date, 1);
+            const nextWorks = entriesForSectionDate(nextDate).filter(
+                (e) =>
+                    e.descType === "작업" &&
+                    (e.persons ?? []).includes(person)
+            );
+            const firstNext = nextWorks[0];
+            if (!firstNext) {
+                return false;
+            }
+            if (
+                lastWorkEntry.splitGroupId &&
+                firstNext.splitGroupId &&
+                lastWorkEntry.splitGroupId === firstNext.splitGroupId
+            ) {
+                return true;
+            }
+            return (
+                entryEndsAtCalendarMidnight(lastWorkEntry) &&
+                entryStartsAtCalendarMidnight(firstNext, nextDate)
+            );
+        };
+
+        /** 전날에 자정까지 작업 후 당일 00:00부터 같은 연속 작업이면 ‘작업 전 이동 없음’ 코멘트 생략 */
+        const workContinuesFromPreviousCalendarDay = (
+            date: string,
+            person: string,
+            firstWorkEntry: TimesheetSourceEntryData
+        ): boolean => {
+            const prevDate = shiftDateByDays(date, -1);
+            const prevWorks = entriesForSectionDate(prevDate).filter(
+                (e) =>
+                    e.descType === "작업" &&
+                    (e.persons ?? []).includes(person)
+            );
+            const lastPrev = prevWorks[prevWorks.length - 1];
+            if (!lastPrev) {
+                return false;
+            }
+            if (
+                firstWorkEntry.splitGroupId &&
+                lastPrev.splitGroupId &&
+                firstWorkEntry.splitGroupId === lastPrev.splitGroupId
+            ) {
+                return true;
+            }
+            return (
+                entryEndsAtCalendarMidnight(lastPrev) &&
+                entryStartsAtCalendarMidnight(firstWorkEntry, date)
+            );
+        };
+
+        dates.forEach((date) => {
+            const dayEntries = entriesForSectionDate(date);
 
             const previousDayVessels = new Set<string>();
             const nextDayVessels = new Set<string>();
@@ -6218,13 +6825,29 @@ export default function InvoiceCreatePage() {
                     (vessel) => vessel && vessel !== currentVessel
                 );
 
-                if (currentOtherVessels.length > 0 && !hasTravelBeforeWork) {
+                if (
+                    currentOtherVessels.length > 0 &&
+                    !hasTravelBeforeWork &&
+                    !workContinuesFromPreviousCalendarDay(
+                        date,
+                        person,
+                        personEntries[firstWorkIndex]
+                    )
+                ) {
                     currentOtherVessels.forEach((vessel) =>
                         sameDayOtherVesselsBeforeWork.add(vessel)
                     );
                 }
 
-                if (currentOtherVessels.length > 0 && !hasTravelAfterWork) {
+                if (
+                    currentOtherVessels.length > 0 &&
+                    !hasTravelAfterWork &&
+                    !workContinuesNextCalendarDay(
+                        date,
+                        person,
+                        personEntries[lastWorkIndex]
+                    )
+                ) {
                     currentOtherVessels.forEach((vessel) =>
                         sameDayOtherVesselsAfterWork.add(vessel)
                     );
@@ -8023,7 +8646,8 @@ export default function InvoiceCreatePage() {
                 description:
                     sectionTitle === "R&D TIMESHEET"
                         ? orderRdTimesheetParticipantNames(
-                              getRowPersons(row)
+                              getRowPersons(row),
+                              row.date
                           ).join(", ")
                         : row.description,
                 sourceEntries: row.sourceEntries,
@@ -8041,6 +8665,7 @@ export default function InvoiceCreatePage() {
             timesheetRows,
             selectedSkilledFitters,
             selectedFitterRepresentatives,
+            effectiveInvoiceSkilledByDate,
         ]
     );
 
@@ -8400,6 +9025,60 @@ export default function InvoiceCreatePage() {
         setInvoicePdfSelectedIds([]);
     }, [startInvoicePdfFileDownloads]);
 
+    const handleInvoiceExcelExport = useCallback(async () => {
+        if (invoiceExcelExporting) return;
+        if (workLogDataList.length === 0) {
+            showError("내보낼 보고서 데이터가 없습니다.");
+            return;
+        }
+        setInvoiceExcelExporting(true);
+        try {
+            const template = await fetchActiveInvoiceExcelTemplate();
+            if (!template) {
+                showError(
+                    "등록된 인보이스 엑셀 양식이 없습니다. Supabase 대시보드에서 Storage 버킷 `invoice-excel-templates`에 파일을 올리고, 테이블 invoice_excel_templates에 행을 추가하세요."
+                );
+                return;
+            }
+            const templateBuf = await downloadInvoiceExcelTemplateArrayBuffer(
+                template.storage_path
+            );
+            const meta = buildInvoiceExcelMeta(workLogDataList);
+            const rowRecords = buildInvoiceExcelRowRecords(timesheetRows);
+            const workbook = await fillInvoiceExcelWorkbook(
+                templateBuf,
+                template.field_mappings,
+                meta,
+                rowRecords
+            );
+            const blob = await invoiceExcelWorkbookToBlob(workbook);
+            const safeBase = String(meta.report_title ?? "invoice")
+                .replace(/[\\/:*?"<>|]/g, "_")
+                .trim()
+                .slice(0, 120);
+            triggerExcelDownload(
+                blob,
+                `${safeBase.length > 0 ? safeBase : "invoice"}.xlsx`
+            );
+            showSuccess("엑셀 파일을 저장했습니다.");
+        } catch (e) {
+            console.error(e);
+            showError(
+                e instanceof Error
+                    ? e.message
+                    : "엑셀 내보내기에 실패했습니다."
+            );
+        } finally {
+            setInvoiceExcelExporting(false);
+        }
+    }, [
+        invoiceExcelExporting,
+        workLogDataList,
+        timesheetRows,
+        showError,
+        showSuccess,
+    ]);
+
     return (
         <div className="flex h-screen bg-white overflow-hidden font-pretendard">
             {invoicePdfDownloadIframeId != null ? (
@@ -8442,6 +9121,19 @@ export default function InvoiceCreatePage() {
                     rightContent={
                         !loading && workLogDataList.length > 0 ? (
                             <div className="flex items-center gap-1.5 md:gap-2">
+                                <button
+                                    type="button"
+                                    disabled={invoiceExcelExporting}
+                                    onClick={() => void handleInvoiceExcelExport()}
+                                    className={[
+                                        "h-12 min-w-[3rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-50",
+                                    ].join(" ")}
+                                    aria-busy={invoiceExcelExporting}
+                                    aria-label="인보이스 엑셀 내보내기"
+                                    title="엑셀"
+                                >
+                                    {invoiceExcelExporting ? "…" : "엑셀"}
+                                </button>
                                 <button
                                     ref={invoicePdfMenuButtonRef}
                                     type="button"
@@ -8987,7 +9679,8 @@ export default function InvoiceCreatePage() {
                                                                         return orderRdTimesheetParticipantNames(
                                                                             getRowPersons(
                                                                                 row
-                                                                            )
+                                                                            ),
+                                                                            row.date
                                                                         ).map(
                                                                             (
                                                                                 person,
@@ -9014,6 +9707,12 @@ export default function InvoiceCreatePage() {
                                                                                                     person
                                                                                                 )
                                                                                                     ? "text-gray-400 line-through decoration-gray-500 decoration-2"
+                                                                                                    : "",
+                                                                                                isSelectedSkilledFitterForDate(
+                                                                                                    row.date,
+                                                                                                    person
+                                                                                                )
+                                                                                                    ? "font-bold text-gray-900"
                                                                                                     : "",
                                                                                             ]
                                                                                                 .filter(Boolean)
@@ -10302,6 +11001,9 @@ export default function InvoiceCreatePage() {
                     timesheetRowCalendarDate={
                         selectedTimesheetRow?.timesheetRowCalendarDate ?? ""
                     }
+                    isInvoiceEffectiveSkilledFitter={
+                        isSelectedSkilledFitterForDate
+                    }
                 />
                 <TimesheetDateGroupDetailSidePanel
                     isOpen={selectedTimesheetDateGroupPanel !== null}
@@ -10372,6 +11074,9 @@ export default function InvoiceCreatePage() {
                     }
                     scrollToFullGroupNonce={
                         selectedTimesheetDateGroupPanel?.scrollToFullGroupNonce
+                    }
+                    isInvoiceEffectiveSkilledFitter={
+                        isSelectedSkilledFitterForDate
                     }
                 />
             </div>

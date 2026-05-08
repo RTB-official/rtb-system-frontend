@@ -146,6 +146,14 @@ interface TimesheetRowDetailSidePanelProps {
     onRestoreAllDeletedTimesheetEntriesInScope?: (entryIds: number[]) => void;
     /** 타임시트 행 YYYY-MM-DD — 내 엔트리만 모두 삭제해도 삭제 목록 스코프 유지 */
     timesheetRowCalendarDate?: string;
+    /**
+     * 엔트리 `dateFrom`(YYYY-MM-DD) 기준 인보이스에서 실제 스킬드로 집계되는 참여자 이름 볼드.
+     * 타임시트 그리드 R&D 비고와 동일 기준.
+     */
+    isInvoiceEffectiveSkilledFitter?: (
+        calendarDateYmd: string,
+        personName: string
+    ) => boolean;
 }
 
 type TravelChargeOverrideTarget = "home" | "lodging";
@@ -677,6 +685,7 @@ export default function TimesheetRowDetailSidePanel({
     onRestoreDeletedTimesheetEntry,
     onRestoreAllDeletedTimesheetEntriesInScope,
     timesheetRowCalendarDate = "",
+    isInvoiceEffectiveSkilledFitter,
 }: TimesheetRowDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
@@ -998,6 +1007,17 @@ export default function TimesheetRowDetailSidePanel({
                                 const isReplacedRemarkPerson =
                                     hasPersonsBaseline &&
                                     !originalPersonSet.has(person);
+                                const isInvoiceSkilled =
+                                    Boolean(entry.dateFrom) &&
+                                    Boolean(
+                                        isInvoiceEffectiveSkilledFitter?.(
+                                            entry.dateFrom,
+                                            person
+                                        )
+                                    );
+                                const isEmphasizedForTimesheetSkilled =
+                                    highlightedPersons.has(person) ||
+                                    isInvoiceSkilled;
                                 const isSettledByEarlierLodging =
                                     isTravelEntrySettledByEarlierLodgingOverride(
                                         entry,
@@ -1025,9 +1045,7 @@ export default function TimesheetRowDetailSidePanel({
                                                         ? "bg-blue-50 font-bold text-blue-800 ring-2 ring-blue-400"
                                                         : [
                                                               "bg-blue-50 text-blue-900 ring-1 ring-blue-200",
-                                                              highlightedPersons.has(
-                                                                  person
-                                                              )
+                                                              isEmphasizedForTimesheetSkilled
                                                                   ? "font-bold"
                                                                   : "",
                                                           ]
@@ -1035,9 +1053,7 @@ export default function TimesheetRowDetailSidePanel({
                                                               .join(" ")
                                                     : isReplacedRemarkPerson
                                                       ? "rounded border border-blue-500 px-px font-bold text-blue-700"
-                                                      : highlightedPersons.has(
-                                                            person
-                                                        )
+                                                      : isEmphasizedForTimesheetSkilled
                                                         ? "font-bold text-gray-900"
                                                         : "text-gray-700",
                                                 isSettledByEarlierLodging
