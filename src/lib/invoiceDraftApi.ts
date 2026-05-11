@@ -28,6 +28,18 @@ export type InvoiceDraftPayloadV1 = {
     >;
     deletedTimesheetEntries: unknown[];
     selectedTimesheetDateGroupKeys: string[];
+    /**
+     * 타임시트 행 단위 Skilled Fitter 지정(행 키: `YYYY-MM-DD::entryId,entryId,...`).
+     * 같은 날 다른 묶음 행에는 적용되지 않음.
+     */
+    invoiceSkilledFitterByTimesheetRowKey?: Record<string, string>;
+    /**
+     * 타임시트 묶음 행에서 Skilled를 끈 인원(해당 행에는 수동 지정 삭제 후에도 알고리즘으로 복구하지 않음).
+     * 키는 `invoiceSkilledFitterByTimesheetRowKey`와 동일(`YYYY-MM-DD::entryId,...`).
+     */
+    invoiceSkilledFitterOptOutByTimesheetRowKey?: Record<string, string[]>;
+    /** @deprecated 구버전 드래프트 — 로드 시 행 키로 마이그레이션 */
+    entryInvoiceSkilledFitterByEntryId?: Record<number, string>;
 };
 
 export type InvoiceDraftPayload = InvoiceDraftPayloadV1;

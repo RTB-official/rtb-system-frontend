@@ -93,6 +93,16 @@ interface TimesheetRow {
     timesheetTotalHoursDisplay?: number;
 }
 
+/** 날짜 + 소스 엔트리 id 집합 — 타임시트 묶음 행별 스킬드 지정 키 */
+function getTimesheetRowSkilledIdentityKey(row: TimesheetRow): string {
+    return [
+        row.date,
+        Array.from(new Set(row.sourceEntries.map((entry) => entry.id)))
+            .sort((a, b) => a - b)
+            .join(","),
+    ].join("::");
+}
+
 interface TimesheetSourceEntryData {
     id: number;
     workLogId: number;
@@ -257,6 +267,12 @@ const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
     const round1 = (n: number) => Math.round(n * 10) / 10;
 
     const chargeDisplayKey = (row: TimesheetRow) => {
+        /** 올림 청구 시 그리드 Split 열과 동일 값 — 인접 병합 기준을 화면과 일치 */
+        const tc = row.timesheetChargeDisplay;
+        const wn = tc?.weekdayNormal ?? row.weekdayNormal;
+        const wa = tc?.weekdayAfter ?? row.weekdayAfter;
+        const wkn = tc?.weekendNormal ?? row.weekendNormal;
+        const wka = tc?.weekendAfter ?? row.weekendAfter;
         const travelWeekdayCell =
             row.travelWeekdayDisplay ||
             (row.travelWeekday > 0 ? String(round1(row.travelWeekday)) : "");
@@ -267,10 +283,10 @@ const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
             row.timesheetTotalHoursDisplay ?? row.totalHours;
         return [
             String(round1(totalForGrid)),
-            row.weekdayNormal > 0 ? String(round1(row.weekdayNormal)) : "",
-            row.weekdayAfter > 0 ? String(round1(row.weekdayAfter)) : "",
-            row.weekendNormal > 0 ? String(round1(row.weekendNormal)) : "",
-            row.weekendAfter > 0 ? String(round1(row.weekendAfter)) : "",
+            wn > 0 ? String(round1(wn)) : "",
+            wa > 0 ? String(round1(wa)) : "",
+            wkn > 0 ? String(round1(wkn)) : "",
+            wka > 0 ? String(round1(wka)) : "",
             travelWeekdayCell,
             travelWeekendCell,
         ].join("|");
@@ -531,6 +547,9 @@ type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
     entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
     deletedTimesheetEntries: TimesheetSourceEntryData[];
     selectedTimesheetDateGroupKeys: string[];
+    invoiceSkilledFitterByTimesheetRowKey?: Record<string, string>;
+    invoiceSkilledFitterOptOutByTimesheetRowKey?: Record<string, string[]>;
+    entryInvoiceSkilledFitterByEntryId?: Record<number, string>;
 };
 
 type InvoiceUndoSnapshot = {
@@ -539,6 +558,8 @@ type InvoiceUndoSnapshot = {
     entryManualBillableHours: Record<number, number>;
     entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
     deletedTimesheetEntries: TimesheetSourceEntryData[];
+    invoiceSkilledFitterByTimesheetRowKey: Record<string, string>;
+    invoiceSkilledFitterOptOutByTimesheetRowKey: Record<string, string[]>;
     selectedTimesheetDateGroupPanel: TimesheetDateGroupPanelData | null;
     selectedTimesheetRow: TimesheetRowModalData | null;
 };
@@ -556,6 +577,14 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
         deletedTimesheetEntries: JSON.parse(
             JSON.stringify(s.deletedTimesheetEntries ?? [])
         ) as TimesheetSourceEntryData[],
+        invoiceSkilledFitterByTimesheetRowKey: {
+            ...(s.invoiceSkilledFitterByTimesheetRowKey ?? {}),
+        },
+        invoiceSkilledFitterOptOutByTimesheetRowKey: Object.fromEntries(
+            Object.entries(s.invoiceSkilledFitterOptOutByTimesheetRowKey ?? {}).map(
+                ([k, names]) => [k, [...(names ?? [])]]
+            )
+        ),
         selectedTimesheetDateGroupPanel: s.selectedTimesheetDateGroupPanel
             ? (JSON.parse(
                   JSON.stringify(s.selectedTimesheetDateGroupPanel)
@@ -1004,6 +1033,101 @@ function buildEffectiveSkilledByDateForInvoice(
     return effectiveSkilledByDate;
 }
 
+function migrateEntrySkilledMapToTimesheetRowKeys(
+    timesheetRows: readonly TimesheetRow[],
+    entryMap: Record<number, string>
+): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [eidStr, person] of Object.entries(entryMap)) {
+        const eid = Number(eidStr);
+        if (!Number.isFinite(eid) || !person?.trim()) {
+            continue;
+        }
+        const row = timesheetRows.find((r) =>
+            r.sourceEntries.some((e) => e.id === eid)
+        );
+        if (!row) {
+            continue;
+        }
+        out[getTimesheetRowSkilledIdentityKey(row)] = person.trim();
+    }
+    return out;
+}
+
+function normalizeInvoiceSkilledRowKeyRecordFromPayload(
+    raw: unknown
+): Record<string, string> {
+    if (!raw || typeof raw !== "object") {
+        return {};
+    }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const key = k.trim();
+        if (!key || typeof v !== "string") {
+            continue;
+        }
+        const name = v.trim();
+        if (!name) {
+            continue;
+        }
+        out[key] = name;
+    }
+    return out;
+}
+
+function normalizeInvoiceSkilledOptOutByRowKeyFromPayload(
+    raw: unknown
+): Record<string, string[]> {
+    if (!raw || typeof raw !== "object") {
+        return {};
+    }
+    const out: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const key = k.trim();
+        if (!key) {
+            continue;
+        }
+        if (typeof v === "string") {
+            const name = v.trim();
+            if (name) {
+                out[key] = [name];
+            }
+            continue;
+        }
+        if (Array.isArray(v)) {
+            const names = v
+                .filter((item): item is string => typeof item === "string")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            if (names.length > 0) {
+                out[key] = Array.from(new Set(names));
+            }
+        }
+    }
+    return out;
+}
+
+function normalizeEntryInvoiceSkilledRecordFromPayload(
+    raw: unknown
+): Record<number, string> {
+    if (!raw || typeof raw !== "object") {
+        return {};
+    }
+    const out: Record<number, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const id = Number(k);
+        if (!Number.isFinite(id) || typeof v !== "string") {
+            continue;
+        }
+        const name = v.trim();
+        if (!name) {
+            continue;
+        }
+        out[id] = name;
+    }
+    return out;
+}
+
 function PersonnelSelectionModal({
     isOpen,
     onClose,
@@ -1258,6 +1382,18 @@ export default function InvoiceCreatePage() {
     const [deletedTimesheetEntries, setDeletedTimesheetEntries] = useState<
         TimesheetSourceEntryData[]
     >([]);
+    const [invoiceSkilledFitterByTimesheetRowKey, setInvoiceSkilledFitterByTimesheetRowKey] =
+        useState<Record<string, string>>({});
+    const invoiceSkilledFitterByTimesheetRowKeyRef = useRef<Record<string, string>>({});
+    invoiceSkilledFitterByTimesheetRowKeyRef.current =
+        invoiceSkilledFitterByTimesheetRowKey;
+    const [invoiceSkilledFitterOptOutByTimesheetRowKey, setInvoiceSkilledFitterOptOutByTimesheetRowKey] =
+        useState<Record<string, string[]>>({});
+    const invoiceSkilledFitterOptOutByTimesheetRowKeyRef = useRef<
+        Record<string, string[]>
+    >({});
+    invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current =
+        invoiceSkilledFitterOptOutByTimesheetRowKey;
     const [invoiceDraftId, setInvoiceDraftId] = useState<string | null>(null);
     const [invoiceDraftTitle, setInvoiceDraftTitle] = useState("");
     const [invoiceDraftSaving, setInvoiceDraftSaving] = useState(false);
@@ -1274,6 +1410,8 @@ export default function InvoiceCreatePage() {
         entryManualBillableHours,
         entryManualBillableSplitHours,
         deletedTimesheetEntries,
+        invoiceSkilledFitterByTimesheetRowKey,
+        invoiceSkilledFitterOptOutByTimesheetRowKey,
         selectedTimesheetDateGroupPanel,
         selectedTimesheetRow,
     };
@@ -1317,6 +1455,14 @@ export default function InvoiceCreatePage() {
                 JSON.stringify(deletedTimesheetEntries)
             ) as TimesheetSourceEntryData[],
             selectedTimesheetDateGroupKeys: [...selectedTimesheetDateGroupKeys],
+            invoiceSkilledFitterByTimesheetRowKey: {
+                ...invoiceSkilledFitterByTimesheetRowKey,
+            },
+            invoiceSkilledFitterOptOutByTimesheetRowKey: Object.fromEntries(
+                Object.entries(invoiceSkilledFitterOptOutByTimesheetRowKey).map(
+                    ([k, names]) => [k, [...names]]
+                )
+            ),
         };
     }, [
         workLogDataList,
@@ -1328,6 +1474,8 @@ export default function InvoiceCreatePage() {
         entryManualBillableSplitHours,
         deletedTimesheetEntries,
         selectedTimesheetDateGroupKeys,
+        invoiceSkilledFitterByTimesheetRowKey,
+        invoiceSkilledFitterOptOutByTimesheetRowKey,
     ]);
 
     const applyInvoiceDraftPayload = useCallback(
@@ -1373,6 +1521,29 @@ export default function InvoiceCreatePage() {
             setDeletedTimesheetEntries(normalized.deletedTimesheetEntries ?? []);
             setSelectedTimesheetDateGroupKeys(
                 normalized.selectedTimesheetDateGroupKeys ?? []
+            );
+            const rowsFromDraft = JSON.parse(
+                JSON.stringify(normalized.timesheetRows ?? [])
+            ) as TimesheetRow[];
+            let rowKeySkilled = normalizeInvoiceSkilledRowKeyRecordFromPayload(
+                normalized.invoiceSkilledFitterByTimesheetRowKey
+            );
+            if (
+                Object.keys(rowKeySkilled).length === 0 &&
+                normalized.entryInvoiceSkilledFitterByEntryId
+            ) {
+                rowKeySkilled = migrateEntrySkilledMapToTimesheetRowKeys(
+                    rowsFromDraft,
+                    normalizeEntryInvoiceSkilledRecordFromPayload(
+                        normalized.entryInvoiceSkilledFitterByEntryId
+                    ) as Record<number, string>
+                );
+            }
+            setInvoiceSkilledFitterByTimesheetRowKey(rowKeySkilled);
+            setInvoiceSkilledFitterOptOutByTimesheetRowKey(
+                normalizeInvoiceSkilledOptOutByRowKeyFromPayload(
+                    normalized.invoiceSkilledFitterOptOutByTimesheetRowKey
+                )
             );
             setSelectedTimesheetDateGroupAnchorKey(null);
             setSelectedTimesheetDateGroupPanel(null);
@@ -1919,6 +2090,12 @@ export default function InvoiceCreatePage() {
             snapshot.entryManualBillableSplitHours ?? {}
         );
         setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
+        setInvoiceSkilledFitterByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterByTimesheetRowKey ?? {}
+        );
+        setInvoiceSkilledFitterOptOutByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterOptOutByTimesheetRowKey ?? {}
+        );
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceUndoRedoCounts({
@@ -1943,6 +2120,12 @@ export default function InvoiceCreatePage() {
             snapshot.entryManualBillableSplitHours ?? {}
         );
         setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
+        setInvoiceSkilledFitterByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterByTimesheetRowKey ?? {}
+        );
+        setInvoiceSkilledFitterOptOutByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterOptOutByTimesheetRowKey ?? {}
+        );
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceUndoRedoCounts({
@@ -1980,6 +2163,8 @@ export default function InvoiceCreatePage() {
         setTravelChargeOverrides({});
         setEntryManualBillableHours({});
         setEntryManualBillableSplitHours({});
+        setInvoiceSkilledFitterByTimesheetRowKey({});
+        setInvoiceSkilledFitterOptOutByTimesheetRowKey({});
         setDeletedTimesheetEntries([]);
         duplicateTimesheetEntryIdRef.current = -1;
         setSelectedFitterRepresentatives({});
@@ -2761,10 +2946,16 @@ export default function InvoiceCreatePage() {
                 loadedWorkLogIdsParamRef.current === workLogIdsParam &&
                 workLogDataList.length > 0;
 
-            if (!shouldReuseLoadedData) {
+            /** 드래프트: 보고서는 이미 있고 타임시트만 로컬 상태 변경으로 재계산 — 로딩 스피너·드래프트 ID 초기화 없음 */
+            const isDraftTimesheetRecomputeOnly =
+                isDraftMode && workLogDataList.length > 0;
+
+            if (!shouldReuseLoadedData && !isDraftTimesheetRecomputeOnly) {
                 setLoading(true);
-                setInvoiceDraftId(null);
-                setInvoiceDraftTitle("");
+                if (!isDraftMode) {
+                    setInvoiceDraftId(null);
+                    setInvoiceDraftTitle("");
+                }
             }
             try {
                 let validData: WorkLogFullData[];
@@ -2775,7 +2966,23 @@ export default function InvoiceCreatePage() {
                         return;
                     }
                     validData = workLogDataList;
-                    holidaySetForTimesheet = new Set(holidayDateSet);
+                    const rawEntriesForHolidayDraft: InvoiceTimesheetEntry[] =
+                        validData.flatMap((data) =>
+                            data.entries.map((entry) => ({
+                                ...entry,
+                                workLogId: data.workLog.id,
+                                location: data.workLog.location,
+                                sourceEntryIds: [entry.id],
+                            }))
+                        );
+                    const allEntriesForHolidayDraft =
+                        mergeContinuousTravelEntries(rawEntriesForHolidayDraft);
+
+                    holidaySetForTimesheet = await loadHolidayDates(
+                        allEntriesForHolidayDraft.flatMap((entry) =>
+                            enumerateDateRange(entry.dateFrom, entry.dateTo)
+                        )
+                    );
                 } else if (shouldReuseLoadedData) {
                     validData = workLogDataList;
                     holidaySetForTimesheet = new Set(holidayDateSet);
@@ -2820,6 +3027,8 @@ export default function InvoiceCreatePage() {
                     invoiceUndoPastRef.current = [];
                     invoiceUndoFutureRef.current = [];
                     setInvoiceUndoRedoCounts({ past: 0, future: 0 });
+                    setInvoiceSkilledFitterByTimesheetRowKey({});
+                    setInvoiceSkilledFitterOptOutByTimesheetRowKey({});
 
                     const rawEntriesForHoliday: InvoiceTimesheetEntry[] = validData.flatMap(
                         (data) =>
@@ -4895,7 +5104,11 @@ export default function InvoiceCreatePage() {
                     Object.keys(travelChargeOverrides).length === 0 &&
                     Object.keys(entryManualBillableHours).length === 0 &&
                     Object.keys(entryManualBillableSplitHours).length === 0 &&
-                    deletedTimesheetEntries.length === 0;
+                    deletedTimesheetEntries.length === 0 &&
+                    Object.keys(invoiceSkilledFitterByTimesheetRowKeyRef.current)
+                        .length === 0 &&
+                    Object.keys(invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current)
+                        .length === 0;
                 const shouldInitializeInitialSnapshot =
                     (!isDraftMode && !shouldReuseLoadedData) || isPristineInvoiceState;
                 if (shouldInitializeInitialSnapshot) {
@@ -5598,6 +5811,44 @@ export default function InvoiceCreatePage() {
         [timesheetRows, selectedSkilledFitters, toDateSafe]
     );
 
+    const isSkilledFitterForTimesheetRow = useCallback(
+        (row: TimesheetRow, person: string) => {
+            const key = getTimesheetRowSkilledIdentityKey(row);
+            const optOut = invoiceSkilledFitterOptOutByTimesheetRowKey[key];
+            if (optOut?.includes(person)) {
+                return false;
+            }
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    invoiceSkilledFitterByTimesheetRowKey,
+                    key
+                )
+            ) {
+                return invoiceSkilledFitterByTimesheetRowKey[key] === person;
+            }
+            // 같은 날 다른 타임시트 묶음 행에서 이 인원을 수동 스킬드로 지정했다면,
+            // 날짜 전역 알고리즘 폴백으로 이 행까지 스킬드가 번지지 않게 한다.
+            for (const [k, designated] of Object.entries(
+                invoiceSkilledFitterByTimesheetRowKey
+            )) {
+                if (designated !== person) {
+                    continue;
+                }
+                const datePrefix = k.split("::")[0];
+                if (datePrefix !== row.date || k === key) {
+                    continue;
+                }
+                return false;
+            }
+            return effectiveInvoiceSkilledByDate.get(row.date)?.has(person) ?? false;
+        },
+        [
+            invoiceSkilledFitterByTimesheetRowKey,
+            invoiceSkilledFitterOptOutByTimesheetRowKey,
+            effectiveInvoiceSkilledByDate,
+        ]
+    );
+
     const createEmptyInvoiceHourSummary = () => ({
         weekdayNormal: 0,
         weekdayAfter: 0,
@@ -5672,10 +5923,6 @@ export default function InvoiceCreatePage() {
                     entry.descType === "이동" &&
                     entryManualBillableHours[entry.id] !== undefined
             );
-        const effectiveSkilledByDate = effectiveInvoiceSkilledByDate;
-        const isSelectedSkilledFitterPerson = (person: string, date: string) =>
-            effectiveSkilledByDate.get(date)?.has(person) ?? false;
-
         /** 해당 일에 작업 엔트리가 하나라도 있는지 */
         const dateHasWorkEntry = new Map<string, boolean>();
         /** 해당 일 타임시트에 잡디에서 선택된 Skilled fitter가 한 명이라도 있는지 */
@@ -5686,7 +5933,7 @@ export default function InvoiceCreatePage() {
                 dateHasWorkEntry.set(d, true);
             }
             for (const person of getRowPersons(r)) {
-                if (isSelectedSkilledFitterPerson(person, d)) {
+                if (isSkilledFitterForTimesheetRow(r, person)) {
                     dateHasJobSkilledFitter.set(d, true);
                 }
             }
@@ -5724,13 +5971,12 @@ export default function InvoiceCreatePage() {
                     skilledAllocatedWorkKeys.has(blockKey);
                 const travelSkilledAlreadyAllocated =
                     skilledAllocatedTravelKeys.has(blockKey);
-                const hasSelectedSkilledInRow =
-                    rowPeople.some((person) =>
-                        isSelectedSkilledFitterPerson(person, row.date)
-                    );
+                const hasSelectedSkilledInRow = rowPeople.some((person) =>
+                    isSkilledFitterForTimesheetRow(row, person)
+                );
                 const hasSelectedSkilledInTravelBillablePeople =
                     travelBillablePeople.some((person) =>
-                        isSelectedSkilledFitterPerson(person, row.date)
+                        isSkilledFitterForTimesheetRow(row, person)
                     );
                 const workSkilled =
                     hasSelectedSkilledInRow && !workSkilledAlreadyAllocated
@@ -6182,8 +6428,88 @@ export default function InvoiceCreatePage() {
             .split(",")
             .map((value) => value.trim())
             .filter(Boolean);
-    const isSelectedSkilledFitterForDate = (date: string, person: string) =>
-        effectiveInvoiceSkilledByDate.get(date)?.has(person) ?? false;
+    const isInvoiceEffectiveSkilledFitterForPanel = useCallback(
+        (entryId: number, date: string, person: string) => {
+            const row = timesheetRows.find((r) =>
+                r.sourceEntries.some((e) => e.id === entryId)
+            );
+            if (!row) {
+                return effectiveInvoiceSkilledByDate.get(date)?.has(person) ?? false;
+            }
+            return isSkilledFitterForTimesheetRow(row, person);
+        },
+        [timesheetRows, effectiveInvoiceSkilledByDate, isSkilledFitterForTimesheetRow]
+    );
+
+    const setEntryInvoiceSkilledFitterForEntry = useCallback(
+        (entryId: number, person: string | null) => {
+            const row = timesheetRows.find((r) =>
+                r.sourceEntries.some((e) => e.id === entryId)
+            );
+            if (!row) {
+                return;
+            }
+            const key = getTimesheetRowSkilledIdentityKey(row);
+            pushInvoiceUndoSnapshot();
+            if (person === null) {
+                const removed =
+                    invoiceSkilledFitterByTimesheetRowKeyRef.current[key];
+                setInvoiceSkilledFitterByTimesheetRowKey((prev) => {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                });
+                if (removed) {
+                    setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
+                        const cur = prev[key] ?? [];
+                        if (cur.includes(removed)) {
+                            return prev;
+                        }
+                        return { ...prev, [key]: [...cur, removed] };
+                    });
+                }
+            } else {
+                setInvoiceSkilledFitterByTimesheetRowKey((prev) => ({
+                    ...prev,
+                    [key]: person,
+                }));
+                setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
+                    const cur = prev[key];
+                    if (!cur?.length) {
+                        return prev;
+                    }
+                    const nextList = cur.filter((p) => p !== person);
+                    if (nextList.length === cur.length) {
+                        return prev;
+                    }
+                    const next = { ...prev };
+                    if (nextList.length === 0) {
+                        delete next[key];
+                    } else {
+                        next[key] = nextList;
+                    }
+                    return next;
+                });
+            }
+        },
+        [timesheetRows, pushInvoiceUndoSnapshot]
+    );
+
+    const getEntryInvoiceSkilledFitterDesignation = useCallback(
+        (entryId: number) => {
+            const row = timesheetRows.find((r) =>
+                r.sourceEntries.some((e) => e.id === entryId)
+            );
+            if (!row) {
+                return undefined;
+            }
+            return invoiceSkilledFitterByTimesheetRowKey[
+                getTimesheetRowSkilledIdentityKey(row)
+            ];
+        },
+        [timesheetRows, invoiceSkilledFitterByTimesheetRowKey]
+    );
+
     const getLodgingSettledPersonNamesForRow = (row: TimesheetRow) => {
         const rowStart = toDateSafe(row.date, row.timeFrom || "00:00").getTime();
         if (Number.isNaN(rowStart)) {
@@ -6419,7 +6745,7 @@ export default function InvoiceCreatePage() {
     /** R&D TIMESHEET 참여자 표시 순: Skilled fitter → 잡디 Mechanic(Fitter 대표) → 가나다 */
     const orderRdTimesheetParticipantNames = (
         names: string[],
-        rowCalendarDate: string
+        timesheetRow: TimesheetRow
     ) => {
         const uniquePeople = Array.from(
             new Set(names.map((n) => n.trim()).filter(Boolean))
@@ -6427,13 +6753,11 @@ export default function InvoiceCreatePage() {
         if (uniquePeople.length === 0) {
             return [];
         }
-        const effectiveSkilledToday =
-            effectiveInvoiceSkilledByDate.get(rowCalendarDate) ?? null;
         const engineerPeople = sortPeopleForMention(
             uniquePeople.filter(
                 (person) =>
                     SKILLED_FITTER_SET.has(person) &&
-                    (effectiveSkilledToday?.has(person) ?? false)
+                    isSkilledFitterForTimesheetRow(timesheetRow, person)
             )
         );
         const skilledOrdered = [
@@ -6494,8 +6818,7 @@ export default function InvoiceCreatePage() {
             uniquePeople.filter(
                 (person) =>
                     SKILLED_FITTER_SET.has(person) &&
-                    (effectiveInvoiceSkilledByDate.get(row.date)?.has(person) ??
-                        false)
+                    isSkilledFitterForTimesheetRow(row, person)
             )
         );
         const skilledOrdered = [
@@ -6618,6 +6941,16 @@ export default function InvoiceCreatePage() {
     /** 타임시트 그리드 총시간 열: 실제 구간 합(올림 청구 미반영). */
     const getTimesheetRowTotalHoursForGrid = (row: TimesheetRow) =>
         row.timesheetTotalHoursDisplay ?? row.totalHours;
+
+    /** Split of Hours 합계 행: renderSplitHoursCells와 동일 분기 (올림 청구 표시 분할 반영). */
+    const getTimesheetRowChargeBucketForFooter = (
+        row: TimesheetRow,
+        key: "weekdayNormal" | "weekdayAfter" | "weekendNormal" | "weekendAfter"
+    ) => {
+        const tc = row.timesheetChargeDisplay;
+        const v = tc ? tc[key] : row[key];
+        return typeof v === "number" && Number.isFinite(v) ? v : 0;
+    };
 
     const getNormalTimesheetSignature = (row: TimesheetRow) =>
         [
@@ -8077,12 +8410,7 @@ export default function InvoiceCreatePage() {
             .join("|");
     /** 날짜 + 엔트리 id 집합만 사용 — 인원 교체 시에도 초기 스냅샷 키가 유지되어 시간·근무 표시가 오표시되지 않음 */
     const getTimesheetRowIdentityKey = (row: TimesheetRow) =>
-        [
-            row.date,
-            Array.from(new Set(row.sourceEntries.map((entry) => entry.id)))
-                .sort((a, b) => a - b)
-                .join(","),
-        ].join("::");
+        getTimesheetRowSkilledIdentityKey(row);
     const getTimesheetRowDisplayedValueSnapshot = (row: TimesheetRow) => {
         const tc = row.timesheetChargeDisplay;
         const wn = tc?.weekdayNormal ?? row.weekdayNormal;
@@ -9077,7 +9405,7 @@ export default function InvoiceCreatePage() {
                     sectionTitle === "R&D TIMESHEET"
                         ? orderRdTimesheetParticipantNames(
                               getRowPersons(row),
-                              row.date
+                              row
                           ).join(", ")
                         : row.description,
                 sourceEntries: row.sourceEntries,
@@ -9096,6 +9424,8 @@ export default function InvoiceCreatePage() {
             selectedSkilledFitters,
             selectedFitterRepresentatives,
             effectiveInvoiceSkilledByDate,
+            invoiceSkilledFitterByTimesheetRowKey,
+            isSkilledFitterForTimesheetRow,
         ]
     );
 
@@ -10138,7 +10468,7 @@ export default function InvoiceCreatePage() {
                                                                             getRowPersons(
                                                                                 row
                                                                             ),
-                                                                            row.date
+                                                                            row
                                                                         ).map(
                                                                             (
                                                                                 person,
@@ -10166,8 +10496,8 @@ export default function InvoiceCreatePage() {
                                                                                                 )
                                                                                                     ? "text-gray-400 line-through decoration-gray-500 decoration-2"
                                                                                                     : "",
-                                                                                                isSelectedSkilledFitterForDate(
-                                                                                                    row.date,
+                                                                                                isSkilledFitterForTimesheetRow(
+                                                                                                    row,
                                                                                                     person
                                                                                                 )
                                                                                                     ? "font-bold text-gray-900"
@@ -10209,16 +10539,16 @@ export default function InvoiceCreatePage() {
                                                             {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowTotalHoursForGrid(row), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayNormal"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekdayAfter, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayAfter"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekendNormal, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendNormal"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekendAfter, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendAfter"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                             {Math.round(timesheetRows.reduce((sum, row) => sum + row.travelWeekday, 0) * 10) / 10}
@@ -10651,16 +10981,16 @@ export default function InvoiceCreatePage() {
                                                                                 {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowTotalHoursForGrid(row), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayNormal"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekdayAfter, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayAfter"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekendNormal, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendNormal"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekendAfter, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendAfter"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                                                 {Math.round(section.rows.reduce((sum, row) => sum + row.travelWeekday, 0) * 10) / 10}
@@ -11472,8 +11802,12 @@ export default function InvoiceCreatePage() {
                         selectedTimesheetRow?.timesheetRowCalendarDate ?? ""
                     }
                     isInvoiceEffectiveSkilledFitter={
-                        isSelectedSkilledFitterForDate
+                        isInvoiceEffectiveSkilledFitterForPanel
                     }
+                    getEntryInvoiceSkilledFitterDesignation={
+                        getEntryInvoiceSkilledFitterDesignation
+                    }
+                    onSetEntryInvoiceSkilledFitter={setEntryInvoiceSkilledFitterForEntry}
                 />
                 <TimesheetDateGroupDetailSidePanel
                     isOpen={selectedTimesheetDateGroupPanel !== null}
@@ -11546,8 +11880,12 @@ export default function InvoiceCreatePage() {
                         selectedTimesheetDateGroupPanel?.scrollToFullGroupNonce
                     }
                     isInvoiceEffectiveSkilledFitter={
-                        isSelectedSkilledFitterForDate
+                        isInvoiceEffectiveSkilledFitterForPanel
                     }
+                    getEntryInvoiceSkilledFitterDesignation={
+                        getEntryInvoiceSkilledFitterDesignation
+                    }
+                    onSetEntryInvoiceSkilledFitter={setEntryInvoiceSkilledFitterForEntry}
                 />
             </div>
         </div>
