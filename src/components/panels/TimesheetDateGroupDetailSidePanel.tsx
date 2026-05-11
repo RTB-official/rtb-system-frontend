@@ -19,7 +19,10 @@ import {
     type ManualBillableSplitHours,
 } from "./TimesheetEntryEditorForm";
 import BaseModal from "../ui/BaseModal";
-import { getDatesMissingSkilledFitterRemark } from "../../constants/skilledFitter";
+import {
+    getDatesMissingSkilledFitterRemark,
+    SKILLED_FITTER_NAME_SET,
+} from "../../constants/skilledFitter";
 import {
     buildConsecutiveWorkClusterIndices,
     distributeWorkManualToFourBuckets,
@@ -161,13 +164,15 @@ interface TimesheetDateGroupDetailSidePanelProps {
     /** Bump so the same date can scroll again on repeated row clicks. */
     scrollToFullGroupNonce?: number;
     /**
-     * 엔트리 `dateFrom`(YYYY-MM-DD) 기준 인보이스에서 실제 스킬드로 집계되는 참여자 이름 볼드.
-     * 타임시트 그리드 R&D 비고와 동일 기준.
+     * 엔트리 단위: 해당 엔트리 비고에서 Skilled Fitter로 표시할 참여자(엔트리별 지정이 있으면 그 기준만 볼드).
      */
     isInvoiceEffectiveSkilledFitter?: (
+        entryId: number,
         calendarDateYmd: string,
         personName: string
     ) => boolean;
+    getEntryInvoiceSkilledFitterDesignation?: (entryId: number) => string | undefined;
+    onSetEntryInvoiceSkilledFitter?: (entryId: number, person: string | null) => void;
 }
 
 type TravelChargeOverrideTarget = "home" | "lodging";
@@ -695,6 +700,8 @@ export default function TimesheetDateGroupDetailSidePanel({
     scrollToFullGroupDate,
     scrollToFullGroupNonce,
     isInvoiceEffectiveSkilledFitter,
+    getEntryInvoiceSkilledFitterDesignation,
+    onSetEntryInvoiceSkilledFitter,
 }: TimesheetDateGroupDetailSidePanelProps) {
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
@@ -2444,6 +2451,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                 Boolean(entry.dateFrom) &&
                                 Boolean(
                                     isInvoiceEffectiveSkilledFitter?.(
+                                        entry.id,
                                         entry.dateFrom,
                                         person
                                     )
@@ -3704,15 +3712,83 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                                         </>
                                                                                     ) : null}
                                                                                 </div>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={
-                                                                                        closeRemarkEditor
-                                                                                    }
-                                                                                    className="shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
-                                                                                >
-                                                                                    {"\uB2EB\uAE30"}
-                                                                                </button>
+                                                                                <div className="flex shrink-0 items-center gap-2">
+                                                                                    {selectedRemarkPerson &&
+                                                                                    SKILLED_FITTER_NAME_SET.has(
+                                                                                        selectedRemarkPerson
+                                                                                    ) &&
+                                                                                    (entry.persons ?? []).includes(
+                                                                                        selectedRemarkPerson
+                                                                                    ) &&
+                                                                                    getEntryInvoiceSkilledFitterDesignation &&
+                                                                                    onSetEntryInvoiceSkilledFitter ? (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            aria-pressed={
+                                                                                                getEntryInvoiceSkilledFitterDesignation(
+                                                                                                    entry.id
+                                                                                                ) === selectedRemarkPerson
+                                                                                            }
+                                                                                            aria-label={
+                                                                                                getEntryInvoiceSkilledFitterDesignation(
+                                                                                                    entry.id
+                                                                                                ) === selectedRemarkPerson
+                                                                                                    ? "Skilled 끄기"
+                                                                                                    : "Skilled 켜기"
+                                                                                            }
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                const designated =
+                                                                                                    getEntryInvoiceSkilledFitterDesignation(
+                                                                                                        entry.id
+                                                                                                    );
+                                                                                                const isEntrySkilledOn =
+                                                                                                    designated ===
+                                                                                                    selectedRemarkPerson;
+                                                                                                onSetEntryInvoiceSkilledFitter(
+                                                                                                    entry.id,
+                                                                                                    isEntrySkilledOn
+                                                                                                        ? null
+                                                                                                        : selectedRemarkPerson
+                                                                                                );
+                                                                                            }}
+                                                                                            className={[
+                                                                                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
+                                                                                                getEntryInvoiceSkilledFitterDesignation(
+                                                                                                    entry.id
+                                                                                                ) === selectedRemarkPerson
+                                                                                                    ? "border-blue-500 bg-blue-50 text-blue-900 hover:bg-blue-100"
+                                                                                                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50",
+                                                                                            ].join(" ")}
+                                                                                        >
+                                                                                            <span>Skilled</span>
+                                                                                            <span
+                                                                                                className={
+                                                                                                    getEntryInvoiceSkilledFitterDesignation(
+                                                                                                        entry.id
+                                                                                                    ) === selectedRemarkPerson
+                                                                                                        ? "text-blue-700"
+                                                                                                        : "text-gray-500"
+                                                                                                }
+                                                                                            >
+                                                                                                {getEntryInvoiceSkilledFitterDesignation(
+                                                                                                    entry.id
+                                                                                                ) === selectedRemarkPerson
+                                                                                                    ? "On"
+                                                                                                    : "Off"}
+                                                                                            </span>
+                                                                                        </button>
+                                                                                    ) : null}
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={
+                                                                                            closeRemarkEditor
+                                                                                        }
+                                                                                        className="shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                                                                                    >
+                                                                                        {"\uB2EB\uAE30"}
+                                                                                    </button>
+                                                                                </div>
                                                                             </div>
                                                                             {selectedRemarkPerson ? (
                                                                                 <div className="pb-3">

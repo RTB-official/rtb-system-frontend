@@ -46,6 +46,14 @@ import {
     invoiceExcelWorkbookToBlob,
     triggerExcelDownload,
 } from "../../lib/invoiceExcelExport";
+import {
+    createInvoiceDraft,
+    getInvoiceDraftById,
+    listInvoiceDraftsByUser,
+    updateInvoiceDraft,
+    type InvoiceDraftPayload,
+    type InvoiceDraftRow,
+} from "../../lib/invoiceDraftApi";
 
 interface TimesheetRow {
     rowId: string;
@@ -83,6 +91,16 @@ interface TimesheetRow {
      * `totalHours`는 인보이스/수동 올림 청구 반영 값일 수 있음.
      */
     timesheetTotalHoursDisplay?: number;
+}
+
+/** 날짜 + 소스 엔트리 id 집합 — 타임시트 묶음 행별 스킬드 지정 키 */
+function getTimesheetRowSkilledIdentityKey(row: TimesheetRow): string {
+    return [
+        row.date,
+        Array.from(new Set(row.sourceEntries.map((entry) => entry.id)))
+            .sort((a, b) => a - b)
+            .join(","),
+    ].join("::");
 }
 
 interface TimesheetSourceEntryData {
@@ -249,6 +267,12 @@ const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
     const round1 = (n: number) => Math.round(n * 10) / 10;
 
     const chargeDisplayKey = (row: TimesheetRow) => {
+        /** 올림 청구 시 그리드 Split 열과 동일 값 — 인접 병합 기준을 화면과 일치 */
+        const tc = row.timesheetChargeDisplay;
+        const wn = tc?.weekdayNormal ?? row.weekdayNormal;
+        const wa = tc?.weekdayAfter ?? row.weekdayAfter;
+        const wkn = tc?.weekendNormal ?? row.weekendNormal;
+        const wka = tc?.weekendAfter ?? row.weekendAfter;
         const travelWeekdayCell =
             row.travelWeekdayDisplay ||
             (row.travelWeekday > 0 ? String(round1(row.travelWeekday)) : "");
@@ -259,10 +283,10 @@ const mergeAdjacentTimesheetRowsByVisibleTimeAndCharge = (
             row.timesheetTotalHoursDisplay ?? row.totalHours;
         return [
             String(round1(totalForGrid)),
-            row.weekdayNormal > 0 ? String(round1(row.weekdayNormal)) : "",
-            row.weekdayAfter > 0 ? String(round1(row.weekdayAfter)) : "",
-            row.weekendNormal > 0 ? String(round1(row.weekendNormal)) : "",
-            row.weekendAfter > 0 ? String(round1(row.weekendAfter)) : "",
+            wn > 0 ? String(round1(wn)) : "",
+            wa > 0 ? String(round1(wa)) : "",
+            wkn > 0 ? String(round1(wkn)) : "",
+            wka > 0 ? String(round1(wka)) : "",
             travelWeekdayCell,
             travelWeekendCell,
         ].join("|");
@@ -512,12 +536,30 @@ type ManualBillableSplitHours = {
     weekendAfter: number;
 };
 
+type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
+    version: 1;
+    workLogDataList: WorkLogFullData[];
+    timesheetRows: TimesheetRow[];
+    selectedSkilledFitters: string[];
+    selectedFitterRepresentatives: Record<string, string>;
+    travelChargeOverrides: TravelChargeOverrideMap;
+    entryManualBillableHours: Record<number, number>;
+    entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
+    deletedTimesheetEntries: TimesheetSourceEntryData[];
+    selectedTimesheetDateGroupKeys: string[];
+    invoiceSkilledFitterByTimesheetRowKey?: Record<string, string>;
+    invoiceSkilledFitterOptOutByTimesheetRowKey?: Record<string, string[]>;
+    entryInvoiceSkilledFitterByEntryId?: Record<number, string>;
+};
+
 type InvoiceUndoSnapshot = {
     workLogDataList: WorkLogFullData[];
     travelChargeOverrides: TravelChargeOverrideMap;
     entryManualBillableHours: Record<number, number>;
     entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
     deletedTimesheetEntries: TimesheetSourceEntryData[];
+    invoiceSkilledFitterByTimesheetRowKey: Record<string, string>;
+    invoiceSkilledFitterOptOutByTimesheetRowKey: Record<string, string[]>;
     selectedTimesheetDateGroupPanel: TimesheetDateGroupPanelData | null;
     selectedTimesheetRow: TimesheetRowModalData | null;
 };
@@ -535,6 +577,14 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
         deletedTimesheetEntries: JSON.parse(
             JSON.stringify(s.deletedTimesheetEntries ?? [])
         ) as TimesheetSourceEntryData[],
+        invoiceSkilledFitterByTimesheetRowKey: {
+            ...(s.invoiceSkilledFitterByTimesheetRowKey ?? {}),
+        },
+        invoiceSkilledFitterOptOutByTimesheetRowKey: Object.fromEntries(
+            Object.entries(s.invoiceSkilledFitterOptOutByTimesheetRowKey ?? {}).map(
+                ([k, names]) => [k, [...(names ?? [])]]
+            )
+        ),
         selectedTimesheetDateGroupPanel: s.selectedTimesheetDateGroupPanel
             ? (JSON.parse(
                   JSON.stringify(s.selectedTimesheetDateGroupPanel)
@@ -983,6 +1033,101 @@ function buildEffectiveSkilledByDateForInvoice(
     return effectiveSkilledByDate;
 }
 
+function migrateEntrySkilledMapToTimesheetRowKeys(
+    timesheetRows: readonly TimesheetRow[],
+    entryMap: Record<number, string>
+): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [eidStr, person] of Object.entries(entryMap)) {
+        const eid = Number(eidStr);
+        if (!Number.isFinite(eid) || !person?.trim()) {
+            continue;
+        }
+        const row = timesheetRows.find((r) =>
+            r.sourceEntries.some((e) => e.id === eid)
+        );
+        if (!row) {
+            continue;
+        }
+        out[getTimesheetRowSkilledIdentityKey(row)] = person.trim();
+    }
+    return out;
+}
+
+function normalizeInvoiceSkilledRowKeyRecordFromPayload(
+    raw: unknown
+): Record<string, string> {
+    if (!raw || typeof raw !== "object") {
+        return {};
+    }
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const key = k.trim();
+        if (!key || typeof v !== "string") {
+            continue;
+        }
+        const name = v.trim();
+        if (!name) {
+            continue;
+        }
+        out[key] = name;
+    }
+    return out;
+}
+
+function normalizeInvoiceSkilledOptOutByRowKeyFromPayload(
+    raw: unknown
+): Record<string, string[]> {
+    if (!raw || typeof raw !== "object") {
+        return {};
+    }
+    const out: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const key = k.trim();
+        if (!key) {
+            continue;
+        }
+        if (typeof v === "string") {
+            const name = v.trim();
+            if (name) {
+                out[key] = [name];
+            }
+            continue;
+        }
+        if (Array.isArray(v)) {
+            const names = v
+                .filter((item): item is string => typeof item === "string")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            if (names.length > 0) {
+                out[key] = Array.from(new Set(names));
+            }
+        }
+    }
+    return out;
+}
+
+function normalizeEntryInvoiceSkilledRecordFromPayload(
+    raw: unknown
+): Record<number, string> {
+    if (!raw || typeof raw !== "object") {
+        return {};
+    }
+    const out: Record<number, string> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const id = Number(k);
+        if (!Number.isFinite(id) || typeof v !== "string") {
+            continue;
+        }
+        const name = v.trim();
+        if (!name) {
+            continue;
+        }
+        out[id] = name;
+    }
+    return out;
+}
+
 function PersonnelSelectionModal({
     isOpen,
     onClose,
@@ -1042,8 +1187,86 @@ function PersonnelSelectionModal({
     );
 }
 
+function InvoiceDraftLoadModal({
+    isOpen,
+    onClose,
+    drafts,
+    loading,
+    onRefresh,
+    onSelectDraft,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    drafts: InvoiceDraftRow[];
+    loading: boolean;
+    onRefresh: () => void;
+    onSelectDraft: (draftId: string) => void;
+}) {
+    return (
+        <BaseModal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="인보이스 드래프트 불러오기"
+            maxWidth="max-w-2xl"
+            footer={
+                <>
+                    <button
+                        type="button"
+                        className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                        onClick={onClose}
+                    >
+                        닫기
+                    </button>
+                    <button
+                        type="button"
+                        className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:pointer-events-none disabled:opacity-50"
+                        onClick={onRefresh}
+                        disabled={loading}
+                    >
+                        새로고침
+                    </button>
+                </>
+            }
+        >
+            {loading ? (
+                <div className="rounded-xl border border-gray-200 px-4 py-8 text-center text-sm text-gray-500">
+                    드래프트를 불러오는 중입니다...
+                </div>
+            ) : drafts.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
+                    저장된 드래프트가 없습니다.
+                </div>
+            ) : (
+                <ul className="space-y-2">
+                    {drafts.map((draft) => (
+                        <li key={draft.id}>
+                            <button
+                                type="button"
+                                onClick={() => onSelectDraft(draft.id)}
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/60"
+                            >
+                                <div className="text-sm font-semibold text-gray-900">
+                                    {draft.title}
+                                </div>
+                                <div className="mt-1 text-xs text-gray-600">
+                                    보고서 {draft.work_log_ids.length}건 · 상태{" "}
+                                    {draft.status === "final" ? "Final" : "Draft"}
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-500">
+                                    수정: {new Date(draft.updated_at).toLocaleString("ko-KR")}
+                                </div>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </BaseModal>
+    );
+}
+
 export default function InvoiceCreatePage() {
     const [searchParams] = useSearchParams();
+    const invoiceDraftIdParam = searchParams.get("draftId");
     const workLogIdsParam =
         searchParams.get("workLogIds") ?? searchParams.get("workLogId");
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1119,12 +1342,14 @@ export default function InvoiceCreatePage() {
     >("person");
     const [mealCountAdjustmentsBySectionDate, setMealCountAdjustmentsBySectionDate] =
         useState<Record<string, MealCountAdjustmentEntry>>({});
+    const invoiceDraftAutoLoadRequestRef = useRef(0);
     const duplicateTimesheetEntryIdRef = useRef(-1);
     /** normalTimesheetSectionsByPerson 정의 이후 매 렌더에서 갱신 — 인원별 `::date::` 조정을 R&D 등에서 조회 */
     const resolveNormalPersonDateScopedMealAdjustmentRef = useRef<
         (row: TimesheetRow) => MealCountAdjustmentEntry | undefined
     >(() => undefined);
     const loadedWorkLogIdsParamRef = useRef<string | null>(null);
+    const loadedInvoiceDraftIdFromUrlRef = useRef<string | null>(null);
     const initialTimesheetRowValueByIdentityRef = useRef<
         Record<
             string,
@@ -1157,6 +1382,26 @@ export default function InvoiceCreatePage() {
     const [deletedTimesheetEntries, setDeletedTimesheetEntries] = useState<
         TimesheetSourceEntryData[]
     >([]);
+    const [invoiceSkilledFitterByTimesheetRowKey, setInvoiceSkilledFitterByTimesheetRowKey] =
+        useState<Record<string, string>>({});
+    const invoiceSkilledFitterByTimesheetRowKeyRef = useRef<Record<string, string>>({});
+    invoiceSkilledFitterByTimesheetRowKeyRef.current =
+        invoiceSkilledFitterByTimesheetRowKey;
+    const [invoiceSkilledFitterOptOutByTimesheetRowKey, setInvoiceSkilledFitterOptOutByTimesheetRowKey] =
+        useState<Record<string, string[]>>({});
+    const invoiceSkilledFitterOptOutByTimesheetRowKeyRef = useRef<
+        Record<string, string[]>
+    >({});
+    invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current =
+        invoiceSkilledFitterOptOutByTimesheetRowKey;
+    const [invoiceDraftId, setInvoiceDraftId] = useState<string | null>(null);
+    const [invoiceDraftTitle, setInvoiceDraftTitle] = useState("");
+    const [invoiceDraftSaving, setInvoiceDraftSaving] = useState(false);
+    const [invoiceDraftLoadModalOpen, setInvoiceDraftLoadModalOpen] =
+        useState(false);
+    const [invoiceDraftListLoading, setInvoiceDraftListLoading] = useState(false);
+    const [invoiceDrafts, setInvoiceDrafts] = useState<InvoiceDraftRow[]>([]);
+    const loadedDraftBaselinePayloadRef = useRef<InvoiceDraftPayload | null>(null);
     const { showError, showSuccess } = useToast();
 
     latestInvoiceStateRef.current = {
@@ -1165,9 +1410,315 @@ export default function InvoiceCreatePage() {
         entryManualBillableHours,
         entryManualBillableSplitHours,
         deletedTimesheetEntries,
+        invoiceSkilledFitterByTimesheetRowKey,
+        invoiceSkilledFitterOptOutByTimesheetRowKey,
         selectedTimesheetDateGroupPanel,
         selectedTimesheetRow,
     };
+
+    const resetInvoiceUndoRedoStacks = useCallback(() => {
+        invoiceUndoPastRef.current = [];
+        invoiceUndoFutureRef.current = [];
+        setInvoiceUndoRedoCounts({ past: 0, future: 0 });
+    }, []);
+
+    const buildDraftTitleFromWorkLogs = useCallback((rows: WorkLogFullData[]) => {
+        const first = rows[0];
+        if (!first) {
+            return "인보이스 드래프트";
+        }
+        const range = aggregateWorkLogEntryDateRange(first.entries);
+        const label = formatInvoiceReportTableTitle({
+            periodStart: range.start,
+            periodEnd: range.end,
+            vessel: first.workLog.vessel,
+            subject: first.workLog.subject,
+        }).trim();
+        return label || "인보이스 드래프트";
+    }, []);
+
+    const buildInvoiceDraftPayloadV1 = useCallback((): InvoiceDraftPayloadV1 => {
+        return {
+            version: 1,
+            workLogDataList: JSON.parse(
+                JSON.stringify(workLogDataList)
+            ) as WorkLogFullData[],
+            timesheetRows: JSON.parse(JSON.stringify(timesheetRows)) as TimesheetRow[],
+            selectedSkilledFitters: [...selectedSkilledFitters],
+            selectedFitterRepresentatives: { ...selectedFitterRepresentatives },
+            travelChargeOverrides: { ...travelChargeOverrides },
+            entryManualBillableHours: { ...entryManualBillableHours },
+            entryManualBillableSplitHours: JSON.parse(
+                JSON.stringify(entryManualBillableSplitHours)
+            ) as Record<number, ManualBillableSplitHours>,
+            deletedTimesheetEntries: JSON.parse(
+                JSON.stringify(deletedTimesheetEntries)
+            ) as TimesheetSourceEntryData[],
+            selectedTimesheetDateGroupKeys: [...selectedTimesheetDateGroupKeys],
+            invoiceSkilledFitterByTimesheetRowKey: {
+                ...invoiceSkilledFitterByTimesheetRowKey,
+            },
+            invoiceSkilledFitterOptOutByTimesheetRowKey: Object.fromEntries(
+                Object.entries(invoiceSkilledFitterOptOutByTimesheetRowKey).map(
+                    ([k, names]) => [k, [...names]]
+                )
+            ),
+        };
+    }, [
+        workLogDataList,
+        timesheetRows,
+        selectedSkilledFitters,
+        selectedFitterRepresentatives,
+        travelChargeOverrides,
+        entryManualBillableHours,
+        entryManualBillableSplitHours,
+        deletedTimesheetEntries,
+        selectedTimesheetDateGroupKeys,
+        invoiceSkilledFitterByTimesheetRowKey,
+        invoiceSkilledFitterOptOutByTimesheetRowKey,
+    ]);
+
+    const applyInvoiceDraftPayload = useCallback(
+        (payload: InvoiceDraftPayload) => {
+            if (payload.version !== 1) {
+                throw new Error(
+                    `지원하지 않는 드래프트 버전입니다. (version=${String(payload.version)})`
+                );
+            }
+            const normalized = payload as InvoiceDraftPayloadV1;
+            const nextWorkLogs = JSON.parse(
+                JSON.stringify(normalized.workLogDataList ?? [])
+            ) as WorkLogFullData[];
+            originalEntryPersonsByIdRef.current = Object.fromEntries(
+                nextWorkLogs.flatMap((data) =>
+                    data.entries.map((entry) => [
+                        entry.id,
+                        [...(entry.persons ?? [])],
+                    ] as const)
+                )
+            );
+            timesheetEntryEditBaselineByIdRef.current =
+                buildTimesheetEntryEditBaselineMap(
+                    nextWorkLogs,
+                    normalized.entryManualBillableHours ?? {}
+                );
+            initialWorkLogSnapshotRef.current = JSON.parse(
+                JSON.stringify(nextWorkLogs)
+            ) as WorkLogFullData[];
+            setWorkLogDataList(nextWorkLogs);
+            setTimesheetRows(
+                JSON.parse(JSON.stringify(normalized.timesheetRows ?? [])) as TimesheetRow[]
+            );
+            setSelectedSkilledFitters(normalized.selectedSkilledFitters ?? []);
+            setSelectedFitterRepresentatives(
+                normalized.selectedFitterRepresentatives ?? {}
+            );
+            setTravelChargeOverrides(normalized.travelChargeOverrides ?? {});
+            setEntryManualBillableHours(normalized.entryManualBillableHours ?? {});
+            setEntryManualBillableSplitHours(
+                normalized.entryManualBillableSplitHours ?? {}
+            );
+            setDeletedTimesheetEntries(normalized.deletedTimesheetEntries ?? []);
+            setSelectedTimesheetDateGroupKeys(
+                normalized.selectedTimesheetDateGroupKeys ?? []
+            );
+            const rowsFromDraft = JSON.parse(
+                JSON.stringify(normalized.timesheetRows ?? [])
+            ) as TimesheetRow[];
+            let rowKeySkilled = normalizeInvoiceSkilledRowKeyRecordFromPayload(
+                normalized.invoiceSkilledFitterByTimesheetRowKey
+            );
+            if (
+                Object.keys(rowKeySkilled).length === 0 &&
+                normalized.entryInvoiceSkilledFitterByEntryId
+            ) {
+                rowKeySkilled = migrateEntrySkilledMapToTimesheetRowKeys(
+                    rowsFromDraft,
+                    normalizeEntryInvoiceSkilledRecordFromPayload(
+                        normalized.entryInvoiceSkilledFitterByEntryId
+                    ) as Record<number, string>
+                );
+            }
+            setInvoiceSkilledFitterByTimesheetRowKey(rowKeySkilled);
+            setInvoiceSkilledFitterOptOutByTimesheetRowKey(
+                normalizeInvoiceSkilledOptOutByRowKeyFromPayload(
+                    normalized.invoiceSkilledFitterOptOutByTimesheetRowKey
+                )
+            );
+            setSelectedTimesheetDateGroupAnchorKey(null);
+            setSelectedTimesheetDateGroupPanel(null);
+            setSelectedTimesheetRow(null);
+            setTimesheetRowSidebarHighlightKey(null);
+            setInvoicePdfMenuOpen(false);
+            setInvoicePdfSelectedIds([]);
+            resetInvoiceUndoRedoStacks();
+        },
+        [resetInvoiceUndoRedoStacks]
+    );
+
+    const refreshInvoiceDraftList = useCallback(async () => {
+        setInvoiceDraftListLoading(true);
+        try {
+            const rows = await listInvoiceDraftsByUser();
+            setInvoiceDrafts(rows);
+        } catch (error) {
+            console.error(error);
+            showError(
+                error instanceof Error
+                    ? error.message
+                    : "드래프트 목록을 불러오지 못했습니다."
+            );
+        } finally {
+            setInvoiceDraftListLoading(false);
+        }
+    }, [showError]);
+
+    const handleOpenInvoiceDraftLoadModal = useCallback(() => {
+        setInvoiceDraftLoadModalOpen(true);
+        void refreshInvoiceDraftList();
+    }, [refreshInvoiceDraftList]);
+
+    const handleSelectInvoiceDraft = useCallback(
+        async (draftId: string): Promise<boolean> => {
+            try {
+                const draft = await getInvoiceDraftById(draftId);
+                if (!draft) {
+                    showError("해당 드래프트를 찾을 수 없습니다.");
+                    return false;
+                }
+                applyInvoiceDraftPayload(draft.payload);
+                setInvoiceDraftId(draft.id);
+                setInvoiceDraftTitle(draft.title ?? "");
+                loadedDraftBaselinePayloadRef.current = JSON.parse(
+                    JSON.stringify(draft.payload)
+                ) as InvoiceDraftPayload;
+                setInvoiceDraftLoadModalOpen(false);
+                showSuccess("드래프트를 불러왔습니다.");
+                return true;
+            } catch (error) {
+                console.error(error);
+                showError(
+                    error instanceof Error
+                        ? error.message
+                        : "드래프트 불러오기에 실패했습니다."
+                );
+                return false;
+            }
+        },
+        [applyInvoiceDraftPayload, showError, showSuccess]
+    );
+
+    useEffect(() => {
+        if (!invoiceDraftIdParam) {
+            loadedInvoiceDraftIdFromUrlRef.current = null;
+            loadedDraftBaselinePayloadRef.current = null;
+            return;
+        }
+        if (loadedInvoiceDraftIdFromUrlRef.current === invoiceDraftIdParam) {
+            return;
+        }
+
+        const requestId = ++invoiceDraftAutoLoadRequestRef.current;
+        setLoading(true);
+
+        void (async () => {
+            try {
+                const draft = await getInvoiceDraftById(invoiceDraftIdParam);
+                if (requestId !== invoiceDraftAutoLoadRequestRef.current) {
+                    return;
+                }
+                if (!draft) {
+                    showError("해당 드래프트를 찾을 수 없습니다.");
+                    return;
+                }
+                applyInvoiceDraftPayload(draft.payload);
+                setInvoiceDraftId(draft.id);
+                setInvoiceDraftTitle(draft.title ?? "");
+                loadedDraftBaselinePayloadRef.current = JSON.parse(
+                    JSON.stringify(draft.payload)
+                ) as InvoiceDraftPayload;
+                loadedInvoiceDraftIdFromUrlRef.current = invoiceDraftIdParam;
+                loadedWorkLogIdsParamRef.current = null;
+            } catch (error) {
+                if (requestId !== invoiceDraftAutoLoadRequestRef.current) {
+                    return;
+                }
+                console.error(error);
+                showError(
+                    error instanceof Error
+                        ? error.message
+                        : "드래프트 불러오기에 실패했습니다."
+                );
+            } finally {
+                if (requestId === invoiceDraftAutoLoadRequestRef.current) {
+                    setLoading(false);
+                }
+            }
+        })();
+    }, [invoiceDraftIdParam, applyInvoiceDraftPayload, showError]);
+
+    const handleSaveInvoiceDraft = useCallback(async () => {
+        if (invoiceDraftSaving) {
+            return;
+        }
+        if (workLogDataList.length === 0) {
+            showError("저장할 인보이스 데이터가 없습니다.");
+            return;
+        }
+        const payload = buildInvoiceDraftPayloadV1();
+        const payloadSize = JSON.stringify(payload).length;
+        if (payloadSize > 1_500_000) {
+            showError("드래프트 크기가 너무 커 저장할 수 없습니다.");
+            return;
+        }
+        const draftTitle =
+            invoiceDraftTitle.trim() || buildDraftTitleFromWorkLogs(workLogDataList);
+        const workLogIds = Array.from(
+            new Set(
+                workLogDataList
+                    .map((row) => row.workLog.id)
+                    .filter((id) => Number.isFinite(id))
+            )
+        );
+
+        setInvoiceDraftSaving(true);
+        try {
+            const saved = invoiceDraftId
+                ? await updateInvoiceDraft(invoiceDraftId, {
+                      title: draftTitle,
+                      workLogIds,
+                      payload,
+                      status: "draft",
+                  })
+                : await createInvoiceDraft({
+                      title: draftTitle,
+                      workLogIds,
+                      payload,
+                      status: "draft",
+                  });
+            setInvoiceDraftId(saved.id);
+            setInvoiceDraftTitle(saved.title);
+            showSuccess("인보이스 드래프트를 저장했습니다.");
+        } catch (error) {
+            console.error(error);
+            showError(
+                error instanceof Error
+                    ? error.message
+                    : "드래프트 저장에 실패했습니다."
+            );
+        } finally {
+            setInvoiceDraftSaving(false);
+        }
+    }, [
+        invoiceDraftSaving,
+        workLogDataList,
+        buildInvoiceDraftPayloadV1,
+        invoiceDraftTitle,
+        buildDraftTitleFromWorkLogs,
+        invoiceDraftId,
+        showSuccess,
+        showError,
+    ]);
 
     const getTravelChargeOverrideKey = (entryId: number, person: string) =>
         `${entryId}:${person}`;
@@ -1539,6 +2090,12 @@ export default function InvoiceCreatePage() {
             snapshot.entryManualBillableSplitHours ?? {}
         );
         setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
+        setInvoiceSkilledFitterByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterByTimesheetRowKey ?? {}
+        );
+        setInvoiceSkilledFitterOptOutByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterOptOutByTimesheetRowKey ?? {}
+        );
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceUndoRedoCounts({
@@ -1563,6 +2120,12 @@ export default function InvoiceCreatePage() {
             snapshot.entryManualBillableSplitHours ?? {}
         );
         setDeletedTimesheetEntries(snapshot.deletedTimesheetEntries ?? []);
+        setInvoiceSkilledFitterByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterByTimesheetRowKey ?? {}
+        );
+        setInvoiceSkilledFitterOptOutByTimesheetRowKey(
+            snapshot.invoiceSkilledFitterOptOutByTimesheetRowKey ?? {}
+        );
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceUndoRedoCounts({
@@ -1600,6 +2163,8 @@ export default function InvoiceCreatePage() {
         setTravelChargeOverrides({});
         setEntryManualBillableHours({});
         setEntryManualBillableSplitHours({});
+        setInvoiceSkilledFitterByTimesheetRowKey({});
+        setInvoiceSkilledFitterOptOutByTimesheetRowKey({});
         setDeletedTimesheetEntries([]);
         duplicateTimesheetEntryIdRef.current = -1;
         setSelectedFitterRepresentatives({});
@@ -1607,6 +2172,20 @@ export default function InvoiceCreatePage() {
         setPersonnelEditor(null);
         showSuccess("최초 로드 상태로 되돌렸습니다.");
     }, [pushInvoiceUndoSnapshot, showError, showSuccess]);
+
+    const handleConfirmInvoiceResetToDraft = useCallback(() => {
+        setInvoiceResetConfirmOpen(false);
+        const draftPayload = loadedDraftBaselinePayloadRef.current;
+        if (!draftPayload) {
+            showError("드래프트 기본값 정보를 찾을 수 없습니다.");
+            return;
+        }
+        applyInvoiceDraftPayload(
+            JSON.parse(JSON.stringify(draftPayload)) as InvoiceDraftPayload
+        );
+        setPersonnelEditor(null);
+        showSuccess("드래프트 저장 상태로 되돌렸습니다.");
+    }, [applyInvoiceDraftPayload, showError, showSuccess]);
 
     useEffect(() => {
         const isLikelyTextFieldFocus = (target: EventTarget | null) => {
@@ -2344,27 +2923,67 @@ export default function InvoiceCreatePage() {
     // 보고서 데이터 로드 (다중 선택 지원)
     useEffect(() => {
         const loadWorkLogData = async () => {
-            if (!workLogIdsParam) {
+            const isDraftMode = Boolean(invoiceDraftIdParam);
+            if (!isDraftMode && !workLogIdsParam) {
                 return;
             }
+            if (!isDraftMode) {
+                loadedDraftBaselinePayloadRef.current = null;
+            }
 
-            const workLogIds = workLogIdsParam.split(",").map(id => Number(id.trim())).filter(id => !isNaN(id));
-            if (workLogIds.length === 0) {
+            const workLogIds = isDraftMode
+                ? []
+                : (workLogIdsParam ?? "")
+                      .split(",")
+                      .map((id) => Number(id.trim()))
+                      .filter((id) => !isNaN(id));
+            if (!isDraftMode && workLogIds.length === 0) {
                 return;
             }
 
             const shouldReuseLoadedData =
+                !isDraftMode &&
                 loadedWorkLogIdsParamRef.current === workLogIdsParam &&
                 workLogDataList.length > 0;
 
-            if (!shouldReuseLoadedData) {
+            /** 드래프트: 보고서는 이미 있고 타임시트만 로컬 상태 변경으로 재계산 — 로딩 스피너·드래프트 ID 초기화 없음 */
+            const isDraftTimesheetRecomputeOnly =
+                isDraftMode && workLogDataList.length > 0;
+
+            if (!shouldReuseLoadedData && !isDraftTimesheetRecomputeOnly) {
                 setLoading(true);
+                if (!isDraftMode) {
+                    setInvoiceDraftId(null);
+                    setInvoiceDraftTitle("");
+                }
             }
             try {
                 let validData: WorkLogFullData[];
                 let holidaySetForTimesheet: Set<string>;
 
-                if (shouldReuseLoadedData) {
+                if (isDraftMode) {
+                    if (workLogDataList.length === 0) {
+                        return;
+                    }
+                    validData = workLogDataList;
+                    const rawEntriesForHolidayDraft: InvoiceTimesheetEntry[] =
+                        validData.flatMap((data) =>
+                            data.entries.map((entry) => ({
+                                ...entry,
+                                workLogId: data.workLog.id,
+                                location: data.workLog.location,
+                                sourceEntryIds: [entry.id],
+                            }))
+                        );
+                    const allEntriesForHolidayDraft =
+                        mergeContinuousTravelEntries(rawEntriesForHolidayDraft);
+
+                    holidaySetForTimesheet = await loadHolidayDates(
+                        allEntriesForHolidayDraft.flatMap((entry) =>
+                            enumerateDateRange(entry.dateFrom, entry.dateTo)
+                        )
+                    );
+                } else if (shouldReuseLoadedData) {
                     validData = workLogDataList;
                     holidaySetForTimesheet = new Set(holidayDateSet);
                 } else {
@@ -2408,6 +3027,8 @@ export default function InvoiceCreatePage() {
                     invoiceUndoPastRef.current = [];
                     invoiceUndoFutureRef.current = [];
                     setInvoiceUndoRedoCounts({ past: 0, future: 0 });
+                    setInvoiceSkilledFitterByTimesheetRowKey({});
+                    setInvoiceSkilledFitterOptOutByTimesheetRowKey({});
 
                     const rawEntriesForHoliday: InvoiceTimesheetEntry[] = validData.flatMap(
                         (data) =>
@@ -4483,8 +5104,14 @@ export default function InvoiceCreatePage() {
                     Object.keys(travelChargeOverrides).length === 0 &&
                     Object.keys(entryManualBillableHours).length === 0 &&
                     Object.keys(entryManualBillableSplitHours).length === 0 &&
-                    deletedTimesheetEntries.length === 0;
-                if (!shouldReuseLoadedData || isPristineInvoiceState) {
+                    deletedTimesheetEntries.length === 0 &&
+                    Object.keys(invoiceSkilledFitterByTimesheetRowKeyRef.current)
+                        .length === 0 &&
+                    Object.keys(invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current)
+                        .length === 0;
+                const shouldInitializeInitialSnapshot =
+                    (!isDraftMode && !shouldReuseLoadedData) || isPristineInvoiceState;
+                if (shouldInitializeInitialSnapshot) {
                     initialTimesheetRowValueByIdentityRef.current =
                         Object.fromEntries(
                             finalTimesheetRows.map((row) => [
@@ -4505,6 +5132,7 @@ export default function InvoiceCreatePage() {
 
         loadWorkLogData();
     }, [
+        invoiceDraftIdParam,
         workLogIdsParam,
         showError,
         travelChargeOverrides,
@@ -5183,6 +5811,44 @@ export default function InvoiceCreatePage() {
         [timesheetRows, selectedSkilledFitters, toDateSafe]
     );
 
+    const isSkilledFitterForTimesheetRow = useCallback(
+        (row: TimesheetRow, person: string) => {
+            const key = getTimesheetRowSkilledIdentityKey(row);
+            const optOut = invoiceSkilledFitterOptOutByTimesheetRowKey[key];
+            if (optOut?.includes(person)) {
+                return false;
+            }
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    invoiceSkilledFitterByTimesheetRowKey,
+                    key
+                )
+            ) {
+                return invoiceSkilledFitterByTimesheetRowKey[key] === person;
+            }
+            // 같은 날 다른 타임시트 묶음 행에서 이 인원을 수동 스킬드로 지정했다면,
+            // 날짜 전역 알고리즘 폴백으로 이 행까지 스킬드가 번지지 않게 한다.
+            for (const [k, designated] of Object.entries(
+                invoiceSkilledFitterByTimesheetRowKey
+            )) {
+                if (designated !== person) {
+                    continue;
+                }
+                const datePrefix = k.split("::")[0];
+                if (datePrefix !== row.date || k === key) {
+                    continue;
+                }
+                return false;
+            }
+            return effectiveInvoiceSkilledByDate.get(row.date)?.has(person) ?? false;
+        },
+        [
+            invoiceSkilledFitterByTimesheetRowKey,
+            invoiceSkilledFitterOptOutByTimesheetRowKey,
+            effectiveInvoiceSkilledByDate,
+        ]
+    );
+
     const createEmptyInvoiceHourSummary = () => ({
         weekdayNormal: 0,
         weekdayAfter: 0,
@@ -5257,10 +5923,6 @@ export default function InvoiceCreatePage() {
                     entry.descType === "이동" &&
                     entryManualBillableHours[entry.id] !== undefined
             );
-        const effectiveSkilledByDate = effectiveInvoiceSkilledByDate;
-        const isSelectedSkilledFitterPerson = (person: string, date: string) =>
-            effectiveSkilledByDate.get(date)?.has(person) ?? false;
-
         /** 해당 일에 작업 엔트리가 하나라도 있는지 */
         const dateHasWorkEntry = new Map<string, boolean>();
         /** 해당 일 타임시트에 잡디에서 선택된 Skilled fitter가 한 명이라도 있는지 */
@@ -5271,7 +5933,7 @@ export default function InvoiceCreatePage() {
                 dateHasWorkEntry.set(d, true);
             }
             for (const person of getRowPersons(r)) {
-                if (isSelectedSkilledFitterPerson(person, d)) {
+                if (isSkilledFitterForTimesheetRow(r, person)) {
                     dateHasJobSkilledFitter.set(d, true);
                 }
             }
@@ -5309,13 +5971,12 @@ export default function InvoiceCreatePage() {
                     skilledAllocatedWorkKeys.has(blockKey);
                 const travelSkilledAlreadyAllocated =
                     skilledAllocatedTravelKeys.has(blockKey);
-                const hasSelectedSkilledInRow =
-                    rowPeople.some((person) =>
-                        isSelectedSkilledFitterPerson(person, row.date)
-                    );
+                const hasSelectedSkilledInRow = rowPeople.some((person) =>
+                    isSkilledFitterForTimesheetRow(row, person)
+                );
                 const hasSelectedSkilledInTravelBillablePeople =
                     travelBillablePeople.some((person) =>
-                        isSelectedSkilledFitterPerson(person, row.date)
+                        isSkilledFitterForTimesheetRow(row, person)
                     );
                 const workSkilled =
                     hasSelectedSkilledInRow && !workSkilledAlreadyAllocated
@@ -5767,8 +6428,88 @@ export default function InvoiceCreatePage() {
             .split(",")
             .map((value) => value.trim())
             .filter(Boolean);
-    const isSelectedSkilledFitterForDate = (date: string, person: string) =>
-        effectiveInvoiceSkilledByDate.get(date)?.has(person) ?? false;
+    const isInvoiceEffectiveSkilledFitterForPanel = useCallback(
+        (entryId: number, date: string, person: string) => {
+            const row = timesheetRows.find((r) =>
+                r.sourceEntries.some((e) => e.id === entryId)
+            );
+            if (!row) {
+                return effectiveInvoiceSkilledByDate.get(date)?.has(person) ?? false;
+            }
+            return isSkilledFitterForTimesheetRow(row, person);
+        },
+        [timesheetRows, effectiveInvoiceSkilledByDate, isSkilledFitterForTimesheetRow]
+    );
+
+    const setEntryInvoiceSkilledFitterForEntry = useCallback(
+        (entryId: number, person: string | null) => {
+            const row = timesheetRows.find((r) =>
+                r.sourceEntries.some((e) => e.id === entryId)
+            );
+            if (!row) {
+                return;
+            }
+            const key = getTimesheetRowSkilledIdentityKey(row);
+            pushInvoiceUndoSnapshot();
+            if (person === null) {
+                const removed =
+                    invoiceSkilledFitterByTimesheetRowKeyRef.current[key];
+                setInvoiceSkilledFitterByTimesheetRowKey((prev) => {
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                });
+                if (removed) {
+                    setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
+                        const cur = prev[key] ?? [];
+                        if (cur.includes(removed)) {
+                            return prev;
+                        }
+                        return { ...prev, [key]: [...cur, removed] };
+                    });
+                }
+            } else {
+                setInvoiceSkilledFitterByTimesheetRowKey((prev) => ({
+                    ...prev,
+                    [key]: person,
+                }));
+                setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
+                    const cur = prev[key];
+                    if (!cur?.length) {
+                        return prev;
+                    }
+                    const nextList = cur.filter((p) => p !== person);
+                    if (nextList.length === cur.length) {
+                        return prev;
+                    }
+                    const next = { ...prev };
+                    if (nextList.length === 0) {
+                        delete next[key];
+                    } else {
+                        next[key] = nextList;
+                    }
+                    return next;
+                });
+            }
+        },
+        [timesheetRows, pushInvoiceUndoSnapshot]
+    );
+
+    const getEntryInvoiceSkilledFitterDesignation = useCallback(
+        (entryId: number) => {
+            const row = timesheetRows.find((r) =>
+                r.sourceEntries.some((e) => e.id === entryId)
+            );
+            if (!row) {
+                return undefined;
+            }
+            return invoiceSkilledFitterByTimesheetRowKey[
+                getTimesheetRowSkilledIdentityKey(row)
+            ];
+        },
+        [timesheetRows, invoiceSkilledFitterByTimesheetRowKey]
+    );
+
     const getLodgingSettledPersonNamesForRow = (row: TimesheetRow) => {
         const rowStart = toDateSafe(row.date, row.timeFrom || "00:00").getTime();
         if (Number.isNaN(rowStart)) {
@@ -6004,7 +6745,7 @@ export default function InvoiceCreatePage() {
     /** R&D TIMESHEET 참여자 표시 순: Skilled fitter → 잡디 Mechanic(Fitter 대표) → 가나다 */
     const orderRdTimesheetParticipantNames = (
         names: string[],
-        rowCalendarDate: string
+        timesheetRow: TimesheetRow
     ) => {
         const uniquePeople = Array.from(
             new Set(names.map((n) => n.trim()).filter(Boolean))
@@ -6012,13 +6753,11 @@ export default function InvoiceCreatePage() {
         if (uniquePeople.length === 0) {
             return [];
         }
-        const effectiveSkilledToday =
-            effectiveInvoiceSkilledByDate.get(rowCalendarDate) ?? null;
         const engineerPeople = sortPeopleForMention(
             uniquePeople.filter(
                 (person) =>
                     SKILLED_FITTER_SET.has(person) &&
-                    (effectiveSkilledToday?.has(person) ?? false)
+                    isSkilledFitterForTimesheetRow(timesheetRow, person)
             )
         );
         const skilledOrdered = [
@@ -6079,8 +6818,7 @@ export default function InvoiceCreatePage() {
             uniquePeople.filter(
                 (person) =>
                     SKILLED_FITTER_SET.has(person) &&
-                    (effectiveInvoiceSkilledByDate.get(row.date)?.has(person) ??
-                        false)
+                    isSkilledFitterForTimesheetRow(row, person)
             )
         );
         const skilledOrdered = [
@@ -6203,6 +6941,16 @@ export default function InvoiceCreatePage() {
     /** 타임시트 그리드 총시간 열: 실제 구간 합(올림 청구 미반영). */
     const getTimesheetRowTotalHoursForGrid = (row: TimesheetRow) =>
         row.timesheetTotalHoursDisplay ?? row.totalHours;
+
+    /** Split of Hours 합계 행: renderSplitHoursCells와 동일 분기 (올림 청구 표시 분할 반영). */
+    const getTimesheetRowChargeBucketForFooter = (
+        row: TimesheetRow,
+        key: "weekdayNormal" | "weekdayAfter" | "weekendNormal" | "weekendAfter"
+    ) => {
+        const tc = row.timesheetChargeDisplay;
+        const v = tc ? tc[key] : row[key];
+        return typeof v === "number" && Number.isFinite(v) ? v : 0;
+    };
 
     const getNormalTimesheetSignature = (row: TimesheetRow) =>
         [
@@ -7219,6 +7967,21 @@ export default function InvoiceCreatePage() {
         });
     }, [allTimesheetPeopleKey, workLogDataList]);
 
+    useEffect(() => {
+        if (workLogDataList.length === 0) {
+            return;
+        }
+        if (invoiceDraftId) {
+            return;
+        }
+        setInvoiceDraftTitle((previous) => {
+            if (previous.trim().length > 0) {
+                return previous;
+            }
+            return buildDraftTitleFromWorkLogs(workLogDataList);
+        });
+    }, [workLogDataList, invoiceDraftId, buildDraftTitleFromWorkLogs]);
+
     const getTimesheetRowsBySectionTitle = (sectionTitle: string) => {
         const normalSection = [
             ...normalTimesheetSectionsByPerson,
@@ -7647,12 +8410,7 @@ export default function InvoiceCreatePage() {
             .join("|");
     /** 날짜 + 엔트리 id 집합만 사용 — 인원 교체 시에도 초기 스냅샷 키가 유지되어 시간·근무 표시가 오표시되지 않음 */
     const getTimesheetRowIdentityKey = (row: TimesheetRow) =>
-        [
-            row.date,
-            Array.from(new Set(row.sourceEntries.map((entry) => entry.id)))
-                .sort((a, b) => a - b)
-                .join(","),
-        ].join("::");
+        getTimesheetRowSkilledIdentityKey(row);
     const getTimesheetRowDisplayedValueSnapshot = (row: TimesheetRow) => {
         const tc = row.timesheetChargeDisplay;
         const wn = tc?.weekdayNormal ?? row.weekdayNormal;
@@ -8647,7 +9405,7 @@ export default function InvoiceCreatePage() {
                     sectionTitle === "R&D TIMESHEET"
                         ? orderRdTimesheetParticipantNames(
                               getRowPersons(row),
-                              row.date
+                              row
                           ).join(", ")
                         : row.description,
                 sourceEntries: row.sourceEntries,
@@ -8666,6 +9424,8 @@ export default function InvoiceCreatePage() {
             selectedSkilledFitters,
             selectedFitterRepresentatives,
             effectiveInvoiceSkilledByDate,
+            invoiceSkilledFitterByTimesheetRowKey,
+            isSkilledFitterForTimesheetRow,
         ]
     );
 
@@ -9121,6 +9881,34 @@ export default function InvoiceCreatePage() {
                     rightContent={
                         !loading && workLogDataList.length > 0 ? (
                             <div className="flex items-center gap-1.5 md:gap-2">
+                                <input
+                                    type="text"
+                                    value={invoiceDraftTitle}
+                                    onChange={(event) =>
+                                        setInvoiceDraftTitle(event.target.value)
+                                    }
+                                    placeholder="드래프트 제목"
+                                    className="h-12 w-40 rounded-full border border-gray-200 bg-white px-4 text-xs font-semibold text-gray-800 outline-none transition-colors focus:border-blue-400 md:w-56"
+                                    aria-label="인보이스 드래프트 제목"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => void handleSaveInvoiceDraft()}
+                                    disabled={invoiceDraftSaving}
+                                    className="h-12 min-w-[3.25rem] shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2.5 text-xs font-bold tracking-tight text-blue-700 transition-colors hover:bg-blue-100 disabled:pointer-events-none disabled:opacity-50"
+                                    title="드래프트 저장"
+                                    aria-busy={invoiceDraftSaving}
+                                >
+                                    {invoiceDraftSaving ? "…" : "저장"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleOpenInvoiceDraftLoadModal}
+                                    className="h-12 min-w-[3.25rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100"
+                                    title="드래프트 불러오기"
+                                >
+                                    불러오기
+                                </button>
                                 <button
                                     type="button"
                                     disabled={invoiceExcelExporting}
@@ -9680,7 +10468,7 @@ export default function InvoiceCreatePage() {
                                                                             getRowPersons(
                                                                                 row
                                                                             ),
-                                                                            row.date
+                                                                            row
                                                                         ).map(
                                                                             (
                                                                                 person,
@@ -9708,8 +10496,8 @@ export default function InvoiceCreatePage() {
                                                                                                 )
                                                                                                     ? "text-gray-400 line-through decoration-gray-500 decoration-2"
                                                                                                     : "",
-                                                                                                isSelectedSkilledFitterForDate(
-                                                                                                    row.date,
+                                                                                                isSkilledFitterForTimesheetRow(
+                                                                                                    row,
                                                                                                     person
                                                                                                 )
                                                                                                     ? "font-bold text-gray-900"
@@ -9751,16 +10539,16 @@ export default function InvoiceCreatePage() {
                                                             {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowTotalHoursForGrid(row), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayNormal"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekdayAfter, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayAfter"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekendNormal, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendNormal"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + row.weekendAfter, 0) * 10) / 10}
+                                                            {Math.round(timesheetRows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendAfter"), 0) * 10) / 10}
                                                         </td>
                                                         <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                             {Math.round(timesheetRows.reduce((sum, row) => sum + row.travelWeekday, 0) * 10) / 10}
@@ -10193,16 +10981,16 @@ export default function InvoiceCreatePage() {
                                                                                 {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowTotalHoursForGrid(row), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekdayNormal, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayNormal"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekdayAfter, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekdayAfter"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekendNormal, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendNormal"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
-                                                                                {Math.round(section.rows.reduce((sum, row) => sum + row.weekendAfter, 0) * 10) / 10}
+                                                                                {Math.round(section.rows.reduce((sum, row) => sum + getTimesheetRowChargeBucketForFooter(row, "weekendAfter"), 0) * 10) / 10}
                                                                             </td>
                                                                             <td className="px-2 py-2 text-center border-r border-gray-300 font-bold">
                                                                                 {Math.round(section.rows.reduce((sum, row) => sum + row.travelWeekday, 0) * 10) / 10}
@@ -10854,24 +11642,23 @@ export default function InvoiceCreatePage() {
                             <button
                                 type="button"
                                 className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
-                                onClick={() => setInvoiceResetConfirmOpen(false)}
+                                onClick={handleConfirmInvoiceResetToInitial}
                             >
-                                취소
+                                완전 초기화
                             </button>
                             <button
                                 type="button"
-                                className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
-                                onClick={handleConfirmInvoiceResetToInitial}
+                                className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={handleConfirmInvoiceResetToDraft}
+                                disabled={!loadedDraftBaselinePayloadRef.current}
                             >
-                                기본값
+                                드래프트 초기화
                             </button>
                         </>
                     }
                 >
                     <p className="text-sm leading-relaxed text-gray-700">
-                        보고서·타임시트·이동 청구 등 편집 내역을 모두
-                        버리고, 이 페이지를 처음 불러왔을 때 상태로
-                        되돌리시겠습니까?
+                        원하는 초기화 방식을 선택해 주세요.
                     </p>
                 </BaseModal>
 
@@ -10905,6 +11692,19 @@ export default function InvoiceCreatePage() {
                         선택한 보고서 PDF를 다운로드하시겠습니까?
                     </p>
                 </BaseModal>
+
+                <InvoiceDraftLoadModal
+                    isOpen={invoiceDraftLoadModalOpen}
+                    onClose={() => setInvoiceDraftLoadModalOpen(false)}
+                    drafts={invoiceDrafts}
+                    loading={invoiceDraftListLoading}
+                    onRefresh={() => {
+                        void refreshInvoiceDraftList();
+                    }}
+                    onSelectDraft={(draftId) => {
+                        void handleSelectInvoiceDraft(draftId);
+                    }}
+                />
 
                 <PersonnelSelectionModal
                     isOpen={personnelEditor !== null}
@@ -11002,8 +11802,12 @@ export default function InvoiceCreatePage() {
                         selectedTimesheetRow?.timesheetRowCalendarDate ?? ""
                     }
                     isInvoiceEffectiveSkilledFitter={
-                        isSelectedSkilledFitterForDate
+                        isInvoiceEffectiveSkilledFitterForPanel
                     }
+                    getEntryInvoiceSkilledFitterDesignation={
+                        getEntryInvoiceSkilledFitterDesignation
+                    }
+                    onSetEntryInvoiceSkilledFitter={setEntryInvoiceSkilledFitterForEntry}
                 />
                 <TimesheetDateGroupDetailSidePanel
                     isOpen={selectedTimesheetDateGroupPanel !== null}
@@ -11076,8 +11880,12 @@ export default function InvoiceCreatePage() {
                         selectedTimesheetDateGroupPanel?.scrollToFullGroupNonce
                     }
                     isInvoiceEffectiveSkilledFitter={
-                        isSelectedSkilledFitterForDate
+                        isInvoiceEffectiveSkilledFitterForPanel
                     }
+                    getEntryInvoiceSkilledFitterDesignation={
+                        getEntryInvoiceSkilledFitterDesignation
+                    }
+                    onSetEntryInvoiceSkilledFitter={setEntryInvoiceSkilledFitterForEntry}
                 />
             </div>
         </div>

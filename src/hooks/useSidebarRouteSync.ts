@@ -1,23 +1,26 @@
 //useSidebarRouteSync.ts
 import { useEffect, useRef } from "react";
-import { UserPermissions } from "./useUser";
 
 interface UseSidebarRouteSyncParams {
     pathname: string;
     isReportRoute: boolean;
     isTbmRoute: boolean;
     isExpenseRoute: boolean;
+    isInvoiceRoute: boolean;
     expenseSubMenuItems: Array<{ label: string; to: string }>;
     prevReportRouteRef: React.MutableRefObject<boolean>;
     prevTbmRouteRef: React.MutableRefObject<boolean>;
     prevExpenseRouteRef: React.MutableRefObject<boolean>;
+    prevInvoiceRouteRef: React.MutableRefObject<boolean>;
     reportOpenRef: React.RefObject<boolean>;
     tbmOpenRef: React.RefObject<boolean>;
     expenseOpenRef: React.RefObject<boolean>;
+    invoiceOpenRef: React.RefObject<boolean>;
     setReportOpen: (value: boolean) => void;
     setTbmOpen: (value: boolean) => void;
     setExpenseOpen: (value: boolean) => void;
-    setMenuFocus: (focus: "REPORT" | "TBM" | "EXPENSE" | null) => void;
+    setInvoiceOpen: (value: boolean) => void;
+    setMenuFocus: (focus: "REPORT" | "TBM" | "EXPENSE" | "INVOICE" | null) => void;
     setShowNotifications: (value: boolean) => void;
 }
 
@@ -30,16 +33,20 @@ export function useSidebarRouteSync({
     isReportRoute,
     isTbmRoute,
     isExpenseRoute,
+    isInvoiceRoute,
     expenseSubMenuItems,
     prevReportRouteRef,
     prevTbmRouteRef,
     prevExpenseRouteRef,
+    prevInvoiceRouteRef,
     reportOpenRef,
     tbmOpenRef,
     expenseOpenRef,
+    invoiceOpenRef,
     setReportOpen,
     setTbmOpen,
     setExpenseOpen,
+    setInvoiceOpen,
     setMenuFocus,
     setShowNotifications,
 }: UseSidebarRouteSyncParams) {
@@ -48,9 +55,11 @@ export function useSidebarRouteSync({
         const prevIsReportRoute = prevReportRouteRef.current;
         const prevIsTbmRoute = prevTbmRouteRef.current;
         const prevIsExpenseRoute = prevExpenseRouteRef.current;
+        const prevIsInvoiceRoute = prevInvoiceRouteRef.current;
         const currentReportOpen = reportOpenRef.current;
         const currentTbmOpen = tbmOpenRef.current;
         const currentExpenseOpen = expenseOpenRef.current;
+        const currentInvoiceOpen = invoiceOpenRef.current;
 
         // 보고서 라우트 처리
         if (isReportRoute) {
@@ -116,6 +125,24 @@ export function useSidebarRouteSync({
             prevExpenseRouteRef.current = false;
         }
 
+        if (isInvoiceRoute) {
+            const isSameSubmenuNavigation = prevIsInvoiceRoute && currentInvoiceOpen;
+            if (isSameSubmenuNavigation) {
+                prevInvoiceRouteRef.current = true;
+            } else {
+                setMenuFocus("INVOICE");
+                if (!currentInvoiceOpen) {
+                    setInvoiceOpen(true);
+                }
+                prevInvoiceRouteRef.current = true;
+            }
+        } else {
+            if (currentInvoiceOpen) {
+                setInvoiceOpen(false);
+            }
+            prevInvoiceRouteRef.current = false;
+        }
+
         // ✅ "진짜 페이지 전환(경로 변경)"일 때만 알림 닫기
         if (prevPathRef.current !== pathname) {
             setShowNotifications(false);
@@ -126,17 +153,21 @@ export function useSidebarRouteSync({
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,
+        isInvoiceRoute,
         expenseSubMenuItems.length,
         setShowNotifications,
         prevReportRouteRef,
         prevTbmRouteRef,
         prevExpenseRouteRef,
+        prevInvoiceRouteRef,
         reportOpenRef,
         tbmOpenRef,
         expenseOpenRef,
+        invoiceOpenRef,
         setReportOpen,
         setTbmOpen,
         setExpenseOpen,
+        setInvoiceOpen,
         setMenuFocus,
     ]);
 }

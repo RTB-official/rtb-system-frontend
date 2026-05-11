@@ -7,6 +7,7 @@ export const PATHS = {
     reportList: "/report",
     reportCreate: "/reportcreate",
     invoice: "/invoice",
+    invoiceDrafts: "/invoice/drafts",
     invoiceCreate: "/invoice/create",
     tbmList: "/tbm",
     tbmCreate: "/tbm/create",

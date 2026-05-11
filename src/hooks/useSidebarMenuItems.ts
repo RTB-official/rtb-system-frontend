@@ -49,9 +49,18 @@ export function useSidebarMenuItems(
         return [];
     }, [stablePermissions.isCEO, stablePermissions.isAdmin, stablePermissions.isStaff]);
 
+    const invoiceSubMenuItems = useMemo<MenuItem[]>(
+        () => [
+            { label: "보고서", to: PATHS.invoice },
+            { label: "저장 목록", to: PATHS.invoiceDrafts },
+        ],
+        []
+    );
+
     return {
         reportSubMenuItems,
         tbmSubMenuItems,
         expenseSubMenuItems,
+        invoiceSubMenuItems,
     };
 }
