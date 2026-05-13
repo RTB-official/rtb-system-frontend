@@ -158,6 +158,7 @@ export default function InvoicePage() {
                     periodEnd: p?.end,
                     vessel,
                     subject: purpose,
+                    createdAt: item.createdAt,
                 });
 
                 return {
@@ -224,6 +225,14 @@ export default function InvoicePage() {
         });
     }, [reports, search, year, month]);
 
+    /** 현재 필터 목록이 모두 선택됐는지(버튼 라벨·토글용) */
+    const allFilteredSelected = useMemo(
+        () =>
+            filtered.length > 0 &&
+            filtered.every((r) => selectedIds.has(r.id)),
+        [filtered, selectedIds]
+    );
+
     /** 검색·년/월 필터 변경 시 이전 페이지 번호가 유지되면 빈 목록이 될 수 있음 */
     useEffect(() => {
         setCurrentPage(1);
@@ -246,6 +255,20 @@ export default function InvoicePage() {
             }
             return next;
         });
+    };
+
+    /** 필터 결과 전체 선택 ↔ 현재 필터에 해당하는 항목만 선택 해제 */
+    const handleToggleSelectAllFiltered = () => {
+        if (filtered.length === 0) return;
+        if (allFilteredSelected) {
+            setSelectedIds((prev) => {
+                const next = new Set(prev);
+                filtered.forEach((r) => next.delete(r.id));
+                return next;
+            });
+        } else {
+            setSelectedIds(new Set(filtered.map((r) => r.id)));
+        }
     };
 
     const hasSelection = selectedIds.size > 0;
@@ -299,26 +322,28 @@ export default function InvoicePage() {
                     <div className="space-y-4">
                         {/* 검색 & 필터 (상단 고정) */}
                         <div className="flex flex-wrap items-center gap-3 justify-between sticky top-0 z-10 bg-white border-b border-gray-200 pb-4 pt-4 -mx-4 md:-mx-6 lg:-mx-9 px-4 md:px-6 lg:px-9">
-                            <Input
-                                value={search}
-                                onChange={setSearch}
-                                placeholder="보고서 검색"
-                                icon={
-                                    <svg
-                                        width="16"
-                                        height="16"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                    >
-                                        <circle cx="11" cy="11" r="7" />
-                                        <line x1="16.65" y1="16.65" x2="21" y2="21" />
-                                    </svg>
-                                }
-                                iconPosition="left"
-                                className="flex-1 min-w-[260px]"
-                            />
+                            <div className="flex flex-1 min-w-0 flex-wrap items-center gap-3">
+                                <Input
+                                    value={search}
+                                    onChange={setSearch}
+                                    placeholder="보고서 검색"
+                                    icon={
+                                        <svg
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <circle cx="11" cy="11" r="7" />
+                                            <line x1="16.65" y1="16.65" x2="21" y2="21" />
+                                        </svg>
+                                    }
+                                    iconPosition="left"
+                                    className="flex-1 min-w-[260px]"
+                                />
+                            </div>
                             <div className="flex items-center gap-2 flex-wrap justify-end">
                                 <YearMonthSelector
                                     year={year}
@@ -346,10 +371,21 @@ export default function InvoicePage() {
                                         { value: "12월", label: "12월" },
                                     ]}
                                 />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="lg"
+                                    className="min-w-[5.75rem] shrink-0 rounded-xl px-4"
+                                    onClick={handleToggleSelectAllFiltered}
+                                    disabled={loading || filtered.length === 0}
+                                    aria-pressed={allFilteredSelected}
+                                >
+                                    {allFilteredSelected ? "전체 해제" : "전체 선택"}
+                                </Button>
                                 {isFilterActive && (
                                     <button
                                         onClick={handleResetFilter}
-                                        className="h-11 w-11 flex items-center justify-center border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 transition-colors"
+                                        className="h-12 w-12 flex items-center justify-center border border-gray-200 rounded-xl bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 transition-colors"
                                         aria-label="필터 초기화"
                                     >
                                         <svg

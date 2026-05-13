@@ -76,7 +76,7 @@ export default function BaseModal({
                 onClick={onClose}
             >
                 <div
-                    className={`w-full ${maxWidth} bg-white ${compactHeader ? 'pt-2.5 md:pt-5 pb-5 px-5' : 'p-5'} ${compactHeader ? 'gap-1 md:gap-3' : 'gap-3'} rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh] sm:max-h-none ${className}`}
+                    className={`w-full ${maxWidth} bg-white ${compactHeader ? 'pt-2.5 md:pt-5 pb-5 px-5' : 'p-5'} ${compactHeader ? 'gap-1 md:gap-3' : 'gap-3'} rounded-2xl shadow-xl flex flex-col overflow-hidden max-h-[90vh] ${className}`}
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}
