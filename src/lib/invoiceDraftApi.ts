@@ -40,6 +40,10 @@ export type InvoiceDraftPayloadV1 = {
     invoiceSkilledFitterOptOutByTimesheetRowKey?: Record<string, string[]>;
     /** @deprecated 구버전 드래프트 — 로드 시 행 키로 마이그레이션 */
     entryInvoiceSkilledFitterByEntryId?: Record<number, string>;
+    /**
+     * 인보이스 섹션 Work Item 표시용. 생략·null = 선택 보고서 목적 중 한글 제외 길이가 가장 긴 subject 하나.
+     */
+    invoiceWorkItemOverride?: string | null;
 };
 
 export type InvoiceDraftPayload = InvoiceDraftPayloadV1;

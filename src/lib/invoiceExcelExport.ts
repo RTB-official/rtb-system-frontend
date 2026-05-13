@@ -75,6 +75,7 @@ export function buildInvoiceExcelMeta(
         periodEnd,
         vessel: vessel || null,
         subject: subject || null,
+        createdAt: workLogDataList[0]?.workLog.created_at ?? null,
     });
 
     const periodLabel = formatKoreanPeriod(periodStart, periodEnd);

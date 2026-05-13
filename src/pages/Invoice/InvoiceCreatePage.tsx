@@ -562,9 +562,53 @@ type InvoiceUndoSnapshot = {
     invoiceSkilledFitterOptOutByTimesheetRowKey: Record<string, string[]>;
     selectedTimesheetDateGroupPanel: TimesheetDateGroupPanelData | null;
     selectedTimesheetRow: TimesheetRowModalData | null;
+    /** null = 보고서 목적 합성 표기 */
+    invoiceWorkItemOverride: string | null;
 };
 
 const MAX_INVOICE_UNDO = 40;
+
+/** 한글(호환 자모·음절) 제거 후 남은 문자열 길이 — 영문·숫자·기호 등 비한글 구간 길이 비교용 */
+const KOREAN_SCRIPT_RE =
+    /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/g;
+
+function nonKoreanTrimmedLength(s: string): number {
+    return s.replace(KOREAN_SCRIPT_RE, "").trim().length;
+}
+
+/**
+ * Work Item 기본값: 선택된 보고서 목적(subject) 중, 한글을 제외한 나머지가 가장 긴 것 하나.
+ * 동점이면 보고서 목록 순서상 앞선 것. 모두 한글뿐이면 원문 전체 길이가 가장 긴 목적 하나(동점 시 앞선 것).
+ */
+function pickDefaultWorkItemSubject(rows: WorkLogFullData[]): string {
+    let best: { full: string; score: number } | null = null;
+    for (const row of rows) {
+        const full = row.workLog.subject?.trim() ?? "";
+        if (!full) continue;
+        const score = nonKoreanTrimmedLength(full);
+        if (best === null) {
+            best = { full, score };
+            continue;
+        }
+        if (score > best.score) {
+            best = { full, score };
+        }
+    }
+    if (!best) {
+        return "";
+    }
+    if (best.score > 0) {
+        return best.full;
+    }
+    let longest = "";
+    for (const row of rows) {
+        const full = row.workLog.subject?.trim() ?? "";
+        if (full.length > longest.length) {
+            longest = full;
+        }
+    }
+    return longest;
+}
 
 function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
     return {
@@ -593,6 +637,10 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
         selectedTimesheetRow: s.selectedTimesheetRow
             ? (JSON.parse(JSON.stringify(s.selectedTimesheetRow)) as TimesheetRowModalData)
             : null,
+        invoiceWorkItemOverride:
+            s.invoiceWorkItemOverride === undefined || s.invoiceWorkItemOverride === null
+                ? null
+                : s.invoiceWorkItemOverride,
     };
 }
 
@@ -1284,6 +1332,16 @@ export default function InvoiceCreatePage() {
         useState<Record<string, string>>({});
     const [personnelEditor, setPersonnelEditor] =
         useState<PersonnelEditorState | null>(null);
+    const [invoiceWorkItemOverride, setInvoiceWorkItemOverride] = useState<
+        string | null
+    >(null);
+    const [invoiceWorkItemModalOpen, setInvoiceWorkItemModalOpen] =
+        useState(false);
+    const [invoiceWorkItemModalDraft, setInvoiceWorkItemModalDraft] =
+        useState("");
+    /** Work Item 모달: 좌측에서 선택한 보고서 id (카드 하이라이트·textarea 연동) */
+    const [invoiceWorkItemModalSelectedReportId, setInvoiceWorkItemModalSelectedReportId] =
+        useState<number | null>(null);
     const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
     const [selectedTimesheetRow, setSelectedTimesheetRow] =
@@ -1402,6 +1460,10 @@ export default function InvoiceCreatePage() {
     const [invoiceDraftListLoading, setInvoiceDraftListLoading] = useState(false);
     const [invoiceDrafts, setInvoiceDrafts] = useState<InvoiceDraftRow[]>([]);
     const loadedDraftBaselinePayloadRef = useRef<InvoiceDraftPayload | null>(null);
+    /** 드래프트 적용 세대 — 비동기 원본 인원 재조회 완료 시점에 최신 적용만 반영 */
+    const invoiceDraftApplyGenerationRef = useRef(0);
+    /** 서버에서 비고(인원) 원본 스냅샷을 받아온 뒤 사이드패널 등이 리렌더되도록 함 */
+    const [, setInvoiceDraftOriginalPersonsBaselineRevision] = useState(0);
     const { showError, showSuccess } = useToast();
 
     latestInvoiceStateRef.current = {
@@ -1414,6 +1476,7 @@ export default function InvoiceCreatePage() {
         invoiceSkilledFitterOptOutByTimesheetRowKey,
         selectedTimesheetDateGroupPanel,
         selectedTimesheetRow,
+        invoiceWorkItemOverride,
     };
 
     const resetInvoiceUndoRedoStacks = useCallback(() => {
@@ -1433,6 +1496,7 @@ export default function InvoiceCreatePage() {
             periodEnd: range.end,
             vessel: first.workLog.vessel,
             subject: first.workLog.subject,
+            createdAt: first.workLog.created_at,
         }).trim();
         return label || "인보이스 드래프트";
     }, []);
@@ -1463,6 +1527,7 @@ export default function InvoiceCreatePage() {
                     ([k, names]) => [k, [...names]]
                 )
             ),
+            invoiceWorkItemOverride,
         };
     }, [
         workLogDataList,
@@ -1476,7 +1541,53 @@ export default function InvoiceCreatePage() {
         selectedTimesheetDateGroupKeys,
         invoiceSkilledFitterByTimesheetRowKey,
         invoiceSkilledFitterOptOutByTimesheetRowKey,
+        invoiceWorkItemOverride,
     ]);
+
+    /** 드래프트의 엔트리 인원은 수정본일 수 있으므로, 표시용 원본은 API 보고서 기준으로 덮어쓴다. */
+    const refreshOriginalEntryPersonsBaselineFromApiForDraft = useCallback(
+        async (
+            nextWorkLogs: WorkLogFullData[],
+            applyGeneration: number
+        ) => {
+            const workLogIds = [...new Set(nextWorkLogs.map((d) => d.workLog.id))];
+            if (workLogIds.length === 0) {
+                return;
+            }
+            try {
+                const results = await Promise.all(
+                    workLogIds.map((id) => getWorkLogById(id))
+                );
+                if (applyGeneration !== invoiceDraftApplyGenerationRef.current) {
+                    return;
+                }
+                const draftEntryIdSet = new Set(
+                    nextWorkLogs.flatMap((d) => d.entries.map((e) => e.id))
+                );
+                const serverByEntryId: Record<number, string[]> = {};
+                for (const data of results) {
+                    if (!data) continue;
+                    for (const entry of data.entries) {
+                        if (draftEntryIdSet.has(entry.id)) {
+                            serverByEntryId[entry.id] = [...(entry.persons ?? [])];
+                        }
+                    }
+                }
+                const merged: Record<number, string[]> = {};
+                for (const entryId of draftEntryIdSet) {
+                    merged[entryId] =
+                        serverByEntryId[entryId] ??
+                        originalEntryPersonsByIdRef.current[entryId] ??
+                        [];
+                }
+                originalEntryPersonsByIdRef.current = merged;
+                setInvoiceDraftOriginalPersonsBaselineRevision((n) => n + 1);
+            } catch (error) {
+                console.error(error);
+            }
+        },
+        []
+    );
 
     const applyInvoiceDraftPayload = useCallback(
         (payload: InvoiceDraftPayload) => {
@@ -1485,6 +1596,7 @@ export default function InvoiceCreatePage() {
                     `지원하지 않는 드래프트 버전입니다. (version=${String(payload.version)})`
                 );
             }
+            const applyGeneration = ++invoiceDraftApplyGenerationRef.current;
             const normalized = payload as InvoiceDraftPayloadV1;
             const nextWorkLogs = JSON.parse(
                 JSON.stringify(normalized.workLogDataList ?? [])
@@ -1545,6 +1657,11 @@ export default function InvoiceCreatePage() {
                     normalized.invoiceSkilledFitterOptOutByTimesheetRowKey
                 )
             );
+            setInvoiceWorkItemOverride(
+                normalized.invoiceWorkItemOverride === undefined
+                    ? null
+                    : normalized.invoiceWorkItemOverride
+            );
             setSelectedTimesheetDateGroupAnchorKey(null);
             setSelectedTimesheetDateGroupPanel(null);
             setSelectedTimesheetRow(null);
@@ -1552,8 +1669,12 @@ export default function InvoiceCreatePage() {
             setInvoicePdfMenuOpen(false);
             setInvoicePdfSelectedIds([]);
             resetInvoiceUndoRedoStacks();
+            void refreshOriginalEntryPersonsBaselineFromApiForDraft(
+                nextWorkLogs,
+                applyGeneration
+            );
         },
-        [resetInvoiceUndoRedoStacks]
+        [refreshOriginalEntryPersonsBaselineFromApiForDraft, resetInvoiceUndoRedoStacks]
     );
 
     const refreshInvoiceDraftList = useCallback(async () => {
@@ -1925,9 +2046,9 @@ export default function InvoiceCreatePage() {
                 continue;
             }
             const overrideTarget = out[key]?.target;
-            // 자택은 기본값과 동일해 보여도(1h+자택 키워드 등) 청구 배지는 숙소 쪽일 수 있어
-            // 명시적 home 오버라이드를 prune 하면 클릭이 즉시 무효가 된다.
-            if (overrideTarget === "home") {
+            // 사용자가 배지에서 직접 옮긴 home/lodging 지정은 숙소 집계의 기준이므로
+            // 기본값과 같아 보여도 제거하지 않는다.
+            if (overrideTarget === "home" || overrideTarget === "lodging") {
                 continue;
             }
             if (overrideTarget === def) {
@@ -1954,9 +2075,10 @@ export default function InvoiceCreatePage() {
         const existingOverride =
             map[getTravelChargeOverrideKey(entryId, person)] ?? null;
         const shouldResetToDefault =
-            (getDefaultTravelChargeTargetForEntry(baseEntry) === target &&
-                target !== "home") ||
-            (existingOverride?.target === "home" && target === "lodging");
+            getDefaultTravelChargeTargetForEntry(baseEntry) === target &&
+            target !== "home" &&
+            target !== "lodging" &&
+            existingOverride?.target !== "home";
         const next: TravelChargeOverrideMap = { ...map };
 
         if (shouldResetToDefault) {
@@ -2098,6 +2220,7 @@ export default function InvoiceCreatePage() {
         );
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
+        setInvoiceWorkItemOverride(snapshot.invoiceWorkItemOverride ?? null);
         setInvoiceUndoRedoCounts({
             past: invoiceUndoPastRef.current.length,
             future: invoiceUndoFutureRef.current.length,
@@ -2128,6 +2251,7 @@ export default function InvoiceCreatePage() {
         );
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
+        setInvoiceWorkItemOverride(snapshot.invoiceWorkItemOverride ?? null);
         setInvoiceUndoRedoCounts({
             past: invoiceUndoPastRef.current.length,
             future: invoiceUndoFutureRef.current.length,
@@ -2170,6 +2294,7 @@ export default function InvoiceCreatePage() {
         setSelectedFitterRepresentatives({});
         setSelectedTimesheetRow(null);
         setPersonnelEditor(null);
+        setInvoiceWorkItemOverride(null);
         showSuccess("최초 로드 상태로 되돌렸습니다.");
     }, [pushInvoiceUndoSnapshot, showError, showSuccess]);
 
@@ -3029,6 +3154,7 @@ export default function InvoiceCreatePage() {
                     setInvoiceUndoRedoCounts({ past: 0, future: 0 });
                     setInvoiceSkilledFitterByTimesheetRowKey({});
                     setInvoiceSkilledFitterOptOutByTimesheetRowKey({});
+                    setInvoiceWorkItemOverride(null);
 
                     const rawEntriesForHoliday: InvoiceTimesheetEntry[] = validData.flatMap(
                         (data) =>
@@ -5174,7 +5300,14 @@ export default function InvoiceCreatePage() {
     const workPlaceDisplay = mapWorkPlace(workLogDataList[0]?.workLog.location || null);
     const workOrderFromDisplay = "Everllence ELU KOREA";
     const engineTypeDisplay = workLogDataList[0]?.workLog.engine || "";
-    const workItemDisplay = workLogDataList[0]?.workLog.subject || "";
+    const workItemDefaultFromReports = useMemo(
+        () => pickDefaultWorkItemSubject(workLogDataList),
+        [workLogDataList]
+    );
+    const workItemDisplay =
+        invoiceWorkItemOverride !== null
+            ? invoiceWorkItemOverride
+            : workItemDefaultFromReports;
     /** PDF 메뉴 목록: 짧을 때는 기존과 동일, 항목이 많으면 max-height만 완만히 증가 */
     const invoicePdfMenuListMaxHeight = useMemo(() => {
         const n = workLogDataList.length;
@@ -7252,15 +7385,44 @@ export default function InvoiceCreatePage() {
         const groupRows = getMealGroupRows(sectionTitle, sectionKey, allRows, row);
         const dateKey = row.date;
         const entryById = new Map<number, TimesheetSourceEntryData>();
-        for (const r of groupRows) {
+        const persons = getUniquePersonsFromRows(groupRows);
+        const personSet = new Set(persons);
+
+        // 숙소 수량은 사이드패널 Full Group의 `→숙소` 배지와 동일해야 한다.
+        // 타임시트 행으로 재계산된 sourceEntries만 보면, 수정 후 별도 이동 행에 남은
+        // 배지 인원이 누락될 수 있어 원본 workLogDataList의 해당 날짜 전체 엔트리를 본다.
+        for (const data of workLogDataList) {
+            for (const entry of data.entries) {
+                if (entry.dateFrom !== dateKey) {
+                    continue;
+                }
+                if (!(entry.persons ?? []).some((person) => personSet.has(person))) {
+                    continue;
+                }
+                entryById.set(
+                    entry.id,
+                    mapWorkLogEntryToTimesheetSource(
+                        entry,
+                        data.workLog.id,
+                        data.workLog.location
+                    )
+                );
+            }
+        }
+
+        // 로컬 복제/임시 행처럼 아직 workLogDataList에 없는 엔트리도 함께 고려한다.
+        for (const r of allRows) {
             for (const e of r.sourceEntries) {
-                if (e.dateFrom === dateKey) {
+                if (
+                    e.dateFrom === dateKey &&
+                    (e.persons ?? []).some((person) => personSet.has(person)) &&
+                    !entryById.has(e.id)
+                ) {
                     entryById.set(e.id, e);
                 }
             }
         }
         const entries = [...entryById.values()];
-        const persons = getUniquePersonsFromRows(groupRows);
         let n = 0;
         for (const person of persons) {
             for (const entry of entries) {
@@ -10132,6 +10294,7 @@ export default function InvoiceCreatePage() {
                                     periodEnd: range.end,
                                     vessel: wl.workLog.vessel,
                                     subject: wl.workLog.subject,
+                                    createdAt: wl.workLog.created_at,
                                 });
                                 const checked = invoicePdfSelectedIds.includes(
                                     id
@@ -11159,11 +11322,47 @@ export default function InvoiceCreatePage() {
                                                     {invoiceWorkPeriodDisplay}
                                                 </span>
                                             </div>
-                                            <div className="flex min-w-0 items-start gap-2">
-                                                <span className="shrink-0 text-sm text-gray-700">Work Item:</span>
-                                                <span className="min-w-0 break-words text-sm text-gray-900">
-                                                    {workItemDisplay}
+                                            <div className="group inline-flex w-max max-w-full flex-wrap items-center gap-x-2 gap-y-1 self-start rounded-md border border-transparent transition-shadow hover:border-gray-200 hover:bg-gray-50 hover:shadow-sm hover:ring-1 hover:ring-blue-200">
+                                                <span className="shrink-0 text-sm text-gray-700">
+                                                    Work Item:
                                                 </span>
+                                                <span className="min-w-0 max-w-full break-words text-sm text-gray-900">
+                                                    {workItemDisplay || "—"}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group-hover:opacity-100"
+                                                    onClick={() => {
+                                                        const def =
+                                                            pickDefaultWorkItemSubject(
+                                                                workLogDataList
+                                                            );
+                                                        const effective =
+                                                            invoiceWorkItemOverride !==
+                                                            null
+                                                                ? invoiceWorkItemOverride
+                                                                : def;
+                                                        setInvoiceWorkItemModalDraft(
+                                                            effective
+                                                        );
+                                                        const matchedReport =
+                                                            workLogDataList.find(
+                                                                (d) =>
+                                                                    (d.workLog.subject?.trim() ??
+                                                                        "") === effective
+                                                            );
+                                                        setInvoiceWorkItemModalSelectedReportId(
+                                                            matchedReport?.workLog.id ??
+                                                                null
+                                                        );
+                                                        setInvoiceWorkItemModalOpen(
+                                                            true
+                                                        );
+                                                    }}
+                                                    aria-label="Work Item 수정"
+                                                >
+                                                    <IconEdit className="h-4 w-4" />
+                                                </button>
                                             </div>
                                         </div>
 
@@ -11691,6 +11890,137 @@ export default function InvoiceCreatePage() {
                     <p className="text-sm leading-relaxed text-gray-700">
                         선택한 보고서 PDF를 다운로드하시겠습니까?
                     </p>
+                </BaseModal>
+
+                <BaseModal
+                    isOpen={invoiceWorkItemModalOpen}
+                    onClose={() => {
+                        setInvoiceWorkItemModalOpen(false);
+                        setInvoiceWorkItemModalSelectedReportId(null);
+                    }}
+                    title="Work Item"
+                    maxWidth="max-w-3xl"
+                    footer={
+                        <>
+                            <button
+                                type="button"
+                                className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                                onClick={() => {
+                                    setInvoiceWorkItemModalOpen(false);
+                                    setInvoiceWorkItemModalSelectedReportId(null);
+                                }}
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                                onClick={() => {
+                                    const def =
+                                        pickDefaultWorkItemSubject(workLogDataList);
+                                    const trimmed =
+                                        invoiceWorkItemModalDraft.trim();
+                                    const nextOverride =
+                                        trimmed === "" || trimmed === def
+                                            ? null
+                                            : trimmed;
+                                    pushInvoiceUndoSnapshot();
+                                    setInvoiceWorkItemOverride(nextOverride);
+                                    setInvoiceWorkItemModalOpen(false);
+                                    setInvoiceWorkItemModalSelectedReportId(null);
+                                }}
+                            >
+                                저장
+                            </button>
+                        </>
+                    }
+                >
+                    <p className="mb-4 shrink-0 text-sm text-gray-600">
+
+                    </p>
+                    {/* 고정 높이 + min-h-0 로 좌측 목록만 스크롤 (보고서 많을 때 모달이 무한히 길어지지 않음) */}
+                    <div className="flex min-h-0 flex-col gap-4 md:h-[min(52vh,440px)] md:flex-row md:gap-0">
+                        {/* 좌측: 보고서 Subject 목록 */}
+                        <div className="flex min-h-0 min-w-0 flex-1 flex-col md:w-1/2 md:max-w-[50%] md:pr-4">
+                            <h4 className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                                보고서 Subject
+                            </h4>
+                            <div
+                                className={[
+                                    "min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain rounded-lg border border-gray-200 bg-gray-50 p-3",
+                                    "max-h-[38vh] md:max-h-full",
+                                    "[scrollbar-gutter:stable]",
+                                ].join(" ")}
+                            >
+                                {workLogDataList.length === 0 ? (
+                                    <p className="text-sm text-gray-500">
+                                        보고서가 없습니다.
+                                    </p>
+                                ) : (
+                                    workLogDataList.map((data) => {
+                                        const subjectText =
+                                            data.workLog.subject?.trim() ?? "";
+                                        const isSelected =
+                                            invoiceWorkItemModalSelectedReportId ===
+                                            data.workLog.id;
+                                        return (
+                                            <button
+                                                key={data.workLog.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setInvoiceWorkItemModalDraft(
+                                                        subjectText
+                                                    );
+                                                    setInvoiceWorkItemModalSelectedReportId(
+                                                        data.workLog.id
+                                                    );
+                                                }}
+                                                className={[
+                                                    "w-full rounded-md border px-3 py-2 text-left transition-colors",
+                                                    isSelected
+                                                        ? "border-blue-400 bg-blue-50/80 ring-2 ring-blue-400"
+                                                        : "border-gray-200 bg-white hover:border-blue-200 hover:bg-gray-50",
+                                                ].join(" ")}
+                                            >
+                                                <div className="text-xs font-medium text-gray-500">
+                                                    보고서 #{data.workLog.id}
+                                                    {data.workLog.vessel
+                                                        ? ` · ${data.workLog.vessel}`
+                                                        : ""}
+                                                </div>
+                                                <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                    목적
+                                                </div>
+                                                <div className="text-sm text-gray-900">
+                                                    {subjectText || "—"}
+                                                </div>
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </div>
+                        {/* 우측: Work Item 입력 */}
+                        <div className="flex min-h-0 min-w-0 flex-1 flex-col border-t border-gray-200 pt-4 md:w-1/2 md:max-w-[50%] md:border-t-0 md:border-l md:pt-0 md:pl-4">
+                            <label
+                                htmlFor="invoice-work-item-override"
+                                className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-600"
+                            >
+                                Work Item
+                            </label>
+                            <textarea
+                                id="invoice-work-item-override"
+                                className="min-h-[10rem] w-full flex-1 resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 md:min-h-0"
+                                rows={6}
+                                value={invoiceWorkItemModalDraft}
+                                onChange={(e) => {
+                                    setInvoiceWorkItemModalDraft(e.target.value);
+                                    setInvoiceWorkItemModalSelectedReportId(null);
+                                }}
+                                placeholder="비우고 저장하면 자동 선택 목적(한글 제외 최장)과 동일하게 처리됩니다."
+                            />
+                        </div>
+                    </div>
                 </BaseModal>
 
                 <InvoiceDraftLoadModal

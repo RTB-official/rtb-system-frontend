@@ -45,13 +45,30 @@ export function aggregateWorkLogEntryDateRange(
     return { start, end };
 }
 
+/**
+ * 작업일지 엔트리에서 기간을 못 구할 때(뷰/데이터 누락) 목록 제목 앞 날짜가 사라지지 않도록,
+ * 작성일(로컬 달력)을 한 줄짜리 기간 접두사로 쓴다. 작성일 컬럼과 같은 날짜 기준.
+ */
+function koreanDayLabelFromCreatedAt(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    return `${month}월${day}일`;
+}
+
 export function formatInvoiceReportTableTitle(options: {
     periodStart?: string;
     periodEnd?: string;
     vessel?: string | null;
     subject?: string | null;
+    /** 엔트리 기간이 비었을 때만 사용 (work_log.created_at 등 ISO 문자열) */
+    createdAt?: string | null;
 }): string {
-    const period = formatKoreanPeriod(options.periodStart, options.periodEnd);
+    let period = formatKoreanPeriod(options.periodStart, options.periodEnd);
+    if (!period && options.createdAt?.trim()) {
+        period = koreanDayLabelFromCreatedAt(options.createdAt.trim());
+    }
     const vessel = options.vessel?.trim() ? options.vessel.trim() : "";
     const purpose = options.subject?.trim() ? options.subject.trim() : "";
     const parts = [period, vessel, purpose].filter(Boolean);
