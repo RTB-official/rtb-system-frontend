@@ -8,16 +8,91 @@ import {
 const workLogCache = new Map<number, WorkLogFullData>();
 const workLogInFlight = new Map<number, Promise<WorkLogFullData | null>>();
 
+/** 원격 DB에 `split_group_id` 컬럼 존재 여부 (미확인 | 있음 | 없음) */
+let workLogEntriesSplitGroupIdSupported: boolean | null = null;
+
+function isSplitGroupIdSchemaError(message: string): boolean {
+    return /split_group_id/i.test(message) && /schema cache|could not find/i.test(message);
+}
+
+function omitSplitGroupId<T extends Record<string, unknown>>(payload: T): T {
+    const { split_group_id: _removed, ...rest } = payload as T & { split_group_id?: unknown };
+    return rest as T;
+}
+
 /**
  * `split_group_id` 컬럼이 없는 DB(마이그레이션 미적용)에서는 `null`로 보내는 것도
  * 스키마에 없는 키로 인해 PostgREST 오류가 난다. 값이 있을 때만 컬럼을 포함한다.
- * (자정 분할 id가 케이스면 원격 `work_log_entries`에 `split_group_id` 컬럼이 있어야 저장된다.)
  */
 function workLogEntrySplitGroupIdPayload(splitGroupId: string | null | undefined) {
+    if (workLogEntriesSplitGroupIdSupported === false) return {};
     if (typeof splitGroupId === "string" && splitGroupId.length > 0) {
         return { split_group_id: splitGroupId };
     }
     return {};
+}
+
+type WorkLogEntryRowPayload = Record<string, unknown>;
+
+async function insertWorkLogEntryRow(
+    payload: WorkLogEntryRowPayload
+): Promise<{ id: number }> {
+    const run = (row: WorkLogEntryRowPayload) =>
+        supabase.from("work_log_entries").insert([row]).select("id").single();
+
+    let { data, error } = await run(payload);
+
+    if (
+        error &&
+        isSplitGroupIdSchemaError(error.message) &&
+        "split_group_id" in payload
+    ) {
+        workLogEntriesSplitGroupIdSupported = false;
+        ({ data, error } = await run(omitSplitGroupId(payload)));
+    }
+
+    if (error) throw error;
+    if ("split_group_id" in payload) workLogEntriesSplitGroupIdSupported = true;
+
+    const id = Number((data as { id?: number })?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+        throw new Error(`업무 일지 생성 실패: 반환된 id가 없음 (row=${JSON.stringify(data)})`);
+    }
+    return { id };
+}
+
+async function updateWorkLogEntryRow(
+    payload: WorkLogEntryRowPayload,
+    workLogId: number,
+    entryId: number
+): Promise<{ id: number } | null> {
+    const run = (row: WorkLogEntryRowPayload) =>
+        supabase
+            .from("work_log_entries")
+            .update(row)
+            .eq("work_log_id", workLogId)
+            .eq("id", entryId)
+            .select("id")
+            .maybeSingle();
+
+    let { data, error } = await run(payload);
+
+    if (
+        error &&
+        isSplitGroupIdSchemaError(error.message) &&
+        "split_group_id" in payload
+    ) {
+        workLogEntriesSplitGroupIdSupported = false;
+        ({ data, error } = await run(omitSplitGroupId(payload)));
+    }
+
+    if (error) throw error;
+    if ("split_group_id" in payload) workLogEntriesSplitGroupIdSupported = true;
+    if (!data) return null;
+
+    const id = Number((data as { id?: number }).id);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    return { id };
 }
 
 // ==================== 타입 정의 ====================
@@ -361,32 +436,29 @@ export async function createWorkLog(
                 const { segments } = splitEntryByDate(entry);
 
                 for (const segment of segments) {
-                    const { data: entryData, error: entryError } = await supabase
-                        .from("work_log_entries")
-                        .insert([
-                            {
-                                work_log_id: workLogId,
-                                date_from: segment.dateFrom || null,
-                                time_from: segment.timeFrom || null,
-                                date_to: segment.dateTo || null,
-                                time_to: segment.timeTo || null,
-                                desc_type: segment.descType,
-                                details: segment.details || null,
-                                note: segment.note || null,
-                                move_from: segment.moveFrom || null,
-                                move_to: segment.moveTo || null,
-                                lunch_worked: segment.lunch_worked ?? false,
-                                ...workLogEntrySplitGroupIdPayload(segment.splitGroupId),
-                            },
-                        ])
-                        .select()
-                        .single();
-
-                    if (entryError) {
+                    let entryData: { id: number };
+                    try {
+                        entryData = await insertWorkLogEntryRow({
+                            work_log_id: workLogId,
+                            date_from: segment.dateFrom || null,
+                            time_from: segment.timeFrom || null,
+                            date_to: segment.dateTo || null,
+                            time_to: segment.timeTo || null,
+                            desc_type: segment.descType,
+                            details: segment.details || null,
+                            note: segment.note || null,
+                            move_from: segment.moveFrom || null,
+                            move_to: segment.moveTo || null,
+                            lunch_worked: segment.lunch_worked ?? false,
+                            ...workLogEntrySplitGroupIdPayload(segment.splitGroupId),
+                        });
+                    } catch (entryError) {
+                        const message =
+                            entryError instanceof Error
+                                ? entryError.message
+                                : String(entryError);
                         console.error("Error creating work log entry:", entryError);
-                        throw new Error(
-                            `업무 일지 저장 실패: ${entryError.message}`
-                        );
+                        throw new Error(`업무 일지 저장 실패: ${message}`);
                     }
 
                     // 각 entry의 참여자 저장
@@ -764,6 +836,13 @@ export async function getWorkLogById(
 
             const persons = entryPersonsData?.map((p) => p.person_name) || [];
 
+            if (
+                workLogEntriesSplitGroupIdSupported !== true &&
+                Object.prototype.hasOwnProperty.call(entry, "split_group_id")
+            ) {
+                workLogEntriesSplitGroupIdSupported = true;
+            }
+
             entries.push({
                 id: entry.id,
                 dateFrom: entry.date_from || "",
@@ -1111,43 +1190,24 @@ for (const r of curRows ?? []) {
     let rowKey: { id: number } | null = null;
     
     if (Number.isFinite(incomingId) && incomingId > 0) {
-        const { data: updRow, error: updErr } = await supabase
-          .from("work_log_entries")
-          .update(payload)
-          .eq("work_log_id", workLogId)
-          .eq("id", incomingId)
-          .select("id")
-          .maybeSingle();
-    
-        if (updErr) throw new Error(`업무 일지 업데이트 실패: ${updErr.message}`);
-    
-        if (updRow) {
-            const id = Number((updRow as any).id);
-            if (!Number.isFinite(id) || id <= 0) {
-              throw new Error(`업무 일지 업데이트 실패: 반환된 id가 없음 (row=${JSON.stringify(updRow)})`);
-            }
-            rowKey = { id };
-          }
+        try {
+            const updRow = await updateWorkLogEntryRow(payload, workLogId, incomingId);
+            if (updRow) rowKey = updRow;
+        } catch (updErr) {
+            const message = updErr instanceof Error ? updErr.message : String(updErr);
+            throw new Error(`업무 일지 업데이트 실패: ${message}`);
+        }
       }
     
     
         // UPDATE가 안 됐으면 INSERT
         if (!rowKey) {
-          const { data: insRow, error: insErr } = await supabase
-            .from("work_log_entries")
-            .insert([payload])
-            .select("id")
-            .single();
-    
-          if (insErr) throw new Error(`업무 일지 생성 실패: ${insErr.message}`);
-    
-          rowKey = { id: (insRow as any).id };
-    
-    // 안전 확인
-    const a = Number(rowKey.id);
-    if (!(Number.isFinite(a) && a > 0)) {
-      throw new Error(`업무 일지 생성 실패: 반환된 id가 없음 (row=${JSON.stringify(insRow)})`);
-    }
+          try {
+            rowKey = await insertWorkLogEntryRow(payload);
+          } catch (insErr) {
+            const message = insErr instanceof Error ? insErr.message : String(insErr);
+            throw new Error(`업무 일지 생성 실패: ${message}`);
+          }
         }
         await syncEntryPersons(rowKey.id, e.persons ?? []);
       }

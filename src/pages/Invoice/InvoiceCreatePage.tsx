@@ -11602,6 +11602,13 @@ export default function InvoiceCreatePage() {
                                                         </td>
                                                     </tr>
                                                     )}
+                                                    <tr aria-hidden="true">
+                                                        <td className="border-b border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                    </tr>
                                                     {/* 1.2 Fitters */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">
@@ -11791,6 +11798,13 @@ export default function InvoiceCreatePage() {
                                                         </td>
                                                     </tr>
                                                     )}
+                                                    <tr aria-hidden="true">
+                                                        <td className="border-b border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
+                                                    </tr>
                                                     {/* 2. Daily Allowance */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 font-semibold border-b border-gray-300">2. Daily Allowance</td>
