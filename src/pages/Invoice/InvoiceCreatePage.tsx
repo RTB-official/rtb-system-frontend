@@ -10,7 +10,7 @@ import React, {
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
-import { IconEdit } from "../../components/icons/Icons";
+import { IconEdit, IconSave } from "../../components/icons/Icons";
 import BaseModal from "../../components/ui/BaseModal";
 import TimesheetDateGroupDetailSidePanel from "../../components/panels/TimesheetDateGroupDetailSidePanel";
 import TimesheetRowDetailSidePanel from "../../components/panels/TimesheetRowDetailSidePanel";
@@ -35,6 +35,11 @@ import {
     aggregateWorkLogEntryDateRange,
     formatInvoiceReportTableTitle,
 } from "../../utils/invoiceReportDisplayTitle";
+import {
+    resolveInvoiceRecipientInfo,
+    resolveInvoiceWorkOrderFromDisplay,
+    resolvePrimaryWorkLogOrderGroup,
+} from "../../utils/invoiceOrderGroupDisplay";
 import {
     fetchActiveInvoiceExcelTemplate,
     downloadInvoiceExcelTemplateArrayBuffer,
@@ -608,6 +613,17 @@ function pickDefaultWorkItemSubject(rows: WorkLogFullData[]): string {
         }
     }
     return longest;
+}
+
+/** 인보이스 섹션 Work Item 표시값(override 또는 보고서 기본값) */
+function resolveInvoiceWorkItemDisplay(
+    invoiceWorkItemOverride: string | null,
+    workLogDataList: WorkLogFullData[]
+): string {
+    if (invoiceWorkItemOverride !== null) {
+        return invoiceWorkItemOverride.trim();
+    }
+    return pickDefaultWorkItemSubject(workLogDataList).trim();
 }
 
 function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
@@ -1793,7 +1809,10 @@ export default function InvoiceCreatePage() {
             return;
         }
         const draftTitle =
-            invoiceDraftTitle.trim() || buildDraftTitleFromWorkLogs(workLogDataList);
+            resolveInvoiceWorkItemDisplay(
+                invoiceWorkItemOverride,
+                workLogDataList
+            ) || buildDraftTitleFromWorkLogs(workLogDataList);
         const workLogIds = Array.from(
             new Set(
                 workLogDataList
@@ -1834,7 +1853,7 @@ export default function InvoiceCreatePage() {
         invoiceDraftSaving,
         workLogDataList,
         buildInvoiceDraftPayloadV1,
-        invoiceDraftTitle,
+        invoiceWorkItemOverride,
         buildDraftTitleFromWorkLogs,
         invoiceDraftId,
         showSuccess,
@@ -3119,11 +3138,6 @@ export default function InvoiceCreatePage() {
                     for (const data of results) {
                         if (!data) {
                             showError("일부 보고서를 찾을 수 없습니다.");
-                            continue;
-                        }
-
-                        if (data.workLog.order_group !== "ELU") {
-                            showError("ELU 보고서만 인보이스를 생성할 수 있습니다.");
                             continue;
                         }
 
@@ -5298,16 +5312,30 @@ export default function InvoiceCreatePage() {
 
     const shipNameDisplay = workLogDataList[0]?.workLog.vessel || "";
     const workPlaceDisplay = mapWorkPlace(workLogDataList[0]?.workLog.location || null);
-    const workOrderFromDisplay = "Everllence ELU KOREA";
-    const engineTypeDisplay = workLogDataList[0]?.workLog.engine || "";
-    const workItemDefaultFromReports = useMemo(
-        () => pickDefaultWorkItemSubject(workLogDataList),
+    const primaryOrderGroup = useMemo(
+        () =>
+            resolvePrimaryWorkLogOrderGroup(
+                workLogDataList.map((data) => data.workLog)
+            ),
         [workLogDataList]
     );
-    const workItemDisplay =
-        invoiceWorkItemOverride !== null
-            ? invoiceWorkItemOverride
-            : workItemDefaultFromReports;
+    const workOrderFromDisplay = useMemo(
+        () => resolveInvoiceWorkOrderFromDisplay(primaryOrderGroup),
+        [primaryOrderGroup]
+    );
+    const invoiceRecipientDisplay = useMemo(
+        () => resolveInvoiceRecipientInfo(primaryOrderGroup),
+        [primaryOrderGroup]
+    );
+    const engineTypeDisplay = workLogDataList[0]?.workLog.engine || "";
+    const workItemDisplay = useMemo(
+        () =>
+            resolveInvoiceWorkItemDisplay(
+                invoiceWorkItemOverride,
+                workLogDataList
+            ),
+        [invoiceWorkItemOverride, workLogDataList]
+    );
     /** PDF 메뉴 목록: 짧을 때는 기존과 동일, 항목이 많으면 max-height만 완만히 증가 */
     const invoicePdfMenuListMaxHeight = useMemo(() => {
         const n = workLogDataList.length;
@@ -5599,6 +5627,60 @@ export default function InvoiceCreatePage() {
         formatInvoiceManpowerKrwWithCommas(
             Math.round((Math.round(hours * 10) / 10) * unitKrw)
         );
+    const invoiceLineItemsSpacerCellClass =
+        "px-4 py-2 text-sm leading-5 border-b border-gray-300";
+    const renderInvoiceLineItemsSpacerRow = () => (
+        <tr aria-hidden="true">
+            <td className={invoiceLineItemsSpacerCellClass}>
+                <span
+                    className="block h-5 overflow-hidden opacity-0"
+                    aria-hidden="true"
+                >
+                    &nbsp;
+                </span>
+            </td>
+            <td
+                className={`${invoiceLineItemsSpacerCellClass} border-l border-gray-300 text-center`}
+            >
+                <span
+                    className="block h-5 overflow-hidden opacity-0"
+                    aria-hidden="true"
+                >
+                    &nbsp;
+                </span>
+            </td>
+            <td
+                className={`${invoiceLineItemsSpacerCellClass} border-l border-gray-300 text-center`}
+            >
+                <span
+                    className="block h-5 overflow-hidden opacity-0"
+                    aria-hidden="true"
+                >
+                    &nbsp;
+                </span>
+            </td>
+            <td
+                className={`${invoiceLineItemsSpacerCellClass} border-l border-gray-300 text-right`}
+            >
+                <span
+                    className="block h-5 overflow-hidden opacity-0"
+                    aria-hidden="true"
+                >
+                    &nbsp;
+                </span>
+            </td>
+            <td
+                className={`${invoiceLineItemsSpacerCellClass} border-l border-gray-300 text-right`}
+            >
+                <span
+                    className="block h-5 overflow-hidden opacity-0"
+                    aria-hidden="true"
+                >
+                    &nbsp;
+                </span>
+            </td>
+        </tr>
+    );
     /** R&D는 항상 행(그룹) 단위. 노말은 "날짜별 보기"(`date:` 키)일 때만 행 단위 — 인원별 보기는 날짜 합산 유지 */
     const usesRowScopedMealGroups = (
         sectionTitle: string,
@@ -8136,13 +8218,18 @@ export default function InvoiceCreatePage() {
         if (invoiceDraftId) {
             return;
         }
-        setInvoiceDraftTitle((previous) => {
-            if (previous.trim().length > 0) {
-                return previous;
-            }
-            return buildDraftTitleFromWorkLogs(workLogDataList);
-        });
-    }, [workLogDataList, invoiceDraftId, buildDraftTitleFromWorkLogs]);
+        setInvoiceDraftTitle(
+            resolveInvoiceWorkItemDisplay(
+                invoiceWorkItemOverride,
+                workLogDataList
+            ) || buildDraftTitleFromWorkLogs(workLogDataList)
+        );
+    }, [
+        workLogDataList,
+        invoiceDraftId,
+        invoiceWorkItemOverride,
+        buildDraftTitleFromWorkLogs,
+    ]);
 
     const getTimesheetRowsBySectionTitle = (sectionTitle: string) => {
         const normalSection = [
@@ -10043,33 +10130,22 @@ export default function InvoiceCreatePage() {
                     rightContent={
                         !loading && workLogDataList.length > 0 ? (
                             <div className="flex items-center gap-1.5 md:gap-2">
-                                <input
-                                    type="text"
-                                    value={invoiceDraftTitle}
-                                    onChange={(event) =>
-                                        setInvoiceDraftTitle(event.target.value)
-                                    }
-                                    placeholder="드래프트 제목"
-                                    className="h-12 w-40 rounded-full border border-gray-200 bg-white px-4 text-xs font-semibold text-gray-800 outline-none transition-colors focus:border-blue-400 md:w-56"
-                                    aria-label="인보이스 드래프트 제목"
-                                />
                                 <button
                                     type="button"
                                     onClick={() => void handleSaveInvoiceDraft()}
                                     disabled={invoiceDraftSaving}
-                                    className="h-12 min-w-[3.25rem] shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2.5 text-xs font-bold tracking-tight text-blue-700 transition-colors hover:bg-blue-100 disabled:pointer-events-none disabled:opacity-50"
+                                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-50"
                                     title="드래프트 저장"
+                                    aria-label="드래프트 저장"
                                     aria-busy={invoiceDraftSaving}
                                 >
-                                    {invoiceDraftSaving ? "…" : "저장"}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleOpenInvoiceDraftLoadModal}
-                                    className="h-12 min-w-[3.25rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100"
-                                    title="드래프트 불러오기"
-                                >
-                                    불러오기
+                                    {invoiceDraftSaving ? (
+                                        <span className="text-sm font-bold">
+                                            …
+                                        </span>
+                                    ) : (
+                                        <IconSave />
+                                    )}
                                 </button>
                                 <button
                                     type="button"
@@ -10082,7 +10158,7 @@ export default function InvoiceCreatePage() {
                                     aria-label="인보이스 엑셀 내보내기"
                                     title="엑셀"
                                 >
-                                    {invoiceExcelExporting ? "…" : "엑셀"}
+                                    {invoiceExcelExporting ? "…" : "EXL"}
                                 </button>
                                 <button
                                     ref={invoicePdfMenuButtonRef}
@@ -10416,7 +10492,7 @@ export default function InvoiceCreatePage() {
                                                             {mapWorkPlace(workLogDataList[0]?.workLog.location || null)}
                                                         </td>
                                                         <td className="px-4 py-2 text-gray-900 border-b border-l border-gray-300">
-                                                            Everllence ELU KOREA
+                                                            {workOrderFromDisplay}
                                                         </td>
                                                         <td className="px-4 py-2 text-gray-900 border-b border-l border-gray-300"></td>
                                                     </tr>
@@ -11293,10 +11369,16 @@ export default function InvoiceCreatePage() {
                                         {/* Invoice to (Left Column) */}
                                         <div className="flex max-w-full flex-col gap-3">
                                             <h3 className="text-sm font-semibold text-gray-900">Invoice to</h3>
-                                            <div className="text-sm text-gray-900">Everllence</div>
-                                            <div className="text-sm text-gray-900">2-Stroke Business, Operation / Engineering</div>
-                                            <div className="text-sm text-gray-900">Teglholmsgade 41</div>
-                                            <div className="text-sm text-gray-900">2450 Copenhagen SV, Denmark</div>
+                                            {invoiceRecipientDisplay.companyName ? (
+                                                <div className="text-sm text-gray-900">
+                                                    {invoiceRecipientDisplay.companyName}
+                                                </div>
+                                            ) : null}
+                                            {invoiceRecipientDisplay.addressLines.map((line) => (
+                                                <div key={line} className="text-sm text-gray-900">
+                                                    {line}
+                                                </div>
+                                            ))}
                                         </div>
 
                                         {/* Job Information (Middle Column) */}
@@ -11602,13 +11684,7 @@ export default function InvoiceCreatePage() {
                                                         </td>
                                                     </tr>
                                                     )}
-                                                    <tr aria-hidden="true">
-                                                        <td className="border-b border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                    </tr>
+                                                    {renderInvoiceLineItemsSpacerRow()}
                                                     {/* 1.2 Fitters */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">
@@ -11798,13 +11874,7 @@ export default function InvoiceCreatePage() {
                                                         </td>
                                                     </tr>
                                                     )}
-                                                    <tr aria-hidden="true">
-                                                        <td className="border-b border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                        <td className="border-b border-gray-300 border-l border-gray-300 py-2 px-4"></td>
-                                                    </tr>
+                                                    {renderInvoiceLineItemsSpacerRow()}
                                                     {/* 2. Daily Allowance */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 font-semibold border-b border-gray-300">2. Daily Allowance</td>

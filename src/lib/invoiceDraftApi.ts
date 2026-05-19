@@ -57,6 +57,8 @@ export type InvoiceDraftRow = {
     status: InvoiceDraftStatus;
     created_at: string;
     updated_at: string;
+    /** admin 전체 목록 조회 시 profiles 기준 표시명 */
+    creator_name?: string | null;
 };
 
 export type InvoiceDraftUpsertInput = {
@@ -66,9 +68,13 @@ export type InvoiceDraftUpsertInput = {
     status?: InvoiceDraftStatus;
 };
 
-type InvoiceDraftDbRow = Omit<InvoiceDraftRow, "work_log_ids"> & {
+type InvoiceDraftDbRow = Omit<InvoiceDraftRow, "work_log_ids" | "payload"> & {
     work_log_ids: number[] | null;
+    payload?: InvoiceDraftPayload | null;
 };
+
+const INVOICE_DRAFT_LIST_SELECT =
+    "id, created_by, title, work_log_ids, status, created_at, updated_at";
 
 /** PostgREST 오류 등 `Error`를 상속하지 않는 객체 대응 */
 function toThrownError(err: unknown, fallback: string): Error {
@@ -97,6 +103,7 @@ const normalizeDraftRow = (row: InvoiceDraftDbRow): InvoiceDraftRow => ({
               .map((id) => Number(id))
               .filter((id) => Number.isFinite(id))
         : [],
+    payload: (row.payload ?? {}) as InvoiceDraftPayload,
 });
 
 const getCurrentUserId = async (): Promise<string> => {
@@ -111,6 +118,103 @@ const getCurrentUserId = async (): Promise<string> => {
         throw new Error("로그인이 필요합니다.");
     }
     return user.id;
+};
+
+const getCurrentUserIsAdminForUserId = async (
+    userId: string
+): Promise<boolean> => {
+    const { data, error } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .maybeSingle();
+    if (error) {
+        throw error;
+    }
+    return data?.role === "admin";
+};
+
+const getCurrentUserIsAdmin = async (): Promise<boolean> => {
+    const userId = await getCurrentUserId();
+    return getCurrentUserIsAdminForUserId(userId);
+};
+
+/** 목록 화면용: payload 없이 work_log_ids로 호선 힌트만 채움 */
+const attachVesselHintsFromWorkLogs = async (
+    rows: InvoiceDraftRow[]
+): Promise<InvoiceDraftRow[]> => {
+    const workLogIds = [
+        ...new Set(
+            rows
+                .flatMap((row) => row.work_log_ids)
+                .filter((id) => Number.isFinite(id))
+        ),
+    ];
+    if (workLogIds.length === 0) {
+        return rows;
+    }
+
+    const { data, error } = await supabase
+        .from("work_logs")
+        .select("id, vessel")
+        .in("id", workLogIds);
+
+    if (error || !data?.length) {
+        return rows;
+    }
+
+    const vesselByWorkLogId = new Map(
+        data.map((row) => [row.id, row.vessel?.trim() ?? ""])
+    );
+
+    return rows.map((draft) => {
+        const vessel =
+            draft.work_log_ids
+                .map((id) => vesselByWorkLogId.get(id))
+                .find((value) => value) ?? "";
+
+        if (!vessel) {
+            return draft;
+        }
+
+        return {
+            ...draft,
+            payload: {
+                ...draft.payload,
+                workLogDataList: [
+                    {
+                        workLog: { vessel },
+                    } as WorkLogFullData,
+                ],
+            },
+        };
+    });
+};
+
+const attachCreatorNames = async (
+    rows: InvoiceDraftRow[]
+): Promise<InvoiceDraftRow[]> => {
+    const creatorIds = [...new Set(rows.map((row) => row.created_by))];
+    if (creatorIds.length === 0) {
+        return rows;
+    }
+    const { data: profiles, error } = await supabase
+        .from("profiles")
+        .select("id, name, username")
+        .in("id", creatorIds);
+    if (error) {
+        throw error;
+    }
+    const nameById = new Map(
+        (profiles ?? []).map((profile) => [
+            profile.id,
+            profile.name?.trim() || profile.username?.trim() || "",
+        ])
+    );
+    return rows.map((row) => ({
+        ...row,
+        creator_name: nameById.get(row.created_by) || null,
+    }));
 };
 
 export async function createInvoiceDraft(
@@ -175,15 +279,31 @@ export async function getInvoiceDraftById(
 
 export async function listInvoiceDraftsByUser(): Promise<InvoiceDraftRow[]> {
     const userId = await getCurrentUserId();
-    const { data, error } = await supabase
+    const isAdmin = await getCurrentUserIsAdminForUserId(userId);
+
+    let query = supabase
         .from("invoice_drafts")
-        .select("*")
-        .eq("created_by", userId)
+        .select(INVOICE_DRAFT_LIST_SELECT)
         .order("updated_at", { ascending: false });
+
+    if (!isAdmin) {
+        query = query.eq("created_by", userId);
+    }
+
+    const { data, error } = await query;
     if (error) {
         throw error;
     }
-    return (data ?? []).map((row) => normalizeDraftRow(row as InvoiceDraftDbRow));
+
+    const rows = await attachVesselHintsFromWorkLogs(
+        (data ?? []).map((row) => normalizeDraftRow(row as InvoiceDraftDbRow))
+    );
+
+    if (!isAdmin) {
+        return rows;
+    }
+
+    return attachCreatorNames(rows);
 }
 
 export async function deleteInvoiceDraft(draftId: string): Promise<void> {

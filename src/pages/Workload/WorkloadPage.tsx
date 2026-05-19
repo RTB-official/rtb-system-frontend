@@ -647,9 +647,17 @@ export default function WorkloadPage() {
                     lastMonthKeyRef.current = key;
                     loadLastMonth(newChartData);
                 }
-            } catch {
+            } catch (e) {
+                console.error("워크로드 데이터 로드 실패:", e);
                 if (!cancelled && loadRequestIdRef.current === requestId) {
+                    setChartData([]);
+                    setTableData([]);
                     setLoading(false);
+                    pushToast({
+                        type: "error",
+                        message: "워크로드 집계 데이터를 불러오지 못했습니다.",
+                        duration: 4000,
+                    });
                 }
             }
         };
@@ -726,50 +734,44 @@ export default function WorkloadPage() {
     }, [tableData, currentPage, itemsPerPage]);
 
 
-    // 순수 작업시간 평균 계산 (이번 달) - "(프리)"와 공무팀 제외, 작업시간만 계산
+    // profiles.department === "공사팀" 인원만 (차트 평균선용)
+    const gongsaTeamNameSet = useMemo(
+        () =>
+            new Set(
+                allProfilesForAverage
+                    .filter((p) => p.department === "공사팀")
+                    .map((p) => p.name)
+            ),
+        [allProfilesForAverage]
+    );
+
+    // 순수 작업시간 평균 (이번 달) — department=공사팀 프로필 인원만, 작업시간만
     const averageWorkTime = useMemo(() => {
-        if (chartData.length === 0) return 0;
-        
-        const getTeamText = (p: any) =>
-            String(
-                p?.team ??
-                p?.team_name ??
-                p?.department ??
-                p?.dept ??
-                p?.group ??
-                p?.group_name ??
-                ""
-            );
-        
-        const getPersonDepartment = (name: string) => {
-            const profile = allProfilesForAverage.find((p: any) => p.name === name);
-            if (!profile) return null;
-            const team = getTeamText(profile);
-            if (team.includes("공무") && !team.includes("공사")) return "공무팀";
-            if (team.includes("공사")) return "공사팀";
-            return null;
-        };
-        
-        // "(프리)"와 공무팀 제외한 데이터만 사용
-        const filteredForAverage = chartData.filter((d) => {
-            if (d.name.includes("(프리)")) return false;
-            const dept = getPersonDepartment(d.name);
-            if (dept === "공무팀") return false;
-            return true;
-        });
-        
+        if (chartData.length === 0 || gongsaTeamNameSet.size === 0) return 0;
+
+        const filteredForAverage = chartData.filter(
+            (d) => gongsaTeamNameSet.has(d.name) && !d.name.includes("(프리)")
+        );
+
         if (filteredForAverage.length === 0) return 0;
-        // ✅ 작업시간만 평균 계산 (이동, 대기 시간 제외)
         const total = filteredForAverage.reduce((sum, d) => sum + d.작업, 0);
         return Math.round(total / filteredForAverage.length);
-    }, [chartData, allProfilesForAverage]);
+    }, [chartData, gongsaTeamNameSet]);
 
-    // 지난달 작업시간 평균
+    // 지난달 작업시간 평균 — 동일하게 department=공사팀만
     const lastMonthAverageWorkTime = useMemo(() => {
-        if (lastMonthChartData.length === 0) return 0;
-        const total = lastMonthChartData.reduce((sum, d) => sum + (d.작업 ?? 0), 0);
-        return Math.round(total / lastMonthChartData.length);
-    }, [lastMonthChartData]);
+        if (lastMonthChartData.length === 0 || gongsaTeamNameSet.size === 0) {
+            return 0;
+        }
+
+        const filtered = lastMonthChartData.filter(
+            (d) => gongsaTeamNameSet.has(d.name) && !d.name.includes("(프리)")
+        );
+
+        if (filtered.length === 0) return 0;
+        const total = filtered.reduce((sum, d) => sum + (d.작업 ?? 0), 0);
+        return Math.round(total / filtered.length);
+    }, [lastMonthChartData, gongsaTeamNameSet]);
 
     // Y축 최대값 및 ticks 계산 (차트용) — 보조 지표 켜져 있으면 해당 값까지 포함해 스케일 확대
     const { maxYValue, yAxisTicks } = useMemo(() => {

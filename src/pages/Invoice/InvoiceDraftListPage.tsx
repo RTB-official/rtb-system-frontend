@@ -1,51 +1,261 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageContainer from "../../components/common/PageContainer";
 import Header from "../../components/common/Header";
 import Sidebar from "../../components/Sidebar";
 import Table from "../../components/common/Table";
-import Button from "../../components/common/Button";
-import { IconInvoice } from "../../components/icons/Icons";
+import Input from "../../components/common/Input";
 import { useToast } from "../../components/ui/ToastProvider";
+import BaseModal from "../../components/ui/BaseModal";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
+import { IconTrash } from "../../components/icons/Icons";
 import {
+    deleteInvoiceDraft,
     listInvoiceDraftsByUser,
     type InvoiceDraftRow,
 } from "../../lib/invoiceDraftApi";
 import { PATHS } from "../../utils/paths";
+import { useUser } from "../../hooks/useUser";
+import {
+    doesInvoiceDraftVesselGroupMatchSearch,
+    groupInvoiceDraftsByVessel,
+} from "../../utils/invoiceDraftVesselGrouping";
+
+function formatInvoiceDraftModifiedAt(value: string): {
+    date: string;
+    time: string;
+} {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return { date: "-", time: "" };
+    }
+
+    const date = new Intl.DateTimeFormat("ko-KR", {
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+    }).format(parsed);
+
+    const parts = new Intl.DateTimeFormat("ko-KR", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+    }).formatToParts(parsed);
+
+    const dayPeriod =
+        parts.find((part) => part.type === "dayPeriod")?.value ?? "";
+    const hour = parts.find((part) => part.type === "hour")?.value ?? "";
+    const minute = parts.find((part) => part.type === "minute")?.value ?? "";
+    const time =
+        dayPeriod && hour && minute ? `${dayPeriod} ${hour}:${minute}` : "";
+
+    return { date, time };
+}
 
 export default function InvoiceDraftListPage() {
     const navigate = useNavigate();
-    const { showError } = useToast();
+    const { showError, showSuccess } = useToast();
+    const { userPermissions } = useUser();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [drafts, setDrafts] = useState<InvoiceDraftRow[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedVessel, setSelectedVessel] = useState<string | null>(null);
+    const [draftDeleteTarget, setDraftDeleteTarget] =
+        useState<InvoiceDraftRow | null>(null);
+    const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+    const [search, setSearch] = useState("");
 
-    const loadDrafts = useCallback(async () => {
-        setLoading(true);
-        try {
-            const rows = await listInvoiceDraftsByUser();
-            setDrafts(rows);
-        } catch (e) {
-            console.error(e);
-            showError(
-                e instanceof Error
-                    ? e.message
-                    : "저장 목록을 불러오는 중 오류가 발생했습니다."
-            );
-        } finally {
-            setLoading(false);
-        }
-    }, [showError]);
+    const showErrorRef = useRef(showError);
+    showErrorRef.current = showError;
 
     useEffect(() => {
-        void loadDrafts();
-    }, [loadDrafts]);
+        let cancelled = false;
 
-    const openDraft = (row: InvoiceDraftRow) => {
-        navigate(
-            `${PATHS.invoiceCreate}?draftId=${encodeURIComponent(row.id)}`
-        );
-    };
+        const loadDrafts = async () => {
+            setLoading(true);
+            try {
+                const rows = await listInvoiceDraftsByUser();
+                if (!cancelled) {
+                    setDrafts(rows);
+                }
+            } catch (e) {
+                console.error(e);
+                if (!cancelled) {
+                    showErrorRef.current(
+                        e instanceof Error
+                            ? e.message
+                            : "저장 목록을 불러오는 중 오류가 발생했습니다."
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        void loadDrafts();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const vesselGroups = useMemo(
+        () => groupInvoiceDraftsByVessel(drafts),
+        [drafts]
+    );
+
+    const searchQuery = search.trim();
+    const isSearchActive = searchQuery.length > 0;
+
+    const modalVesselGroup = useMemo(
+        () =>
+            selectedVessel
+                ? vesselGroups.find((group) => group.vessel === selectedVessel) ??
+                  null
+                : null,
+        [selectedVessel, vesselGroups]
+    );
+
+    useEffect(() => {
+        if (selectedVessel && !modalVesselGroup) {
+            setSelectedVessel(null);
+        }
+    }, [selectedVessel, modalVesselGroup]);
+
+    const openDraft = useCallback(
+        (row: InvoiceDraftRow) => {
+            navigate(
+                `${PATHS.invoiceCreate}?draftId=${encodeURIComponent(row.id)}`
+            );
+        },
+        [navigate]
+    );
+
+    const closeVesselModal = useCallback(() => {
+        setSelectedVessel(null);
+    }, []);
+
+    const handleConfirmDeleteDraft = useCallback(async () => {
+        if (!draftDeleteTarget || deletingDraftId) {
+            return;
+        }
+
+        const draftId = draftDeleteTarget.id;
+        setDeletingDraftId(draftId);
+        try {
+            await deleteInvoiceDraft(draftId);
+            setDrafts((previous) =>
+                previous.filter((draft) => draft.id !== draftId)
+            );
+            showSuccess("드래프트를 삭제했습니다.");
+            setDraftDeleteTarget(null);
+        } catch (error) {
+            console.error(error);
+            showError(
+                error instanceof Error
+                    ? error.message
+                    : "드래프트를 삭제하지 못했습니다."
+            );
+        } finally {
+            setDeletingDraftId(null);
+        }
+    }, [deletingDraftId, draftDeleteTarget, showError, showSuccess]);
+
+    const draftTableColumns = useMemo(
+        () => [
+            ...(userPermissions.isAdmin
+                ? [
+                      {
+                          key: "creator_name",
+                          label: "작성자",
+                          width: "88px",
+                          headerClassName: "px-3",
+                          cellClassName: "px-3 min-w-0",
+                          render: (_: unknown, row: InvoiceDraftRow) => (
+                              <span className="block truncate text-gray-600">
+                                  {row.creator_name?.trim() || "-"}
+                              </span>
+                          ),
+                      },
+                  ]
+                : []),
+            {
+                key: "title",
+                label: "제목",
+                headerClassName: "px-3",
+                cellClassName: "px-3 min-w-0",
+                render: (_: unknown, row: InvoiceDraftRow) => (
+                    <span
+                        className="block truncate font-medium text-gray-900"
+                        title={row.title?.trim() || "(제목 없음)"}
+                    >
+                        {row.title?.trim() || "(제목 없음)"}
+                    </span>
+                ),
+            },
+            {
+                key: "work_log_ids",
+                label: "보고서",
+                width: "64px",
+                align: "right" as const,
+                headerClassName: "whitespace-nowrap px-2",
+                cellClassName: "px-2",
+                render: (_: unknown, row: InvoiceDraftRow) => (
+                    <span className="text-gray-600 whitespace-nowrap">
+                        {row.work_log_ids.length}건
+                    </span>
+                ),
+            },
+            {
+                key: "updated_at",
+                label: "수정일시",
+                width: "116px",
+                align: "right" as const,
+                headerClassName: "whitespace-nowrap px-2",
+                cellClassName: "px-2",
+                render: (_: unknown, row: InvoiceDraftRow) => {
+                    const { date, time } = formatInvoiceDraftModifiedAt(
+                        row.updated_at
+                    );
+                    return (
+                        <span className="inline-block text-right text-gray-600">
+                            <span className="block whitespace-nowrap">{date}</span>
+                            {time ? (
+                                <span className="block whitespace-nowrap">
+                                    {time}
+                                </span>
+                            ) : null}
+                        </span>
+                    );
+                },
+            },
+            {
+                key: "actions",
+                label: "",
+                width: "56px",
+                align: "center" as const,
+                headerClassName: "pl-1 pr-3",
+                cellClassName: "pl-1 pr-3",
+                render: (_: unknown, row: InvoiceDraftRow) => (
+                    <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+                        aria-label="드래프트 삭제"
+                        disabled={deletingDraftId === row.id}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setDraftDeleteTarget(row);
+                        }}
+                    >
+                        <IconTrash className="w-5 h-5" />
+                    </button>
+                ),
+            },
+        ],
+        [deletingDraftId, userPermissions.isAdmin]
+    );
 
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
@@ -61,100 +271,133 @@ export default function InvoiceDraftListPage() {
                 <Header
                     title="저장 목록"
                     onMenuClick={() => setSidebarOpen(true)}
-                    rightContent={
-                        <Button
-                            variant="outline"
-                            size="lg"
-                            onClick={() => void loadDrafts()}
-                            disabled={loading}
-                        >
-                            새로고침
-                        </Button>
-                    }
                 />
 
                 <PageContainer className="flex-1 overflow-y-auto pt-0 pb-24">
-                    <div className="space-y-4">
-                        <div className="bg-white border border-gray-200 rounded-2xl p-0 md:p-0 shadow-sm mt-4">
-                            {loading ? (
-                                <div className="py-10 text-center text-gray-500 text-sm">
-                                    로딩 중...
-                                </div>
-                            ) : (
-                                <Table
-                                    className="text-[14px]"
-                                    emptyText="저장된 인보이스 드래프트가 없습니다."
-                                    columns={[
-                                        {
-                                            key: "title",
-                                            label: "제목",
-                                            width: "40%",
-                                            render: (_: unknown, row: InvoiceDraftRow) => (
-                                                <span className="text-gray-900 font-medium">
-                                                    {row.title?.trim() || "(제목 없음)"}
-                                                </span>
-                                            ),
-                                        },
-                                        {
-                                            key: "work_log_ids",
-                                            label: "보고서",
-                                            width: "12%",
-                                            render: (_: unknown, row: InvoiceDraftRow) => (
-                                                <span className="text-gray-600">
-                                                    {row.work_log_ids.length}건
-                                                </span>
-                                            ),
-                                        },
-                                        {
-                                            key: "status",
-                                            label: "상태",
-                                            width: "12%",
-                                            render: (_: unknown, row: InvoiceDraftRow) => (
-                                                <span className="text-gray-600">
-                                                    {row.status === "final" ? "Final" : "Draft"}
-                                                </span>
-                                            ),
-                                        },
-                                        {
-                                            key: "updated_at",
-                                            label: "수정일시",
-                                            width: "22%",
-                                            render: (_: unknown, row: InvoiceDraftRow) => (
-                                                <span className="text-gray-600">
-                                                    {new Date(row.updated_at).toLocaleString(
-                                                        "ko-KR"
-                                                    )}
-                                                </span>
-                                            ),
-                                        },
-                                        {
-                                            key: "actions",
-                                            label: "",
-                                            width: "14%",
-                                            render: (_: unknown, row: InvoiceDraftRow) => (
-                                                <Button
-                                                    variant="primary"
-                                                    size="sm"
-                                                    icon={<IconInvoice />}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        openDraft(row);
-                                                    }}
-                                                >
-                                                    열기
-                                                </Button>
-                                            ),
-                                        },
-                                    ]}
-                                    data={drafts}
-                                    rowKey="id"
-                                    onRowClick={(row: InvoiceDraftRow) => openDraft(row)}
-                                />
-                            )}
-                        </div>
+                    <div className="mt-4">
+                        <Input
+                            value={search}
+                            onChange={setSearch}
+                            placeholder="호선 검색"
+                            icon={
+                                <svg
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    aria-hidden="true"
+                                >
+                                    <circle cx="11" cy="11" r="7" />
+                                    <line x1="16.65" y1="16.65" x2="21" y2="21" />
+                                </svg>
+                            }
+                            iconPosition="left"
+                        />
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        {loading ? (
+                            <div className="col-span-full bg-white border border-gray-200 rounded-2xl py-10 text-center text-gray-500 text-sm shadow-sm">
+                                로딩 중...
+                            </div>
+                        ) : vesselGroups.length === 0 ? (
+                            <div className="col-span-full bg-white border border-gray-200 rounded-2xl py-10 text-center text-gray-500 text-sm shadow-sm">
+                                저장된 인보이스 드래프트가 없습니다.
+                            </div>
+                        ) : (
+                            vesselGroups.map((group) => {
+                                const latestLabel = group.latestUpdatedAt
+                                    ? new Date(
+                                          group.latestUpdatedAt
+                                      ).toLocaleString("ko-KR")
+                                    : "";
+                                const isSearchMatch =
+                                    isSearchActive &&
+                                    doesInvoiceDraftVesselGroupMatchSearch(
+                                        group,
+                                        searchQuery
+                                    );
+
+                                return (
+                                    <button
+                                        key={group.vessel}
+                                        type="button"
+                                        onClick={() =>
+                                            setSelectedVessel(group.vessel)
+                                        }
+                                        className={`flex min-w-0 flex-col rounded-2xl border px-4 py-4 text-left shadow-sm transition-colors ${
+                                            isSearchMatch
+                                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200 hover:border-blue-500 hover:bg-blue-100/80"
+                                                : isSearchActive
+                                                  ? "border-gray-200 bg-white opacity-45 hover:opacity-70"
+                                                  : "border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40"
+                                        }`}
+                                    >
+                                        <p className="text-[15px] font-semibold text-gray-900 truncate lg:text-[16px]">
+                                            {group.vessel}
+                                        </p>
+                                        <p className="mt-1 text-[12px] text-gray-500 line-clamp-2">
+                                            {group.drafts.length}건
+                                            {latestLabel
+                                                ? ` · ${latestLabel}`
+                                                : ""}
+                                        </p>
+                                    </button>
+                                );
+                            })
+                        )}
                     </div>
                 </PageContainer>
             </div>
+
+            <BaseModal
+                isOpen={modalVesselGroup !== null}
+                onClose={closeVesselModal}
+                title={
+                    modalVesselGroup
+                        ? `${modalVesselGroup.vessel} · 총 ${modalVesselGroup.drafts.length}건`
+                        : "드래프트 목록"
+                }
+                maxWidth="max-w-4xl"
+            >
+                {modalVesselGroup && (
+                    <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200">
+                        <Table
+                            className="text-[14px] table-fixed"
+                            columns={draftTableColumns}
+                            data={modalVesselGroup.drafts}
+                            rowKey="id"
+                            rowClassName={() => "group"}
+                            outerBorder={false}
+                            scrollX={false}
+                            onRowClick={(row: InvoiceDraftRow) =>
+                                openDraft(row)
+                            }
+                        />
+                    </div>
+                )}
+            </BaseModal>
+
+            <ConfirmDialog
+                isOpen={draftDeleteTarget !== null}
+                onClose={() => {
+                    if (!deletingDraftId) {
+                        setDraftDeleteTarget(null);
+                    }
+                }}
+                onConfirm={() => void handleConfirmDeleteDraft()}
+                title="드래프트 삭제"
+                message={
+                    draftDeleteTarget
+                        ? `"${draftDeleteTarget.title?.trim() || "(제목 없음)"}" 드래프트를 삭제할까요?`
+                        : "이 드래프트를 삭제할까요?"
+                }
+                confirmText="삭제"
+                cancelText="취소"
+                isLoading={deletingDraftId !== null}
+            />
         </div>
     );
 }

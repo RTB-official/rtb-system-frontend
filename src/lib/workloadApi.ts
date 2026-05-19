@@ -224,8 +224,184 @@ function formatHoursOnly(hours: number): string {
     return `${Math.round(hours)}시간`;
 }
 
+const SUPABASE_PAGE_SIZE = 1000;
+/** PostgREST `.in()` URL 길이 제한 회피 */
+const IN_QUERY_CHUNK_SIZE = 150;
+
+type RawWorkloadEntryRow = {
+    id: number;
+    work_log_id: number;
+    date_from: string | null;
+    time_from: string | null;
+    date_to: string | null;
+    time_to: string | null;
+    desc_type: string;
+    work_hours: number | null;
+    lunch_worked?: boolean;
+};
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+    if (items.length === 0) return [];
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+}
+
+function getWorkloadPeriodBounds(filters?: {
+    year?: number;
+    month?: number;
+}): { filterStartDate: string; filterEndDate: string } | null {
+    if (!filters?.year) return null;
+    const year = filters.year;
+    if (filters.month !== undefined) {
+        const month = filters.month;
+        const filterStartDate = `${year}-${String(month).padStart(2, "0")}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        const filterEndDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+        return { filterStartDate, filterEndDate };
+    }
+    return { filterStartDate: `${year}-01-01`, filterEndDate: `${year}-12-31` };
+}
+
+function filterEntriesByPeriod(
+    entries: RawWorkloadEntryRow[],
+    period: { filterStartDate: string; filterEndDate: string }
+): RawWorkloadEntryRow[] {
+    return entries.filter((entry) => {
+        if (!entry.date_from || !entry.date_to) return false;
+        return (
+            entry.date_from <= period.filterEndDate &&
+            entry.date_to >= period.filterStartDate
+        );
+    });
+}
+
+async function fetchWorkloadEntryRows(
+    period: { filterStartDate: string; filterEndDate: string } | null
+): Promise<RawWorkloadEntryRow[]> {
+    const withLunch =
+        "id, work_log_id, date_from, time_from, date_to, time_to, desc_type, work_hours, lunch_worked";
+    const withoutLunch =
+        "id, work_log_id, date_from, time_from, date_to, time_to, desc_type, work_hours";
+
+    const fetchPage = async (selectCols: string, from: number) => {
+        let q = supabase
+            .from("work_log_entries_with_hours")
+            .select(selectCols)
+            .order("date_from", { ascending: true })
+            .order("time_from", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+        if (period) {
+            q = q
+                .lte("date_from", period.filterEndDate)
+                .gte("date_to", period.filterStartDate);
+        }
+
+        return q;
+    };
+
+    const all: RawWorkloadEntryRow[] = [];
+    let from = 0;
+    let selectCols = withLunch;
+    let lunchColumnMissing = false;
+
+    while (true) {
+        const { data, error } = await fetchPage(selectCols, from);
+
+        if (error) {
+            if (!lunchColumnMissing && /lunch_worked/i.test(error.message)) {
+                lunchColumnMissing = true;
+                selectCols = withoutLunch;
+                from = 0;
+                all.length = 0;
+                continue;
+            }
+            console.error("Error fetching work log entries:", error);
+            throw new Error(`업무 일지 조회 실패: ${error.message}`);
+        }
+
+        const rows = (data ?? []) as RawWorkloadEntryRow[];
+        all.push(...rows);
+        if (rows.length < SUPABASE_PAGE_SIZE) break;
+        from += SUPABASE_PAGE_SIZE;
+    }
+
+    return all;
+}
+
+async function fetchWorkLogsByIds(
+    ids: number[],
+    includeDrafts?: boolean
+): Promise<
+    Map<number, { vessel: string | null; subject: string | null; isDraft: boolean }>
+> {
+    const map = new Map<
+        number,
+        { vessel: string | null; subject: string | null; isDraft: boolean }
+    >();
+    const uniqueIds = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
+
+    for (const idChunk of chunkArray(uniqueIds, IN_QUERY_CHUNK_SIZE)) {
+        let q = supabase
+            .from("work_logs")
+            .select("id, vessel, subject, is_draft")
+            .in("id", idChunk);
+
+        if (!includeDrafts) {
+            q = q.eq("is_draft", false);
+        }
+
+        const { data, error } = await q;
+        if (error) {
+            console.error("Error fetching work logs:", error);
+            throw new Error(`출장 보고서 조회 실패: ${error.message}`);
+        }
+
+        for (const log of data ?? []) {
+            map.set(log.id, {
+                vessel: log.vessel,
+                subject: log.subject,
+                isDraft: !!log.is_draft,
+            });
+        }
+    }
+
+    return map;
+}
+
+async function fetchEntryPersonsMap(entryIds: number[]): Promise<Map<number, string[]>> {
+    const personMap = new Map<number, string[]>();
+    const uniqueIds = [...new Set(entryIds.filter((id) => Number.isFinite(id) && id > 0))];
+
+    for (const idChunk of chunkArray(uniqueIds, IN_QUERY_CHUNK_SIZE)) {
+        const { data: entryPersons, error: entryPersonsError } = await supabase
+            .from("work_log_entry_persons")
+            .select("entry_id, person_name")
+            .in("entry_id", idChunk);
+
+        if (entryPersonsError) {
+            console.error("Error fetching entry persons:", entryPersonsError);
+            throw new Error(`참여자 조회 실패: ${entryPersonsError.message}`);
+        }
+
+        for (const ep of entryPersons ?? []) {
+            if (!personMap.has(ep.entry_id)) {
+                personMap.set(ep.entry_id, []);
+            }
+            personMap.get(ep.entry_id)!.push(ep.person_name);
+        }
+    }
+
+    return personMap;
+}
+
 /**
  * 워크로드 데이터 조회 (년/월 필터링)
+ * - 조회 기간과 겹치는 entry를 DB에서 먼저 가져온 뒤 관련 work_log만 조회 (1000행·대량 IN 제한 회피)
  */
 export async function getWorkloadData(filters?: {
     year?: number;
@@ -233,116 +409,40 @@ export async function getWorkloadData(filters?: {
     includeDrafts?: boolean;
 }): Promise<WorkloadEntry[]> {
     try {
-        // 1. 출장보고서 조회 (제출된 것만, is_draft = false)
-        // 필터링은 작업 일정(date_from, date_to) 기준으로 하므로 모든 제출된 보고서 조회
-        let workLogsQuery = supabase
-            .from("work_logs")
-            .select("id, vessel, subject, is_draft");
-        if (!filters?.includeDrafts) {
-            workLogsQuery = workLogsQuery.eq("is_draft", false);
-        }
+        const period = getWorkloadPeriodBounds(filters);
+        const rawEntries = await fetchWorkloadEntryRows(period);
 
-        const { data: workLogs, error: workLogsError } = await workLogsQuery;
-
-        if (workLogsError) {
-            console.error("Error fetching work logs:", workLogsError);
-            throw new Error(`출장 보고서 조회 실패: ${workLogsError.message}`);
-        }
-
-        if (!workLogs || workLogs.length === 0) {
+        if (rawEntries.length === 0) {
             return [];
         }
 
-        const workLogIds = workLogs.map((log) => log.id);
-        const workLogMap = new Map(
-            workLogs.map((log) => [
-                log.id,
-                {
-                    vessel: log.vessel,
-                    subject: log.subject,
-                    isDraft: !!log.is_draft,
-                },
-            ])
-        );
-
-        // 2. 업무 일지 조회 (모든 entry 조회 후 필터링)
-        const { data: entries, error: entriesError } = await supabase
-        .from("work_log_entries_with_hours")
-        .select("id, work_log_id, date_from, time_from, date_to, time_to, desc_type, work_hours, lunch_worked")
-        .in("work_log_id", workLogIds)
-        .order("date_from", { ascending: true })
-        .order("time_from", { ascending: true });
-    
-
-        if (entriesError) {
-            console.error("Error fetching work log entries:", entriesError);
-            throw new Error(`업무 일지 조회 실패: ${entriesError.message}`);
-        }
-
-        if (!entries || entries.length === 0) {
-            return [];
-        }
-
-        // 3. 작업 일정 기준으로 필터링 (date_from, date_to 기준)
-        let filteredEntries = entries;
-        if (filters?.year && filters?.month !== undefined) {
-            // 특정 월: 해당 월과 겹치는 모든 entry 필터링
-            const year = filters.year;
-            const month = filters.month; // month는 1~12
-            const filterStartDate = `${year}-${String(month).padStart(2, "0")}-01`;
-            const lastDay = new Date(year, month, 0).getDate(); // month=1이면 1월 마지막날 OK
-            const filterEndDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;            
-            
-            filteredEntries = entries.filter((entry) => {
-                if (!entry.date_from || !entry.date_to) return false;
-                // entry가 필터 기간과 겹치는지 확인
-                // entry 시작일이 필터 종료일 이전이고, entry 종료일이 필터 시작일 이후인 경우
-                return entry.date_from <= filterEndDate && entry.date_to >= filterStartDate;
-            });
-        } else if (filters?.year) {
-            // 특정 년도: 해당 년도와 겹치는 모든 entry 필터링
-            const year = filters.year;
-            const filterStartDate = `${year}-01-01`;
-            const filterEndDate = `${year}-12-31`;
-            
-            filteredEntries = entries.filter((entry) => {
-                if (!entry.date_from || !entry.date_to) return false;
-                return entry.date_from <= filterEndDate && entry.date_to >= filterStartDate;
-            });
-        }
+        const filteredEntries = period
+            ? filterEntriesByPeriod(rawEntries, period)
+            : rawEntries;
 
         if (filteredEntries.length === 0) {
             return [];
         }
 
-        const entryIds = filteredEntries.map((e) => e.id);
+        const workLogIds = filteredEntries.map((e) => e.work_log_id);
+        const workLogMap = await fetchWorkLogsByIds(workLogIds, filters?.includeDrafts);
 
-        // 3. 참여자 조회
-        const { data: entryPersons, error: entryPersonsError } = await supabase
-            .from("work_log_entry_persons")
-            .select("entry_id, person_name")
-            .in("entry_id", entryIds);
+        const entriesWithWorkLog = filteredEntries.filter((entry) =>
+            workLogMap.has(entry.work_log_id)
+        );
 
-        if (entryPersonsError) {
-            console.error("Error fetching entry persons:", entryPersonsError);
-            throw new Error(`참여자 조회 실패: ${entryPersonsError.message}`);
+        if (entriesWithWorkLog.length === 0) {
+            return [];
         }
 
-        // 4. 데이터 조합
-        const personMap = new Map<number, string[]>();
-        if (entryPersons) {
-            for (const ep of entryPersons) {
-                if (!personMap.has(ep.entry_id)) {
-                    personMap.set(ep.entry_id, []);
-                }
-                personMap.get(ep.entry_id)!.push(ep.person_name);
-            }
-        }
+        const personMap = await fetchEntryPersonsMap(
+            entriesWithWorkLog.map((e) => e.id)
+        );
 
         const workloadEntries: WorkloadEntry[] = [];
-        for (const entry of filteredEntries) {
+        for (const entry of entriesWithWorkLog) {
             const persons = personMap.get(entry.id) || [];
-            const workLogInfo = workLogMap.get(entry.work_log_id);
+            const workLogInfo = workLogMap.get(entry.work_log_id)!;
 
             for (const personName of persons) {
                 workloadEntries.push({
@@ -354,13 +454,12 @@ export async function getWorkloadData(filters?: {
                     time_to: entry.time_to,
                     desc_type: entry.desc_type,
                     person_name: personName,
-                    vessel: workLogInfo?.vessel || null,
-                    subject: workLogInfo?.subject || null,
-                    is_draft: workLogInfo?.isDraft ?? false,
-                    work_hours: (entry as any).work_hours ?? null,
-                    lunch_worked: (entry as any).lunch_worked ?? false,
+                    vessel: workLogInfo.vessel ?? null,
+                    subject: workLogInfo.subject ?? null,
+                    is_draft: workLogInfo.isDraft,
+                    work_hours: entry.work_hours ?? null,
+                    lunch_worked: entry.lunch_worked ?? false,
                 });
-                
             }
         }
 
