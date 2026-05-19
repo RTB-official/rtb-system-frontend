@@ -6203,6 +6203,18 @@ export default function InvoiceCreatePage() {
                     activeSkilledCarry = false;
                 }
                 const manualBillableTravel = hasManualBillableTravel(row);
+                const hasTravelHours =
+                    row.travelWeekday > 0 || row.travelWeekend > 0;
+                const isTravelOnlyRow = !hasWorkEntry;
+                /** 이동만 있는 날: 잡 디스크립션 스킬드가 타임시트 이동 행에 있으면 이동 시간도 스킬드 청구 */
+                const jobSkilledOnPureTravelRow =
+                    isTravelOnlyRow &&
+                    hasTravelHours &&
+                    travelBillablePeople.some(
+                        (person) =>
+                            SKILLED_FITTER_SET.has(person) &&
+                            selectedSkilledFitters.includes(person)
+                    );
                 let travelSkilled =
                     travelBillablePeople.length > 0 && !travelSkilledAlreadyAllocated
                         ? manualBillableTravel
@@ -6213,9 +6225,20 @@ export default function InvoiceCreatePage() {
                               ? 1
                               : 0
                         : 0;
+                if (
+                    jobSkilledOnPureTravelRow &&
+                    !travelSkilledAlreadyAllocated
+                ) {
+                    travelSkilled = 1;
+                }
                 const dayHasWork = dateHasWorkEntry.get(row.date) ?? false;
                 const dayHasSkilled = dateHasJobSkilledFitter.get(row.date) ?? false;
-                if (travelSkilled > 0 && !dayHasWork && !dayHasSkilled) {
+                if (
+                    travelSkilled > 0 &&
+                    !dayHasWork &&
+                    !dayHasSkilled &&
+                    !jobSkilledOnPureTravelRow
+                ) {
                     travelSkilled = isContinuousWithPrevious && activeSkilledCarry ? 1 : 0;
                 }
                 if (workSkilled > 0) {
