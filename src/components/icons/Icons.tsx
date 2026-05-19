@@ -234,6 +234,50 @@ export const IconDownload = (props: { className?: string }) => (
     </svg>
 );
 
+export const IconSave = (props: { className?: string }) => (
+    <svg
+        viewBox="0 0 24 24"
+        width="24"
+        height="24"
+        className={props.className || "block shrink-0"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+        <path d="M17 21v-8H7v8" />
+        <path d="M7 3v5h8" />
+    </svg>
+);
+
+export const IconExcel = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+    >
+        <path
+            d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+        <path
+            d="M14 2v6h6M8 13h2v2H8v-2zm0-3h2v2H8v-2zm3 3h2v2h-2v-2zm0-3h2v2h-2v-2zm3 3h2v2h-2v-2zm0-3h2v2h-2v-2z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+    </svg>
+);
+
 /** 제출/전송 액션용 */
 export const IconSend = (props: { className?: string }) => (
     <svg

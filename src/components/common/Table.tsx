@@ -29,6 +29,8 @@ interface TableProps<T = any> {
     hideRowBorders?: boolean;
     hideHeaderBorder?: boolean;
     outerBorder?: boolean;
+    /** false면 가로 스크롤 숨김 (모달 등 좁은 컨테이너용) */
+    scrollX?: boolean;
     pagination?: {
         currentPage: number;
         totalPages: number;
@@ -50,6 +52,7 @@ export default function Table<T = any>({
     hideRowBorders = false,
     hideHeaderBorder = false,
     outerBorder = true,
+    scrollX = true,
     pagination,
 }: TableProps<T>) {
     const getRowKey = (row: T, index: number): string | number => {
@@ -67,7 +70,9 @@ export default function Table<T = any>({
     return (
         <div className="flex flex-col">
             <div
-                className={`overflow-auto w-full ${outerBorder ? "border border-gray-200 rounded-2xl" : ""}`}
+                className={`w-full ${
+                    scrollX ? "overflow-auto" : "overflow-x-hidden overflow-y-auto"
+                } ${outerBorder ? "border border-gray-200 rounded-2xl" : ""}`}
             >
                 <table
                     className={`w-full text-[14px] text-gray-900 ${className}`}
