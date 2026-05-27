@@ -14,6 +14,7 @@ import { getWorkLogs, type WorkLog } from "../../lib/workLogApi";
 import { supabase } from "../../lib/supabase";
 import { PATHS } from "../../utils/paths";
 import { formatInvoiceReportTableTitle } from "../../utils/invoiceReportDisplayTitle";
+import { fetchWorkLogEntryPeriodMap } from "../../lib/workLogEntryPeriodMap";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -72,10 +73,6 @@ export default function InvoicePage() {
             // WorkLog id 목록
             const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
 
-            // workLogId -> { start, end } 기간 맵 (entries.dateFrom/dateTo 기반)
-            const periodMap = new Map<number, { start?: string; end?: string }>();
-
-            // 작성자 이름 목록 수집
             const ownerNames = Array.from(
                 new Set(baseItems.map((i) => i.owner).filter(Boolean))
             );
@@ -84,65 +81,24 @@ export default function InvoicePage() {
                 { email: string | null; position: string | null }
             >();
 
-            // entries와 profiles를 병렬로 조회
-            if (workLogIds.length > 0) {
-                const [entriesResult, profilesResult] = await Promise.allSettled([
-                    supabase
-                        .from("work_log_entries_with_hours")
-                        .select("work_log_id, date_from, date_to")
-                        .in("work_log_id", workLogIds),
-                    ownerNames.length > 0
-                        ? supabase
-                            .from("profiles")
-                            .select("name, email, position")
-                            .in("name", ownerNames)
-                        : Promise.resolve({ data: [], error: null }),
-                ]);
+            const [periodMap, profilesResult] = await Promise.all([
+                fetchWorkLogEntryPeriodMap(workLogIds),
+                ownerNames.length > 0
+                    ? supabase
+                          .from("profiles")
+                          .select("name, email, position")
+                          .in("name", ownerNames)
+                    : Promise.resolve({ data: [], error: null }),
+            ]);
 
-                // entries 처리
-                if (entriesResult.status === "fulfilled") {
-                    const { data: entries, error: entriesError } = entriesResult.value;
-                    if (entriesError) {
-                        console.error("기간(entries) 조회 실패:", entriesError);
-                    } else if (entries) {
-                        entries.forEach((e: any) => {
-                            const id = Number(e.work_log_id);
-                            if (!id) return;
-
-                            const s = e.date_from ? String(e.date_from) : "";
-                            const t = e.date_to ? String(e.date_to) : "";
-
-                            const prev = periodMap.get(id);
-
-                            // start = 최소 dateFrom, end = 최대 dateTo
-                            const nextStart =
-                                !prev?.start || (s && s < prev.start) ? (s || prev?.start) : prev.start;
-                            const nextEnd =
-                                !prev?.end || (t && t > prev.end) ? (t || prev?.end) : prev.end;
-
-                            periodMap.set(id, { start: nextStart, end: nextEnd });
-                        });
-                    }
-                } else {
-                    console.error("기간(entries) 조회 실패:", entriesResult.reason);
-                }
-
-                // profiles 처리
-                if (profilesResult.status === "fulfilled") {
-                    const { data: profiles, error: profilesError } = profilesResult.value;
-                    if (profilesError) {
-                        console.error("프로필 조회 실패:", profilesError);
-                    } else if (profiles) {
-                        profiles.forEach((profile: any) => {
-                            profileMap.set(profile.name, {
-                                email: profile.email || null,
-                                position: profile.position || null,
-                            });
-                        });
-                    }
-                } else {
-                    console.error("프로필 조회 실패:", profilesResult.reason);
-                }
+            const { data: profiles, error: profilesError } = profilesResult;
+            if (!profilesError && profiles) {
+                profiles.forEach((profile: any) => {
+                    profileMap.set(profile.name, {
+                        email: profile.email || null,
+                        position: profile.position || null,
+                    });
+                });
             }
 
             // 제목을 "기간 / 호선(vessel) / 출장목적(subject)"으로 재조합

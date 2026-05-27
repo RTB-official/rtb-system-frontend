@@ -10,7 +10,13 @@ import React, {
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
-import { IconEdit, IconSave } from "../../components/icons/Icons";
+import {
+    IconEdit,
+    IconExportDocuments,
+    IconReportOutline,
+    IconSave,
+} from "../../components/icons/Icons";
+import InvoiceReportsPickerModal from "../../components/invoice/InvoiceReportsPickerModal";
 import BaseModal from "../../components/ui/BaseModal";
 import TimesheetDateGroupDetailSidePanel from "../../components/panels/TimesheetDateGroupDetailSidePanel";
 import TimesheetRowDetailSidePanel from "../../components/panels/TimesheetRowDetailSidePanel";
@@ -151,6 +157,26 @@ function compareTimesheetSourceEntriesByTimeThenId(
         return -1;
     }
     return b.id - a.id;
+}
+
+/** 보고서 추가·제거 시 전체 리로드 없이 타임시트·휴일만 증분 반영 */
+type IncrementalWorkLogPatch = {
+    addedChunks: WorkLogFullData[];
+    removedWorkLogIds: number[];
+};
+
+function sortTimesheetRows(rows: TimesheetRow[]): TimesheetRow[] {
+    return [...rows].sort((a, b) => {
+        const dateCmp = a.date.localeCompare(b.date);
+        if (dateCmp !== 0) {
+            return dateCmp;
+        }
+        const timeCmp = (a.timeFrom || "00").localeCompare(b.timeFrom || "00");
+        if (timeCmp !== 0) {
+            return timeCmp;
+        }
+        return a.rowId.localeCompare(b.rowId);
+    });
 }
 
 function timesheetSourceToWorkLogEntry(
@@ -733,6 +759,14 @@ const HOLIDAY_API_ENDPOINT =
 const SKILLED_FITTER_PRIORITY = [...SKILLED_FITTER_KOREAN_NAMES];
 const SKILLED_FITTER_SET = SKILLED_FITTER_NAME_SET;
 
+/** 프로필 username → 영문 표기 보정 (인보이스 페이지 전역) */
+const INVOICE_ENGLISH_NAME_OVERRIDES: Record<string, string> = {
+    "JH An": "JH Ahn",
+};
+const INVOICE_ENGLISH_NAME_BY_KOREAN: Record<string, string> = {
+    안재훈: "JH Ahn",
+};
+
 /** 기본 Skilled fitter 1순위 풀(동순위). 타임시트에 이 중 한 명이라도 있으면 이들만 엔트리 수로 경쟁. */
 const DEFAULT_SKILLED_FITTER_TIER1 = [
     "김춘근",
@@ -925,7 +959,10 @@ function mergeRowWorkWaitEnvelope(
     };
 }
 
-/** 인보이스 인력 합계·표시와 동일: 날짜별 실제 스킬드 청구 대상 인원 집합(겹침 시 총 작업분 우선 등). */
+/**
+ * 인보이스 인력 합계·표시와 동일: 날짜별 실제 스킬드 청구 대상 인원 집합.
+ * 작업·대기 겹침 시 총 작업분 우선; 해당 구간이 없는 날(이동만)은 잡 디스크립션 지정 스킬드가 타임시트에 있으면 포함.
+ */
 function buildEffectiveSkilledByDateForInvoice(
     rows: readonly TimesheetRow[],
     selectedSkilledFitters: readonly string[],
@@ -1093,6 +1130,30 @@ function buildEffectiveSkilledByDateForInvoice(
         });
         effectiveSkilledByDate.set(date, winners);
     });
+
+    if (selectedSkilledSet.size > 0) {
+        for (const row of rows) {
+            const dateKey = row.date;
+            if (!dateKey || workIntervalsByDatePerson.has(dateKey)) {
+                continue;
+            }
+            const rowPeople = row.description
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            for (const person of rowPeople) {
+                if (!selectedSkilledSet.has(person)) {
+                    continue;
+                }
+                let daySet = effectiveSkilledByDate.get(dateKey);
+                if (!daySet) {
+                    daySet = new Set<string>();
+                    effectiveSkilledByDate.set(dateKey, daySet);
+                }
+                daySet.add(person);
+            }
+        }
+    }
 
     return effectiveSkilledByDate;
 }
@@ -1329,7 +1390,7 @@ function InvoiceDraftLoadModal({
 }
 
 export default function InvoiceCreatePage() {
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const invoiceDraftIdParam = searchParams.get("draftId");
     const workLogIdsParam =
         searchParams.get("workLogIds") ?? searchParams.get("workLogId");
@@ -1351,6 +1412,8 @@ export default function InvoiceCreatePage() {
     const [invoiceWorkItemOverride, setInvoiceWorkItemOverride] = useState<
         string | null
     >(null);
+    const [invoiceReportsModalOpen, setInvoiceReportsModalOpen] =
+        useState(false);
     const [invoiceWorkItemModalOpen, setInvoiceWorkItemModalOpen] =
         useState(false);
     const [invoiceWorkItemModalDraft, setInvoiceWorkItemModalDraft] =
@@ -1389,6 +1452,9 @@ export default function InvoiceCreatePage() {
     >(null);
     const [hoveredTimesheetDateGroupKey, setHoveredTimesheetDateGroupKey] =
         useState<string | null>(null);
+    const [invoiceDocumentExportOpen, setInvoiceDocumentExportOpen] =
+        useState(false);
+    const invoiceDocumentExportRef = useRef<HTMLDivElement | null>(null);
     const [invoicePdfMenuOpen, setInvoicePdfMenuOpen] = useState(false);
     const [invoicePdfSelectedIds, setInvoicePdfSelectedIds] = useState<number[]>(
         []
@@ -1423,6 +1489,16 @@ export default function InvoiceCreatePage() {
         (row: TimesheetRow) => MealCountAdjustmentEntry | undefined
     >(() => undefined);
     const loadedWorkLogIdsParamRef = useRef<string | null>(null);
+    /** setState 이전에도 최신 보고서 목록으로 타임시트 빌드 (추가 시 12일 맥락 유지) */
+    const workLogDataListForTimesheetRef = useRef<WorkLogFullData[]>([]);
+    /** 보고서 추가 직후 1회 전체 타임시트 재빌드 (append·stale state 방지) */
+    const forceFullTimesheetRebuildRef = useRef(false);
+    /** loadWorkLogData 비동기 경합·Strict Mode 이중 실행 시 stale 결과 무시 */
+    const workLogDataLoadRequestRef = useRef(0);
+    /** 보고서 추가·제거 시 타임시트·휴일 증분 반영 (전체 fetch/리셋 없음) */
+    const incrementalWorkLogPatchRef = useRef<IncrementalWorkLogPatch | null>(
+        null
+    );
     const loadedInvoiceDraftIdFromUrlRef = useRef<string | null>(null);
     const initialTimesheetRowValueByIdentityRef = useRef<
         Record<
@@ -1714,6 +1790,177 @@ export default function InvoiceCreatePage() {
         setInvoiceDraftLoadModalOpen(true);
         void refreshInvoiceDraftList();
     }, [refreshInvoiceDraftList]);
+
+    const syncWorkLogIdsInUrl = useCallback((ids: number[]) => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("draftId");
+        if (ids.length > 0) {
+            url.searchParams.set("workLogIds", ids.join(","));
+        } else {
+            url.searchParams.delete("workLogIds");
+            url.searchParams.delete("workLogId");
+        }
+        window.history.replaceState(null, "", url.toString());
+    }, []);
+
+    const applyInvoiceReportSelection = useCallback(
+        async (ids: number[]) => {
+            if (ids.length === 0) {
+                showError("보고서를 1건 이상 선택해 주세요.");
+                return;
+            }
+
+            const currentIdSet = new Set(
+                workLogDataList.map((data) => data.workLog.id)
+            );
+            const nextIdSet = new Set(ids);
+            const addedIds = ids.filter((id) => !currentIdSet.has(id));
+            const removedIds = [...currentIdSet].filter((id) => !nextIdSet.has(id));
+            const nextParam = ids.join(",");
+
+            if (
+                addedIds.length === 0 &&
+                removedIds.length === 0 &&
+                workLogDataList.length > 0
+            ) {
+                setInvoiceReportsModalOpen(false);
+                return;
+            }
+
+            /** 이미 로드된 상태: 추가·제거·교체 모두 증분 반영 (새로고침·편집 초기화 없음) */
+            if (workLogDataList.length > 0) {
+                const removedSet = new Set(removedIds);
+                const removedEntryIds = new Set<number>();
+                for (const data of workLogDataList) {
+                    if (!removedSet.has(data.workLog.id)) continue;
+                    for (const entry of data.entries) {
+                        removedEntryIds.add(entry.id);
+                    }
+                }
+
+                if (removedEntryIds.size > 0) {
+                    for (const entryId of removedEntryIds) {
+                        delete originalEntryPersonsByIdRef.current[entryId];
+                        delete timesheetEntryEditBaselineByIdRef.current[
+                            entryId
+                        ];
+                    }
+                    setTravelChargeOverrides((prev) => {
+                        const next = { ...prev };
+                        for (const key of Object.keys(next)) {
+                            const entryId = Number.parseInt(
+                                key.split(":")[0] ?? "",
+                                10
+                            );
+                            if (removedEntryIds.has(entryId)) {
+                                delete next[key];
+                            }
+                        }
+                        return next;
+                    });
+                    setEntryManualBillableHours((prev) => {
+                        const next = { ...prev };
+                        for (const entryId of removedEntryIds) {
+                            delete next[entryId];
+                        }
+                        return next;
+                    });
+                    setEntryManualBillableSplitHours((prev) => {
+                        const next = { ...prev };
+                        for (const entryId of removedEntryIds) {
+                            delete next[entryId];
+                        }
+                        return next;
+                    });
+                    setDeletedTimesheetEntries((prev) =>
+                        prev.filter((entry) => !removedSet.has(entry.workLogId))
+                    );
+                }
+
+                let newChunks: WorkLogFullData[] = [];
+                if (addedIds.length > 0) {
+                    const results = await Promise.all(
+                        addedIds.map((id) => getWorkLogById(id))
+                    );
+                    for (const data of results) {
+                        if (!data) {
+                            showError("일부 보고서를 찾을 수 없습니다.");
+                            continue;
+                        }
+                        newChunks.push(data);
+                    }
+                    if (newChunks.length === 0) {
+                        return;
+                    }
+
+                    for (const data of newChunks) {
+                        for (const entry of data.entries) {
+                            originalEntryPersonsByIdRef.current[entry.id] = [
+                                ...(entry.persons ?? []),
+                            ];
+                        }
+                    }
+                    timesheetEntryEditBaselineByIdRef.current = {
+                        ...timesheetEntryEditBaselineByIdRef.current,
+                        ...buildTimesheetEntryEditBaselineMap(
+                            newChunks,
+                            entryManualBillableHours
+                        ),
+                    };
+                }
+
+                const mergedWorkLogs = [
+                    ...workLogDataList.filter(
+                        (data) => !removedSet.has(data.workLog.id)
+                    ),
+                    ...newChunks,
+                ];
+
+                if (mergedWorkLogs.length === 0) {
+                    showError("유효한 보고서가 없습니다.");
+                    return;
+                }
+
+                initialWorkLogSnapshotRef.current = JSON.parse(
+                    JSON.stringify(mergedWorkLogs)
+                ) as WorkLogFullData[];
+
+                workLogDataListForTimesheetRef.current = mergedWorkLogs;
+                forceFullTimesheetRebuildRef.current = true;
+                incrementalWorkLogPatchRef.current = {
+                    addedChunks: newChunks,
+                    removedWorkLogIds: removedIds,
+                };
+                loadedWorkLogIdsParamRef.current = nextParam;
+                setInvoiceDraftId(null);
+                setWorkLogDataList(mergedWorkLogs);
+                syncWorkLogIdsInUrl(ids);
+                setInvoiceReportsModalOpen(false);
+                return;
+            }
+
+            loadedWorkLogIdsParamRef.current = null;
+            incrementalWorkLogPatchRef.current = null;
+            setInvoiceDraftId(null);
+            setSearchParams(
+                (prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.delete("draftId");
+                    next.set("workLogIds", nextParam);
+                    return next;
+                },
+                { replace: true }
+            );
+            setInvoiceReportsModalOpen(false);
+        },
+        [
+            workLogDataList,
+            entryManualBillableHours,
+            syncWorkLogIdsInUrl,
+            setSearchParams,
+            showError,
+        ]
+    );
 
     const handleSelectInvoiceDraft = useCallback(
         async (draftId: string): Promise<boolean> => {
@@ -3064,20 +3311,37 @@ export default function InvoiceCreatePage() {
         }
     };
 
+    useEffect(() => {
+        if (forceFullTimesheetRebuildRef.current) {
+            return;
+        }
+        workLogDataListForTimesheetRef.current = workLogDataList;
+    }, [workLogDataList]);
+
     // 보고서 데이터 로드 (다중 선택 지원)
     useEffect(() => {
+        const requestId = ++workLogDataLoadRequestRef.current;
+        const isStaleRequest = () =>
+            requestId !== workLogDataLoadRequestRef.current;
+
         const loadWorkLogData = async () => {
             const isDraftMode = Boolean(invoiceDraftIdParam);
-            if (!isDraftMode && !workLogIdsParam) {
+            const workLogIdsParamEffective =
+                loadedWorkLogIdsParamRef.current ?? workLogIdsParam ?? "";
+            if (!isDraftMode && !workLogIdsParamEffective) {
                 return;
             }
             if (!isDraftMode) {
                 loadedDraftBaselinePayloadRef.current = null;
             }
 
+            const workLogIdsKeyFromState = workLogDataList
+                .map((data) => data.workLog.id)
+                .join(",");
+
             const workLogIds = isDraftMode
                 ? []
-                : (workLogIdsParam ?? "")
+                : workLogIdsParamEffective
                       .split(",")
                       .map((id) => Number(id.trim()))
                       .filter((id) => !isNaN(id));
@@ -3087,14 +3351,60 @@ export default function InvoiceCreatePage() {
 
             const shouldReuseLoadedData =
                 !isDraftMode &&
-                loadedWorkLogIdsParamRef.current === workLogIdsParam &&
-                workLogDataList.length > 0;
+                workLogDataList.length > 0 &&
+                loadedWorkLogIdsParamRef.current != null &&
+                (loadedWorkLogIdsParamRef.current === workLogIdsParam ||
+                    loadedWorkLogIdsParamRef.current === workLogIdsKeyFromState);
 
             /** 드래프트: 보고서는 이미 있고 타임시트만 로컬 상태 변경으로 재계산 — 로딩 스피너·드래프트 ID 초기화 없음 */
             const isDraftTimesheetRecomputeOnly =
                 isDraftMode && workLogDataList.length > 0;
 
-            if (!shouldReuseLoadedData && !isDraftTimesheetRecomputeOnly) {
+            const patch = incrementalWorkLogPatchRef.current;
+            let incrementalRemovedIds: number[] = [];
+            let addedChunksFromPatch: WorkLogFullData[] = [];
+            let isIncrementalPatch = false;
+            let forceFullTimesheetRebuild = forceFullTimesheetRebuildRef.current;
+
+            if (patch) {
+                incrementalWorkLogPatchRef.current = null;
+                isIncrementalPatch = true;
+                incrementalRemovedIds = patch.removedWorkLogIds;
+                addedChunksFromPatch = patch.addedChunks;
+                if (addedChunksFromPatch.length > 0) {
+                    forceFullTimesheetRebuild = true;
+                }
+
+                if (incrementalRemovedIds.length > 0) {
+                    const removedSet = new Set(incrementalRemovedIds);
+                    setTimesheetRows((prev) =>
+                        prev.filter(
+                            (row) =>
+                                !row.sourceEntries.some((entry) =>
+                                    removedSet.has(entry.workLogId)
+                                )
+                        )
+                    );
+                }
+            }
+
+            const workLogsForTimesheetBuild =
+                workLogDataListForTimesheetRef.current.length > 0
+                    ? workLogDataListForTimesheetRef.current
+                    : workLogDataList;
+
+            const isIncrementalTimesheetRebuild =
+                forceFullTimesheetRebuild && workLogsForTimesheetBuild.length > 0;
+            const isRemoveOnlyPatch =
+                isIncrementalPatch && addedChunksFromPatch.length === 0;
+            const isNonDestructiveWorkLogUpdate =
+                isIncrementalTimesheetRebuild || isRemoveOnlyPatch;
+
+            if (
+                !isNonDestructiveWorkLogUpdate &&
+                !shouldReuseLoadedData &&
+                !isDraftTimesheetRecomputeOnly
+            ) {
                 setLoading(true);
                 if (!isDraftMode) {
                     setInvoiceDraftId(null);
@@ -3104,8 +3414,52 @@ export default function InvoiceCreatePage() {
             try {
                 let validData: WorkLogFullData[];
                 let holidaySetForTimesheet: Set<string>;
+                let timesheetOutputMode: "append" | "replace" = "replace";
 
-                if (isDraftMode) {
+                if (isRemoveOnlyPatch) {
+                    const rawEntriesForHolidayRemove: InvoiceTimesheetEntry[] =
+                        workLogDataList.flatMap((data) =>
+                            data.entries.map((entry) => ({
+                                ...entry,
+                                workLogId: data.workLog.id,
+                                location: data.workLog.location,
+                                sourceEntryIds: [entry.id],
+                            }))
+                        );
+                    const allEntriesForHolidayRemove =
+                        mergeContinuousTravelEntries(rawEntriesForHolidayRemove);
+                    holidaySetForTimesheet = await loadHolidayDates(
+                        allEntriesForHolidayRemove.flatMap((entry) =>
+                            enumerateDateRange(entry.dateFrom, entry.dateTo)
+                        )
+                    );
+                    if (isStaleRequest()) return;
+                    setHolidayDateSet(holidaySetForTimesheet);
+                    return;
+                }
+
+                if (isIncrementalTimesheetRebuild) {
+                    timesheetOutputMode = "replace";
+                    validData = workLogsForTimesheetBuild;
+                    const rawEntriesForHolidayRebuild: InvoiceTimesheetEntry[] =
+                        validData.flatMap((data) =>
+                            data.entries.map((entry) => ({
+                                ...entry,
+                                workLogId: data.workLog.id,
+                                location: data.workLog.location,
+                                sourceEntryIds: [entry.id],
+                            }))
+                        );
+                    const allEntriesForHolidayRebuild =
+                        mergeContinuousTravelEntries(rawEntriesForHolidayRebuild);
+                    holidaySetForTimesheet = await loadHolidayDates(
+                        allEntriesForHolidayRebuild.flatMap((entry) =>
+                            enumerateDateRange(entry.dateFrom, entry.dateTo)
+                        )
+                    );
+                    if (isStaleRequest()) return;
+                    setHolidayDateSet(holidaySetForTimesheet);
+                } else if (isDraftMode) {
                     if (workLogDataList.length === 0) {
                         return;
                     }
@@ -3127,12 +3481,13 @@ export default function InvoiceCreatePage() {
                             enumerateDateRange(entry.dateFrom, entry.dateTo)
                         )
                     );
-                } else if (shouldReuseLoadedData) {
-                    validData = workLogDataList;
+                } else if (shouldReuseLoadedData && !forceFullTimesheetRebuild) {
+                    validData = workLogsForTimesheetBuild;
                     holidaySetForTimesheet = new Set(holidayDateSet);
                 } else {
                     const dataPromises = workLogIds.map((id) => getWorkLogById(id));
                     const results = await Promise.all(dataPromises);
+                    if (isStaleRequest()) return;
 
                     validData = [];
                     for (const data of results) {
@@ -3162,6 +3517,8 @@ export default function InvoiceCreatePage() {
                     initialWorkLogSnapshotRef.current = JSON.parse(
                         JSON.stringify(validData)
                     ) as WorkLogFullData[];
+                    if (isStaleRequest()) return;
+                    workLogDataListForTimesheetRef.current = validData;
                     setWorkLogDataList(validData);
                     invoiceUndoPastRef.current = [];
                     invoiceUndoFutureRef.current = [];
@@ -3187,8 +3544,10 @@ export default function InvoiceCreatePage() {
                             enumerateDateRange(entry.dateFrom, entry.dateTo)
                         )
                     );
-                    loadedWorkLogIdsParamRef.current = workLogIdsParam;
+                    loadedWorkLogIdsParamRef.current = workLogIds.join(",");
                 }
+
+                if (isStaleRequest()) return;
 
                 // 타임시트 데이터 계산
                 const rawEntries: InvoiceTimesheetEntry[] = validData.flatMap(data =>
@@ -5238,39 +5597,61 @@ export default function InvoiceCreatePage() {
                         applyChargedTimeWindowToTimesheetRows(rows)
                     )
                 );
-                setTimesheetRows(finalTimesheetRows);
-                const isPristineInvoiceState =
-                    invoiceUndoPastRef.current.length === 0 &&
-                    Object.keys(travelChargeOverrides).length === 0 &&
-                    Object.keys(entryManualBillableHours).length === 0 &&
-                    Object.keys(entryManualBillableSplitHours).length === 0 &&
-                    deletedTimesheetEntries.length === 0 &&
-                    Object.keys(invoiceSkilledFitterByTimesheetRowKeyRef.current)
-                        .length === 0 &&
-                    Object.keys(invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current)
-                        .length === 0;
-                const shouldInitializeInitialSnapshot =
-                    (!isDraftMode && !shouldReuseLoadedData) || isPristineInvoiceState;
-                if (shouldInitializeInitialSnapshot) {
-                    initialTimesheetRowValueByIdentityRef.current =
-                        Object.fromEntries(
-                            finalTimesheetRows.map((row) => [
-                                getTimesheetRowIdentityKey(row),
-                                getTimesheetRowDisplayedValueSnapshot(row),
-                            ])
-                        );
+                if (isStaleRequest()) return;
+
+                if (isIncrementalTimesheetRebuild) {
+                    forceFullTimesheetRebuildRef.current = false;
+                }
+
+                if (timesheetOutputMode === "append") {
+                    setTimesheetRows((prev) =>
+                        sortTimesheetRows([...prev, ...finalTimesheetRows])
+                    );
+                } else {
+                    setTimesheetRows(finalTimesheetRows);
+                    const isPristineInvoiceState =
+                        invoiceUndoPastRef.current.length === 0 &&
+                        Object.keys(travelChargeOverrides).length === 0 &&
+                        Object.keys(entryManualBillableHours).length === 0 &&
+                        Object.keys(entryManualBillableSplitHours).length === 0 &&
+                        deletedTimesheetEntries.length === 0 &&
+                        Object.keys(invoiceSkilledFitterByTimesheetRowKeyRef.current)
+                            .length === 0 &&
+                        Object.keys(
+                            invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current
+                        ).length === 0;
+                    const shouldInitializeInitialSnapshot =
+                        (!isDraftMode && !shouldReuseLoadedData) ||
+                        isPristineInvoiceState ||
+                        isIncrementalTimesheetRebuild;
+                    if (shouldInitializeInitialSnapshot) {
+                        initialTimesheetRowValueByIdentityRef.current =
+                            Object.fromEntries(
+                                finalTimesheetRows.map((row) => [
+                                    getTimesheetRowIdentityKey(row),
+                                    getTimesheetRowDisplayedValueSnapshot(row),
+                                ])
+                            );
+                    }
                 }
             } catch (error) {
                 console.error("보고서 데이터 로드 실패:", error);
                 showError("보고서 데이터를 불러오는 중 오류가 발생했습니다.");
             } finally {
-                if (!shouldReuseLoadedData) {
+                if (
+                    !isNonDestructiveWorkLogUpdate &&
+                    !shouldReuseLoadedData
+                ) {
                     setLoading(false);
                 }
             }
         };
 
         loadWorkLogData();
+
+        return () => {
+            workLogDataLoadRequestRef.current += 1;
+        };
     }, [
         invoiceDraftIdParam,
         workLogIdsParam,
@@ -6876,8 +7257,15 @@ export default function InvoiceCreatePage() {
             .join(" ");
     };
     const getEnglishPersonName = (personName: string) => {
-        const username = profileUsernameMap[personName];
-        return username ? formatUsernameDisplay(username) : personName;
+        const trimmed = personName.trim();
+        const koreanOverride = INVOICE_ENGLISH_NAME_BY_KOREAN[trimmed];
+        if (koreanOverride) {
+            return koreanOverride;
+        }
+
+        const username = profileUsernameMap[trimmed];
+        const display = username ? formatUsernameDisplay(username) : trimmed;
+        return INVOICE_ENGLISH_NAME_OVERRIDES[display] ?? display;
     };
     const sortPeopleForMention = (people: string[]) => {
         const uniquePeople = Array.from(new Set(people)).filter(Boolean);
@@ -7414,6 +7802,246 @@ export default function InvoiceCreatePage() {
                     : null,
         };
     };
+    const inferWorkPlaceFromTravelSegmentsForBadge = (
+        leadingTravelEntries: TimesheetSourceEntryData[],
+        trailingTravelEntries: TimesheetSourceEntryData[]
+    ) => {
+        const lastLeadingTravelEntry =
+            leadingTravelEntries[leadingTravelEntries.length - 1];
+        const leadingDestination = lastLeadingTravelEntry
+            ? normalizeLocationName(
+                  getFinalDestination({
+                      ...lastLeadingTravelEntry,
+                      sourceEntryIds: [lastLeadingTravelEntry.id],
+                  } as InvoiceTimesheetEntry)
+              )
+            : "";
+        if (leadingDestination && leadingDestination !== "자택") {
+            return leadingDestination;
+        }
+
+        const firstTrailingTravelEntry = trailingTravelEntries[0];
+        const trailingOrigin = firstTrailingTravelEntry
+            ? normalizeLocationName(
+                  getTravelEntryOrigin({
+                      ...firstTrailingTravelEntry,
+                      sourceEntryIds: [firstTrailingTravelEntry.id],
+                  } as InvoiceTimesheetEntry)
+              )
+            : "";
+        if (trailingOrigin && trailingOrigin !== "자택") {
+            return trailingOrigin;
+        }
+
+        return "";
+    };
+
+    const getPersonDaySourceEntriesForBadge = (
+        person: string,
+        dateKey: string
+    ) => {
+        const byId = new Map<number, TimesheetSourceEntryData>();
+        for (const row of timesheetRows) {
+            if (row.date !== dateKey) {
+                continue;
+            }
+            for (const sourceEntry of row.sourceEntries) {
+                if (!(sourceEntry.persons ?? []).includes(person)) {
+                    continue;
+                }
+                if (!byId.has(sourceEntry.id)) {
+                    byId.set(sourceEntry.id, sourceEntry);
+                }
+            }
+        }
+        for (const data of workLogDataList) {
+            for (const raw of data.entries) {
+                if (raw.dateFrom !== dateKey) {
+                    continue;
+                }
+                if (!(raw.persons ?? []).includes(person)) {
+                    continue;
+                }
+                if (!byId.has(raw.id)) {
+                    byId.set(
+                        raw.id,
+                        mapWorkLogEntryToTimesheetSource(
+                            raw,
+                            data.workLog.id,
+                            data.workLog.location
+                        )
+                    );
+                }
+            }
+        }
+        return [...byId.values()].sort(compareTimesheetSourceEntriesByTimeThenId);
+    };
+
+    /** 사이드패널 `resolveBadgeTargetFromChargeResult`와 동일 */
+    const resolveTravelBadgeTargetFromChargeResult = (
+        chargeResult: { hours: number; kind: string },
+        entry: TimesheetSourceEntryData
+    ): TravelChargeOverrideTarget | null => {
+        const containsLodging = (entry.details ?? "").includes("숙소");
+        const containsHome =
+            (entry.details ?? "").includes("자택") ||
+            entry.moveFrom === "자택" ||
+            entry.moveTo === "자택";
+        const isHomeCharge =
+            chargeResult.kind === "home" ||
+            chargeResult.kind === "initial-home" ||
+            chargeResult.kind.endsWith("-home");
+        if (isHomeCharge) {
+            return "home";
+        }
+        if (chargeResult.hours === 1 && (containsLodging || containsHome)) {
+            return "lodging";
+        }
+        return null;
+    };
+
+    /** 사이드패널 `getTravelChargeResultForPerson`에 맞춘 청구 시간·종류 (배지·숙박 집계용) */
+    const getTravelChargeResultForBadge = (
+        entry: TimesheetSourceEntryData,
+        person: string
+    ): { hours: number; kind: string } => {
+        const override = getTravelChargeOverride(entry.id, person);
+        const fixedHours = getHomeTravelHours(entry.location ?? null) ?? 0;
+
+        if (override?.target === "lodging") {
+            return { hours: 1, kind: "continued" };
+        }
+        if (override?.target === "home" && fixedHours > 0) {
+            return { hours: fixedHours, kind: "home" };
+        }
+
+        const dateKey = entry.dateFrom ?? "";
+        const personEntries = getPersonDaySourceEntriesForBadge(person, dateKey);
+        const sorted = personEntries.map(
+            (sourceEntry) =>
+                ({
+                    ...sourceEntry,
+                    sourceEntryIds: [sourceEntry.id],
+                }) as InvoiceTimesheetEntry
+        );
+
+        let index = 0;
+        const leadingTravel: InvoiceTimesheetEntry[] = [];
+        while (index < sorted.length && sorted[index].descType === "이동") {
+            leadingTravel.push(sorted[index]);
+            index += 1;
+        }
+
+        if (leadingTravel.some((candidate) => candidate.id === entry.id)) {
+            const afterTravel: InvoiceTimesheetEntry[] = [];
+            const workEntries: InvoiceTimesheetEntry[] = [];
+
+            while (index < sorted.length && sorted[index].descType !== "이동") {
+                workEntries.push(sorted[index]);
+                index += 1;
+            }
+            while (index < sorted.length && sorted[index].descType === "이동") {
+                afterTravel.push(sorted[index]);
+                index += 1;
+            }
+
+            const workPlaces = new Set(
+                workEntries
+                    .map((workEntry) =>
+                        normalizeLocationName(
+                            getPrimaryLocation(
+                                workEntry.location ?? entry.location ?? null
+                            )
+                        )
+                    )
+                    .filter(Boolean)
+            );
+            const blockWorkPlace = inferWorkPlaceFromTravelSegmentsForBadge(
+                leadingTravel,
+                afterTravel
+            );
+
+            if (
+                workEntries.length > 0 &&
+                blockWorkPlace &&
+                workPlaces.has(blockWorkPlace)
+            ) {
+                return { hours: 1, kind: "continued" };
+            }
+
+            const hasHome = leadingTravel.some((travelEntry) =>
+                hasHomeInTravel(travelEntry)
+            );
+            if (hasHome && fixedHours > 0) {
+                return { hours: fixedHours, kind: "initial-home" };
+            }
+
+            const travelHours = roundHoursForInvoice(
+                leadingTravel.reduce(
+                    (sum, travelEntry) =>
+                        sum + calculateTravelHours(travelEntry),
+                    0
+                )
+            );
+            return { hours: travelHours, kind: "travel" };
+        }
+
+        const travelOnly = sorted.filter(
+            (candidate) => candidate.descType === "이동"
+        );
+        if (
+            travelOnly.some((candidate) => candidate.id === entry.id) &&
+            sorted.every((candidate) => candidate.descType === "이동")
+        ) {
+            const hasHome = travelOnly.some((travelEntry) =>
+                hasHomeInTravel(travelEntry)
+            );
+            if (hasHome && fixedHours > 0) {
+                return { hours: fixedHours, kind: "home" };
+            }
+            return {
+                hours: calculateTravelHours({
+                    ...entry,
+                    sourceEntryIds: [entry.id],
+                } as InvoiceTimesheetEntry),
+                kind: "travel",
+            };
+        }
+
+        const hours = calculateTravelHours({
+            ...entry,
+            sourceEntryIds: [entry.id],
+        } as InvoiceTimesheetEntry);
+        const hasHome = hasHomeInTravel({
+            ...entry,
+            sourceEntryIds: [entry.id],
+        } as InvoiceTimesheetEntry);
+        if (hasHome && fixedHours > 0 && hours === fixedHours) {
+            return { hours: fixedHours, kind: "home" };
+        }
+        return { hours, kind: "travel" };
+    };
+
+    const getTravelBadgeTargetForPerson = (
+        entry: TimesheetSourceEntryData,
+        person: string
+    ): TravelChargeOverrideTarget | null => {
+        if (entry.descType !== "이동" || !(entry.persons ?? []).includes(person)) {
+            return null;
+        }
+
+        const override = getTravelChargeOverride(entry.id, person);
+        if (override?.target === "lodging" || override?.target === "home") {
+            return override.target;
+        }
+
+        const chargeResult = getTravelChargeResultForBadge(entry, person);
+        return (
+            resolveTravelBadgeTargetFromChargeResult(chargeResult, entry) ??
+            getDefaultTravelChargeTargetForEntry(entry)
+        );
+    };
+
     const getTravelBadgeLabelForPerson = (
         entry: TimesheetSourceEntryData,
         person: string
@@ -7444,31 +8072,7 @@ export default function InvoiceCreatePage() {
             return "";
         }
 
-        const fixedHours = getHomeTravelHours(entry.location ?? null) ?? 0;
-        const containsLodging = (entry.details ?? "").includes("숙소");
-        const containsHome =
-            (entry.details ?? "").includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택";
-        const override = getTravelChargeOverride(entry.id, person);
-        const travelHours = calculateTravelHours({
-            ...entry,
-            sourceEntryIds: [entry.id],
-        } as InvoiceTimesheetEntry);
-
-        let target: TravelChargeOverrideTarget | null = null;
-        if (override?.target === "lodging") {
-            target = "lodging";
-        } else if (override?.target === "home") {
-            target = "home";
-        } else if (travelHours === 1 && containsLodging) {
-            target = "lodging";
-        } else if (travelHours === 1 && containsHome) {
-            target = "home";
-        } else if (containsHome && fixedHours > 0) {
-            target = "home";
-        }
-
+        const target = getTravelBadgeTargetForPerson(entry, person);
         if (!target) {
             return "";
         }
@@ -7480,28 +8084,104 @@ export default function InvoiceCreatePage() {
         return target === "home" ? "→자택" : "→숙소";
     };
 
-    /** 해당 meal 그룹·해당 일자에서 이동 배지가 `→숙소`인 인원 수(중복 인원 1회) */
+    /**
+     * 인보이스 코멘트용: 실제 숙소 출발 여부.
+     * 청구/배지용 `숙소→`(자택+continued 1h 등)와 구분한다.
+     */
+    const isSemanticLodgingDepartureForComment = (
+        entry: TimesheetSourceEntryData,
+        person: string
+    ): boolean => {
+        if (entry.descType !== "이동" || !(entry.persons ?? []).includes(person)) {
+            return false;
+        }
+
+        const override = getTravelChargeOverride(entry.id, person);
+        if (override?.target === "home") {
+            return false;
+        }
+
+        const origin = normalizeLocationName(getInitialOrigin(entry));
+        const details = (entry.details ?? "").trim();
+
+        if (origin === "자택" || entry.moveFrom === "자택") {
+            return false;
+        }
+
+        if (override?.target === "lodging") {
+            return origin === "숙소" || entry.moveFrom === "숙소";
+        }
+
+        return (
+            origin === "숙소" ||
+            entry.moveFrom === "숙소" ||
+            details.startsWith("숙소→")
+        );
+    };
+
+    /** 인보이스 코멘트용: 실제 숙소 도착(→숙소) 여부 */
+    const isSemanticLodgingArrivalForComment = (
+        entry: TimesheetSourceEntryData,
+        person: string
+    ): boolean => {
+        if (entry.descType !== "이동" || !(entry.persons ?? []).includes(person)) {
+            return false;
+        }
+
+        const override = getTravelChargeOverride(entry.id, person);
+        if (override?.target === "home") {
+            return false;
+        }
+
+        const destination = normalizeLocationName(
+            getFinalDestination({
+                ...entry,
+                sourceEntryIds: [entry.id],
+            } as InvoiceTimesheetEntry)
+        );
+        const details = (entry.details ?? "").trim();
+
+        if (destination === "자택" || entry.moveTo === "자택") {
+            return false;
+        }
+
+        if (override?.target === "lodging") {
+            return destination === "숙소" || entry.moveTo === "숙소";
+        }
+
+        return (
+            destination === "숙소" ||
+            entry.moveTo === "숙소" ||
+            details.includes("→숙소")
+        );
+    };
+
+    /**
+     * 해당 meal 그룹·표시 일자(row.date)의 숙박 인원 수.
+     * 다음 날 이동 배지 `숙소→`(숙소 출발)가 있는 인원을 전날 숙박으로 집계한다.
+     * 예: 5/2에 숙소→ 4명 → 5/1 숙박 칸에 4.
+     */
     const countLodgingArrivalPersonsForMealGroup = (
-        sectionTitle: string,
-        sectionKey: string | undefined,
+        _sectionTitle: string,
+        _sectionKey: string | undefined,
         allRows: TimesheetRow[],
         row: TimesheetRow
     ): number => {
-        const groupRows = getMealGroupRows(sectionTitle, sectionKey, allRows, row);
-        const dateKey = row.date;
+        const departureLodgingDateKey = shiftDateByDays(row.date, 1);
         const entryById = new Map<number, TimesheetSourceEntryData>();
-        const persons = getUniquePersonsFromRows(groupRows);
-        const personSet = new Set(persons);
+        const sectionPersons = new Set(getUniquePersonsFromRows(allRows));
 
-        // 숙소 수량은 사이드패널 Full Group의 `→숙소` 배지와 동일해야 한다.
-        // 타임시트 행으로 재계산된 sourceEntries만 보면, 수정 후 별도 이동 행에 남은
-        // 배지 인원이 누락될 수 있어 원본 workLogDataList의 해당 날짜 전체 엔트리를 본다.
+        // 타임시트 행만 보면 누락될 수 있어 원본 workLogDataList의 해당 날짜(다음날) 전체 이동을 본다.
         for (const data of workLogDataList) {
             for (const entry of data.entries) {
-                if (entry.dateFrom !== dateKey) {
+                if (entry.dateFrom !== departureLodgingDateKey) {
                     continue;
                 }
-                if (!(entry.persons ?? []).some((person) => personSet.has(person))) {
+                if (
+                    !(entry.persons ?? []).some((person) =>
+                        sectionPersons.has(person)
+                    )
+                ) {
                     continue;
                 }
                 entryById.set(
@@ -7516,34 +8196,34 @@ export default function InvoiceCreatePage() {
         }
 
         // 로컬 복제/임시 행처럼 아직 workLogDataList에 없는 엔트리도 함께 고려한다.
-        for (const r of allRows) {
-            for (const e of r.sourceEntries) {
+        for (const timesheetRow of allRows) {
+            for (const sourceEntry of timesheetRow.sourceEntries) {
                 if (
-                    e.dateFrom === dateKey &&
-                    (e.persons ?? []).some((person) => personSet.has(person)) &&
-                    !entryById.has(e.id)
+                    sourceEntry.dateFrom === departureLodgingDateKey &&
+                    !entryById.has(sourceEntry.id)
                 ) {
-                    entryById.set(e.id, e);
+                    entryById.set(sourceEntry.id, sourceEntry);
                 }
             }
         }
-        const entries = [...entryById.values()];
-        let n = 0;
-        for (const person of persons) {
-            for (const entry of entries) {
-                if (entry.descType !== "이동") {
+
+        const counted = new Set<string>();
+        for (const sourceEntry of entryById.values()) {
+            if (sourceEntry.descType !== "이동") {
+                continue;
+            }
+            for (const person of sourceEntry.persons ?? []) {
+                if (counted.has(person) || !sectionPersons.has(person)) {
                     continue;
                 }
-                if (!(entry.persons ?? []).includes(person)) {
-                    continue;
-                }
-                if (getTravelBadgeLabelForPerson(entry, person) === "→숙소") {
-                    n += 1;
-                    break;
+                if (
+                    getTravelBadgeLabelForPerson(sourceEntry, person) === "숙소→"
+                ) {
+                    counted.add(person);
                 }
             }
         }
-        return n;
+        return counted.size;
     };
 
     const getSectionLodgingArrivalTotal = (
@@ -7785,7 +8465,7 @@ export default function InvoiceCreatePage() {
                 const firstEntry = personEntries[0];
                 if (
                     firstEntry?.descType === "이동" &&
-                    getTravelBadgeLabelForPerson(firstEntry, person) === "숙소→"
+                    isSemanticLodgingDepartureForComment(firstEntry, person)
                 ) {
                     const previousVesselsForPerson = (previous?.vessels ?? []).filter(
                         (vessel) => vessel && vessel !== currentVessel
@@ -7803,7 +8483,7 @@ export default function InvoiceCreatePage() {
                 const lastEntry = personEntries[personEntries.length - 1];
                 if (
                     lastEntry?.descType === "이동" &&
-                    getTravelBadgeLabelForPerson(lastEntry, person) === "→숙소"
+                    isSemanticLodgingArrivalForComment(lastEntry, person)
                 ) {
                     const nextVesselsForPerson = (next?.vessels ?? []).filter(
                         (vessel) => vessel && vessel !== currentVessel
@@ -9960,6 +10640,38 @@ export default function InvoiceCreatePage() {
     }, [selectedTimesheetDateGroupKeys.length]);
 
     useEffect(() => {
+        if (!invoiceDocumentExportOpen) {
+            return;
+        }
+        const onPointerDown = (event: MouseEvent) => {
+            const target = event.target as Node;
+            if (invoiceDocumentExportRef.current?.contains(target)) {
+                return;
+            }
+            if (
+                invoicePdfMenuPanelRef.current?.contains(target) ||
+                invoicePdfMenuButtonRef.current?.contains(target)
+            ) {
+                return;
+            }
+            setInvoiceDocumentExportOpen(false);
+            setInvoicePdfMenuOpen(false);
+        };
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setInvoiceDocumentExportOpen(false);
+                setInvoicePdfMenuOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("keydown", onKeyDown);
+        return () => {
+            document.removeEventListener("mousedown", onPointerDown);
+            document.removeEventListener("keydown", onKeyDown);
+        };
+    }, [invoiceDocumentExportOpen]);
+
+    useEffect(() => {
         if (!invoicePdfMenuOpen) {
             return;
         }
@@ -10172,7 +10884,60 @@ export default function InvoiceCreatePage() {
                                 </button>
                                 <button
                                     type="button"
-                                    disabled={invoiceExcelExporting}
+                                    onClick={() => setInvoiceReportsModalOpen(true)}
+                                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100"
+                                    title="보고서 선택"
+                                    aria-label="보고서 선택"
+                                >
+                                    <IconReportOutline />
+                                </button>
+                                <div
+                                    ref={invoiceDocumentExportRef}
+                                    className="flex items-center"
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setInvoiceDocumentExportOpen(
+                                                (open) => {
+                                                    if (open) {
+                                                        setInvoicePdfMenuOpen(
+                                                            false
+                                                        );
+                                                    }
+                                                    return !open;
+                                                }
+                                            )
+                                        }
+                                        className={[
+                                            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100",
+                                            invoiceDocumentExportOpen
+                                                ? "bg-gray-100"
+                                                : null,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                        title="문서보내기"
+                                        aria-label="문서보내기"
+                                        aria-expanded={invoiceDocumentExportOpen}
+                                    >
+                                        <IconExportDocuments />
+                                    </button>
+                                    <div
+                                        className={[
+                                            "flex items-center gap-1.5 overflow-hidden transition-[max-width,opacity,margin] duration-300 ease-out md:gap-2",
+                                            invoiceDocumentExportOpen
+                                                ? "ml-1.5 max-w-[9.5rem] opacity-100 md:ml-2"
+                                                : "pointer-events-none max-w-0 opacity-0",
+                                        ].join(" ")}
+                                        aria-hidden={!invoiceDocumentExportOpen}
+                                    >
+                                <button
+                                    type="button"
+                                    disabled={
+                                        !invoiceDocumentExportOpen ||
+                                        invoiceExcelExporting
+                                    }
                                     onClick={() => void handleInvoiceExcelExport()}
                                     className={[
                                         "h-12 min-w-[3rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-50",
@@ -10186,11 +10951,12 @@ export default function InvoiceCreatePage() {
                                 <button
                                     ref={invoicePdfMenuButtonRef}
                                     type="button"
+                                    disabled={!invoiceDocumentExportOpen}
                                     onClick={() =>
                                         setInvoicePdfMenuOpen((open) => !open)
                                     }
                                     className={[
-                                        "h-12 min-w-[3rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100",
+                                        "h-12 min-w-[3rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-50",
                                         invoicePdfMenuOpen ? "bg-gray-100" : null,
                                     ]
                                         .filter(Boolean)
@@ -10202,6 +10968,8 @@ export default function InvoiceCreatePage() {
                                 >
                                     PDF
                                 </button>
+                                    </div>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -12129,6 +12897,15 @@ export default function InvoiceCreatePage() {
                         </div>
                     </div>
                 </BaseModal>
+
+                <InvoiceReportsPickerModal
+                    isOpen={invoiceReportsModalOpen}
+                    onClose={() => setInvoiceReportsModalOpen(false)}
+                    initialSelectedIds={workLogDataList.map(
+                        (data) => data.workLog.id
+                    )}
+                    onApply={applyInvoiceReportSelection}
+                />
 
                 <InvoiceDraftLoadModal
                     isOpen={invoiceDraftLoadModalOpen}
