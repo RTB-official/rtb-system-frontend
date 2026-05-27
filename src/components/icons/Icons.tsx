@@ -253,6 +253,26 @@ export const IconSave = (props: { className?: string }) => (
     </svg>
 );
 
+/** 문서보내기·보내기 (IconSave·헤더 패널 버튼과 동일 stroke 스타일) */
+export const IconExportDocuments = (props: { className?: string }) => (
+    <svg
+        viewBox="0 0 24 24"
+        width="24"
+        height="24"
+        className={props.className || "block shrink-0"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M12 3v12" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M5 21h14" />
+    </svg>
+);
+
 export const IconExcel = (props: { className?: string }) => (
     <svg
         className={props.className || "w-5 h-5"}
@@ -431,6 +451,28 @@ export const IconReport = (props: { className?: string }) => (
             d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM16 18H8V16H16V18ZM16 14H8V12H16V14ZM13 9V3.5L18.5 9H13Z"
             fill="currentColor"
         />
+    </svg>
+);
+
+/** 헤더 액션용 stroke 보고서 아이콘 (IconSave·패널 버튼과 동일 톤) */
+export const IconReportOutline = (props: { className?: string }) => (
+    <svg
+        viewBox="0 0 24 24"
+        width="24"
+        height="24"
+        className={props.className || "block shrink-0"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M8 13h8" />
+        <path d="M8 17h5" />
+        <path d="M8 9h4" />
     </svg>
 );
 

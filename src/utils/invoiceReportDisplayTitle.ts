@@ -1,10 +1,51 @@
 /** 인보이스 보고서 목록 테이블 제목과 동일 규칙: 기간 + 호선 + 출장목적 */
 
+/** DB·뷰 값(YYYY-MM-DD 또는 ISO)을 달력 일자 키로 통일 */
+export function normalizeCalendarDateKey(
+    raw?: string | null
+): string | undefined {
+    const t = raw?.trim();
+    if (!t) {
+        return undefined;
+    }
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(t);
+    return match ? match[1] : undefined;
+}
+
 function formatKoreanDate(dateString: string) {
+    const dayKey = normalizeCalendarDateKey(dateString);
+    if (dayKey) {
+        const [, month, day] = dayKey.split("-").map(Number);
+        return { month, day };
+    }
     const d = new Date(dateString);
-    const month = d.getMonth() + 1;
-    const day = d.getDate();
-    return { month, day };
+    if (Number.isNaN(d.getTime())) {
+        return { month: 0, day: 0 };
+    }
+    return { month: d.getMonth() + 1, day: d.getDate() };
+}
+
+/** date_from·date_to 각각을 시작·종료 후보에 넣어 최소·최대 일자를 구한다 */
+export function mergeWorkLogPeriodBounds(
+    prev: { start?: string; end?: string } | undefined,
+    dateFrom?: string | null,
+    dateTo?: string | null
+): { start?: string; end?: string } {
+    let start = prev?.start;
+    let end = prev?.end;
+    for (const raw of [dateFrom, dateTo]) {
+        const day = normalizeCalendarDateKey(raw);
+        if (!day) {
+            continue;
+        }
+        if (!start || day < start) {
+            start = day;
+        }
+        if (!end || day > end) {
+            end = day;
+        }
+    }
+    return { start, end };
 }
 
 export function formatKoreanPeriod(start?: string, end?: string) {
@@ -30,19 +71,11 @@ export function formatKoreanPeriod(start?: string, end?: string) {
 export function aggregateWorkLogEntryDateRange(
     entries: ReadonlyArray<{ dateFrom?: string; dateTo?: string }>
 ): { start?: string; end?: string } {
-    let start: string | undefined;
-    let end: string | undefined;
+    let bounds: { start?: string; end?: string } | undefined;
     for (const e of entries) {
-        const df = e.dateFrom?.trim();
-        const dt = e.dateTo?.trim();
-        if (df && (!start || df < start)) {
-            start = df;
-        }
-        if (dt && (!end || dt > end)) {
-            end = dt;
-        }
+        bounds = mergeWorkLogPeriodBounds(bounds, e.dateFrom, e.dateTo);
     }
-    return { start, end };
+    return bounds ?? {};
 }
 
 /**
