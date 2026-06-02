@@ -12,7 +12,24 @@ const workLogInFlight = new Map<number, Promise<WorkLogFullData | null>>();
 let workLogEntriesSplitGroupIdSupported: boolean | null = null;
 
 function isSplitGroupIdSchemaError(message: string): boolean {
-    return /split_group_id/i.test(message) && /schema cache|could not find/i.test(message);
+    return /split_group_id/i.test(message);
+}
+
+/** Supabase/PostgREST 오류 객체 → 사용자 메시지 */
+function formatUnknownError(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (err && typeof err === "object") {
+        const o = err as Record<string, unknown>;
+        if (typeof o.message === "string" && o.message) return o.message;
+        if (typeof o.details === "string" && o.details) return o.details;
+        if (typeof o.hint === "string" && o.hint) return o.hint;
+        try {
+            return JSON.stringify(err);
+        } catch {
+            return String(err);
+        }
+    }
+    return String(err);
 }
 
 function omitSplitGroupId<T extends Record<string, unknown>>(payload: T): T {
@@ -51,7 +68,9 @@ async function insertWorkLogEntryRow(
         ({ data, error } = await run(omitSplitGroupId(payload)));
     }
 
-    if (error) throw error;
+    if (error) {
+        throw new Error(formatUnknownError(error));
+    }
     if ("split_group_id" in payload) workLogEntriesSplitGroupIdSupported = true;
 
     const id = Number((data as { id?: number })?.id);
@@ -86,7 +105,9 @@ async function updateWorkLogEntryRow(
         ({ data, error } = await run(omitSplitGroupId(payload)));
     }
 
-    if (error) throw error;
+    if (error) {
+        throw new Error(formatUnknownError(error));
+    }
     if ("split_group_id" in payload) workLogEntriesSplitGroupIdSupported = true;
     if (!data) return null;
 
@@ -453,12 +474,10 @@ export async function createWorkLog(
                             ...workLogEntrySplitGroupIdPayload(segment.splitGroupId),
                         });
                     } catch (entryError) {
-                        const message =
-                            entryError instanceof Error
-                                ? entryError.message
-                                : String(entryError);
                         console.error("Error creating work log entry:", entryError);
-                        throw new Error(`업무 일지 저장 실패: ${message}`);
+                        throw new Error(
+                            `업무 일지 저장 실패: ${formatUnknownError(entryError)}`
+                        );
                     }
 
                     // 각 entry의 참여자 저장
@@ -1194,8 +1213,9 @@ for (const r of curRows ?? []) {
             const updRow = await updateWorkLogEntryRow(payload, workLogId, incomingId);
             if (updRow) rowKey = updRow;
         } catch (updErr) {
-            const message = updErr instanceof Error ? updErr.message : String(updErr);
-            throw new Error(`업무 일지 업데이트 실패: ${message}`);
+            throw new Error(
+                `업무 일지 업데이트 실패: ${formatUnknownError(updErr)}`
+            );
         }
       }
     
@@ -1205,8 +1225,9 @@ for (const r of curRows ?? []) {
           try {
             rowKey = await insertWorkLogEntryRow(payload);
           } catch (insErr) {
-            const message = insErr instanceof Error ? insErr.message : String(insErr);
-            throw new Error(`업무 일지 생성 실패: ${message}`);
+            throw new Error(
+                `업무 일지 생성 실패: ${formatUnknownError(insErr)}`
+            );
           }
         }
         await syncEntryPersons(rowKey.id, e.persons ?? []);

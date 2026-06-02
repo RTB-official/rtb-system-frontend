@@ -1,5 +1,5 @@
 // src/store/auth.tsx
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase"; // ✅ @/lib/supabase → 상대경로
@@ -17,6 +17,8 @@ const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type Profile = {
   id: string;
@@ -47,65 +49,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
 
-  const loadProfile = async (userId: string) => {
+  const applyProfile = useCallback((data: any): Profile => {
+    const nextProfile: Profile = {
+      id: data.id,
+      email: data.email ?? null,
+      username: data.username ?? null,
+      name: data.name ?? null,
+      role: data.role ?? null,
+      position: data.position ?? null,
+      department: data.department ?? null,
+    };
+
+    setProfile(nextProfile);
+    localStorage.setItem("profile_role", nextProfile.role ?? "");
+    localStorage.setItem("profile_position", nextProfile.position ?? "");
+
+    return nextProfile;
+  }, []);
+
+  const loadProfile = useCallback(async (userId: string) => {
     setLoadingProfile(true);
     try {
       let data: any = null;
       let error: any = null;
 
-      try {
-        const res1 = await supabase
-          .from("profiles")
-          .select("id, email, username, name, role, position, department")
-          .eq("id", userId)
-          .single();
-
-        data = res1.data;
-        error = res1.error;
-      } catch (e: any) {
-        // AbortError면 1회 재시도
-        if (e?.name === "AbortError") {
-          const res2 = await supabase
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const res = await supabase
             .from("profiles")
             .select("id, email, username, name, role, position, department")
             .eq("id", userId)
-            .single();
+            .maybeSingle();
 
-          data = res2.data;
-          error = res2.error;
-        } else {
-          throw e;
+          data = res.data;
+          error = res.error;
+
+          if (!error && data) break;
+        } catch (e: any) {
+          error = e;
+        }
+
+        if (attempt < 2) {
+          await sleep(250 * (attempt + 1));
         }
       }
 
 
-      if (error) {
+      if (error || !data) {
         console.error("profiles 조회 실패:", error);
+
+        // 세션 저장소 전환/토큰 갱신 직후 authenticated 클라이언트가
+        // 일시적으로 profile을 못 읽는 경우가 있어, 로그인 공개 조회 정책으로 한 번 더 확인한다.
+        const { data: publicProfile, error: publicError } = await supabasePublic
+          .from("profiles")
+          .select("id, email, username, name, role, position, department")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (publicProfile && !publicError) {
+          return applyProfile(publicProfile);
+        }
+
+        console.error("profiles 공개 fallback 조회 실패:", publicError);
         setProfile(null);
         return null;
       }
 
-      const nextProfile: Profile = {
-        id: data.id,
-        email: data.email ?? null,
-        username: data.username ?? null,
-        name: data.name ?? null,
-        role: data.role ?? null,
-        position: data.position ?? null,
-        department: data.department ?? null,
-      };
-
-      setProfile(nextProfile);
-
-      // ✅ Sidebar/초기 렌더 깜빡임 방지용 캐시
-      localStorage.setItem("profile_role", nextProfile.role ?? "");
-      localStorage.setItem("profile_position", nextProfile.position ?? "");
-
-      return nextProfile;
+      return applyProfile(data);
     } finally {
       setLoadingProfile(false);
     }
-  };
+  }, [applyProfile]);
 
 
   useEffect(() => {
@@ -141,8 +155,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
 
     // ✅ session 생겼을 때 딱 1번 profile 로드 (중복 호출 방지)
-    loadProfile(userId);
-  }, [session?.user?.id]);
+    void loadProfile(userId);
+  }, [loadProfile, session?.user?.id]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -160,7 +174,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!userId) return { ok: false, message: "사용자 정보를 확인할 수 없습니다." };
 
         const p = await loadProfile(userId);
-        if (!p) return { ok: false, message: "프로필 정보를 불러오지 못했습니다." };
+        if (!p) {
+          const { data: profileByEmail } = await supabasePublic
+            .from("profiles")
+            .select("id, email, username, name, role, position, department")
+            .eq("id", userId)
+            .maybeSingle();
+
+          if (profileByEmail) {
+            const fallbackProfile = applyProfile(profileByEmail);
+            return { ok: true, role: fallbackProfile.role ?? undefined };
+          }
+
+          return { ok: false, message: "프로필 정보를 불러오지 못했습니다." };
+        }
 
         return { ok: true, role: p.role ?? undefined };
       },
@@ -177,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const res1 = await supabasePublic
             .from("profiles")
-            .select("email, name, username")
+            .select("id, email, name, username, role, position, department")
             .eq("username", trimmedUsername)
             .maybeSingle();
 
@@ -188,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (e?.name === "AbortError") {
             const res2 = await supabasePublic
               .from("profiles")
-              .select("email, name, username")
+              .select("id, email, name, username, role, position, department")
               .eq("username", trimmedUsername)
               .maybeSingle();
 
@@ -205,7 +232,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!profile && !profileError) {
           const { data: profiles, error: searchError } = await supabasePublic
             .from("profiles")
-            .select("email, name, username")
+            .select("id, email, name, username, role, position, department")
             .like("username", `${trimmedUsername}_%`)
             .limit(1);
 
@@ -249,7 +276,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!userId) return { ok: false, message: "사용자 정보를 확인할 수 없습니다." };
 
         const p = await loadProfile(userId);
-        if (!p) return { ok: false, message: "프로필 정보를 불러오지 못했습니다." };
+        if (!p) {
+          if (profile?.id === userId) {
+            const fallbackProfile = applyProfile(profile);
+            return { ok: true, role: fallbackProfile.role ?? undefined };
+          }
+
+          return { ok: false, message: "프로필 정보를 불러오지 못했습니다." };
+        }
 
         return { ok: true, role: p.role ?? undefined };
       },
@@ -261,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
       },
     }),
-    [loading, loadingProfile, session, profile]
+    [loading, loadingProfile, session, profile, loadProfile, applyProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
