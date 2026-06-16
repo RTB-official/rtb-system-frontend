@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BaseModal from "../ui/BaseModal";
 import Input from "../common/Input";
 import YearMonthSelector from "../common/YearMonthSelector";
@@ -17,6 +17,38 @@ const STATUS_LABEL: Record<
     pending: { color: "green-600", label: "임시저장" },
 };
 
+function MiniReportCardContent({ item }: { item: InvoiceReportListItem }) {
+    const status = STATUS_LABEL[item.status];
+
+    return (
+        <>
+            <div className="text-sm font-medium text-gray-900 line-clamp-2">
+                {item.title || "—"}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+                <span>{item.date}</span>
+                {item.place?.trim() ? (
+                    <>
+                        <span aria-hidden>·</span>
+                        <span className="truncate max-w-[8rem]">{item.place}</span>
+                    </>
+                ) : null}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <Avatar
+                    email={item.ownerEmail}
+                    position={item.ownerPosition}
+                    size={18}
+                />
+                <span className="text-xs text-gray-600">{item.owner}</span>
+                <Chip color={status.color} variant="solid" size="sm">
+                    {status.label}
+                </Chip>
+            </div>
+        </>
+    );
+}
+
 function MiniReportCard({
     item,
     action,
@@ -28,7 +60,19 @@ function MiniReportCard({
     onAction: () => void;
     highlight?: boolean;
 }) {
-    const status = STATUS_LABEL[item.status];
+    if (action === "add") {
+        return (
+            <button
+                type="button"
+                onClick={onAction}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:border-blue-300 hover:bg-blue-50/60 cursor-pointer"
+                aria-label="선택에 추가"
+                title="추가"
+            >
+                <MiniReportCardContent item={item} />
+            </button>
+        );
+    }
 
     return (
         <div
@@ -40,45 +84,16 @@ function MiniReportCard({
             ].join(" ")}
         >
             <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-gray-900 line-clamp-2">
-                    {item.title || "—"}
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                    <span>{item.date}</span>
-                    {item.place?.trim() ? (
-                        <>
-                            <span aria-hidden>·</span>
-                            <span className="truncate max-w-[8rem]">
-                                {item.place}
-                            </span>
-                        </>
-                    ) : null}
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    <Avatar
-                        email={item.ownerEmail}
-                        position={item.ownerPosition}
-                        size={18}
-                    />
-                    <span className="text-xs text-gray-600">{item.owner}</span>
-                    <Chip color={status.color} variant="solid" size="sm">
-                        {status.label}
-                    </Chip>
-                </div>
+                <MiniReportCardContent item={item} />
             </div>
             <button
                 type="button"
                 onClick={onAction}
-                className={[
-                    "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-bold transition-colors",
-                    action === "add"
-                        ? "border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                        : "border-gray-200 bg-white text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600",
-                ].join(" ")}
-                aria-label={action === "add" ? "선택에 추가" : "선택에서 제거"}
-                title={action === "add" ? "추가" : "제거"}
+                className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-sm font-bold text-gray-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                aria-label="선택에서 제거"
+                title="제거"
             >
-                {action === "add" ? "+" : "×"}
+                ×
             </button>
         </div>
     );
@@ -101,6 +116,8 @@ export default function InvoiceReportsPickerModal({
     const [year, setYear] = useState("년도 전체");
     const [month, setMonth] = useState("월 전체");
     const [selectedIds, setSelectedIds] = useState<number[]>(initialSelectedIds);
+    const selectedListRef = useRef<HTMLDivElement>(null);
+    const lastAddedIdRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (!isOpen) {
@@ -176,8 +193,30 @@ export default function InvoiceReportsPickerModal({
             .filter((r): r is InvoiceReportListItem => Boolean(r));
     }, [reports, selectedIds]);
 
+    useEffect(() => {
+        const addedId = lastAddedIdRef.current;
+        if (addedId == null) {
+            return;
+        }
+        lastAddedIdRef.current = null;
+
+        requestAnimationFrame(() => {
+            const container = selectedListRef.current;
+            const card = container?.querySelector<HTMLElement>(
+                `[data-selected-id="${addedId}"]`
+            );
+            card?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+    }, [selectedIds]);
+
     const addReport = (id: number) => {
-        setSelectedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        setSelectedIds((prev) => {
+            if (prev.includes(id)) {
+                return prev;
+            }
+            lastAddedIdRef.current = id;
+            return [...prev, id];
+        });
     };
 
     const removeReport = (id: number) => {
@@ -299,6 +338,7 @@ export default function InvoiceReportsPickerModal({
                         인보이스에 포함 ({selectedReports.length})
                     </h4>
                     <div
+                        ref={selectedListRef}
                         className={[
                             "min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain rounded-lg border border-blue-100 bg-blue-50/30 p-3",
                             "max-h-[42vh] md:max-h-full",
@@ -311,13 +351,14 @@ export default function InvoiceReportsPickerModal({
                             </p>
                         ) : (
                             selectedReports.map((item) => (
-                                <MiniReportCard
-                                    key={item.id}
-                                    item={item}
-                                    action="remove"
-                                    onAction={() => removeReport(item.id)}
-                                    highlight
-                                />
+                                <div key={item.id} data-selected-id={item.id}>
+                                    <MiniReportCard
+                                        item={item}
+                                        action="remove"
+                                        onAction={() => removeReport(item.id)}
+                                        highlight
+                                    />
+                                </div>
                             ))
                         )}
                     </div>
