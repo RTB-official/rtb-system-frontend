@@ -10867,7 +10867,7 @@ export default function InvoiceCreatePage() {
                 const fitterEnglishNames = jobDescriptionPersonnel.mechanicPeople
                     .map((person) => getEnglishPersonName(person))
                     .join(", ");
-                const skilledSectionLabel = `1.1 ${
+                const skilledSectionLabel = `  1.1 ${
                     invoiceSkilledFitterPeople.length > 1
                         ? "Skilled Fitters"
                         : "Skilled Fitter"
@@ -10876,7 +10876,7 @@ export default function InvoiceCreatePage() {
                         ? ` (${skilledEnglishNames})`
                         : ""
                 }`;
-                const fitterSectionLabel = `1.2 ${
+                const fitterSectionLabel = `  1.2 ${
                     invoiceFitterPeople.length > 1 ? "Fitters" : "Fitter"
                 }${
                     fitterEnglishNames.length > 0
@@ -12485,7 +12485,7 @@ export default function InvoiceCreatePage() {
                                                     {/* 1.1 Skilled Fitter */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">
-                                                            {`1.1 ${
+                                                            {`  1.1 ${
                                                                 invoiceSkilledFitterPeople.length > 1
                                                                     ? "Skilled Fitters"
                                                                     : "Skilled Fitter"
@@ -12675,7 +12675,7 @@ export default function InvoiceCreatePage() {
                                                     {/* 1.2 Fitters */}
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 pl-8 border-b border-gray-300">
-                                                            {`1.2 ${
+                                                            {`  1.2 ${
                                                                 invoiceFitterPeople.length > 1
                                                                     ? "Fitters"
                                                                     : "Fitter"
