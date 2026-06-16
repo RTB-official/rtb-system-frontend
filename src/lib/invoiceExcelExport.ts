@@ -621,6 +621,8 @@ export function fillInvoiceSheet(
         rows.dailyAllowanceDetail,
         input.dailyAllowanceLineTotal
     );
+
+    applyInvoiceSheetFooterSectionLayout(ws, _variant);
 }
 
 export function buildInvoiceExcelManpowerGroupInput(
@@ -675,6 +677,218 @@ function sanitizeExcelCellString(value: string): string {
 
 function unsetInvoiceSheetCell(ws: ExcelJS.Worksheet, address: string) {
     ws.getCell(address).value = null;
+}
+
+function getWorksheetCellDisplayText(cell: ExcelJS.Cell): string {
+    const value = cell.value;
+    if (value === null || value === undefined) return "";
+    if (typeof value === "object") {
+        if (
+            "richText" in value &&
+            Array.isArray((value as ExcelJS.CellRichTextValue).richText)
+        ) {
+            return (value as ExcelJS.CellRichTextValue).richText
+                .map((part) => part.text ?? "")
+                .join("");
+        }
+        if (
+            "text" in value &&
+            typeof (value as { text?: string }).text === "string"
+        ) {
+            return (value as { text: string }).text;
+        }
+        if ("result" in value) {
+            return String((value as ExcelJS.CellFormulaValue).result ?? "");
+        }
+    }
+    return String(value);
+}
+
+function findInvoiceSheetRowByColumnText(
+    ws: ExcelJS.Worksheet,
+    col: string,
+    pattern: RegExp,
+    startRow: number,
+    endRow: number
+): number | undefined {
+    for (let row = startRow; row <= endRow; row += 1) {
+        const text = getWorksheetCellDisplayText(ws.getCell(`${col}${row}`));
+        if (pattern.test(text)) return row;
+    }
+    return undefined;
+}
+
+function findInvoiceSheetRowByDescriptionText(
+    ws: ExcelJS.Worksheet,
+    pattern: RegExp,
+    startRow: number,
+    endRow: number
+): number | undefined {
+    const descriptionCols = ["B", "C", "D", "E", "F"] as const;
+    for (let row = startRow; row <= endRow; row += 1) {
+        for (const col of descriptionCols) {
+            const text = getWorksheetCellDisplayText(ws.getCell(`${col}${row}`));
+            if (pattern.test(text)) return row;
+        }
+    }
+    return undefined;
+}
+
+function clearInvoiceSheetCellCompletely(
+    ws: ExcelJS.Worksheet,
+    address: string
+) {
+    ws.getCell(address).value = null;
+}
+
+function materializeSharedFormulaCell(
+    ws: ExcelJS.Worksheet,
+    address: string
+) {
+    const value = ws.getCell(address).value;
+    if (
+        typeof value === "object" &&
+        value !== null &&
+        "sharedFormula" in value
+    ) {
+        setCellValue(ws, address, 0);
+    }
+}
+
+function dissolveInvoiceSheetFooterSharedTotalFormulas(ws: ExcelJS.Worksheet) {
+    const searchStart = INVOICE_SHEET_MANPOWER_ROWS.dailyAllowanceDetail;
+    for (let row = searchStart; row <= searchStart + 15; row += 1) {
+        materializeSharedFormulaCell(ws, `J${row}`);
+    }
+
+    const mileageRow = findInvoiceSheetRowByDescriptionText(
+        ws,
+        /\* Mileage:/,
+        searchStart,
+        searchStart + 20
+    );
+    if (mileageRow) {
+        const masterCell = ws.getCell(`J${mileageRow}`);
+        const masterValue = masterCell.value;
+        if (
+            typeof masterValue === "object" &&
+            masterValue !== null &&
+            "formula" in masterValue &&
+            "shareType" in masterValue
+        ) {
+            setCellValue(ws, `J${mileageRow}`, 0);
+        }
+    }
+}
+
+function isInvoiceSheetSpacerRow(
+    ws: ExcelJS.Worksheet,
+    rowNumber: number
+): boolean {
+    if (rowNumber < 1) return false;
+    for (const col of INVOICE_SHEET_CLEAR_COLS) {
+        const text = getWorksheetCellDisplayText(ws.getCell(`${col}${rowNumber}`));
+        const trimmed = text.trim();
+        if (trimmed !== "" && trimmed !== "0") return false;
+    }
+    return true;
+}
+
+/** R&D 양식: Transportation(4)과 Accomodation(5) 사이 공백 행 2개 → 1개 */
+function collapseRdInvoiceTransportationAccommodationGap(
+    ws: ExcelJS.Worksheet,
+    accommodationHeaderRow: number
+) {
+    const rowAboveHeader = accommodationHeaderRow - 1;
+    const rowAboveThat = accommodationHeaderRow - 2;
+    if (
+        isInvoiceSheetSpacerRow(ws, rowAboveHeader) &&
+        isInvoiceSheetSpacerRow(ws, rowAboveThat)
+    ) {
+        hideInvoiceSheetRow(ws, rowAboveThat);
+    }
+}
+
+/** Transportation mileage 안내 행 제거, Accommodation 단위/합계를 상세 행으로 이동 */
+function applyInvoiceSheetFooterSectionLayout(
+    ws: ExcelJS.Worksheet,
+    variant: "normal" | "rd"
+) {
+    const cols = INVOICE_SHEET_COLS;
+    const searchStart = INVOICE_SHEET_MANPOWER_ROWS.dailyAllowanceDetail;
+
+    dissolveInvoiceSheetFooterSharedTotalFormulas(ws);
+
+    const mileageRow = findInvoiceSheetRowByDescriptionText(
+        ws,
+        /\* Mileage:/,
+        searchStart,
+        searchStart + 20
+    );
+    if (mileageRow) hideInvoiceSheetRow(ws, mileageRow);
+
+    const hotelMileageRow = findInvoiceSheetRowByDescriptionText(
+        ws,
+        /Hotel to HHI/i,
+        searchStart,
+        searchStart + 20
+    );
+    if (hotelMileageRow) hideInvoiceSheetRow(ws, hotelMileageRow);
+
+    const accommodationHeaderRow = findInvoiceSheetRowByDescriptionText(
+        ws,
+        /^\s*5\.\s*Accomodation/i,
+        searchStart,
+        searchStart + 25
+    );
+    if (!accommodationHeaderRow) return;
+
+    const detailRow = accommodationHeaderRow + 1;
+    const headerUnitText = getWorksheetCellDisplayText(
+        ws.getCell(`${cols.unit}${accommodationHeaderRow}`)
+    );
+    const headerTotalCell = ws.getCell(`${cols.total}${accommodationHeaderRow}`);
+    const headerTotalValue = headerTotalCell.value;
+    const headerHasTotalFormula =
+        typeof headerTotalValue === "object" &&
+        headerTotalValue !== null &&
+        ("formula" in headerTotalValue || "sharedFormula" in headerTotalValue);
+
+    if (headerUnitText === "PC") {
+        setCellValue(ws, `${cols.unit}${detailRow}`, "PC");
+        clearInvoiceSheetCellCompletely(
+            ws,
+            `${cols.unit}${accommodationHeaderRow}`
+        );
+        setCellValue(ws, `${cols.total}${detailRow}`, 0);
+        clearInvoiceSheetCellCompletely(
+            ws,
+            `${cols.total}${accommodationHeaderRow}`
+        );
+    } else {
+        const headerTotalIsZero =
+            headerTotalValue === 0 ||
+            headerTotalValue === "0" ||
+            (typeof headerTotalValue === "object" &&
+                headerTotalValue !== null &&
+                "result" in headerTotalValue &&
+                (headerTotalValue as ExcelJS.CellFormulaValue).result === 0);
+
+        if (headerTotalIsZero || headerHasTotalFormula) {
+            setCellValue(ws, `${cols.total}${detailRow}`, 0);
+            clearInvoiceSheetCellCompletely(
+                ws,
+                `${cols.total}${accommodationHeaderRow}`
+            );
+        }
+    }
+
+    if (variant === "rd") {
+        collapseRdInvoiceTransportationAccommodationGap(
+            ws,
+            accommodationHeaderRow
+        );
+    }
 }
 
 function setCellValue(ws: ExcelJS.Worksheet, address: string, value: unknown) {
