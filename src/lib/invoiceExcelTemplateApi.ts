@@ -56,6 +56,26 @@ export async function fetchActiveInvoiceExcelTemplate(): Promise<InvoiceExcelTem
     return (anyActive.data as InvoiceExcelTemplateRow | null) ?? null;
 }
 
+export async function fetchActiveInvoiceExcelTemplateBySlug(
+    slug: string
+): Promise<InvoiceExcelTemplateRow | null> {
+    const row = await supabase
+        .from("invoice_excel_templates")
+        .select("*")
+        .eq("is_active", true)
+        .eq("slug", slug)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (row.error) {
+        console.error("invoice_excel_templates (slug) 조회 실패:", row.error);
+        throw row.error;
+    }
+
+    return (row.data as InvoiceExcelTemplateRow | null) ?? null;
+}
+
 export async function downloadInvoiceExcelTemplateArrayBuffer(
     storagePath: string
 ): Promise<ArrayBuffer> {

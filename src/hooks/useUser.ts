@@ -91,6 +91,8 @@ export function useUser() {
         };
     });
 
+    const fetchUserRef = useRef<(() => Promise<void>) | null>(null);
+
     // 사용자 정보 로드
     useEffect(() => {
         const fetchUser = async () => {
@@ -103,8 +105,11 @@ export function useUser() {
                 if (authError || !user) {
                     console.error("유저 세션 없음:", authError?.message);
                     setCurrentUser(null);
+                    setCurrentUserId(null);
                     return;
                 }
+
+                setCurrentUserId(user.id);
 
                 const sessionEmail = (user.email ?? "").toString();
                 const sessionId = sessionEmail ? sessionEmail.split("@")[0] : "";
@@ -175,15 +180,34 @@ export function useUser() {
                     setSidebarLoginId(id);
                     localStorage.setItem("sidebarLoginId", id);
                 }
-
-                // 사용자 ID 저장
-                setCurrentUserId(user.id);
             } catch (error) {
                 console.error("사용자 정보 로드 중 오류:", error);
             }
         };
 
-        fetchUser();
+        fetchUserRef.current = fetchUser;
+        void fetchUser();
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((event) => {
+            if (
+                event === "SIGNED_IN" ||
+                event === "TOKEN_REFRESHED" ||
+                event === "INITIAL_SESSION"
+            ) {
+                void fetchUserRef.current?.();
+            }
+
+            if (event === "SIGNED_OUT") {
+                setCurrentUser(null);
+                setCurrentUserId(null);
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // 초기 마운트 시에만 실행
 

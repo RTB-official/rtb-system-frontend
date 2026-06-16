@@ -20,6 +20,7 @@ import { supabase } from "../../lib/supabase";
 import useIsMobile from "../../hooks/useIsMobile";
 import { formatInvoiceReportTableTitle } from "../../utils/invoiceReportDisplayTitle";
 import { fetchWorkLogEntryPeriodMap } from "../../lib/workLogEntryPeriodMap";
+import { fetchStaffParticipatedWorkLogIds } from "../../lib/staffParticipatedWorkLogIds";
 
 type ReportStatus = "submitted" | "pending" | "not_submitted";
 
@@ -223,77 +224,28 @@ export default function ReportListPage() {
                         resolvedUserName = profileName || null;
 
                         if (isStaffMember) {
-                            // ✅ staff는 "내가 작성한 보고서"는 항상 보이게 + "내가 참석한 보고서"도 보이게(합집합)
                             const myId = user.id;
-                        
                             const myOwnIds = new Set<number>(
                                 workLogs
-                                    .filter((w: any) => w.created_by === myId)
+                                    .filter((w) => w.created_by === myId)
                                     .map((w) => w.id)
                                     .filter(Boolean)
                             );
-                        
-                            // profileName이 없으면 참석자 기반 필터링이 불가하므로, 작성한 것만 노출
+
                             if (!profileName) {
                                 workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
                             } else {
-                                const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
-                        
-                                if (workLogIds.length > 0) {
-                                    // 1) 해당 workLog들의 entry id / work_log_id 조회
-                                    const { data: wlEntries, error: wlEntriesError } = await supabase
-                                        .from("work_log_entries_with_hours")
-                                        .select("id, work_log_id")
-                                        .in("work_log_id", workLogIds);
-                        
-                                    if (wlEntriesError) {
-                                        console.error("entries 조회 실패:", wlEntriesError);
-                                        // ✅ 실패해도 "내가 작성한 것"은 유지
-                                        workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
-                                    } else {
-                                        const entryIdToWorkLogId = new Map<number, number>();
-                                        const entryIds: number[] = [];
-                        
-                                        (wlEntries || []).forEach((e: any) => {
-                                            const entryId = Number(e.id);
-                                            const wlId = Number(e.work_log_id);
-                                            if (!entryId || !wlId) return;
-                                            entryIdToWorkLogId.set(entryId, wlId);
-                                            entryIds.push(entryId);
-                                        });
-                        
-                                        if (entryIds.length === 0) {
-                                            // ✅ entry가 없어도 내가 작성한 것은 보이게
-                                            workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
-                                        } else {
-                                            // 2) 본인이 참여한 entry만 조회
-                                            const { data: persons, error: personsError } = await supabase
-                                                .from("work_log_entry_persons")
-                                                .select("entry_id, person_name")
-                                                .eq("person_name", profileName)
-                                                .in("entry_id", entryIds);
-                        
-                                            if (personsError) {
-                                                console.error("entry_persons 조회 실패:", personsError);
-                                                // ✅ 실패해도 내가 작성한 것은 보이게
-                                                workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
-                                            } else {
-                                                const allowedWorkLogIds = new Set<number>([...myOwnIds]);
-                        
-                                                (persons || []).forEach((p: any) => {
-                                                    const entryId = Number(p.entry_id);
-                                                    const wlId = entryIdToWorkLogId.get(entryId);
-                                                    if (wlId) allowedWorkLogIds.add(wlId);
-                                                });
-                        
-                                                workLogs = workLogs.filter((w) => allowedWorkLogIds.has(w.id));
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    // ✅ workLogs가 비어있으면 그대로(=어차피 없음)
-                                    workLogs = [];
-                                }
+                                const participatedIds =
+                                    await fetchStaffParticipatedWorkLogIds(
+                                        profileName
+                                    );
+                                const allowedWorkLogIds = new Set<number>([
+                                    ...myOwnIds,
+                                    ...participatedIds,
+                                ]);
+                                workLogs = workLogs.filter((w) =>
+                                    allowedWorkLogIds.has(w.id)
+                                );
                             }
                         }
                     }
@@ -401,13 +353,12 @@ export default function ReportListPage() {
     };
 
     const filtered = useMemo(() => {
-        // ... (getRange, overlapsMonth 함수 생략 - 기존 코드 유지)
         const getRange = (r: ReportItem) => {
-            const startRaw = r.periodStart || r.periodEnd || r.createdAt || "";
-            const endRaw = r.periodEnd || r.periodStart || r.createdAt || "";
-            if (!startRaw || !endRaw) return null;
-            const start = new Date(startRaw);
-            const end = new Date(endRaw);
+            const startRaw = r.periodStart || r.periodEnd || r.createdAt;
+            const endRaw = r.periodEnd || r.periodStart || r.createdAt;
+            if (!startRaw && !endRaw) return null;
+            const start = new Date(startRaw ?? endRaw!);
+            const end = new Date(endRaw ?? startRaw!);
             if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
                 return null;
             }
@@ -637,7 +588,18 @@ export default function ReportListPage() {
                                 </div>
                             </div>
                             {filtered.length === 0 ? (
-                                <div className="py-10 text-center text-gray-500 text-sm">조회된 보고서가 없습니다.</div>
+                                <div className="py-10 text-center text-gray-500 text-sm flex flex-col items-center gap-3">
+                                    <span>
+                                        {reports.length > 0 && (isFilterActive || search.trim() || activeTab === "education")
+                                            ? "선택한 조건에 맞는 보고서가 없습니다."
+                                            : "조회된 보고서가 없습니다."}
+                                    </span>
+                                    {reports.length > 0 && (isFilterActive || search.trim() || activeTab === "education") && (
+                                        <Button variant="outline" size="sm" onClick={handleResetFilter}>
+                                            필터 초기화
+                                        </Button>
+                                    )}
+                                </div>
                             ) : (
                                 <ul className="flex flex-col gap-3 pb-2">
                                     {filtered.map((row) => {

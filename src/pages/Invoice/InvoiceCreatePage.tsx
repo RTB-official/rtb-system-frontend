@@ -47,15 +47,20 @@ import {
     resolvePrimaryWorkLogOrderGroup,
 } from "../../utils/invoiceOrderGroupDisplay";
 import {
-    fetchActiveInvoiceExcelTemplate,
+    fetchActiveInvoiceExcelTemplateBySlug,
     downloadInvoiceExcelTemplateArrayBuffer,
 } from "../../lib/invoiceExcelTemplateApi";
 import {
     buildInvoiceExcelMeta,
     buildInvoiceExcelRowRecords,
+    buildInvoiceExcelManpowerGroupInput,
+    fillNormalTimesheetInvoiceExcelWorkbook,
+    fillRdTimesheetInvoiceExcelWorkbook,
     fillInvoiceExcelWorkbook,
     invoiceExcelWorkbookToBlob,
     triggerExcelDownload,
+    type InvoiceExcelInvoiceSheetInput,
+    type InvoiceExcelJobDescriptionSheetInput,
 } from "../../lib/invoiceExcelExport";
 import {
     createInvoiceDraft,
@@ -566,6 +571,8 @@ type ManualBillableSplitHours = {
     weekendNormal: number;
     weekendAfter: number;
 };
+
+type InvoiceExcelExportMode = "rnd" | "normal-person" | "normal-date";
 
 type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
     version: 1;
@@ -1469,6 +1476,11 @@ export default function InvoiceCreatePage() {
     const invoicePdfMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const invoicePdfMenuPanelRef = useRef<HTMLDivElement | null>(null);
     const [invoiceExcelExporting, setInvoiceExcelExporting] = useState(false);
+    const [invoiceExcelTemplateModalOpen, setInvoiceExcelTemplateModalOpen] =
+        useState(false);
+    const [invoiceExcelModalStep, setInvoiceExcelModalStep] = useState<
+        "root" | "normal"
+    >("root");
     /** 타임시트 행 클릭으로 Date Group 패널을 연 경우 행 하이라이트 */
     const [timesheetRowSidebarHighlightKey, setTimesheetRowSidebarHighlightKey] =
         useState<string | null>(null);
@@ -10769,7 +10781,7 @@ export default function InvoiceCreatePage() {
         setInvoicePdfSelectedIds([]);
     }, [startInvoicePdfFileDownloads]);
 
-    const handleInvoiceExcelExport = useCallback(async () => {
+    const handleInvoiceExcelExport = useCallback(async (mode: InvoiceExcelExportMode) => {
         if (invoiceExcelExporting) return;
         if (workLogDataList.length === 0) {
             showError("내보낼 보고서 데이터가 없습니다.");
@@ -10777,10 +10789,14 @@ export default function InvoiceCreatePage() {
         }
         setInvoiceExcelExporting(true);
         try {
-            const template = await fetchActiveInvoiceExcelTemplate();
+            const templateSlug =
+                mode === "rnd" ? "rd-invoice" : "normal-invoice";
+            const template = await fetchActiveInvoiceExcelTemplateBySlug(
+                templateSlug
+            );
             if (!template) {
                 showError(
-                    "등록된 인보이스 엑셀 양식이 없습니다. Supabase 대시보드에서 Storage 버킷 `invoice-excel-templates`에 파일을 올리고, 테이블 invoice_excel_templates에 행을 추가하세요."
+                    `선택한 엑셀 양식(${templateSlug})이 없습니다. invoice_excel_templates에서 slug와 is_active를 확인해 주세요.`
                 );
                 return;
             }
@@ -10788,13 +10804,162 @@ export default function InvoiceCreatePage() {
                 template.storage_path
             );
             const meta = buildInvoiceExcelMeta(workLogDataList);
-            const rowRecords = buildInvoiceExcelRowRecords(timesheetRows);
-            const workbook = await fillInvoiceExcelWorkbook(
-                templateBuf,
-                template.field_mappings,
-                meta,
-                rowRecords
-            );
+            const buildNormalExcelSections = (
+                sections: typeof normalTimesheetSectionsByPerson
+            ) =>
+                sections.map((section) => {
+                    const sectionPersonnel = getPersonnelDisplayData(
+                        section.key,
+                        section.people
+                    );
+                    return {
+                        vessel: shipNameDisplay,
+                        workPlace: workPlaceDisplay,
+                        engineerNameAndTitle: sectionPersonnel.engineerDisplay,
+                        mechanicNamesAndNumbers: sectionPersonnel.mechanicDisplay,
+                        departureDisplay: getBoundaryDisplay(
+                            section.rows,
+                            "departure"
+                        ),
+                        returnDisplay: getBoundaryDisplay(section.rows, "return"),
+                        rows: section.rows,
+                        comments: getNormalTimesheetComments(section),
+                    };
+                });
+
+            const buildRdExcelExportData = () => {
+                const rows = timesheetRows.map((row) => {
+                    const tc = row.timesheetChargeDisplay;
+                    const wn = tc?.weekdayNormal ?? row.weekdayNormal;
+                    const wa = tc?.weekdayAfter ?? row.weekdayAfter;
+                    const wkn = tc?.weekendNormal ?? row.weekendNormal;
+                    const wka = tc?.weekendAfter ?? row.weekendAfter;
+
+                    return {
+                        date: row.date,
+                        day: row.hideDayDate ? "" : row.day,
+                        dateFormatted: row.hideDayDate ? "" : row.dateFormatted,
+                        timeFrom: row.timeFrom,
+                        timeTo: row.timeTo,
+                        totalHours: getTimesheetRowTotalHoursForGrid(row),
+                        weekdayNormal: wn,
+                        weekdayAfter: wa,
+                        weekendNormal: wkn,
+                        weekendAfter: wka,
+                        travelWeekday: row.travelWeekday,
+                        travelWeekend: row.travelWeekend,
+                        summaryLine: formatRdTimesheetRowSummaryLine(row),
+                    };
+                });
+
+                return {
+                    vessel: shipNameDisplay,
+                    workPlace: workPlaceDisplay,
+                    rows,
+                    comments: rndTimesheetComments,
+                };
+            };
+
+            const buildInvoiceExcelSheetInput = (): InvoiceExcelInvoiceSheetInput => {
+                const skilledEnglishNames = jobDescriptionPersonnel.engineerPeople
+                    .map((person) => getEnglishPersonName(person))
+                    .join(", ");
+                const fitterEnglishNames = jobDescriptionPersonnel.mechanicPeople
+                    .map((person) => getEnglishPersonName(person))
+                    .join(", ");
+                const skilledSectionLabel = `1.1 ${
+                    invoiceSkilledFitterPeople.length > 1
+                        ? "Skilled Fitters"
+                        : "Skilled Fitter"
+                }${
+                    skilledEnglishNames.length > 0
+                        ? ` (${skilledEnglishNames})`
+                        : ""
+                }`;
+                const fitterSectionLabel = `1.2 ${
+                    invoiceFitterPeople.length > 1 ? "Fitters" : "Fitter"
+                }${
+                    fitterEnglishNames.length > 0
+                        ? ` (${fitterEnglishNames})`
+                        : ""
+                }`;
+
+                return {
+                    recipientCompany: invoiceRecipientDisplay.companyName,
+                    recipientAddressLines: invoiceRecipientDisplay.addressLines,
+                    jobInformation: {
+                        hullNo: shipNameDisplay,
+                        engineType: engineTypeDisplay,
+                        workPeriodAndPlace: invoiceWorkPeriodDisplay,
+                        workItem: workItemDisplay,
+                    },
+                    poNumber: "",
+                    invoiceNumber: "",
+                    invoiceDate: invoiceDateDisplay,
+                    validity: "14 days",
+                    currencyUnit: "EUR",
+                    skilledGroup: buildInvoiceExcelManpowerGroupInput(
+                        skilledSectionLabel,
+                        invoiceSkilledFitterPeople.length,
+                        skilledFitterInvoiceSummary,
+                        "skilled"
+                    ),
+                    fitterGroup: buildInvoiceExcelManpowerGroupInput(
+                        fitterSectionLabel,
+                        invoiceFitterPeople.length,
+                        fitterInvoiceSummary,
+                        "fitter"
+                    ),
+                    dailyAllowanceDescription: invoiceDailyAllowanceDescription,
+                    dailyAllowanceMealsQty: invoiceMealsTotal,
+                    dailyAllowanceUnitPrice: DAILY_ALLOWANCE_MEAL_UNIT_PRICE_KRW,
+                    dailyAllowanceLineTotal: invoiceDailyAllowanceLineTotal,
+                };
+            };
+
+            const buildJobDescriptionExcelSheetInput =
+                (): InvoiceExcelJobDescriptionSheetInput => ({
+                    shipName: shipNameDisplay,
+                    workPlace: workPlaceDisplay,
+                    engineerNameAndTitle: jobDescriptionPersonnel.engineerDisplay,
+                    mechanicNamesAndNumbers:
+                        jobDescriptionPersonnel.mechanicDisplay,
+                    workOrderFrom: workOrderFromDisplay,
+                    poNumber: "",
+                    departureDisplay: jobDescriptionDepartureDisplay,
+                    returnDisplay: jobDescriptionReturnDisplay,
+                });
+
+            const invoiceSheetInput = buildInvoiceExcelSheetInput();
+            const jobDescriptionSheetInput = buildJobDescriptionExcelSheetInput();
+
+            const workbook =
+                mode === "normal-person" || mode === "normal-date"
+                    ? await fillNormalTimesheetInvoiceExcelWorkbook(
+                          templateBuf,
+                          template.field_mappings,
+                          buildNormalExcelSections(
+                              mode === "normal-date"
+                                  ? normalTimesheetSectionsByDate
+                                  : normalTimesheetSectionsByPerson
+                          ),
+                          invoiceSheetInput,
+                          jobDescriptionSheetInput
+                      )
+                    : mode === "rnd"
+                      ? await fillRdTimesheetInvoiceExcelWorkbook(
+                            templateBuf,
+                            template.field_mappings,
+                            buildRdExcelExportData(),
+                            invoiceSheetInput,
+                            jobDescriptionSheetInput
+                        )
+                      : await fillInvoiceExcelWorkbook(
+                            templateBuf,
+                            template.field_mappings,
+                            meta,
+                            buildInvoiceExcelRowRecords(timesheetRows)
+                        );
             const blob = await invoiceExcelWorkbookToBlob(workbook);
             const safeBase = String(meta.report_title ?? "invoice")
                 .replace(/[\\/:*?"<>|]/g, "_")
@@ -10819,6 +10984,32 @@ export default function InvoiceCreatePage() {
         invoiceExcelExporting,
         workLogDataList,
         timesheetRows,
+        normalTimesheetSectionsByPerson,
+        normalTimesheetSectionsByDate,
+        shipNameDisplay,
+        workPlaceDisplay,
+        engineTypeDisplay,
+        workItemDisplay,
+        invoiceWorkPeriodDisplay,
+        invoiceDateDisplay,
+        invoiceRecipientDisplay,
+        invoiceSkilledFitterPeople,
+        invoiceFitterPeople,
+        skilledFitterInvoiceSummary,
+        fitterInvoiceSummary,
+        invoiceDailyAllowanceDescription,
+        invoiceMealsTotal,
+        invoiceDailyAllowanceLineTotal,
+        jobDescriptionPersonnel,
+        workOrderFromDisplay,
+        jobDescriptionDepartureDisplay,
+        jobDescriptionReturnDisplay,
+        getBoundaryDisplay,
+        getNormalTimesheetComments,
+        getPersonnelDisplayData,
+        getTimesheetRowTotalHoursForGrid,
+        formatRdTimesheetRowSummaryLine,
+        rndTimesheetComments,
         showError,
         showSuccess,
     ]);
@@ -10938,7 +11129,12 @@ export default function InvoiceCreatePage() {
                                         !invoiceDocumentExportOpen ||
                                         invoiceExcelExporting
                                     }
-                                    onClick={() => void handleInvoiceExcelExport()}
+                                    onClick={() =>
+                                        {
+                                            setInvoiceExcelModalStep("root");
+                                            setInvoiceExcelTemplateModalOpen(true);
+                                        }
+                                    }
                                     className={[
                                         "h-12 min-w-[3rem] shrink-0 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-bold tracking-tight text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-50",
                                     ].join(" ")}
@@ -12259,7 +12455,7 @@ export default function InvoiceCreatePage() {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Currency unit:</span>
-                                                <span className="text-sm text-gray-900">KRW</span>
+                                                <span className="text-sm text-gray-900">EUR</span>
                                             </div>
                                         </div>
                                     </div>
@@ -12705,6 +12901,68 @@ export default function InvoiceCreatePage() {
                         </div>
                     )}
                 </div>
+
+                <BaseModal
+                    isOpen={invoiceExcelTemplateModalOpen}
+                    onClose={() => {
+                        setInvoiceExcelTemplateModalOpen(false);
+                        setInvoiceExcelModalStep("root");
+                    }}
+                    title="엑셀 양식 선택"
+                    maxWidth="max-w-md"
+                >
+                    {invoiceExcelModalStep === "root" ? (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <button
+                                type="button"
+                                className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-base font-semibold text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => setInvoiceExcelModalStep("normal")}
+                                disabled={invoiceExcelExporting}
+                            >
+                                Normal
+                            </button>
+                            <button
+                                type="button"
+                                className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-base font-semibold text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => {
+                                    setInvoiceExcelTemplateModalOpen(false);
+                                    setInvoiceExcelModalStep("root");
+                                    void handleInvoiceExcelExport("rnd");
+                                }}
+                                disabled={invoiceExcelExporting}
+                            >
+                                R&amp;D
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <button
+                                type="button"
+                                className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-base font-semibold text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => {
+                                    setInvoiceExcelTemplateModalOpen(false);
+                                    setInvoiceExcelModalStep("root");
+                                    void handleInvoiceExcelExport("normal-person");
+                                }}
+                                disabled={invoiceExcelExporting}
+                            >
+                                인원별
+                            </button>
+                            <button
+                                type="button"
+                                className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-base font-semibold text-gray-800 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => {
+                                    setInvoiceExcelTemplateModalOpen(false);
+                                    setInvoiceExcelModalStep("root");
+                                    void handleInvoiceExcelExport("normal-date");
+                                }}
+                                disabled={invoiceExcelExporting}
+                            >
+                                날짜별
+                            </button>
+                        </div>
+                    )}
+                </BaseModal>
 
                 <BaseModal
                     isOpen={invoiceResetConfirmOpen}
