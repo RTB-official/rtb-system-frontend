@@ -53,11 +53,14 @@ import {
 import {
     buildInvoiceExcelMeta,
     buildInvoiceExcelRowRecords,
+    buildInvoiceExcelManpowerGroupInput,
     fillNormalTimesheetInvoiceExcelWorkbook,
     fillRdTimesheetInvoiceExcelWorkbook,
     fillInvoiceExcelWorkbook,
     invoiceExcelWorkbookToBlob,
     triggerExcelDownload,
+    type InvoiceExcelInvoiceSheetInput,
+    type InvoiceExcelJobDescriptionSheetInput,
 } from "../../lib/invoiceExcelExport";
 import {
     createInvoiceDraft,
@@ -10857,6 +10860,79 @@ export default function InvoiceCreatePage() {
                 };
             };
 
+            const buildInvoiceExcelSheetInput = (): InvoiceExcelInvoiceSheetInput => {
+                const skilledEnglishNames = jobDescriptionPersonnel.engineerPeople
+                    .map((person) => getEnglishPersonName(person))
+                    .join(", ");
+                const fitterEnglishNames = jobDescriptionPersonnel.mechanicPeople
+                    .map((person) => getEnglishPersonName(person))
+                    .join(", ");
+                const skilledSectionLabel = `1.1 ${
+                    invoiceSkilledFitterPeople.length > 1
+                        ? "Skilled Fitters"
+                        : "Skilled Fitter"
+                }${
+                    skilledEnglishNames.length > 0
+                        ? ` (${skilledEnglishNames})`
+                        : ""
+                }`;
+                const fitterSectionLabel = `1.2 ${
+                    invoiceFitterPeople.length > 1 ? "Fitters" : "Fitter"
+                }${
+                    fitterEnglishNames.length > 0
+                        ? ` (${fitterEnglishNames})`
+                        : ""
+                }`;
+
+                return {
+                    recipientCompany: invoiceRecipientDisplay.companyName,
+                    recipientAddressLines: invoiceRecipientDisplay.addressLines,
+                    jobInformation: {
+                        hullNo: shipNameDisplay,
+                        engineType: engineTypeDisplay,
+                        workPeriodAndPlace: invoiceWorkPeriodDisplay,
+                        workItem: workItemDisplay,
+                    },
+                    poNumber: "",
+                    invoiceNumber: "",
+                    invoiceDate: invoiceDateDisplay,
+                    validity: "14 days",
+                    currencyUnit: "EUR",
+                    skilledGroup: buildInvoiceExcelManpowerGroupInput(
+                        skilledSectionLabel,
+                        invoiceSkilledFitterPeople.length,
+                        skilledFitterInvoiceSummary,
+                        "skilled"
+                    ),
+                    fitterGroup: buildInvoiceExcelManpowerGroupInput(
+                        fitterSectionLabel,
+                        invoiceFitterPeople.length,
+                        fitterInvoiceSummary,
+                        "fitter"
+                    ),
+                    dailyAllowanceDescription: invoiceDailyAllowanceDescription,
+                    dailyAllowanceMealsQty: invoiceMealsTotal,
+                    dailyAllowanceUnitPrice: DAILY_ALLOWANCE_MEAL_UNIT_PRICE_KRW,
+                    dailyAllowanceLineTotal: invoiceDailyAllowanceLineTotal,
+                };
+            };
+
+            const buildJobDescriptionExcelSheetInput =
+                (): InvoiceExcelJobDescriptionSheetInput => ({
+                    shipName: shipNameDisplay,
+                    workPlace: workPlaceDisplay,
+                    engineerNameAndTitle: jobDescriptionPersonnel.engineerDisplay,
+                    mechanicNamesAndNumbers:
+                        jobDescriptionPersonnel.mechanicDisplay,
+                    workOrderFrom: workOrderFromDisplay,
+                    poNumber: "",
+                    departureDisplay: jobDescriptionDepartureDisplay,
+                    returnDisplay: jobDescriptionReturnDisplay,
+                });
+
+            const invoiceSheetInput = buildInvoiceExcelSheetInput();
+            const jobDescriptionSheetInput = buildJobDescriptionExcelSheetInput();
+
             const workbook =
                 mode === "normal-person" || mode === "normal-date"
                     ? await fillNormalTimesheetInvoiceExcelWorkbook(
@@ -10866,13 +10942,17 @@ export default function InvoiceCreatePage() {
                               mode === "normal-date"
                                   ? normalTimesheetSectionsByDate
                                   : normalTimesheetSectionsByPerson
-                          )
+                          ),
+                          invoiceSheetInput,
+                          jobDescriptionSheetInput
                       )
                     : mode === "rnd"
                       ? await fillRdTimesheetInvoiceExcelWorkbook(
                             templateBuf,
                             template.field_mappings,
-                            buildRdExcelExportData()
+                            buildRdExcelExportData(),
+                            invoiceSheetInput,
+                            jobDescriptionSheetInput
                         )
                       : await fillInvoiceExcelWorkbook(
                             templateBuf,
@@ -10908,6 +10988,22 @@ export default function InvoiceCreatePage() {
         normalTimesheetSectionsByDate,
         shipNameDisplay,
         workPlaceDisplay,
+        engineTypeDisplay,
+        workItemDisplay,
+        invoiceWorkPeriodDisplay,
+        invoiceDateDisplay,
+        invoiceRecipientDisplay,
+        invoiceSkilledFitterPeople,
+        invoiceFitterPeople,
+        skilledFitterInvoiceSummary,
+        fitterInvoiceSummary,
+        invoiceDailyAllowanceDescription,
+        invoiceMealsTotal,
+        invoiceDailyAllowanceLineTotal,
+        jobDescriptionPersonnel,
+        workOrderFromDisplay,
+        jobDescriptionDepartureDisplay,
+        jobDescriptionReturnDisplay,
         getBoundaryDisplay,
         getNormalTimesheetComments,
         getPersonnelDisplayData,
@@ -12359,7 +12455,7 @@ export default function InvoiceCreatePage() {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Currency unit:</span>
-                                                <span className="text-sm text-gray-900">KRW</span>
+                                                <span className="text-sm text-gray-900">EUR</span>
                                             </div>
                                         </div>
                                     </div>
