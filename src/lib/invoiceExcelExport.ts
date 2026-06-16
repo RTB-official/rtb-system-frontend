@@ -243,6 +243,7 @@ const NORMAL_TIMESHEET_EXCEL = {
     commentsStartRow: 38,
     /** 양식 코멘트 영역 마지막 행 (B38~B40) */
     commentsLastRow: 40,
+    travelHoursHeader: "K12",
 } as const;
 
 /** R&D 인보이스 양식(Time Sheet) 고정 셀 — Normal과 다름 */
@@ -258,7 +259,10 @@ const RD_TIMESHEET_EXCEL = {
     commentsStartRow: 42,
     /** 양식 코멘트 영역 마지막 행 (B42~B44) */
     commentsLastRow: 44,
+    travelHoursHeader: "K10",
 } as const;
+
+const TIMESHEET_TRAVEL_HOURS_HEADER = "Waiting & Travel\nHours**";
 
 function resolveSectionYear(rows: InvoiceExcelTimesheetRowInput[]): string {
     for (const row of rows) {
@@ -2614,6 +2618,11 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
 
     const timeSheets: ExcelJS.Worksheet[] = [];
     baseSheet.name = sheetNames[0];
+    setCellValue(
+        baseSheet,
+        NORMAL_TIMESHEET_EXCEL.travelHoursHeader,
+        TIMESHEET_TRAVEL_HOURS_HEADER
+    );
     timeSheets.push(baseSheet);
     for (let i = 1; i < sheetNames.length; i += 1) {
         timeSheets.push(cloneWorksheetLike(baseSheet, sheetNames[i]));
@@ -2751,6 +2760,11 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
     const commentsLastRow = RD_TIMESHEET_EXCEL.commentsLastRow + insertedRows;
 
     setCellValue(ws, "E3", "TIMESHEET");
+    setCellValue(
+        ws,
+        RD_TIMESHEET_EXCEL.travelHoursHeader,
+        TIMESHEET_TRAVEL_HOURS_HEADER
+    );
     setCellValue(ws, RD_TIMESHEET_EXCEL.vessel, withLeadingSpace(data.vessel));
     setCellValue(
         ws,
