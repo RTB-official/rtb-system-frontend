@@ -1314,11 +1314,12 @@ function normalizeWorksheetCellXml(
     };
 }
 
-function injectMissingTimeSheetGrayBarCells(
+function injectMissingGrayBarCells(
     rows: Map<number, MinimalWorksheetCell[]>,
     templateStyles?: Map<string, string>
 ) {
-    if (!templateStyles?.has("E4") || !templateStyles.has("B5")) return;
+    if (!templateStyles?.has("E4")) return;
+    if (!templateStyles.has("B5") && !templateStyles.has("E5")) return;
 
     for (const [ref, styleId] of templateStyles) {
         const refMatch = ref.match(/^([A-Z]+)(\d+)$/);
@@ -1364,7 +1365,7 @@ function buildMinimalWorksheetXml(
         rows.set(row, cells);
     }
 
-    injectMissingTimeSheetGrayBarCells(rows, templateStyles);
+    injectMissingGrayBarCells(rows, templateStyles);
 
     const rowXml = [...rows.entries()]
         .sort(([a], [b]) => a - b)
@@ -1381,10 +1382,14 @@ function buildMinimalWorksheetXml(
     const sheetDataXml = `<sheetData>${rowXml}</sheetData>`;
     const dimensionRef = calculateWorksheetDimensionRef(sheetDataXml) ?? "A1";
     const sheetFormatPr = extractXmlFragment(xml, "sheetFormatPr");
-    const cols = extractXmlFragment(xml, "cols");
+    const cols = templateLayout?.cols || extractXmlFragment(xml, "cols");
     const mergeCells = extractXmlFragment(xml, "mergeCells");
-    const pageMargins = extractXmlFragment(xml, "pageMargins");
-    const pageSetup = extractXmlFragment(xml, "pageSetup");
+    const printOptions =
+        templateLayout?.printOptions || extractXmlFragment(xml, "printOptions");
+    const pageMargins =
+        templateLayout?.pageMargins || extractXmlFragment(xml, "pageMargins");
+    const pageSetup =
+        templateLayout?.pageSetup || extractXmlFragment(xml, "pageSetup");
     const drawing = extractXmlFragment(xml, "drawing");
     const sheetPr = normalizeSheetPrFragment(
         templateLayout?.sheetPr || extractXmlFragment(xml, "sheetPr")
@@ -1404,9 +1409,10 @@ function buildMinimalWorksheetXml(
         cols,
         sheetDataXml,
         mergeCells,
-        drawing,
+        printOptions,
         pageMargins,
         pageSetup,
+        drawing,
         "</worksheet>",
     ].join("");
 }
@@ -1420,7 +1426,31 @@ type TemplateWorksheetLayout = {
     topRowAttrs: Map<number, string>;
     sheetViews?: string;
     sheetPr?: string;
+    cols?: string;
+    printOptions?: string;
+    pageMargins?: string;
+    pageSetup?: string;
 };
+
+function extractTemplatePrintLayout(templateXml: string) {
+    const pageSetup = extractXmlFragment(templateXml, "pageSetup");
+    return {
+        cols: extractXmlFragment(templateXml, "cols"),
+        printOptions: extractXmlFragment(templateXml, "printOptions"),
+        pageMargins: extractXmlFragment(templateXml, "pageMargins"),
+        pageSetup: pageSetup.replace(/\s+r:id="[^"]*"/g, ""),
+    };
+}
+
+function withTemplatePrintLayout(
+    layout: TemplateWorksheetLayout,
+    templateXml: string
+): TemplateWorksheetLayout {
+    return {
+        ...layout,
+        ...extractTemplatePrintLayout(templateXml),
+    };
+}
 
 function hasTemplateCellStyle(xml: string, ref: string): boolean {
     return new RegExp(`<c\\b[^>]*\\br="${ref}"[^>]*\\bs="\\d+"`).test(xml);
@@ -1475,7 +1505,46 @@ function buildNormalInfoTableTemplateLayout(
     templateXml: string,
     maxRow = 13
 ): Map<number, string> {
-    return extractTopRowAttributes(templateXml, maxRow);
+    const topRowAttrs = new Map<number, string>();
+    for (const [row, attrs] of extractTemplateRowAttributes(templateXml)) {
+        if (row <= maxRow) {
+            topRowAttrs.set(row, attrs);
+        }
+    }
+    return topRowAttrs;
+}
+
+/** Job description 제목 아래 회색 막대 — Time Sheet row 4·5와 동일하게 적용 */
+const JOB_DESCRIPTION_GRAY_BAR_ROWS = [4, 5] as const;
+
+function applyJobDescriptionGrayBarFromTimeSheetTemplate(
+    styles: Map<string, string>,
+    timeSheetTemplateXml: string
+) {
+    for (const match of timeSheetTemplateXml.matchAll(
+        /<c\b[^>]*\br="([A-Z]+)([45])"[^>]*\bs="(\d+)"/g
+    )) {
+        styles.set(`${match[1]}${match[2]}`, match[3]);
+    }
+
+    // Job description 템플릿에만 있는 row 4 셀(J4 등)은 Time Sheet와 맞추기 위해 제거
+    for (const [ref] of [...styles]) {
+        const refMatch = ref.match(/^([A-Z]+)4$/);
+        if (!refMatch) continue;
+        if (timeSheetTemplateXml.includes(`r="${ref}"`)) continue;
+        styles.delete(ref);
+    }
+}
+
+function applyJobDescriptionGrayBarRowAttributes(
+    topRowAttrs: Map<number, string>,
+    timeSheetTemplateXml: string
+) {
+    const timeSheetRowAttrs = extractTemplateRowAttributes(timeSheetTemplateXml);
+    for (const row of JOB_DESCRIPTION_GRAY_BAR_ROWS) {
+        const attrs = timeSheetRowAttrs.get(row);
+        if (attrs) topRowAttrs.set(row, attrs);
+    }
 }
 
 function buildTimeSheetTemplateLayout(
@@ -1900,34 +1969,78 @@ async function buildTemplateStyleMaps(
         if (templateName === "Time Sheet") {
             layoutByOutputPath.set(
                 outputSheet.path,
-                buildTimeSheetTemplateLayout(
-                    templateXml,
-                    await outputSheetFile.async("string"),
-                    outputSharedStrings
+                withTemplatePrintLayout(
+                    buildTimeSheetTemplateLayout(
+                        templateXml,
+                        await outputSheetFile.async("string"),
+                        outputSharedStrings
+                    ),
+                    templateXml
                 )
             );
             continue;
         }
 
         if (templateName === "Job description") {
-            layoutByOutputPath.set(outputSheet.path, {
-                topRowAttrs: buildNormalInfoTableTemplateLayout(templateXml),
-                sheetViews: extractXmlFragment(templateXml, "sheetViews"),
-                sheetPr: normalizeSheetPrFragment(
-                    extractXmlFragment(templateXml, "sheetPr")
-                ),
-            });
+            const topRowAttrs = buildNormalInfoTableTemplateLayout(templateXml);
+            layoutByOutputPath.set(
+                outputSheet.path,
+                withTemplatePrintLayout(
+                    {
+                        topRowAttrs,
+                        sheetViews: extractXmlFragment(templateXml, "sheetViews"),
+                        sheetPr: normalizeSheetPrFragment(
+                            extractXmlFragment(templateXml, "sheetPr")
+                        ),
+                    },
+                    templateXml
+                )
+            );
             continue;
         }
 
         if (templateName === "Invoice") {
-            layoutByOutputPath.set(outputSheet.path, {
-                topRowAttrs: extractTopRowAttributes(templateXml, 12),
-                sheetViews: extractXmlFragment(templateXml, "sheetViews"),
-                sheetPr: normalizeSheetPrFragment(
-                    extractXmlFragment(templateXml, "sheetPr")
-                ),
-            });
+            layoutByOutputPath.set(
+                outputSheet.path,
+                withTemplatePrintLayout(
+                    {
+                        topRowAttrs: extractTopRowAttributes(templateXml, 12),
+                        sheetViews: extractXmlFragment(templateXml, "sheetViews"),
+                        sheetPr: normalizeSheetPrFragment(
+                            extractXmlFragment(templateXml, "sheetPr")
+                        ),
+                    },
+                    templateXml
+                )
+            );
+        }
+    }
+
+    const timeSheetTemplatePath = templateByName.get("Time Sheet");
+    if (timeSheetTemplatePath) {
+        const timeSheetTemplateXml = await templateZip
+            .file(timeSheetTemplatePath)
+            ?.async("string");
+        if (timeSheetTemplateXml) {
+            for (const outputSheet of outputSheets) {
+                if (getTemplateSheetName(outputSheet.name) !== "Job description") {
+                    continue;
+                }
+                const styles = byOutputPath.get(outputSheet.path);
+                if (styles) {
+                    applyJobDescriptionGrayBarFromTimeSheetTemplate(
+                        styles,
+                        timeSheetTemplateXml
+                    );
+                }
+                const layout = layoutByOutputPath.get(outputSheet.path);
+                if (layout) {
+                    applyJobDescriptionGrayBarRowAttributes(
+                        layout.topRowAttrs,
+                        timeSheetTemplateXml
+                    );
+                }
+            }
         }
     }
 
