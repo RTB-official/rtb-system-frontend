@@ -448,6 +448,12 @@ export function fillJobDescriptionSheet(
     );
 }
 
+export function applyNormalJobDescriptionSheetBorderFormatting(
+    ws: ExcelJS.Worksheet
+) {
+    applyNormalSheetInfoTableMiddleDividerBorder(ws);
+}
+
 function clearInvoiceSheetRowValues(
     ws: ExcelJS.Worksheet,
     rowNumber: number,
@@ -1420,6 +1426,58 @@ function hasTemplateCellStyle(xml: string, ref: string): boolean {
     return new RegExp(`<c\\b[^>]*\\br="${ref}"[^>]*\\bs="\\d+"`).test(xml);
 }
 
+/** Normal 양식 정보표 2·3행 사이 구분선 — row 8에 row 6 헤더와 동일한 top medium border 스타일 적용 */
+function extractTemplateRowCellStylesByColumn(
+    templateXml: string,
+    row: number
+): Map<string, string> {
+    const stylesByColumn = new Map<string, string>();
+    for (const match of templateXml.matchAll(
+        new RegExp(`<c\\b[^>]*\\br="([A-Z]+)${row}"[^>]*\\bs="(\\d+)"`, "g")
+    )) {
+        stylesByColumn.set(match[1], match[2]);
+    }
+    return stylesByColumn;
+}
+
+function applyNormalInfoTableMiddleDividerCellStyles(
+    styles: Map<string, string>,
+    templateXml: string,
+    sheetName: string
+) {
+    const normalizedSheetName = sheetName.trim();
+    if (
+        normalizedSheetName !== "Job description" &&
+        normalizedSheetName !== "Time Sheet"
+    ) {
+        return;
+    }
+    if (
+        normalizedSheetName === "Time Sheet" &&
+        hasTemplateCellStyle(templateXml, "A48")
+    ) {
+        return;
+    }
+
+    const headerRowStyles = extractTemplateRowCellStylesByColumn(templateXml, 6);
+    for (const [col, _styleId] of extractTemplateRowCellStylesByColumn(
+        templateXml,
+        8
+    )) {
+        const dividerStyle = headerRowStyles.get(col);
+        if (dividerStyle) {
+            styles.set(`${col}8`, dividerStyle);
+        }
+    }
+}
+
+function buildNormalInfoTableTemplateLayout(
+    templateXml: string,
+    maxRow = 13
+): Map<number, string> {
+    return extractTopRowAttributes(templateXml, maxRow);
+}
+
 function buildTimeSheetTemplateLayout(
     templateXml: string,
     outputXml: string,
@@ -1767,6 +1825,12 @@ function extractTemplateCellStyles(
         }
     }
 
+    applyNormalInfoTableMiddleDividerCellStyles(
+        styles,
+        xml,
+        normalizedSheetName
+    );
+
     return styles;
 }
 
@@ -1842,6 +1906,17 @@ async function buildTemplateStyleMaps(
                     outputSharedStrings
                 )
             );
+            continue;
+        }
+
+        if (templateName === "Job description") {
+            layoutByOutputPath.set(outputSheet.path, {
+                topRowAttrs: buildNormalInfoTableTemplateLayout(templateXml),
+                sheetViews: extractXmlFragment(templateXml, "sheetViews"),
+                sheetPr: normalizeSheetPrFragment(
+                    extractXmlFragment(templateXml, "sheetPr")
+                ),
+            });
             continue;
         }
 
@@ -2567,12 +2642,21 @@ function ensureCommentRowCapacity(
     );
 }
 
+/** Normal 인보이스 Time Sheet / Job description 정보표 2·3행 사이 구분선 */
+function applyNormalSheetInfoTableMiddleDividerBorder(ws: ExcelJS.Worksheet) {
+    for (let col = 2; col <= 13; col += 1) {
+        if (!isMergeMasterCell(ws, 8, col)) continue;
+        applyBorderToCellSafe(ws, 8, col, (cell) => {
+            applyCellBorderPatch(cell, {
+                top: EXCEL_MEDIUM_BLACK_BORDER,
+            });
+        });
+    }
+}
+
 /** Normal 인보이스 Time Sheet 전용 — R&D 양식에는 적용하지 않음 */
 function applyNormalTimesheetSheetBorderFormatting(ws: ExcelJS.Worksheet) {
-    // Keep export stable and fast. The uploaded template already contains
-    // the intended borders; mutating merged-cell borders in ExcelJS can create
-    // invalid workbook XML and is expensive on large invoices.
-    void ws;
+    applyNormalSheetInfoTableMiddleDividerBorder(ws);
 }
 
 function shiftColumnLetter(letter: string, offset: number): string {
@@ -2930,6 +3014,7 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
         const jobDescriptionWs = resolveJobDescriptionWorksheet(workbook);
         if (jobDescriptionWs) {
             fillJobDescriptionSheet(jobDescriptionWs, jobDescription);
+            applyNormalJobDescriptionSheetBorderFormatting(jobDescriptionWs);
         }
     }
 
