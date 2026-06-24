@@ -10,6 +10,7 @@ export function useMenuNotifications() {
     const { showInfo } = useToast();
 
     const intervalMs = 24 * 60 * 60 * 1000; // 1 day
+    const memberPassportIntervalMs = 14 * 24 * 60 * 60 * 1000; // 2 weeks
 
     const [notis, setNotis] = useState(() => {
         const cached = localStorage.getItem("sidebar_notis_cache");
@@ -104,7 +105,7 @@ export function useMenuNotifications() {
         setPendingMembers(foundMembers);
         if (foundMembers.length > 0) {
             const lastShown = localStorage.getItem("noti_toast_members");
-            const isExpired = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
+            const isExpired = !lastShown || (now.getTime() - parseInt(lastShown)) > memberPassportIntervalMs;
             if (isExpired) memberDot = true;
         }
 
@@ -160,7 +161,7 @@ export function useMenuNotifications() {
         } else if (type === "members") {
             if (pendingMembers.length > 0) {
                 const lastShown = localStorage.getItem("noti_toast_members");
-                const shouldShow = !lastShown || (now.getTime() - parseInt(lastShown)) > intervalMs;
+                const shouldShow = !lastShown || (now.getTime() - parseInt(lastShown)) > memberPassportIntervalMs;
                 if (shouldShow) {
                     pendingMembers.forEach((p) => {
                         const remainingLabel = getRemainingTimeLabel(p.passport_expiry_date);
