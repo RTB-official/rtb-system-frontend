@@ -8,7 +8,8 @@ import { useWorkReportStore } from "../../store/workReportStore";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import { createWorkLog, uploadReceiptFile } from "../../lib/workLogApi";
-import { supabase } from "../../lib/supabase";
+import { supabase, formatSupabaseErrorMessage, withSupabaseRetry } from "../../lib/supabase";
+import { useAuth } from "../../store/auth";
 import { IconArrowBack } from "../../components/icons/Icons";
 import useIsMobile from "../../hooks/useIsMobile";
 
@@ -59,6 +60,7 @@ export default function ReportCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const navigate = useNavigate();
     const isMobile = useIsMobile();
+    const { user } = useAuth();
     const { showError, showSuccess } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -129,12 +131,12 @@ export default function ReportCreatePage() {
 
     // 작성자 자동 설정 (로그인 유저)
     const setInitialAuthor = async () => {
-        const { data } = await supabase.auth.getUser();
-        if (data?.user) {
-            const { data: profile } = await supabase.from("profiles").select("name").eq("id", data.user.id).single();
-            if (profile?.name) {
-                useWorkReportStore.getState().setAuthor(profile.name);
-            }
+        if (!user?.id) return;
+        const { data: profile } = await withSupabaseRetry(() =>
+            supabase.from("profiles").select("name").eq("id", user.id).single()
+        );
+        if (profile?.name) {
+            useWorkReportStore.getState().setAuthor(profile.name);
         }
         // Baseline snapshot after ALL initialization is done
         setTimeout(() => {
@@ -148,11 +150,15 @@ export default function ReportCreatePage() {
         resetForm();
         setReportType("work");
         setActiveTab("work");
-        setInitialAuthor();
         fetchAllStaff();
 
         return () => resetForm();
     }, [setReportType, resetForm]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        void setInitialAuthor();
+    }, [user?.id]);
 
     // Update isDirty on change
     useEffect(() => {
@@ -241,8 +247,7 @@ export default function ReportCreatePage() {
 
         try {
             setIsSubmitting(true);
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error("로그인이 필요합니다.");
+            if (!user?.id) throw new Error("로그인이 필요합니다.");
 
             // 데이터 매핑
             const finalSubject = reportType === "education"
@@ -253,7 +258,7 @@ export default function ReportCreatePage() {
             const finalLocation = locations.length > 0 ? locations.join(", ") : undefined;
 
             // 1. Log 생성
-            const newLog = await createWorkLog({
+            const newLog = await withSupabaseRetry(() => createWorkLog({
                 author: author,
                 vessel: reportType === "work" ? vessel : undefined,
                 engine: reportType === "work" ? engine : undefined,
@@ -282,7 +287,7 @@ export default function ReportCreatePage() {
                 receipts: [],
                 is_draft: isDraft,
                 created_by: user.id
-            });
+            }));
 
             // 2. 파일 업로드
             const newFiles = uploadedFiles.filter(f => !f.isExisting && f.file);
@@ -330,9 +335,9 @@ export default function ReportCreatePage() {
             // 임시저장/제출 모두 보고서 목록으로 이동
             navigate("/report");
 
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            showError(e.message || "저장 중 오류가 발생했습니다.");
+            showError(formatSupabaseErrorMessage(e, "저장 중 오류가 발생했습니다."));
         } finally {
             setIsSubmitting(false);
         }

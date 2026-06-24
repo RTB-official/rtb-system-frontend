@@ -11,6 +11,7 @@ type TbmDetailSheetProps = {
     participants: TbmParticipant[];
     variant?: "screen" | "pdf";
     currentUserId?: string | null;
+    isAdmin?: boolean;
     onSign?: (participant: TbmParticipant) => void;
     signatureUrls?: Map<string, string>;
 };
@@ -166,6 +167,7 @@ export default function TbmDetailSheet({
     participants,
     variant = "screen",
     currentUserId,
+    isAdmin = false,
     onSign,
     signatureUrls: propSignatureUrls,
 }: TbmDetailSheetProps) {
@@ -284,8 +286,9 @@ export default function TbmDetailSheet({
 
         const canSign =
             !!participant &&
-            participant.user_id === currentUserId &&
-            !participant.signed_at;
+            !!participant.user_id &&
+            !participant.signed_at &&
+            (isAdmin || participant.user_id === currentUserId);
 
         // 서명 이미지가 있으면 이미지 표시
         if (hasSignature && signatureUrl) {

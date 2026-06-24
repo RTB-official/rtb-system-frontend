@@ -24,7 +24,7 @@ import {
     deleteWorkLogReceipt,
 } from "../../lib/workLogApi";
 import { useAuth } from "../../store/auth";
-import { supabase } from "../../lib/supabase";
+import { supabase, formatSupabaseErrorMessage, withSupabaseRetry } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import useIsMobile from "../../hooks/useIsMobile";
@@ -441,7 +441,7 @@ export default function ReportEditPage() {
 
 
             // 기존 레코드 업데이트
-            const workLog = await updateWorkLog(workLogId, workLogData);
+            const workLog = await withSupabaseRetry(() => updateWorkLog(workLogId, workLogData));
 
 // 파일 업로드 처리 (work_log 업데이트 후)
 // ✅ 수정 화면에서 isExisting 플래그가 꼬일 수 있으므로 "실제 File 객체 존재"로 판별
@@ -526,12 +526,9 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
             resetForm();
             setLastSavedAt(null);
             navigate("/report");
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error updating work log:", error);
-            showError(
-                `제출 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
-                }`
-            );
+            showError(`제출 실패: ${formatSupabaseErrorMessage(error)}`);
         } finally {
             setSubmitting(false);
         }
@@ -641,7 +638,7 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
 
 
                 // 기존 레코드 업데이트
-                await updateWorkLog(workLogId, draftData);
+                await withSupabaseRetry(() => updateWorkLog(workLogId, draftData));
 
 // ✅ [임시저장에서도] 파일 업로드 처리 (work_log 업데이트 후)
 // ✅ 수정 화면에서 isExisting 플래그가 꼬일 수 있으므로 "실제 File 객체 존재"로 판별
@@ -733,13 +730,10 @@ if (newFiles.length > 0) {
                     showSuccess("임시저장이 완료되었습니다!");
                     navigate("/report"); // ✅ 임시저장 후 목록으로 이동
                 }
-            } catch (error: any) {
+            } catch (error: unknown) {
                 console.error("Error saving draft:", error);
                 if (!silent) {
-                    showError(
-                        `임시저장 실패: ${error.message || "알 수 없는 오류가 발생했습니다."
-                        }`
-                    );
+                    showError(`임시저장 실패: ${formatSupabaseErrorMessage(error)}`);
                 }
             } finally {
                 setSavingDraft(false);

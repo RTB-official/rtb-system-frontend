@@ -44,7 +44,7 @@ Then you're able to import the library and establish the connection with the dat
 import { createClient } from '@supabase/supabase-js'
 
 // Create a single supabase client for interacting with your database
-const supabase = createClient('https://xyzcompany.supabase.co', 'public-anon-key')
+const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
 ```
 
 ### UMD
@@ -66,7 +66,7 @@ Then you can use it from a global `supabase` variable:
 ```html
 <script>
   const { createClient } = supabase
-  const _supabase = createClient('https://xyzcompany.supabase.co', 'public-anon-key')
+  const _supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
 
   console.log('Supabase Instance: ', _supabase)
   // ...
@@ -80,7 +80,7 @@ You can use `<script type="module">` to import supabase-js from CDNs, like:
 ```html
 <script type="module">
   import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
-  const supabase = createClient('https://xyzcompany.supabase.co', 'public-anon-key')
+  const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
 
   console.log('Supabase Instance: ', supabase)
   // ...
@@ -103,10 +103,56 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { createClient } from '@supabase/supabase-js'
 
 // Provide a custom `fetch` implementation as an option
-const supabase = createClient('https://xyzcompany.supabase.co', 'public-anon-key', {
+const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key', {
   global: {
     fetch: (...args) => fetch(...args),
   },
+})
+```
+
+### Distributed Tracing with OpenTelemetry
+
+The Supabase JS SDK can attach W3C/OpenTelemetry trace context headers (`traceparent`, `tracestate`, `baggage`) to outgoing requests, enabling end-to-end request tracing from your client application through Supabase services.
+
+Trace propagation is **opt-in** and disabled by default. When enabled, headers are only attached to requests targeting Supabase domains (`*.supabase.co`, `*.supabase.in`, `localhost`).
+
+#### Enable trace propagation
+
+```js
+import { createClient } from '@supabase/supabase-js'
+import { trace } from '@opentelemetry/api'
+
+const supabase = createClient('https://xyzcompany.supabase.co', 'public-anon-key', {
+  tracePropagation: true,
+})
+
+const tracer = trace.getTracer('my-app')
+await tracer.startActiveSpan('fetch-users', async (span) => {
+  // This request now includes the active trace context.
+  const { data, error } = await supabase.from('users').select('*')
+  span.end()
+})
+```
+
+If `@opentelemetry/api` is not installed or no active context exists, the SDK silently no-ops.
+
+#### Advanced configuration
+
+```typescript
+interface TracePropagationOptions {
+  // Enable trace propagation (default: false).
+  enabled?: boolean
+
+  // Respect upstream sampling decisions (default: true).
+  // When true, headers are skipped if the upstream trace is not sampled.
+  respectSamplingDecision?: boolean
+}
+```
+
+```js
+// Always propagate, even for non-sampled traces.
+const supabase = createClient('https://xyzcompany.supabase.co', 'public-anon-key', {
+  tracePropagation: { enabled: true, respectSamplingDecision: false },
 })
 ```
 
@@ -152,6 +198,67 @@ We support Cloudflare Workers runtime environments. Cloudflare Workers provides 
 
 - **Experimental features**: Features marked as experimental may be removed or changed without notice
 
+## Known Build Warnings
+
+### `UNUSED_EXTERNAL_IMPORT` in Vite / Rollup / Nuxt
+
+When bundling your app, you may see warnings like:
+
+```
+"PostgrestError" is imported from external module "@supabase/postgrest-js" but never used in "...supabase-js/dist/index.mjs".
+"FunctionRegion", "FunctionsError", "FunctionsFetchError", "FunctionsHttpError" and "FunctionsRelayError" are imported from external module "@supabase/functions-js" but never used in "...".
+```
+
+**This is a false positive — your bundle is fine.** Here is why it happens:
+
+`@supabase/supabase-js` re-exports `PostgrestError`, `FunctionsError`, and related symbols so you can import them directly from `@supabase/supabase-js`. However, our build tool merges all imports from the same package into a single import statement in the built output:
+
+```js
+// dist/index.mjs (simplified)
+import { PostgrestClient, PostgrestError } from '@supabase/postgrest-js'
+//       ^ used internally    ^ re-exported for you
+```
+
+Your bundler checks which names from that import are used _in the code body_, and flags `PostgrestError` as unused because it only appears in an `export` statement — not called or assigned. The export itself is the usage, but downstream bundlers don't track this correctly. This is a known Rollup/Vite limitation with re-exported external imports.
+
+**Nothing is broken.** Tree-shaking and bundle size are unaffected.
+
+To suppress the warning:
+
+**Vite / Rollup (`vite.config.js` or `rollup.config.js`):**
+
+```js
+export default {
+  build: {
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (warning.code === 'UNUSED_EXTERNAL_IMPORT' && warning.exporter?.includes('@supabase/'))
+          return
+        warn(warning)
+      },
+    },
+  },
+}
+```
+
+**Nuxt (`nuxt.config.ts`):**
+
+```ts
+export default defineNuxtConfig({
+  vite: {
+    build: {
+      rollupOptions: {
+        onwarn(warning, warn) {
+          if (warning.code === 'UNUSED_EXTERNAL_IMPORT' && warning.exporter?.includes('@supabase/'))
+            return
+          warn(warning)
+        },
+      },
+    },
+  },
+})
+```
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](../../../CONTRIBUTING.md) for details on how to get started.
@@ -162,10 +269,10 @@ For major changes or if you're unsure about something, please open an issue firs
 
 ```bash
 # From the monorepo root
-npx nx build supabase-js
+pnpm nx build supabase-js
 
 # Or with watch mode for development
-npx nx build supabase-js --watch
+pnpm nx build supabase-js --watch
 ```
 
 ### Testing
