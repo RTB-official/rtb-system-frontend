@@ -5,6 +5,7 @@ import {
     getUnreadNotificationCount,
     type Notification,
 } from "../lib/notificationApi";
+import { maybeCheckUnsignedTbmSignatures } from "../lib/tbmApi";
 
 export function useNotifications(userId: string | null) {
     const [showNotifications, setShowNotifications] = useState(false);
@@ -47,6 +48,7 @@ export function useNotifications(userId: string | null) {
 
         const loadNotifications = async () => {
             try {
+                await maybeCheckUnsignedTbmSignatures(userId);
                 const [notificationList, count] = await Promise.all([
                     getUserNotifications(userId),
                     getUnreadNotificationCount(userId),
@@ -71,6 +73,7 @@ export function useNotifications(userId: string | null) {
     const refreshNotifications = async () => {
         if (!userId) return;
         try {
+            await maybeCheckUnsignedTbmSignatures(userId);
             const [notificationList, count] = await Promise.all([
                 getUserNotifications(userId),
                 getUnreadNotificationCount(userId),

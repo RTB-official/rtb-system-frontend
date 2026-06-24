@@ -542,3 +542,92 @@ export async function deleteTbm(id: string) {
         throw new Error(`TBM ?? ??: ${error.message}`);
     }
 }
+
+/** TBM 작성 후 서명 미완료 알림: 작성일 기준 2주 경과 후 본인에게만, 2주 간격 재알림 */
+const TBM_SIGN_REMIND_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+const TBM_SIGN_REMIND_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
+const TBM_SIGN_CHECK_THROTTLE_MS = 60 * 60 * 1000;
+
+function getTbmSignRemindStorageKey(userId: string, tbmId: string) {
+    return `tbm_sign_remind:${userId}:${tbmId}`;
+}
+
+function wasTbmSignRemindedRecently(userId: string, tbmId: string): boolean {
+    const stored = localStorage.getItem(getTbmSignRemindStorageKey(userId, tbmId));
+    if (!stored) return false;
+    const last = parseInt(stored, 10);
+    return !Number.isNaN(last) && Date.now() - last < TBM_SIGN_REMIND_INTERVAL_MS;
+}
+
+function markTbmSignReminded(userId: string, tbmId: string) {
+    localStorage.setItem(
+        getTbmSignRemindStorageKey(userId, tbmId),
+        String(Date.now()),
+    );
+}
+
+export async function checkAndNotifyUnsignedTbmSignatures(
+    userId: string,
+): Promise<void> {
+    const cutoffIso = new Date(Date.now() - TBM_SIGN_REMIND_AFTER_MS).toISOString();
+
+    const { data: participants, error: partError } = await supabase
+        .from("tbm_participants")
+        .select("tbm_id")
+        .eq("user_id", userId)
+        .is("signed_at", null);
+
+    if (partError || !participants?.length) return;
+
+    const tbmIds = [
+        ...new Set(
+            participants.map((p) => p.tbm_id).filter(Boolean) as string[],
+        ),
+    ];
+    if (tbmIds.length === 0) return;
+
+    const { data: tbms, error: tbmError } = await supabase
+        .from("tbm")
+        .select("id, work_name, line_name, created_at")
+        .in("id", tbmIds)
+        .lte("created_at", cutoffIso);
+
+    if (tbmError || !tbms?.length) return;
+
+    for (const tbm of tbms) {
+        if (wasTbmSignRemindedRecently(userId, tbm.id)) continue;
+
+        const label =
+            [tbm.line_name, tbm.work_name].filter(Boolean).join(" / ") || "TBM";
+
+        await createNotificationsForUsers(
+            [userId],
+            "TBM 서명 미완료",
+            `${label} TBM 서명이 아직 완료되지 않았습니다. 서명해 주세요.`,
+            "other",
+            JSON.stringify({
+                kind: "tbm_unsigned_sign_reminder",
+                tbm_id: tbm.id,
+                route: `/tbm/${tbm.id}`,
+            }),
+        );
+        markTbmSignReminded(userId, tbm.id);
+    }
+}
+
+/** 과도한 DB 조회 방지: 사용자당 최대 1시간에 1회 확인 */
+export async function maybeCheckUnsignedTbmSignatures(
+    userId: string,
+): Promise<void> {
+    const throttleKey = `tbm_sign_check_last:${userId}`;
+    const last = localStorage.getItem(throttleKey);
+    const now = Date.now();
+    if (last && now - parseInt(last, 10) < TBM_SIGN_CHECK_THROTTLE_MS) return;
+    localStorage.setItem(throttleKey, String(now));
+
+    try {
+        await checkAndNotifyUnsignedTbmSignatures(userId);
+    } catch (e) {
+        console.error("TBM 서명 미완료 알림 확인 실패:", e);
+    }
+}

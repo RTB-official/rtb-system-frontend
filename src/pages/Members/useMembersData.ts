@@ -9,6 +9,13 @@ import type { Member } from "./types";
 import { MEMBERS_CACHE_KEY } from "./constants";
 import { toYYMMDD } from "./utils";
 
+/** 동일 여권 만료 알림 재발송 최소 간격 (2주) */
+const PASSPORT_NOTIFY_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
+
+function getPassportNotifyStorageKey(memberId: string, expiryISO: string) {
+    return `passport_expiry_notify:${memberId}:${expiryISO.slice(0, 10)}`;
+}
+
 export function useMembersData() {
     const { showSuccess } = useToast();
     const [members, setMembers] = useState<Member[]>(() => {
@@ -45,42 +52,70 @@ export function useMembersData() {
             });
             if (expiring.length === 0) return;
 
-            const hasPassportExpiryAlertRecord = async (
+            const wasPassportExpiryNotifiedRecently = async (
                 memberId: string,
                 expiryISO: string,
             ) => {
+                const storageKey = getPassportNotifyStorageKey(memberId, expiryISO);
+                const stored = localStorage.getItem(storageKey);
+                if (stored) {
+                    const last = parseInt(stored, 10);
+                    if (
+                        !Number.isNaN(last) &&
+                        Date.now() - last < PASSPORT_NOTIFY_INTERVAL_MS
+                    ) {
+                        return true;
+                    }
+                }
+
                 const expiryDate = expiryISO.slice(0, 10);
                 const { data, error } = await supabase
                     .from("passport_expiry_alerts")
-                    .select("user_id")
+                    .select("notified_at")
                     .eq("user_id", memberId)
                     .eq("passport_expiry_date", expiryDate)
-                    .limit(1);
-                if (error) return false;
-                return (data ?? []).length > 0;
+                    .maybeSingle();
+
+                if (error || !data?.notified_at) return false;
+
+                const lastNotified = new Date(data.notified_at).getTime();
+                if (
+                    !Number.isNaN(lastNotified) &&
+                    Date.now() - lastNotified < PASSPORT_NOTIFY_INTERVAL_MS
+                ) {
+                    localStorage.setItem(storageKey, String(lastNotified));
+                    return true;
+                }
+                return false;
             };
 
-            const upsertPassportExpiryAlertRecord = async (
+            const markPassportExpiryNotified = async (
                 memberId: string,
                 expiryISO: string,
             ) => {
+                const now = Date.now();
+                localStorage.setItem(
+                    getPassportNotifyStorageKey(memberId, expiryISO),
+                    String(now),
+                );
+
                 const expiryDate = expiryISO.slice(0, 10);
                 await supabase.from("passport_expiry_alerts").upsert(
                     {
                         user_id: memberId,
                         passport_expiry_date: expiryDate,
-                        notified_at: new Date().toISOString(),
+                        notified_at: new Date(now).toISOString(),
                     },
                     { onConflict: "user_id,passport_expiry_date" },
                 );
             };
 
             for (const m of expiring) {
-                const alreadySent = await hasPassportExpiryAlertRecord(
+                const recentlyNotified = await wasPassportExpiryNotifiedRecently(
                     m.id,
                     m.passportExpiryISO,
                 );
-                if (alreadySent) continue;
+                if (recentlyNotified) continue;
                 const recipients = Array.from(new Set([m.id, ...adminIds]));
                 let label = "";
                 try {
@@ -98,10 +133,7 @@ export function useMembersData() {
                         passport_expiry_date: m.passportExpiryISO,
                     }),
                 );
-                await upsertPassportExpiryAlertRecord(
-                    m.id,
-                    m.passportExpiryISO,
-                );
+                await markPassportExpiryNotified(m.id, m.passportExpiryISO);
             }
         } catch (e) {
             console.error("여권 만료 1년 이내 알림 전송 실패:", e);

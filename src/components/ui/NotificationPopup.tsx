@@ -85,6 +85,11 @@ export default function NotificationPopup({
         return null;
     };
 
+    const isTbmUnsignedSignReminder = (item: NotificationItem) => {
+        const meta = parseMeta(item.meta);
+        return meta?.kind === "tbm_unsigned_sign_reminder";
+    };
+
     const resolveNotificationRoute = (item: NotificationItem) => {
         const meta = parseMeta(item.meta);
         const metaRoute =
@@ -94,6 +99,10 @@ export default function NotificationPopup({
             (meta?.tbmId ? `/tbm/${meta.tbmId}` : null);
 
         if (metaRoute) return metaRoute;
+
+        if (meta?.kind === "tbm_unsigned_sign_reminder" && meta?.tbm_id) {
+            return `/tbm/${meta.tbm_id}`;
+        }
 
         if (meta?.kind === "passport_expiry_within_1y") {
             return "/members";
@@ -236,26 +245,37 @@ export default function NotificationPopup({
                 ) : (
                     items.map((it) => {
                         const isRead = !!it.read_at;
+                        const isTbmSignReminder = isTbmUnsignedSignReminder(it);
                         return (
                             <div
                                 key={it.id}
                                 onClick={() => handleNotificationClick(it)}
-                                className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${isRead
-                                    ? "bg-white hover:bg-gray-50"
-                                    : "bg-blue-50 hover:bg-gray-100"
-                                    }`}
+                                className={`flex flex-col gap-1 px-5 py-4 transition-colors cursor-pointer relative group border-b border-gray-50 last:border-0 ${
+                                    isRead
+                                        ? "bg-white hover:bg-gray-50"
+                                        : isTbmSignReminder
+                                          ? "bg-pink-50 hover:bg-pink-100"
+                                          : "bg-blue-50 hover:bg-gray-100"
+                                }`}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <p
-                                        className={`text-[14px] leading-relaxed ${isRead
-                                            ? "font-medium text-[#475569]"
-                                            : "font-semibold text-[#1e293b]"
-                                            }`}
+                                        className={`text-[14px] leading-relaxed ${
+                                            isRead
+                                                ? "font-medium text-[#475569]"
+                                                : "font-semibold text-[#1e293b]"
+                                        }`}
                                     >
                                         {it.title}
                                     </p>
                                     {!isRead && (
-                                        <div className="shrink-0 w-2 h-2 rounded-full bg-blue-400 mt-1.5"></div>
+                                        <div
+                                            className={`shrink-0 w-2 h-2 rounded-full mt-1.5 ${
+                                                isTbmSignReminder
+                                                    ? "bg-pink-400"
+                                                    : "bg-blue-400"
+                                            }`}
+                                        />
                                     )}
                                 </div>
                                 <p
