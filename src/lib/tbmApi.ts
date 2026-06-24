@@ -452,6 +452,27 @@ export async function getTbmDetail(id: string) {
 }
 
 export async function signTbm(tbmId: string, userId: string) {
+    const {
+        data: { user },
+        error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+        throw new Error("로그인이 필요합니다.");
+    }
+
+    if (user.id !== userId) {
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", user.id)
+            .single();
+
+        if (profile?.role !== "admin") {
+            throw new Error("본인만 서명할 수 있습니다.");
+        }
+    }
+
     const { data: updatedRows, error } = await supabase
         .from("tbm_participants")
         .update({ signed_at: new Date().toISOString() })

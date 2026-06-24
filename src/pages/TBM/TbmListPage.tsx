@@ -1,6 +1,6 @@
 // src/pages/TBM/TbmListPage.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Table from "../../components/common/Table";
@@ -76,17 +76,37 @@ function isTbmListRowInProgress(
     return chip?.label === "진행중";
 }
 
+const DEFAULT_YEAR = "년도 전체";
+const DEFAULT_MONTH = "월 전체";
+
+const parsePage = (value: string | null) => {
+    const page = Number.parseInt(value || "", 10);
+    return Number.isNaN(page) || page < 1 ? 1 : page;
+};
+
+const searchParamsEqual = (a: URLSearchParams, b: URLSearchParams) => {
+    if (a.size !== b.size) return false;
+    for (const [key, val] of a.entries()) {
+        if (b.get(key) !== val) return false;
+    }
+    return true;
+};
+
 export default function TbmListPage() {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [search, setSearch] = useState("");
-    const [year, setYear] = useState("년도 전체");
-    const [month, setMonth] = useState("월 전체");
-    const [inProgressOnly, setInProgressOnly] = useState(false);
+    const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+    const [year, setYear] = useState(() => searchParams.get("year") || DEFAULT_YEAR);
+    const [month, setMonth] = useState(() => searchParams.get("month") || DEFAULT_MONTH);
+    const [inProgressOnly, setInProgressOnly] = useState(
+        () => searchParams.get("inProgress") === "1"
+    );
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPage] = useState(() => parsePage(searchParams.get("page")));
     const itemsPerPage = 10;
-    const navigate = useNavigate();
     const { showError, showSuccess } = useToast();
     const [loading, setLoading] = useState(true);
     const [tbmList, setTbmList] = useState<TbmListItem[]>([]);
@@ -96,6 +116,17 @@ export default function TbmListPage() {
         await generateTbmPdf({
             tbmId,
             onError: showError,
+        });
+    };
+
+    const navigateToTbmDetail = (tbmId: string) => {
+        navigate(`/tbm/${tbmId}`, {
+            state: {
+                from: {
+                    pathname: location.pathname,
+                    search: location.search,
+                },
+            },
         });
     };
 
@@ -210,6 +241,33 @@ export default function TbmListPage() {
     ]);
 
     const totalPages = Math.ceil(filtered.length / itemsPerPage);
+
+    useEffect(() => {
+        const nextParams = new URLSearchParams();
+
+        if (search) nextParams.set("search", search);
+        if (year !== DEFAULT_YEAR) nextParams.set("year", year);
+        if (month !== DEFAULT_MONTH) nextParams.set("month", month);
+        if (inProgressOnly) nextParams.set("inProgress", "1");
+        if (currentPage > 1) nextParams.set("page", String(currentPage));
+
+        if (!searchParamsEqual(nextParams, searchParams)) {
+            setSearchParams(nextParams, { replace: true });
+        }
+    }, [search, year, month, inProgressOnly, currentPage, searchParams, setSearchParams]);
+
+    useEffect(() => {
+        if (loading) return;
+
+        if (totalPages === 0 && currentPage !== 1) {
+            setCurrentPage(1);
+            return;
+        }
+        if (totalPages > 0 && currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, loading, totalPages]);
+
     const currentData = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
         const endIndex = startIndex + itemsPerPage;
@@ -340,11 +398,11 @@ export default function TbmListPage() {
                                                     className="rounded-xl border border-gray-200 bg-white p-4 active:bg-gray-50 transition-colors flex items-start gap-3"
                                                     role="button"
                                                     tabIndex={0}
-                                                    onClick={() => navigate(`/tbm/${row.id}`)}
+                                                    onClick={() => navigateToTbmDetail(row.id)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === "Enter" || e.key === " ") {
                                                             e.preventDefault();
-                                                            navigate(`/tbm/${row.id}`);
+                                                            navigateToTbmDetail(row.id);
                                                         }
                                                     }}
                                                 >
@@ -590,7 +648,7 @@ export default function TbmListPage() {
                                     data={currentData}
                                     rowKey="id"
                                     emptyText={"결과가 없습니다."}
-                                    onRowClick={(row: TbmListItem) => navigate(`/tbm/${row.id}`)}
+                                    onRowClick={(row: TbmListItem) => navigateToTbmDetail(row.id)}
                                     pagination={{
                                         currentPage,
                                         totalPages,

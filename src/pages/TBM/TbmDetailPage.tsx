@@ -1,6 +1,6 @@
 // TbmDetailPage.tsx
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
@@ -13,12 +13,21 @@ import TbmDetailSheet from "../../components/tbm/TbmDetailSheet";
 import { generateTbmPdf } from "../../lib/pdfUtils";
 import { supabase } from "../../lib/supabase";
 
+type TbmListLocationState = {
+    from?: {
+        pathname?: string;
+        search?: string;
+    };
+};
+
 export default function TbmDetailPage() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const navigate = useNavigate();
+    const location = useLocation();
+    const locationState = location.state as TbmListLocationState | null;
     const { id } = useParams();
     const { showError, showSuccess } = useToast();
-    const { currentUserId } = useUser();
+    const { currentUserId, userPermissions } = useUser();
     const [loading, setLoading] = useState(true);
     const [tbm, setTbm] = useState<TbmRecord | null>(null);
     const [participants, setParticipants] = useState<TbmParticipant[]>([]);
@@ -91,50 +100,59 @@ export default function TbmDetailPage() {
         load();
     }, [id, showError]);
 
+    const handleBackToList = () => {
+        const pathname = locationState?.from?.pathname || "/tbm";
+        const search = locationState?.from?.search || "";
+        navigate(`${pathname}${search}`);
+    };
 
     const handleSign = async (participant: TbmParticipant) => {
         if (!id || !currentUserId) return;
-        if (participant.user_id !== currentUserId) return;
+        if (!participant.user_id) return;
         if (participant.signed_at) return;
         if (signing) return; // ✅ 이미 서명 처리 중이면 무시
 
+        const canSign =
+            userPermissions.isAdmin || participant.user_id === currentUserId;
+        if (!canSign) return;
+
+        const targetUserId = participant.user_id;
+
         try {
             setSigning(true); // ✅ 서명 시작
-            await signTbm(id, currentUserId);
+            await signTbm(id, targetUserId);
 
             setParticipants((prev) =>
                 prev.map((p) =>
-                    p.user_id === currentUserId
+                    p.user_id === targetUserId
                         ? { ...p, signed_at: new Date().toISOString() }
                         : p
                 )
             );
 
             // 서명 후 서명 이미지 URL 로드
-            if (currentUserId) {
-                const { data: profile, error } = await supabase
-                    .from("profiles")
-                    .select("id, signature_bucket, signature_path")
-                    .eq("id", currentUserId)
-                    .single();
+            const { data: profile, error } = await supabase
+                .from("profiles")
+                .select("id, signature_bucket, signature_path")
+                .eq("id", targetUserId)
+                .single();
 
-                if (!error && profile?.signature_bucket && profile?.signature_path) {
-                    try {
-                        const { data, error: urlError } = await supabase.storage
+            if (!error && profile?.signature_bucket && profile?.signature_path) {
+                try {
+                    const { data, error: urlError } = await supabase.storage
+                        .from(profile.signature_bucket)
+                        .createSignedUrl(profile.signature_path, 60 * 60);
+
+                    if (!urlError && data) {
+                        setSignatureUrls((prev) => new Map(prev).set(targetUserId, data.signedUrl));
+                    } else {
+                        const { data: publicData } = supabase.storage
                             .from(profile.signature_bucket)
-                            .createSignedUrl(profile.signature_path, 60 * 60);
-
-                        if (!urlError && data) {
-                            setSignatureUrls((prev) => new Map(prev).set(currentUserId, data.signedUrl));
-                        } else {
-                            const { data: publicData } = supabase.storage
-                                .from(profile.signature_bucket)
-                                .getPublicUrl(profile.signature_path);
-                            setSignatureUrls((prev) => new Map(prev).set(currentUserId, publicData.publicUrl));
-                        }
-                    } catch (e) {
-                        console.error("서명 이미지 URL 로드 실패:", e);
+                            .getPublicUrl(profile.signature_path);
+                        setSignatureUrls((prev) => new Map(prev).set(targetUserId, publicData.publicUrl));
                     }
+                } catch (e) {
+                    console.error("서명 이미지 URL 로드 실패:", e);
                 }
             }
 
@@ -171,7 +189,7 @@ export default function TbmDetailPage() {
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         <button
-                            onClick={() => navigate("/tbm")}
+                            onClick={handleBackToList}
                             className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
                             title="목록으로 돌아가기"
                         >
@@ -209,6 +227,7 @@ export default function TbmDetailPage() {
                                 participants={participants}
                                 variant="screen"
                                 currentUserId={currentUserId}
+                                isAdmin={userPermissions.isAdmin}
                                 onSign={handleSign}
                                 signatureUrls={signatureUrls}
                             />
