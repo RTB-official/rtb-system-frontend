@@ -11,6 +11,7 @@ import {
     useWorkReportStore,
     formatCurrency,
     parseCurrency,
+    sanitizeDecimalAmountInput,
     EXPENSE_TYPES,
     ExpenseEntry,
 } from "../../store/workReportStore";
@@ -76,9 +77,7 @@ export default function ExpenseSection() {
     };
 
     const handleAmountChange = (value: string) => {
-        // 숫자만 추출하여 저장
-        const cleaned = value.replace(/[^\d]/g, '');
-        setAmount(cleaned);
+        setAmount(sanitizeDecimalAmountInput(value));
     };
 
     const handleAddExpense = () => {
@@ -304,7 +303,7 @@ export default function ExpenseSection() {
                             <div className="flex-[2] md:flex-1 min-w-0">
                                 <TextInput
                                     placeholder="0"
-                                    inputMode="numeric"
+                                    inputMode="decimal"
                                     value={isAmountFocused ? amount : (amount ? formatCurrency(parseCurrency(amount)) : '')}
                                     onChange={(val) => {
                                         handleAmountChange(val);

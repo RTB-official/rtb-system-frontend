@@ -11,10 +11,14 @@ import { useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import {
+    IconArrowBack,
+    IconClose,
     IconEdit,
     IconExportDocuments,
+    IconPlus,
     IconReportOutline,
     IconSave,
+    IconTrash,
 } from "../../components/icons/Icons";
 import InvoiceReportsPickerModal from "../../components/invoice/InvoiceReportsPickerModal";
 import BaseModal from "../../components/ui/BaseModal";
@@ -256,6 +260,46 @@ function isTimesheetSourceEntryPanelSyncEqual(
 }
 
 type MealCountAdjustmentEntry = { delta: number; lastDirection: "up" | "down" };
+
+type TimesheetCommentOverrideState = {
+    hiddenAutoComments: string[];
+    addedComments: string[];
+    trashedComments: Array<{ comment: string; isManual: boolean }>;
+};
+
+function cloneTimesheetCommentOverrideState(
+    state?: TimesheetCommentOverrideState | null
+): TimesheetCommentOverrideState {
+    const hiddenAutoComments = [...(state?.hiddenAutoComments ?? [])];
+    const addedComments = [...(state?.addedComments ?? [])];
+    const trashedComments = (state?.trashedComments ?? []).map((item) => ({
+        ...item,
+    }));
+    for (const comment of hiddenAutoComments) {
+        if (
+            !trashedComments.some(
+                (item) => item.comment === comment && !item.isManual
+            )
+        ) {
+            trashedComments.push({ comment, isManual: false });
+        }
+    }
+    return {
+        hiddenAutoComments,
+        addedComments,
+        trashedComments,
+    };
+}
+
+function isTimesheetCommentOverrideEmpty(
+    state: TimesheetCommentOverrideState
+): boolean {
+    return (
+        state.hiddenAutoComments.length === 0 &&
+        state.addedComments.length === 0 &&
+        state.trashedComments.length === 0
+    );
+}
 
 /** 로직 계산 후 청구시간 기준 구간으로 Time from / Time to를 보정 */
 const applyChargedTimeWindowToTimesheetRows = (
@@ -588,6 +632,11 @@ type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
     invoiceSkilledFitterByTimesheetRowKey?: Record<string, string>;
     invoiceSkilledFitterOptOutByTimesheetRowKey?: Record<string, string[]>;
     entryInvoiceSkilledFitterByEntryId?: Record<number, string>;
+    invoiceWorkItemOverride?: string | null;
+    timesheetCommentOverridesBySectionKey?: Record<
+        string,
+        TimesheetCommentOverrideState
+    >;
 };
 
 type InvoiceUndoSnapshot = {
@@ -1494,10 +1543,34 @@ export default function InvoiceCreatePage() {
     >("person");
     const [mealCountAdjustmentsBySectionDate, setMealCountAdjustmentsBySectionDate] =
         useState<Record<string, MealCountAdjustmentEntry>>({});
+    const [lodgingCountAdjustmentsBySectionDate, setLodgingCountAdjustmentsBySectionDate] =
+        useState<Record<string, MealCountAdjustmentEntry>>({});
+    const [timesheetCommentOverridesBySectionKey, setTimesheetCommentOverridesBySectionKey] =
+        useState<Record<string, TimesheetCommentOverrideState>>({});
+    const [timesheetCommentAddModalOpen, setTimesheetCommentAddModalOpen] =
+        useState(false);
+    const [timesheetCommentAddModalDraft, setTimesheetCommentAddModalDraft] =
+        useState("");
+    const [timesheetCommentAddModalSectionKey, setTimesheetCommentAddModalSectionKey] =
+        useState<string | null>(null);
+    const [timesheetCommentTrashModalOpen, setTimesheetCommentTrashModalOpen] =
+        useState(false);
+    const [timesheetCommentTrashModalSectionKey, setTimesheetCommentTrashModalSectionKey] =
+        useState<string | null>(null);
+    const timesheetCommentUndoPastRef = useRef<
+        Record<string, TimesheetCommentOverrideState[]>
+    >({});
+    const timesheetCommentUndoFutureRef = useRef<
+        Record<string, TimesheetCommentOverrideState[]>
+    >({});
+    const [timesheetCommentUndoRedoTick, setTimesheetCommentUndoRedoTick] = useState(0);
     const invoiceDraftAutoLoadRequestRef = useRef(0);
     const duplicateTimesheetEntryIdRef = useRef(-1);
     /** normalTimesheetSectionsByPerson 정의 이후 매 렌더에서 갱신 — 인원별 `::date::` 조정을 R&D 등에서 조회 */
     const resolveNormalPersonDateScopedMealAdjustmentRef = useRef<
+        (row: TimesheetRow) => MealCountAdjustmentEntry | undefined
+    >(() => undefined);
+    const resolveNormalPersonDateScopedLodgingAdjustmentRef = useRef<
         (row: TimesheetRow) => MealCountAdjustmentEntry | undefined
     >(() => undefined);
     const loadedWorkLogIdsParamRef = useRef<string | null>(null);
@@ -1632,6 +1705,7 @@ export default function InvoiceCreatePage() {
                 )
             ),
             invoiceWorkItemOverride,
+            timesheetCommentOverridesBySectionKey,
         };
     }, [
         workLogDataList,
@@ -1646,6 +1720,7 @@ export default function InvoiceCreatePage() {
         invoiceSkilledFitterByTimesheetRowKey,
         invoiceSkilledFitterOptOutByTimesheetRowKey,
         invoiceWorkItemOverride,
+        timesheetCommentOverridesBySectionKey,
     ]);
 
     /** 드래프트의 엔트리 인원은 수정본일 수 있으므로, 표시용 원본은 API 보고서 기준으로 덮어쓴다. */
@@ -1765,6 +1840,9 @@ export default function InvoiceCreatePage() {
                 normalized.invoiceWorkItemOverride === undefined
                     ? null
                     : normalized.invoiceWorkItemOverride
+            );
+            setTimesheetCommentOverridesBySectionKey(
+                normalized.timesheetCommentOverridesBySectionKey ?? {}
             );
             setSelectedTimesheetDateGroupAnchorKey(null);
             setSelectedTimesheetDateGroupPanel(null);
@@ -6103,6 +6181,30 @@ export default function InvoiceCreatePage() {
                 getMealGroupKey(sectionTitle, sectionKey, row)
         );
 
+    /** 숙박은 달력 날짜당 1회만 집계·표시 (야간 작업으로 같은 날 행이 여러 개여도 중복 없음) */
+    const getLodgingGroupKey = (sectionTitle: string, row: TimesheetRow) =>
+        `${sectionTitle}::lodging::date::${row.date}`;
+    const getLodgingGroupRows = (rows: TimesheetRow[], row: TimesheetRow) =>
+        rows.filter((candidate) => candidate.date === row.date);
+    const isFirstRowForLodgingGroup = (rows: TimesheetRow[], row: TimesheetRow) =>
+        getLodgingGroupRows(rows, row)[0]?.rowId === row.rowId;
+    const findDateScopedLodgingAdjustmentEntry = (
+        sectionTitle: string,
+        date: string
+    ): MealCountAdjustmentEntry | undefined => {
+        const lodgingKey = `${sectionTitle}::lodging::date::${date}`;
+        const direct = lodgingCountAdjustmentsBySectionDate[lodgingKey];
+        if (direct) {
+            return direct;
+        }
+        if (sectionTitle.includes("NORMAL TIMESHEET")) {
+            return lodgingCountAdjustmentsBySectionDate[
+                `${sectionTitle}::date::${date}`
+            ];
+        }
+        return undefined;
+    };
+
     /**
      * 같은 rowId는 R&D / NORMAL(날짜별 보기)에서 각각 다른 state 키로 저장됨.
      * 서로 다른 표에서 같은 행의 조정을 맞추기 위한 보조 lookup.
@@ -6229,6 +6331,78 @@ export default function InvoiceCreatePage() {
             };
         });
     };
+    const getSectionLodgingGroupData = (
+        sectionTitle: string,
+        sectionKey: string | undefined,
+        rows: TimesheetRow[],
+        row: TimesheetRow
+    ) => {
+        const lodgingGroupKey = getLodgingGroupKey(sectionTitle, row);
+        const baseLodgingCount = countLodgingArrivalPersonsForMealGroup(
+            sectionTitle,
+            sectionKey,
+            rows,
+            row
+        );
+        let lodgingAdjustment: MealCountAdjustmentEntry | undefined =
+            lodgingCountAdjustmentsBySectionDate[lodgingGroupKey];
+
+        if (lodgingAdjustment === undefined) {
+            lodgingAdjustment = findDateScopedLodgingAdjustmentEntry(
+                sectionTitle,
+                row.date
+            );
+        }
+
+        if (lodgingAdjustment === undefined && sectionTitle === "R&D TIMESHEET") {
+            lodgingAdjustment =
+                resolveNormalPersonDateScopedLodgingAdjustmentRef.current(row);
+        }
+
+        const lodgingDelta = lodgingAdjustment?.delta ?? 0;
+        const lodgingCount = Math.max(baseLodgingCount + lodgingDelta, 0);
+
+        return {
+            baseLodgingCount,
+            lodgingCount,
+            isLodgingAdjusted: lodgingDelta !== 0,
+            lodgingAdjustLastDirection: lodgingAdjustment?.lastDirection ?? null,
+        };
+    };
+    const adjustSectionMealGroupLodging = (
+        sectionTitle: string,
+        sectionKey: string | undefined,
+        rows: TimesheetRow[],
+        row: TimesheetRow,
+        delta: number
+    ) => {
+        setLodgingCountAdjustmentsBySectionDate((previous) => {
+            const key = getLodgingGroupKey(sectionTitle, row);
+            const currentDelta = previous[key]?.delta ?? 0;
+            const baseLodgingCount = countLodgingArrivalPersonsForMealGroup(
+                sectionTitle,
+                sectionKey,
+                rows,
+                row
+            );
+            const nextLodgingCount = Math.max(
+                baseLodgingCount + currentDelta + delta,
+                0
+            );
+            const nextDelta = nextLodgingCount - baseLodgingCount;
+            const lastDirection = delta > 0 ? ("up" as const) : ("down" as const);
+
+            if (nextDelta === 0) {
+                const { [key]: _removed, ...rest } = previous;
+                return rest;
+            }
+
+            return {
+                ...previous,
+                [key]: { delta: nextDelta, lastDirection },
+            };
+        });
+    };
     const getSectionMealsTotal = (
         sectionTitle: string,
         sectionKey: string | undefined,
@@ -6256,8 +6430,74 @@ export default function InvoiceCreatePage() {
             <div className="relative flex min-w-0 flex-1 flex-col items-center justify-center border-r border-gray-200 px-0.5">
                 {left}
             </div>
-            <div className="flex min-w-0 flex-1 items-center justify-center px-0.5 tabular-nums text-gray-400">
+            <div className="relative flex min-w-0 flex-1 flex-col items-center justify-center px-0.5">
                 {right}
+            </div>
+        </div>
+    );
+
+    const renderMealLodgingAdjustStepper = (
+        displayLabel: string,
+        isAdjusted: boolean,
+        onIncrease: (event: React.MouseEvent<HTMLButtonElement>) => void,
+        onDecrease: (event: React.MouseEvent<HTMLButtonElement>) => void,
+        increaseAriaLabel: string,
+        decreaseAriaLabel: string,
+        mutedWhenZero = false
+    ) => (
+        <div className="relative flex min-h-[18px] w-full items-center justify-center pr-3">
+            <span
+                className={`block text-center font-semibold leading-none tabular-nums ${
+                    isAdjusted
+                        ? getTimesheetChangedValueTextClass(true, displayLabel)
+                        : mutedWhenZero && displayLabel.replace(/[▲▼]/g, "") === "0"
+                          ? "text-gray-400"
+                          : "text-gray-900"
+                }`}
+            >
+                {displayLabel}
+            </span>
+            <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0">
+                <button
+                    type="button"
+                    className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
+                    onClick={onIncrease}
+                    aria-label={increaseAriaLabel}
+                >
+                    <svg
+                        viewBox="0 0 16 16"
+                        width="7"
+                        height="7"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M4 10l4-4 4 4" />
+                    </svg>
+                </button>
+                <button
+                    type="button"
+                    className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
+                    onClick={onDecrease}
+                    aria-label={decreaseAriaLabel}
+                >
+                    <svg
+                        viewBox="0 0 16 16"
+                        width="7"
+                        height="7"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M4 6l4 4 4-4" />
+                    </svg>
+                </button>
             </div>
         </div>
     );
@@ -6272,6 +6512,7 @@ export default function InvoiceCreatePage() {
         const isFirstRowForMealGroup =
             getMealGroupRows(sectionTitle, sectionKey, rows, row)[0]?.rowId ===
             row.rowId;
+        const isLodgingGroupLeadRow = isFirstRowForLodgingGroup(rows, row);
         const cellClassName = `relative px-0 py-0 text-center align-middle ${getTimesheetRowStateClass(
             sectionTitle,
             row
@@ -6283,7 +6524,7 @@ export default function InvoiceCreatePage() {
             </span>
         );
 
-        if (!isFirstRowForMealGroup) {
+        if (!isFirstRowForMealGroup && !isLodgingGroupLeadRow) {
             return (
                 <td
                     className={cellClassName}
@@ -6294,37 +6535,34 @@ export default function InvoiceCreatePage() {
             );
         }
 
-        const lodgingCount = countLodgingArrivalPersonsForMealGroup(
-            sectionTitle,
-            sectionKey,
-            rows,
-            row
-        );
-        const lodgingValue = (
-            <span
-                className={`tabular-nums ${
-                    lodgingCount > 0
-                        ? "font-semibold text-gray-900"
-                        : "text-gray-400"
-                }`}
-            >
-                {lodgingCount}
-            </span>
-        );
+        const lodgingData = isLodgingGroupLeadRow
+            ? getSectionLodgingGroupData(sectionTitle, sectionKey, rows, row)
+            : null;
+        const lodgingLabel =
+            lodgingData === null
+                ? ""
+                : String(lodgingData.lodgingCount) +
+                  (lodgingData.isLodgingAdjusted &&
+                  lodgingData.lodgingAdjustLastDirection === "up"
+                      ? "▲"
+                      : lodgingData.isLodgingAdjusted &&
+                          lodgingData.lodgingAdjustLastDirection === "down"
+                        ? "▼"
+                        : "");
 
-        const mealsData = getSectionMealGroupData(
-            sectionTitle,
-            sectionKey,
-            rows,
-            row
-        );
+        const mealsData = isFirstRowForMealGroup
+            ? getSectionMealGroupData(sectionTitle, sectionKey, rows, row)
+            : null;
         const mealsLabel =
-            mealsData.totalMeals +
-            (mealsData.isMealAdjusted && mealsData.mealAdjustLastDirection === "up"
-                ? "▲"
-                : mealsData.isMealAdjusted && mealsData.mealAdjustLastDirection === "down"
-                  ? "▼"
-                  : "");
+            mealsData === null
+                ? ""
+                : mealsData.totalMeals +
+                  (mealsData.isMealAdjusted && mealsData.mealAdjustLastDirection === "up"
+                      ? "▲"
+                      : mealsData.isMealAdjusted &&
+                          mealsData.mealAdjustLastDirection === "down"
+                        ? "▼"
+                        : "");
 
         return (
             <td
@@ -6332,78 +6570,65 @@ export default function InvoiceCreatePage() {
                 {...getTimesheetInteractiveCellProps(sectionTitle, row)}
             >
                 {mealsCellSplitShell(
-                    <div className="relative flex min-h-[18px] w-full items-center justify-center pr-3">
-                        <span
-                            className={`block text-center font-semibold leading-none ${
-                                mealsData.isMealAdjusted
-                                    ? getTimesheetChangedValueTextClass(true, mealsLabel)
-                                    : "text-gray-900"
-                            }`}
-                        >
-                            {mealsLabel}
-                        </span>
-                        <div className="absolute right-0 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0">
-                            <button
-                                type="button"
-                                className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    adjustSectionMealGroupMeals(
-                                        sectionTitle,
-                                        sectionKey,
-                                        rows,
-                                        row,
-                                        1
-                                    );
-                                }}
-                                aria-label="increase meals"
-                            >
-                                <svg
-                                    viewBox="0 0 16 16"
-                                    width="7"
-                                    height="7"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.8"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M4 10l4-4 4 4" />
-                                </svg>
-                            </button>
-                            <button
-                                type="button"
-                                className="flex h-2.5 w-2.5 items-center justify-center rounded-none bg-transparent p-0 text-gray-500 hover:text-gray-700"
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    adjustSectionMealGroupMeals(
-                                        sectionTitle,
-                                        sectionKey,
-                                        rows,
-                                        row,
-                                        -1
-                                    );
-                                }}
-                                aria-label="decrease meals"
-                            >
-                                <svg
-                                    viewBox="0 0 16 16"
-                                    width="7"
-                                    height="7"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.8"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M4 6l4 4 4-4" />
-                                </svg>
-                            </button>
-                        </div>
-                    </div>,
-                    lodgingValue
+                    isFirstRowForMealGroup ? (
+                        renderMealLodgingAdjustStepper(
+                            String(mealsLabel),
+                            mealsData!.isMealAdjusted,
+                            (event) => {
+                                event.stopPropagation();
+                                adjustSectionMealGroupMeals(
+                                    sectionTitle,
+                                    sectionKey,
+                                    rows,
+                                    row,
+                                    1
+                                );
+                            },
+                            (event) => {
+                                event.stopPropagation();
+                                adjustSectionMealGroupMeals(
+                                    sectionTitle,
+                                    sectionKey,
+                                    rows,
+                                    row,
+                                    -1
+                                );
+                            },
+                            "increase meals",
+                            "decrease meals"
+                        )
+                    ) : null,
+                    isLodgingGroupLeadRow ? (
+                        renderMealLodgingAdjustStepper(
+                            lodgingLabel,
+                            lodgingData!.isLodgingAdjusted,
+                            (event) => {
+                                event.stopPropagation();
+                                adjustSectionMealGroupLodging(
+                                    sectionTitle,
+                                    sectionKey,
+                                    rows,
+                                    row,
+                                    1
+                                );
+                            },
+                            (event) => {
+                                event.stopPropagation();
+                                adjustSectionMealGroupLodging(
+                                    sectionTitle,
+                                    sectionKey,
+                                    rows,
+                                    row,
+                                    -1
+                                );
+                            },
+                            "increase lodging",
+                            "decrease lodging",
+                            true
+                        )
+                    ) : (
+                        lodgingEmpty
+                    )
                 )}
             </td>
         );
@@ -7732,6 +7957,26 @@ export default function InvoiceCreatePage() {
         }
         return undefined;
     };
+    resolveNormalPersonDateScopedLodgingAdjustmentRef.current = (row: TimesheetRow) => {
+        for (const section of normalTimesheetSectionsByPerson) {
+            if (!section.rows.some((r) => r.rowId === row.rowId)) {
+                continue;
+            }
+            const sameDateRows = section.rows.filter((r) => r.date === row.date);
+            const leader = sameDateRows[0];
+            if (!leader || leader.rowId !== row.rowId) {
+                return undefined;
+            }
+            const dateKey = `${section.title}::lodging::date::${row.date}`;
+            return (
+                lodgingCountAdjustmentsBySectionDate[dateKey] ??
+                lodgingCountAdjustmentsBySectionDate[
+                    `${section.title}::date::${row.date}`
+                ]
+            );
+        }
+        return undefined;
+    };
 
     const allTimesheetPeople = getUniquePersonsFromRows(timesheetRows);
     const allTimesheetPeopleKey = allTimesheetPeople.join("|");
@@ -7742,10 +7987,11 @@ export default function InvoiceCreatePage() {
         allTimesheetPeople
     );
     const DAILY_ALLOWANCE_MEAL_UNIT_PRICE_KRW = 15000;
-    const invoiceMealsTotal = normalTimesheetSectionsByPerson.reduce(
-        (sum, section) =>
-            sum + getSectionMealsTotal(section.title, section.key, section.rows),
-        0
+    /** 인보이스 Daily Allowance — R&D 타임시트 Total 행 Meals 합과 동일 */
+    const invoiceMealsTotal = getSectionMealsTotal(
+        "R&D TIMESHEET",
+        undefined,
+        timesheetRows
     );
     const dailyAllowanceSkilledCount =
         jobDescriptionPersonnel.engineerPeople.length;
@@ -8181,7 +8427,11 @@ export default function InvoiceCreatePage() {
     ): number => {
         const departureLodgingDateKey = shiftDateByDays(row.date, 1);
         const entryById = new Map<number, TimesheetSourceEntryData>();
-        const sectionPersons = new Set(getUniquePersonsFromRows(allRows));
+        const dateGroupPersons = new Set(
+            getUniquePersonsFromRows(
+                allRows.filter((candidate) => candidate.date === row.date)
+            )
+        );
 
         // 타임시트 행만 보면 누락될 수 있어 원본 workLogDataList의 해당 날짜(다음날) 전체 이동을 본다.
         for (const data of workLogDataList) {
@@ -8191,7 +8441,7 @@ export default function InvoiceCreatePage() {
                 }
                 if (
                     !(entry.persons ?? []).some((person) =>
-                        sectionPersons.has(person)
+                        dateGroupPersons.has(person)
                     )
                 ) {
                     continue;
@@ -8225,7 +8475,7 @@ export default function InvoiceCreatePage() {
                 continue;
             }
             for (const person of sourceEntry.persons ?? []) {
-                if (counted.has(person) || !sectionPersons.has(person)) {
+                if (counted.has(person) || !dateGroupPersons.has(person)) {
                     continue;
                 }
                 if (
@@ -8244,28 +8494,27 @@ export default function InvoiceCreatePage() {
         rows: TimesheetRow[]
     ) =>
         rows
-            .reduce((groupLeadRows, row) => {
-                const key = getMealGroupKey(sectionTitle, sectionKey, row);
+            .reduce((dateLeadRows, row) => {
+                const key = getLodgingGroupKey(sectionTitle, row);
                 if (
-                    groupLeadRows.some(
+                    dateLeadRows.some(
                         (candidate) =>
-                            getMealGroupKey(sectionTitle, sectionKey, candidate) ===
-                            key
+                            getLodgingGroupKey(sectionTitle, candidate) === key
                     )
                 ) {
-                    return groupLeadRows;
+                    return dateLeadRows;
                 }
-                return [...groupLeadRows, row];
+                return [...dateLeadRows, row];
             }, [] as TimesheetRow[])
             .reduce(
                 (sum, row) =>
                     sum +
-                    countLodgingArrivalPersonsForMealGroup(
+                    getSectionLodgingGroupData(
                         sectionTitle,
                         sectionKey,
                         rows,
                         row
-                    ),
+                    ).lodgingCount,
                 0
             );
 
@@ -8586,12 +8835,344 @@ export default function InvoiceCreatePage() {
 
         return Array.from(new Set([...comments, ...oneTimeJobComments]));
     };
-    const rndTimesheetComments = getNormalTimesheetComments({
+
+    const getTimesheetSectionCommentKey = (
+        section: Pick<NormalTimesheetSection, "title" | "key">
+    ) =>
+        section.title === "R&D TIMESHEET"
+            ? "R&D TIMESHEET"
+            : `${section.title}::${section.key}`;
+
+    const resolveTimesheetSectionComments = (
+        section: NormalTimesheetSection,
+        autoComments: string[]
+    ): string[] => {
+        const key = getTimesheetSectionCommentKey(section);
+        const override = cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[key]
+        );
+        if (!override) {
+            return autoComments;
+        }
+        const hidden = new Set(override.hiddenAutoComments);
+        const autoFiltered = autoComments.filter((comment) => !hidden.has(comment));
+        return [...autoFiltered, ...override.addedComments];
+    };
+
+    const deleteTimesheetSectionComment = (
+        sectionKey: string,
+        comment: string,
+        isManual: boolean
+    ) => {
+        const current = cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[sectionKey]
+        );
+        if (isManual) {
+            if (!current.addedComments.includes(comment)) {
+                return;
+            }
+        } else if (current.hiddenAutoComments.includes(comment)) {
+            return;
+        }
+
+        pushTimesheetCommentUndoSnapshot(sectionKey);
+        setTimesheetCommentOverridesBySectionKey((previous) => {
+            const nextCurrent = cloneTimesheetCommentOverrideState(
+                previous[sectionKey]
+            );
+            const alreadyTrashed = nextCurrent.trashedComments.some(
+                (item) => item.comment === comment && item.isManual === isManual
+            );
+            const trashedComments = alreadyTrashed
+                ? nextCurrent.trashedComments
+                : [...nextCurrent.trashedComments, { comment, isManual }];
+            const next: TimesheetCommentOverrideState = isManual
+                ? {
+                      ...nextCurrent,
+                      addedComments: nextCurrent.addedComments.filter(
+                          (c) => c !== comment
+                      ),
+                      trashedComments,
+                  }
+                : {
+                      ...nextCurrent,
+                      hiddenAutoComments: [
+                          ...nextCurrent.hiddenAutoComments,
+                          comment,
+                      ],
+                      trashedComments,
+                  };
+            if (isTimesheetCommentOverrideEmpty(next)) {
+                const { [sectionKey]: _removed, ...rest } = previous;
+                return rest;
+            }
+            return { ...previous, [sectionKey]: next };
+        });
+    };
+
+    const addTimesheetSectionComment = (sectionKey: string, comment: string) => {
+        const trimmed = comment.trim();
+        if (!trimmed) {
+            return;
+        }
+        pushTimesheetCommentUndoSnapshot(sectionKey);
+        setTimesheetCommentOverridesBySectionKey((previous) => {
+            const current = cloneTimesheetCommentOverrideState(previous[sectionKey]);
+            return {
+                ...previous,
+                [sectionKey]: {
+                    ...current,
+                    addedComments: [...current.addedComments, trimmed],
+                },
+            };
+        });
+    };
+
+    const restoreTimesheetSectionComment = (
+        sectionKey: string,
+        comment: string,
+        isManual: boolean
+    ) => {
+        const current = cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[sectionKey]
+        );
+        if (
+            !current.trashedComments.some(
+                (item) => item.comment === comment && item.isManual === isManual
+            )
+        ) {
+            return;
+        }
+
+        pushTimesheetCommentUndoSnapshot(sectionKey);
+        setTimesheetCommentOverridesBySectionKey((previous) => {
+            const nextCurrent = cloneTimesheetCommentOverrideState(
+                previous[sectionKey]
+            );
+            const trashedComments = nextCurrent.trashedComments.filter(
+                (item) => !(item.comment === comment && item.isManual === isManual)
+            );
+            const next: TimesheetCommentOverrideState = isManual
+                ? {
+                      ...nextCurrent,
+                      addedComments: nextCurrent.addedComments.includes(comment)
+                          ? nextCurrent.addedComments
+                          : [...nextCurrent.addedComments, comment],
+                      trashedComments,
+                  }
+                : {
+                      ...nextCurrent,
+                      hiddenAutoComments: nextCurrent.hiddenAutoComments.filter(
+                          (c) => c !== comment
+                      ),
+                      trashedComments,
+                  };
+            if (isTimesheetCommentOverrideEmpty(next)) {
+                const { [sectionKey]: _removed, ...rest } = previous;
+                return rest;
+            }
+            return { ...previous, [sectionKey]: next };
+        });
+    };
+
+    const bumpTimesheetCommentUndoRedoTick = () => {
+        setTimesheetCommentUndoRedoTick((tick) => tick + 1);
+    };
+
+    const applyTimesheetCommentOverrideState = (
+        sectionKey: string,
+        state: TimesheetCommentOverrideState
+    ) => {
+        const next = cloneTimesheetCommentOverrideState(state);
+        setTimesheetCommentOverridesBySectionKey((previous) => {
+            if (isTimesheetCommentOverrideEmpty(next)) {
+                const { [sectionKey]: _removed, ...rest } = previous;
+                return rest;
+            }
+            return { ...previous, [sectionKey]: next };
+        });
+    };
+
+    const pushTimesheetCommentUndoSnapshot = (sectionKey: string) => {
+        const current = cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[sectionKey]
+        );
+        const pastStack = timesheetCommentUndoPastRef.current[sectionKey] ?? [];
+        pastStack.push(current);
+        if (pastStack.length > MAX_INVOICE_UNDO) {
+            pastStack.shift();
+        }
+        timesheetCommentUndoPastRef.current[sectionKey] = pastStack;
+        timesheetCommentUndoFutureRef.current[sectionKey] = [];
+        bumpTimesheetCommentUndoRedoTick();
+    };
+
+    const handleTimesheetCommentUndo = (sectionKey: string) => {
+        const pastStack = timesheetCommentUndoPastRef.current[sectionKey];
+        if (!pastStack || pastStack.length === 0) {
+            return;
+        }
+        const snapshot = pastStack.pop()!;
+        const current = cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[sectionKey]
+        );
+        const futureStack =
+            timesheetCommentUndoFutureRef.current[sectionKey] ?? [];
+        futureStack.push(current);
+        timesheetCommentUndoFutureRef.current[sectionKey] = futureStack;
+        applyTimesheetCommentOverrideState(sectionKey, snapshot);
+        bumpTimesheetCommentUndoRedoTick();
+    };
+
+    const handleTimesheetCommentRedo = (sectionKey: string) => {
+        const futureStack = timesheetCommentUndoFutureRef.current[sectionKey];
+        if (!futureStack || futureStack.length === 0) {
+            return;
+        }
+        const snapshot = futureStack.pop()!;
+        const current = cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[sectionKey]
+        );
+        const pastStack = timesheetCommentUndoPastRef.current[sectionKey] ?? [];
+        pastStack.push(current);
+        timesheetCommentUndoPastRef.current[sectionKey] = pastStack;
+        applyTimesheetCommentOverrideState(sectionKey, snapshot);
+        bumpTimesheetCommentUndoRedoTick();
+    };
+
+    const getTimesheetCommentUndoRedoCounts = (sectionKey: string) => ({
+        past: timesheetCommentUndoPastRef.current[sectionKey]?.length ?? 0,
+        future: timesheetCommentUndoFutureRef.current[sectionKey]?.length ?? 0,
+    });
+
+    const getTimesheetSectionTrashedComments = (sectionKey: string) =>
+        cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[sectionKey]
+        ).trashedComments;
+
+    const renderTimesheetCommentToolbarButton = (
+        ariaLabel: string,
+        onClick: () => void,
+        icon: ReactNode,
+        options?: {
+            disabled?: boolean;
+            dangerHover?: boolean;
+        }
+    ) => (
+        <button
+            type="button"
+            className={`flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                options?.dangerHover
+                    ? "hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                    : "hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+            }`}
+            onClick={onClick}
+            disabled={options?.disabled}
+            aria-label={ariaLabel}
+        >
+            {icon}
+        </button>
+    );
+
+    const renderTimesheetCommentsBlock = (
+        section: NormalTimesheetSection,
+        comments: string[]
+    ) => {
+        const sectionKey = getTimesheetSectionCommentKey(section);
+        const addedCommentSet = new Set(
+            timesheetCommentOverridesBySectionKey[sectionKey]?.addedComments ?? []
+        );
+        void timesheetCommentUndoRedoTick;
+        const { past: commentUndoCount, future: commentRedoCount } =
+            getTimesheetCommentUndoRedoCounts(sectionKey);
+        const trashedCommentCount = getTimesheetSectionTrashedComments(sectionKey).length;
+
+        return (
+            <div className="text-sm text-gray-700">
+                <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-gray-900">Comments :</span>
+                    <div className="flex items-center gap-1">
+                        {renderTimesheetCommentToolbarButton(
+                            "삭제된 코멘트",
+                            () => {
+                                setTimesheetCommentTrashModalSectionKey(sectionKey);
+                                setTimesheetCommentTrashModalOpen(true);
+                            },
+                            <IconTrash className="h-4 w-4" />,
+                            { dangerHover: true }
+                        )}
+                        {renderTimesheetCommentToolbarButton(
+                            "코멘트 실행 취소",
+                            () => handleTimesheetCommentUndo(sectionKey),
+                            <IconArrowBack className="h-4 w-4" />,
+                            { disabled: commentUndoCount === 0 }
+                        )}
+                        {renderTimesheetCommentToolbarButton(
+                            "코멘트 다시 실행",
+                            () => handleTimesheetCommentRedo(sectionKey),
+                            <IconArrowBack className="h-4 w-4 rotate-180" />,
+                            { disabled: commentRedoCount === 0 }
+                        )}
+                        {renderTimesheetCommentToolbarButton(
+                            "코멘트 추가",
+                            () => {
+                                setTimesheetCommentAddModalSectionKey(sectionKey);
+                                setTimesheetCommentAddModalDraft("");
+                                setTimesheetCommentAddModalOpen(true);
+                            },
+                            <IconPlus className="h-4 w-4" />
+                        )}
+                    </div>
+                </div>
+                {trashedCommentCount > 0 ? (
+                    <div className="mt-1 text-xs text-gray-400">
+                        삭제된 코멘트 {trashedCommentCount}개
+                    </div>
+                ) : null}
+                {comments.length > 0 ? (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                        {comments.map((comment, index) => (
+                            <div
+                                key={`${sectionKey}-${index}-${comment}`}
+                                className="group -mx-2 flex items-start gap-2 rounded-md border border-transparent px-2 py-1.5 transition-colors hover:border-gray-200 hover:bg-gray-50"
+                            >
+                                <span className="min-w-0 flex-1 leading-relaxed">
+                                    {comment}
+                                </span>
+                                <button
+                                    type="button"
+                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 opacity-0 shadow-sm transition-all hover:border-red-200 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100"
+                                    onClick={() =>
+                                        deleteTimesheetSectionComment(
+                                            sectionKey,
+                                            comment,
+                                            addedCommentSet.has(comment)
+                                        )
+                                    }
+                                    aria-label="코멘트 삭제"
+                                >
+                                    <IconClose className="h-4 w-4" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="mt-1 text-gray-400">-</div>
+                )}
+            </div>
+        );
+    };
+
+    const rndTimesheetSection: NormalTimesheetSection = {
         key: "R&D TIMESHEET",
         title: "R&D TIMESHEET",
         people: allTimesheetPeople,
         rows: timesheetRows,
-    });
+    };
+    const rndTimesheetComments = resolveTimesheetSectionComments(
+        rndTimesheetSection,
+        getNormalTimesheetComments(rndTimesheetSection)
+    );
     const invoiceSkilledFitterPeople = sortPeopleForMention(
         jobDescriptionPersonnel.engineerPeople
     );
@@ -10823,7 +11404,10 @@ export default function InvoiceCreatePage() {
                         ),
                         returnDisplay: getBoundaryDisplay(section.rows, "return"),
                         rows: section.rows,
-                        comments: getNormalTimesheetComments(section),
+                        comments: resolveTimesheetSectionComments(
+                            section,
+                            getNormalTimesheetComments(section)
+                        ),
                     };
                 });
 
@@ -11010,6 +11594,7 @@ export default function InvoiceCreatePage() {
         getTimesheetRowTotalHoursForGrid,
         formatRdTimesheetRowSummaryLine,
         rndTimesheetComments,
+        timesheetCommentOverridesBySectionKey,
         showError,
         showSuccess,
     ]);
@@ -11818,17 +12403,9 @@ export default function InvoiceCreatePage() {
                                         </table>
                                             </div>
                                             <div className="text-sm text-gray-700">
-                                                <span className="font-semibold text-gray-900">
-                                                    Comments :
-                                                </span>{" "}
-                                                {rndTimesheetComments.length > 0 ? (
-                                                    <div className="mt-2 flex flex-col gap-1">
-                                                        {rndTimesheetComments.map((comment) => (
-                                                            <div key={comment}>{comment}</div>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-gray-400">-</span>
+                                                {renderTimesheetCommentsBlock(
+                                                    rndTimesheetSection,
+                                                    rndTimesheetComments
                                                 )}
                                             </div>
                                         </div>
@@ -11849,7 +12426,10 @@ export default function InvoiceCreatePage() {
                                     const section =
                                         total === 0 ? null : normalTimesheetSections[safeIndex];
                                     const sectionComments = section
-                                        ? getNormalTimesheetComments(section)
+                                        ? resolveTimesheetSectionComments(
+                                              section,
+                                              getNormalTimesheetComments(section)
+                                          )
                                         : [];
 
                                     return (
@@ -12260,22 +12840,12 @@ export default function InvoiceCreatePage() {
                                                             </table>
                                                         </div>
                                                         <div className="text-sm text-gray-700">
-                                                            <span className="font-semibold text-gray-900">
-                                                                Comments :
-                                                            </span>{" "}
-                                                            {sectionComments.length > 0 ? (
-                                                                <div className="mt-2 flex flex-col gap-1">
-                                                                    {sectionComments.map((comment) => (
-                                                                        <div key={comment}>
-                                                                            {comment}
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            ) : (
-                                                                <span className="text-gray-400">
-                                                                    -
-                                                                </span>
-                                                            )}
+                                                            {section
+                                                                ? renderTimesheetCommentsBlock(
+                                                                      section,
+                                                                      sectionComments
+                                                                  )
+                                                                : null}
                                                         </div>
                                                     </div>
                                             </>
@@ -13154,6 +13724,139 @@ export default function InvoiceCreatePage() {
                             />
                         </div>
                     </div>
+                </BaseModal>
+
+                <BaseModal
+                    isOpen={timesheetCommentTrashModalOpen}
+                    onClose={() => {
+                        setTimesheetCommentTrashModalOpen(false);
+                        setTimesheetCommentTrashModalSectionKey(null);
+                    }}
+                    title="삭제된 코멘트"
+                    maxWidth="max-w-2xl"
+                    footer={
+                        <button
+                            type="button"
+                            className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                            onClick={() => {
+                                setTimesheetCommentTrashModalOpen(false);
+                                setTimesheetCommentTrashModalSectionKey(null);
+                            }}
+                        >
+                            닫기
+                        </button>
+                    }
+                >
+                    {timesheetCommentTrashModalSectionKey ? (
+                        (() => {
+                            const trashedComments = getTimesheetSectionTrashedComments(
+                                timesheetCommentTrashModalSectionKey
+                            );
+                            if (trashedComments.length === 0) {
+                                return (
+                                    <p className="text-sm text-gray-500">
+                                        삭제된 코멘트가 없습니다.
+                                    </p>
+                                );
+                            }
+                            return (
+                                <div className="flex max-h-[min(52vh,440px)] flex-col gap-2 overflow-y-auto">
+                                    {trashedComments.map((item, index) => (
+                                        <div
+                                            key={`${item.comment}-${item.isManual ? "manual" : "auto"}-${index}`}
+                                            className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5"
+                                        >
+                                            <p className="min-w-0 flex-1 text-sm leading-relaxed text-gray-800">
+                                                {item.comment}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                className="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                                                onClick={() => {
+                                                    if (!timesheetCommentTrashModalSectionKey) {
+                                                        return;
+                                                    }
+                                                    restoreTimesheetSectionComment(
+                                                        timesheetCommentTrashModalSectionKey,
+                                                        item.comment,
+                                                        item.isManual
+                                                    );
+                                                }}
+                                            >
+                                                복원
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()
+                    ) : (
+                        <p className="text-sm text-gray-500">
+                            삭제된 코멘트가 없습니다.
+                        </p>
+                    )}
+                </BaseModal>
+
+                <BaseModal
+                    isOpen={timesheetCommentAddModalOpen}
+                    onClose={() => {
+                        setTimesheetCommentAddModalOpen(false);
+                        setTimesheetCommentAddModalSectionKey(null);
+                        setTimesheetCommentAddModalDraft("");
+                    }}
+                    title="코멘트 추가"
+                    maxWidth="max-w-2xl"
+                    footer={
+                        <>
+                            <button
+                                type="button"
+                                className="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+                                onClick={() => {
+                                    setTimesheetCommentAddModalOpen(false);
+                                    setTimesheetCommentAddModalSectionKey(null);
+                                    setTimesheetCommentAddModalDraft("");
+                                }}
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={!timesheetCommentAddModalDraft.trim()}
+                                onClick={() => {
+                                    if (!timesheetCommentAddModalSectionKey) {
+                                        return;
+                                    }
+                                    addTimesheetSectionComment(
+                                        timesheetCommentAddModalSectionKey,
+                                        timesheetCommentAddModalDraft
+                                    );
+                                    setTimesheetCommentAddModalOpen(false);
+                                    setTimesheetCommentAddModalSectionKey(null);
+                                    setTimesheetCommentAddModalDraft("");
+                                }}
+                            >
+                                추가
+                            </button>
+                        </>
+                    }
+                >
+                    <label
+                        htmlFor="timesheet-comment-add-input"
+                        className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-600"
+                    >
+                        Comment
+                    </label>
+                    <textarea
+                        id="timesheet-comment-add-input"
+                        className="min-h-[8rem] w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        rows={5}
+                        value={timesheetCommentAddModalDraft}
+                        onChange={(event) =>
+                            setTimesheetCommentAddModalDraft(event.target.value)
+                        }
+                        placeholder="추가할 코멘트를 입력하세요."
+                    />
                 </BaseModal>
 
                 <InvoiceReportsPickerModal
