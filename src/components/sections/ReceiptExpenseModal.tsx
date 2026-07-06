@@ -6,7 +6,7 @@ import Button from "../common/Button";
 import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
 import RequiredIndicator from "../ui/RequiredIndicator";
-import { useWorkReportStore, formatCurrency, parseCurrency, EXPENSE_TYPES, FileCategory, UploadedFile, ExpenseEntry } from "../../store/workReportStore";
+import { useWorkReportStore, formatCurrency, parseCurrency, sanitizeDecimalAmountInput, EXPENSE_TYPES, FileCategory, UploadedFile, ExpenseEntry } from "../../store/workReportStore";
 import { IconChevronLeft, IconChevronRight } from "../icons/Icons";
 
 interface ReceiptExpenseModalProps {
@@ -437,8 +437,7 @@ export default function ReceiptExpenseModal({
 
     // 금액 변경 핸들러
     const handleAmountChange = (value: string) => {
-        const cleaned = value.replace(/[^\d]/g, "");
-        setAmount(cleaned);
+        setAmount(sanitizeDecimalAmountInput(value));
     };
 
     // 인원 모두 추가
@@ -910,7 +909,7 @@ export default function ReceiptExpenseModal({
                                     <div className="flex-1 min-w-0">
                                         <TextInput
                                             placeholder="0"
-                                            inputMode="numeric"
+                                            inputMode="decimal"
                                             value={isAmountFocused ? amount : (amount ? formatCurrency(parseCurrency(amount)) : "")}
                                             onChange={(val) => handleAmountChange(val)}
                                             onFocus={(e) => {

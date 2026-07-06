@@ -570,11 +570,27 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
 
 // 유틸리티 함수들
 export const formatCurrency = (num: number): string => {
-  return num.toLocaleString();
+  if (!Number.isFinite(num)) return "0";
+  return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
 };
 
 export const parseCurrency = (str: string): number => {
-  return Number(str.replace(/[^\d]/g, '')) || 0;
+  if (!str) return 0;
+  const cleaned = str.replace(/,/g, "").trim();
+  const num = parseFloat(cleaned);
+  return Number.isFinite(num) ? num : 0;
+};
+
+/** 금액 입력: 숫자와 소수점(최대 2자리)만 허용 */
+export const sanitizeDecimalAmountInput = (value: string): string => {
+  let cleaned = value.replace(/[^\d.]/g, "");
+  const dotIndex = cleaned.indexOf(".");
+  if (dotIndex !== -1) {
+    const intPart = cleaned.slice(0, dotIndex);
+    const decPart = cleaned.slice(dotIndex + 1).replace(/\./g, "").slice(0, 2);
+    cleaned = `${intPart}.${decPart}`;
+  }
+  return cleaned;
 };
 
 export const toKoreanTime = (time: string): string => {
