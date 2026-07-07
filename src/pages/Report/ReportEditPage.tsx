@@ -476,7 +476,7 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
                             original_name: uploadedFile.name,
                             mime_type: uploadedFile.type || undefined,
                             file_size: uploadedFile.size || undefined,
-                            created_by: originalCreatedBy || user?.id || undefined, // ✅ 원 작성자 기준 유지
+                            created_by: user?.id || undefined,
                         });
                     } catch (err: any) {
                         console.error("Error uploading file:", err);
@@ -503,8 +503,8 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
                     if (r.mime_type) insertData.mime_type = r.mime_type;
                     if (r.file_size) insertData.file_size = r.file_size;
 
-                    // ✅ RLS 통과용: work_logs.created_by와 동일 기준으로
-                    if (originalCreatedBy || user?.id) insertData.created_by = originalCreatedBy || user!.id;
+                    // ✅ RLS: created_by는 현재 로그인 사용자(auth.uid)와 일치해야 함
+                    if (user?.id) insertData.created_by = user.id;
 
                     return insertData;
                     });
@@ -672,7 +672,7 @@ if (newFiles.length > 0) {
                 original_name: uploadedFile.name,
                 mime_type: uploadedFile.type || undefined,
                 file_size: uploadedFile.size || undefined,
-                created_by: originalCreatedBy || user?.id || undefined,
+                created_by: user?.id || undefined,
             });
         } catch (err: any) {
             console.error("Error uploading file:", err);
@@ -699,9 +699,9 @@ if (newFiles.length > 0) {
             if (r.mime_type) insertData.mime_type = r.mime_type;
             if (r.file_size) insertData.file_size = r.file_size;
 
-            // ✅ RLS 통과용
-            if (originalCreatedBy || user?.id) {
-                insertData.created_by = originalCreatedBy || user!.id;
+            // ✅ RLS: created_by는 현재 로그인 사용자(auth.uid)와 일치해야 함
+            if (user?.id) {
+                insertData.created_by = user.id;
             }
 
             return insertData;
