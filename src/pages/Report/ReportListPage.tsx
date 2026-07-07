@@ -1,5 +1,5 @@
 // src/pages/Report/ReportListPage.tsx
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -12,37 +12,27 @@ import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
 import ReportListSkeleton from "../../components/common/skeletons/ReportListSkeleton";
 import { IconMore, IconMoreVertical, IconPlus, IconReport } from "../../components/icons/Icons";
-import { getWorkLogs, deleteWorkLog, WorkLog } from "../../lib/workLogApi";
+import { deleteWorkLog } from "../../lib/workLogApi";
+import {
+    fetchReportList,
+    parseReportListMonth,
+    parseReportListYear,
+    type ReportListItem,
+    type ReportListStatus,
+} from "../../lib/reportListApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Avatar from "../../components/common/Avatar";
 import { supabase } from "../../lib/supabase";
 import useIsMobile from "../../hooks/useIsMobile";
-import { formatInvoiceReportTableTitle } from "../../utils/invoiceReportDisplayTitle";
-import { fetchWorkLogEntryPeriodMap } from "../../lib/workLogEntryPeriodMap";
-import { fetchStaffParticipatedWorkLogIds } from "../../lib/staffParticipatedWorkLogIds";
 
-type ReportStatus = "submitted" | "pending" | "not_submitted";
-
-interface ReportItem {
-    id: number;
-    title: string;
-    place: string;
-    supervisor: string;
-    owner: string;
-    ownerEmail?: string | null;
-    ownerPosition?: string | null;
-    ownerId?: string | null;
-    date: string;
-    createdAt?: string;
-    periodStart?: string;
-    periodEnd?: string;
-    status: ReportStatus;
-}
+type ReportItem = ReportListItem;
 
 const DEFAULT_YEAR = "년도 전체";
 const DEFAULT_MONTH = "월 전체";
 const DEFAULT_TAB = "work";
+const ITEMS_PER_PAGE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const parsePage = (value: string | null) => {
     const page = Number.parseInt(value || "", 10);
@@ -60,7 +50,9 @@ export default function ReportListPage() {
     const [openMenuId, setOpenMenuId] = useState<number | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [currentPage, setCurrentPage] = useState(() => parsePage(searchParams.get("page")));
+    const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get("search") ?? "");
     const [reports, setReports] = useState<ReportItem[]>([]);
+    const [totalCount, setTotalCount] = useState(0);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [isStaffRole, setIsStaffRole] = useState(false);
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -74,10 +66,11 @@ export default function ReportListPage() {
         () => (searchParams.get("tab") === "education" ? "education" : "work")
     );
 
-    const itemsPerPage = 10;
     const { showSuccess, showError } = useToast();
     const safetyToastOnceRef = useRef(false);
+    const isFirstSearchDebounceRef = useRef(true);
     const isMobile = useIsMobile();
+    const itemsPerPage = ITEMS_PER_PAGE;
 
     const navigateToReportView = (row: ReportItem) => {
         navigate(`/report/${row.id}`, {
@@ -140,14 +133,6 @@ export default function ReportListPage() {
         run();
     }, [showSuccess]);
 
-    // 날짜 포맷팅 함수 (ISO -> YYYY.MM.DD.)
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const day = String(date.getDate()).padStart(2, "0");
-        return `${year}.${month}.${day}.`;
-    };
 
     const isRowOwner = (row: ReportItem) => {
         // 모든 가능한 조건을 확인하여 하나라도 일치하면 true 반환
@@ -175,162 +160,62 @@ export default function ReportListPage() {
 
 
 
-    // WorkLog를 ReportItem으로 변환
-    const convertToReportItem = (workLog: WorkLog): ReportItem => {
-        return {
-            id: workLog.id,
-            // ✅ title은 loadReports에서 "기간 / 호선 / 목적"으로 다시 조합할 예정
-            title: workLog.subject || "(제목 없음)",
-            place: workLog.location || "",
-            supervisor: workLog.order_person || "",
-            owner: workLog.author || "(작성자 없음)",
-            ownerId: workLog.created_by || null,
-            date: formatDate(workLog.created_at),
-            createdAt: workLog.created_at || "",
-            status: workLog.is_draft ? "pending" : "submitted",
-        };
-    };
-
-    // 데이터 로드
-    const loadReports = async () => {
-        setLoading(true);
-        let resolvedUserId: string | null = null;
-        let resolvedUserName: string | null = null;
-        let resolvedUserEmail: string | null = null;
-        let isStaffMember = false;
-
-        try {
-            let workLogs = await getWorkLogs();
-
-            // ✅ staff면: 본인이 포함된 작업(보고서)만 필터링
+    useEffect(() => {
+        const loadCurrentUser = async () => {
             try {
                 const { data: authData } = await supabase.auth.getUser();
                 const user = authData?.user;
-                resolvedUserId = user?.id ?? null;
-                resolvedUserEmail = user?.email ?? null;
+                setCurrentUserId(user?.id ?? null);
+                setCurrentUserEmail(user?.email ?? null);
 
-                if (user) {
-                    const { data: myProfile, error: myProfileError } = await supabase
-                        .from("profiles")
-                        .select("role, name")
-                        .eq("id", user.id)
-                        .single();
+                if (!user) return;
 
-                    if (myProfileError) {
-                        console.error("내 프로필 조회 실패:", myProfileError);
-                    } else {
-                        isStaffMember = myProfile?.role === "staff";
-                        const profileName = myProfile?.name?.trim() || "";
-                        resolvedUserName = profileName || null;
+                const { data: myProfile, error: myProfileError } = await supabase
+                    .from("profiles")
+                    .select("role, name")
+                    .eq("id", user.id)
+                    .single();
 
-                        if (isStaffMember) {
-                            const myId = user.id;
-                            const myOwnIds = new Set<number>(
-                                workLogs
-                                    .filter((w) => w.created_by === myId)
-                                    .map((w) => w.id)
-                                    .filter(Boolean)
-                            );
-
-                            if (!profileName) {
-                                workLogs = workLogs.filter((w) => myOwnIds.has(w.id));
-                            } else {
-                                const participatedIds =
-                                    await fetchStaffParticipatedWorkLogIds(
-                                        profileName
-                                    );
-                                const allowedWorkLogIds = new Set<number>([
-                                    ...myOwnIds,
-                                    ...participatedIds,
-                                ]);
-                                workLogs = workLogs.filter((w) =>
-                                    allowedWorkLogIds.has(w.id)
-                                );
-                            }
-                        }
-                    }
+                if (myProfileError) {
+                    console.error("내 프로필 조회 실패:", myProfileError);
+                    return;
                 }
+
+                setIsStaffRole(myProfile?.role === "staff");
+                setCurrentUserName(myProfile?.name?.trim() || null);
             } catch (e) {
-                console.error("staff 필터 처리 중 오류:", e);
+                console.error("현재 사용자 조회 중 오류:", e);
             }
+        };
 
-            setCurrentUserId(resolvedUserId);
-            setCurrentUserName(resolvedUserName);
-            setCurrentUserEmail(resolvedUserEmail);
-            setIsStaffRole(isStaffMember);
+        loadCurrentUser();
+    }, []);
 
-            const reportItems = workLogs.map(convertToReportItem);
-
-            // ✅ WorkLog id 목록
-            const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
-
-            const ownerNames = [
-                ...new Set(
-                    reportItems.map((item) => item.owner).filter(Boolean)
-                ),
-            ];
-
-            let profileMap = new Map<
-                string,
-                { email: string | null; position: string | null }
-            >();
-
-            const [periodMap, profilesResult] = await Promise.all([
-                fetchWorkLogEntryPeriodMap(workLogIds),
-                ownerNames.length > 0
-                    ? supabase
-                          .from("profiles")
-                          .select("name, email, position")
-                          .in("name", ownerNames)
-                    : Promise.resolve({ data: [], error: null }),
-            ]);
-
-            const { data: profiles, error: profilesError } = profilesResult;
-            if (!profilesError && profiles) {
-                profiles.forEach((profile: any) => {
-                    profileMap.set(profile.name, {
-                        email: profile.email || null,
-                        position: profile.position || null,
-                    });
-                });
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedSearch(search);
+            if (!isFirstSearchDebounceRef.current) {
+                setCurrentPage(1);
             }
+            isFirstSearchDebounceRef.current = false;
+        }, SEARCH_DEBOUNCE_MS);
 
-            // ✅ 제목을 "기간 / 호선(vessel) / 출장목적(subject)"으로 재조합 (라벨 없이 내용만)
-            const reportsWithTitle = reportItems.map((item) => {
-                const wl = workLogs.find((w) => w.id === item.id) as any;
+        return () => window.clearTimeout(timer);
+    }, [search]);
 
-                const vessel = wl?.vessel?.trim() ? wl.vessel.trim() : "";
-                const purpose = wl?.subject?.trim() ? wl.subject.trim() : "";
-
-                const p = periodMap.get(item.id);
-                const combinedTitle = formatInvoiceReportTableTitle({
-                    periodStart: p?.start,
-                    periodEnd: p?.end,
-                    vessel,
-                    subject: purpose,
-                    createdAt: item.createdAt,
-                });
-
-                return {
-                    ...item,
-                    title: combinedTitle,
-                    periodStart: p?.start,
-                    periodEnd: p?.end,
-                };
+    const loadReports = async () => {
+        setLoading(true);
+        try {
+            const result = await fetchReportList({
+                page: currentPage,
+                pageSize: itemsPerPage,
+                search: debouncedSearch,
+                year: parseReportListYear(year),
+                month: parseReportListMonth(month),
+                tab: activeTab,
             });
-
-
-            // ReportItem에 프로필 정보 추가 (profileMap은 위에서 이미 생성됨)
-            const reportsWithProfiles = reportsWithTitle.map((item) => {
-                const profile = profileMap.get(item.owner);
-                return {
-                    ...item,
-                    ownerEmail: profile?.email || null,
-                    ownerPosition: profile?.position || null,
-                };
-            });
-
-            setReports(reportsWithProfiles);
+            setReports(result.items);
+            setTotalCount(result.totalCount);
         } catch (error) {
             console.error("Error loading reports:", error);
             showError("보고서 목록을 불러오는 중 오류가 발생했습니다.");
@@ -341,9 +226,12 @@ export default function ReportListPage() {
 
     useEffect(() => {
         loadReports();
-    }, []);
+    }, [currentPage, itemsPerPage, debouncedSearch, year, month, activeTab]);
 
     const isFilterActive = year !== DEFAULT_YEAR || month !== DEFAULT_MONTH;
+    const hasActiveQuery =
+        isFilterActive || debouncedSearch.trim() !== "" || activeTab === "education";
+    const totalPages = Math.ceil(totalCount / itemsPerPage);
 
     const handleResetFilter = () => {
         setYear(DEFAULT_YEAR);
@@ -351,82 +239,6 @@ export default function ReportListPage() {
         setSearch("");
         setCurrentPage(1);
     };
-
-    const filtered = useMemo(() => {
-        const getRange = (r: ReportItem) => {
-            const startRaw = r.periodStart || r.periodEnd || r.createdAt;
-            const endRaw = r.periodEnd || r.periodStart || r.createdAt;
-            if (!startRaw && !endRaw) return null;
-            const start = new Date(startRaw ?? endRaw!);
-            const end = new Date(endRaw ?? startRaw!);
-            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-                return null;
-            }
-            if (start > end) return { start: end, end: start };
-            return { start, end };
-        };
-
-        const overlapsMonth = (
-            range: { start: Date; end: Date },
-            monthNum: number,
-            yearNum?: number
-        ) => {
-            if (yearNum) {
-                const monthStart = new Date(yearNum, monthNum - 1, 1);
-                const monthEnd = new Date(yearNum, monthNum, 0, 23, 59, 59, 999);
-                return range.start <= monthEnd && range.end >= monthStart;
-            }
-            const cursor = new Date(range.start.getFullYear(), range.start.getMonth(), 1);
-            const endMonth = new Date(range.end.getFullYear(), range.end.getMonth(), 1);
-            let guard = 0;
-            while (cursor <= endMonth && guard < 120) {
-                if (cursor.getMonth() + 1 === monthNum) return true;
-                cursor.setMonth(cursor.getMonth() + 1);
-                guard += 1;
-            }
-            return false;
-        };
-
-        const q = search.trim().toLowerCase();
-        return reports.filter((r) => {
-            // 1. 교육 보고서 필터링 (제목에 '교육' 포함 여부)
-            const isEducation = r.title.includes("교육");
-
-            // 탭에 따른 필터링
-            if (activeTab === "education") {
-                if (!isEducation) return false;
-            } else {
-                // work 탭에서는 교육 보고서 제외
-                if (isEducation) return false;
-            }
-
-            const matchSearch =
-                q === "" ||
-                r.title.toLowerCase().includes(q) ||
-                r.owner.toLowerCase().includes(q) ||
-                r.place.toLowerCase().includes(q);
-
-            const range = getRange(r);
-
-            const matchYear =
-                year === "년도 전체" ||
-                (range &&
-                    Number(year.replace("년", "")) >= range.start.getFullYear() &&
-                    Number(year.replace("년", "")) <= range.end.getFullYear());
-
-            let matchMonth = true;
-            if (month !== "월 전체") {
-                const monthNum = parseInt(month.replace("월", ""), 10);
-                const yearNum =
-                    year === "년도 전체"
-                        ? undefined
-                        : Number(year.replace("년", ""));
-                matchMonth = !!range && overlapsMonth(range, monthNum, yearNum);
-            }
-
-            return matchSearch && matchYear && matchMonth;
-        });
-    }, [reports, search, year, month, activeTab]);
 
     useEffect(() => {
         const nextParams = new URLSearchParams();
@@ -444,8 +256,6 @@ export default function ReportListPage() {
         }
     }, [search, year, month, activeTab, currentPage, searchParams, setSearchParams]);
 
-    const totalPages = Math.ceil(filtered.length / itemsPerPage);
-
     useEffect(() => {
         if (loading) return;
 
@@ -457,11 +267,6 @@ export default function ReportListPage() {
             setCurrentPage(totalPages);
         }
     }, [currentPage, loading, totalPages]);
-    const currentData = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        return filtered.slice(startIndex, endIndex);
-    }, [filtered, currentPage, itemsPerPage]);
 
     return (
         <div className="flex h-screen bg-white overflow-hidden">
@@ -493,7 +298,10 @@ export default function ReportListPage() {
                                     { value: "education", label: "교육 보고서" },
                                 ]}
                                 value={activeTab}
-                                onChange={(value) => setActiveTab(value as "work" | "education")}
+                                onChange={(value) => {
+                                    setActiveTab(value as "work" | "education");
+                                    setCurrentPage(1);
+                                }}
                             />
                         </div>
                     }
@@ -587,14 +395,14 @@ export default function ReportListPage() {
                                     )}
                                 </div>
                             </div>
-                            {filtered.length === 0 ? (
+                            {totalCount === 0 ? (
                                 <div className="py-10 text-center text-gray-500 text-sm flex flex-col items-center gap-3">
                                     <span>
-                                        {reports.length > 0 && (isFilterActive || search.trim() || activeTab === "education")
+                                        {hasActiveQuery
                                             ? "선택한 조건에 맞는 보고서가 없습니다."
                                             : "조회된 보고서가 없습니다."}
                                     </span>
-                                    {reports.length > 0 && (isFilterActive || search.trim() || activeTab === "education") && (
+                                    {hasActiveQuery && (
                                         <Button variant="outline" size="sm" onClick={handleResetFilter}>
                                             필터 초기화
                                         </Button>
@@ -602,8 +410,8 @@ export default function ReportListPage() {
                                 </div>
                             ) : (
                                 <ul className="flex flex-col gap-3 pb-2">
-                                    {filtered.map((row) => {
-                                        const statusConfig: Record<ReportStatus, { color: string; label: string }> = {
+                                    {reports.map((row) => {
+                                        const statusConfig: Record<ReportListStatus, { color: string; label: string }> = {
                                             submitted: { color: "blue-500", label: "제출 완료" },
                                             pending: { color: "green-600", label: "임시저장" },
                                             not_submitted: { color: "gray-400", label: "미제출" },
@@ -879,7 +687,7 @@ export default function ReportListPage() {
                                         width: "10%",
                                         render: (_, row: ReportItem) => {
                                             const statusConfig: Record<
-                                                ReportStatus,
+                                                ReportListStatus,
                                                 { color: string; label: string }
                                             > = {
                                                 submitted: {
@@ -995,7 +803,7 @@ export default function ReportListPage() {
 
                                     },
                                 ]}
-                                data={currentData}
+                                data={reports}
                                 rowKey="id"
                                 onRowClick={(row: ReportItem) => {
                                     navigateToReportView(row);

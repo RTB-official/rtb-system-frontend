@@ -782,6 +782,7 @@ export async function getWorkLogs(): Promise<WorkLog[]> {
         console.error("Error fetching work logs:", error);
         throw new Error(`출장 보고서 조회 실패: ${error.message}`);
     }
+    console.log("getWorkLogs", data);
 
     return data || [];
 }
