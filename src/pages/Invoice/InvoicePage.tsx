@@ -48,7 +48,6 @@ export default function InvoicePage() {
             search: debouncedSearch,
             year: parseReportListYear(year),
             month: parseReportListMonth(month),
-            tab: "work" as const,
         }),
         [debouncedSearch, year, month]
     );
