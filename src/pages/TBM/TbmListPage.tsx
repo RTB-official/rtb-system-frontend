@@ -1,5 +1,5 @@
 // src/pages/TBM/TbmListPage.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -11,73 +11,23 @@ import ActionMenu from "../../components/common/ActionMenu";
 import { IconMore, IconPlus } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
 import { useUser } from "../../hooks/useUser";
-import { deleteTbm, getTbmList, TbmRecord } from "../../lib/tbmApi";
+import { deleteTbm } from "../../lib/tbmApi";
+import {
+    fetchTbmList,
+    getTbmListStatusChip,
+    parseTbmListMonth,
+    parseTbmListYear,
+    type TbmListItem,
+} from "../../lib/tbmListApi";
 import { generateTbmPdf } from "../../lib/pdfUtils";
 import Chip from "../../components/ui/Chip";
 import TbmListSkeleton from "../../components/common/skeletons/TbmListSkeleton";
 import useIsMobile from "../../hooks/useIsMobile";
 
-interface TbmListItem extends TbmRecord {
-    participant_total: number;
-    participant_signed: number;
-    participantRows: Array<{ user_id: string; signed_at: string | null }>;
-}
-
-function isUserInvolvedInTbm(
-    row: TbmListItem,
-    currentUserId: string | null
-): boolean {
-    if (!currentUserId) {
-        return false;
-    }
-    if (row.created_by === currentUserId) {
-        return true;
-    }
-    return row.participantRows.some((r) => r.user_id === currentUserId);
-}
-
-function getTbmListStatusChip(
-    row: TbmListItem,
-    currentUserId: string | null,
-    isAdmin: boolean,
-    isStaff: boolean
-): { label: string; color: string } | null {
-    if (isStaff && !isAdmin && !isUserInvolvedInTbm(row, currentUserId)) {
-        return null;
-    }
-
-    const allSigned =
-        row.participant_total > 0 &&
-        row.participant_total === row.participant_signed;
-
-    const useAuthorStyle =
-        (currentUserId && row.created_by === currentUserId) || isAdmin;
-
-    if (useAuthorStyle) {
-        return allSigned
-            ? { label: "완료", color: "blue-500" }
-            : { label: "진행중", color: "gray-400" };
-    }
-
-    const mine = row.participantRows.find((r) => r.user_id === currentUserId);
-    const userSigned = Boolean(mine?.signed_at);
-    return userSigned
-        ? { label: "서명 완료", color: "green-500" }
-        : { label: "진행중", color: "gray-400" };
-}
-
-function isTbmListRowInProgress(
-    row: TbmListItem,
-    currentUserId: string | null,
-    isAdmin: boolean,
-    isStaff: boolean
-): boolean {
-    const chip = getTbmListStatusChip(row, currentUserId, isAdmin, isStaff);
-    return chip?.label === "진행중";
-}
-
 const DEFAULT_YEAR = "년도 전체";
 const DEFAULT_MONTH = "월 전체";
+const ITEMS_PER_PAGE = 10;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const parsePage = (value: string | null) => {
     const page = Number.parseInt(value || "", 10);
@@ -106,12 +56,15 @@ export default function TbmListPage() {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
     const [currentPage, setCurrentPage] = useState(() => parsePage(searchParams.get("page")));
-    const itemsPerPage = 10;
+    const [debouncedSearch, setDebouncedSearch] = useState(() => searchParams.get("search") ?? "");
+    const itemsPerPage = ITEMS_PER_PAGE;
     const { showError, showSuccess } = useToast();
     const [loading, setLoading] = useState(true);
     const [tbmList, setTbmList] = useState<TbmListItem[]>([]);
+    const [totalCount, setTotalCount] = useState(0);
     const { currentUserId, userPermissions } = useUser();
     const isMobile = useIsMobile();
+    const isFirstSearchDebounceRef = useRef(true);
     const handleDownloadPdf = async (tbmId: string) => {
         await generateTbmPdf({
             tbmId,
@@ -131,116 +84,61 @@ export default function TbmListPage() {
     };
 
     useEffect(() => {
-        const load = async () => {
-            try {
-                setLoading(true);
-                const { tbmList: list, participants } = await getTbmList();
-                const countMap = new Map<
-                    string,
-                    { total: number; signed: number }
-                >();
-                const rowsByTbm = new Map<
-                    string,
-                    Array<{ user_id: string; signed_at: string | null }>
-                >();
-
-                (participants || []).forEach((p: any) => {
-                    const entry = countMap.get(p.tbm_id) || { total: 0, signed: 0 };
-                    entry.total += 1;
-                    if (p.signed_at) entry.signed += 1;
-                    countMap.set(p.tbm_id, entry);
-
-                    const uid = String(p.user_id ?? "");
-                    if (uid) {
-                        const arr = rowsByTbm.get(p.tbm_id) ?? [];
-                        arr.push({
-                            user_id: uid,
-                            signed_at: p.signed_at ?? null,
-                        });
-                        rowsByTbm.set(p.tbm_id, arr);
-                    }
-                });
-
-                const mapped = list.map((t) => {
-                    const counts = countMap.get(t.id) || { total: 0, signed: 0 };
-                    return {
-                        ...t,
-                        participant_total: counts.total,
-                        participant_signed: counts.signed,
-                        participantRows: rowsByTbm.get(t.id) ?? [],
-                    };
-                });
-                setTbmList(mapped);
-            } catch (e: any) {
-                showError(e?.message || "TBM 목록을 불러오지 못했습니다.");
-            } finally {
-                setLoading(false);
+        const timer = window.setTimeout(() => {
+            setDebouncedSearch(search);
+            if (!isFirstSearchDebounceRef.current) {
+                setCurrentPage(1);
             }
-        };
+            isFirstSearchDebounceRef.current = false;
+        }, SEARCH_DEBOUNCE_MS);
 
-        load();
-    }, [showError]);
+        return () => window.clearTimeout(timer);
+    }, [search]);
+
+    const loadTbmList = async () => {
+        try {
+            setLoading(true);
+            const result = await fetchTbmList({
+                page: currentPage,
+                pageSize: itemsPerPage,
+                search: debouncedSearch,
+                year: parseTbmListYear(year),
+                month: parseTbmListMonth(month),
+                inProgressOnly,
+            });
+            setTbmList(result.items);
+            setTotalCount(result.totalCount);
+        } catch (e: unknown) {
+            showError(
+                e instanceof Error ? e.message : "TBM 목록을 불러오지 못했습니다."
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        void loadTbmList();
+    }, [currentPage, itemsPerPage, debouncedSearch, year, month, inProgressOnly]);
 
     const handleDeleteTbm = async (tbmId: string) => {
         if (!window.confirm("\u0054\u0042\u004d\uC744 \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) return;
 
         try {
             await deleteTbm(tbmId);
-            setTbmList((prev) => prev.filter((t) => t.id !== tbmId));
+            await loadTbmList();
             showSuccess("\u0054\u0042\u004d\uC774 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
-        } catch (e: any) {
-            showError(e?.message || "\u0054\u0042\u004d \uC0AD\uC81C\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
+        } catch (e: unknown) {
+            showError(
+                e instanceof Error ? e.message : "\u0054\u0042\u004d \uC0AD\uC81C\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4."
+            );
         } finally {
             setOpenMenuId(null);
             setMenuAnchor(null);
         }
     };
 
-    const filtered = useMemo(() => {
-        return tbmList.filter((r) => {
-            const matchSearch =
-                (r.work_name || "").includes(search) ||
-                (r.created_by_name || "").includes(search) ||
-                (r.location || "").includes(search);
-
-            const matchYear =
-                year === "년도 전체" ||
-                (r.tbm_date || "").startsWith(year.replace("년", ""));
-
-            let matchMonth = true;
-            if (month !== "월 전체") {
-                const monthNum = month.replace("월", "");
-                const dateParts = (r.tbm_date || "").split("-");
-                matchMonth = dateParts.length > 1 && dateParts[1] === monthNum.padStart(2, "0");
-            }
-
-            if (!matchSearch || !matchYear || !matchMonth) {
-                return false;
-            }
-
-            if (inProgressOnly) {
-                return isTbmListRowInProgress(
-                    r,
-                    currentUserId,
-                    userPermissions.isAdmin,
-                    userPermissions.isStaff
-                );
-            }
-
-            return true;
-        });
-    }, [
-        tbmList,
-        search,
-        year,
-        month,
-        inProgressOnly,
-        currentUserId,
-        userPermissions.isAdmin,
-        userPermissions.isStaff,
-    ]);
-
-    const totalPages = Math.ceil(filtered.length / itemsPerPage);
+    const totalPages = Math.ceil(totalCount / itemsPerPage);
 
     useEffect(() => {
         const nextParams = new URLSearchParams();
@@ -267,12 +165,6 @@ export default function TbmListPage() {
             setCurrentPage(totalPages);
         }
     }, [currentPage, loading, totalPages]);
-
-    const currentData = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        return filtered.slice(startIndex, endIndex);
-    }, [filtered, currentPage, itemsPerPage]);
 
     return (
         <div className="flex h-screen bg-white overflow-hidden">
@@ -379,11 +271,11 @@ export default function TbmListPage() {
                                 </div>
                             </div>
 
-                            {filtered.length === 0 ? (
+                            {totalCount === 0 ? (
                                 <div className="py-10 text-center text-gray-500 text-sm">결과가 없습니다.</div>
                             ) : (
                                 <ul className="flex flex-col gap-3 pb-2">
-                                    {filtered.map((row) => {
+                                    {tbmList.map((row) => {
                                         const statusChip = getTbmListStatusChip(
                                             row,
                                             currentUserId,
@@ -645,7 +537,7 @@ export default function TbmListPage() {
                                             ),
                                         },
                                     ]}
-                                    data={currentData}
+                                    data={tbmList}
                                     rowKey="id"
                                     emptyText={"결과가 없습니다."}
                                     onRowClick={(row: TbmListItem) => navigateToTbmDetail(row.id)}

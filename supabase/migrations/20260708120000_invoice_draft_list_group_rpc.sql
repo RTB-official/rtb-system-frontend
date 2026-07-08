@@ -1,10 +1,6 @@
 -- 인보이스 드래프트 저장 목록: 호선 그룹화 조회
 -- InvoiceDraftListPage용
 
--- 이전 _paging 명칭 함수 정리 (한 번 적용했다면)
-drop function if exists public.get_invoice_drafts_by_vessel_paging(text, integer, integer);
-drop function if exists public.get_invoice_draft_vessel_groups_paging(integer, integer, text);
-drop function if exists public.invoice_draft_primary_vessel_paging(bigint[], text);
 
 create function public.invoice_draft_group_vessel(
   p_work_log_ids bigint[],
