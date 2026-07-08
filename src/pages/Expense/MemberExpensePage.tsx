@@ -7,14 +7,16 @@ import Table, { TableColumn } from "../../components/common/Table";
 import ExpenseFilterBar from "../../components/common/ExpenseFilterBar";
 import Button from "../../components/common/Button";
 import {
-    getAllUsersExpenseSummary,
     getUserMileageDetails,
     getUserCardExpenseDetails,
     getPersonalExpenseReceiptUrl,
-    type EmployeeExpenseSummary,
     type EmployeeMileageDetail,
     type EmployeeCardExpenseDetail,
 } from "../../lib/personalExpenseApi";
+import {
+    fetchMemberExpenseSummary,
+    type MemberExpenseSummaryItem,
+} from "../../lib/memberExpenseListApi";
 
 import { TableSkeleton } from "./components/TableSkeleton";
 import { DetailSkeleton } from "./components/DetailSkeleton";
@@ -24,7 +26,6 @@ import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
 import Avatar from "../../components/common/Avatar";
 import { IconChevronRight } from "../../components/icons/Icons";
 import { useUser } from "../../hooks/useUser";
-import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 import useIsMobile from "../../hooks/useIsMobile";
 
@@ -61,7 +62,7 @@ export default function MemberExpensePage() {
 
     const [loading, setLoading] = useState(false);
     const [expenseSummary, setExpenseSummary] = useState<
-        EmployeeExpenseSummary[]
+        MemberExpenseSummaryItem[]
     >([]);
     const [mileageDetails, setMileageDetails] = useState<
         EmployeeMileageDetail[]
@@ -70,32 +71,7 @@ export default function MemberExpensePage() {
         []
     );
     const [selectedReceipt, setSelectedReceipt] = useState<string | null>(null);
-    const [employeeProfiles, setEmployeeProfiles] = useState<
-        Map<string, { email: string | null; position: string | null }>
-    >(() => {
-        // ✅ 초기 렌더링 시 localStorage에서 캐시된 프로필 정보 로드 (깜빡임 방지)
-        try {
-            const cached = localStorage.getItem("employeeProfiles_cache");
-            if (cached) {
-                const parsed = JSON.parse(cached);
-                const profileMap = new Map<
-                    string,
-                    { email: string | null; position: string | null }
-                >();
-                Object.entries(parsed).forEach(([name, profile]: [string, any]) => {
-                    profileMap.set(name, {
-                        email: profile.email || null,
-                        position: profile.position || null,
-                    });
-                });
-                return profileMap;
-            }
-        } catch {
-            // 캐시 파싱 실패 시 빈 Map 반환
-        }
-        return new Map();
-    });
-    const summaryCacheRef = useRef<Map<string, EmployeeExpenseSummary[]>>(new Map());
+    const summaryCacheRef = useRef<Map<string, MemberExpenseSummaryItem[]>>(new Map());
     const loadRequestIdRef = useRef(0);
 
     // ✅ 사이드바 열려있을 때 모바일에서 body 스크롤 잠금
@@ -118,8 +94,8 @@ export default function MemberExpensePage() {
     // 데이터 로드
     useEffect(() => {
         const loadData = async () => {
-            const yearNum = parseInt(year.replace("년", ""));
-            const monthNum = parseInt(month.replace("월", "")) - 1;
+            const yearNum = parseInt(year.replace("년", ""), 10);
+            const monthNum = parseInt(month.replace("월", ""), 10);
             const cacheKey = `${yearNum}-${monthNum}`;
             const cached = summaryCacheRef.current.get(cacheKey);
 
@@ -132,30 +108,10 @@ export default function MemberExpensePage() {
 
             const requestId = ++loadRequestIdRef.current;
             try {
-                const filter: { year: number; month: number; userId?: string } =
-                {
+                const summary = await fetchMemberExpenseSummary({
                     year: yearNum,
                     month: monthNum,
-                };
-
-                if (user !== "전체") {
-                    // 선택한 사용자 찾기
-                    const selectedUser = expenseSummary.find((emp) => {
-                        const nameWithoutInitials = emp.name.replace(
-                            /^[A-Z]{2,3} /,
-                            ""
-                        );
-                        return (
-                            nameWithoutInitials === user || emp.name === user
-                        );
-                    });
-                    if (selectedUser) {
-                        filter.userId = selectedUser.id;
-                    }
-                }
-
-                // ✅ 지출 요약 조회
-                const summary = await getAllUsersExpenseSummary(filter);
+                });
                 if (loadRequestIdRef.current !== requestId) return;
                 summaryCacheRef.current.set(cacheKey, summary);
                 setExpenseSummary(summary);
@@ -170,77 +126,7 @@ export default function MemberExpensePage() {
         };
 
         loadData();
-    }, [year, month]); // user 제외 - user 필터는 클라이언트에서 처리
-
-    // 프로필 정보는 요약 로딩 후 백그라운드로 갱신
-    useEffect(() => {
-        if (expenseSummary.length === 0) return;
-        const employeeNames = [...new Set(expenseSummary.map((emp) => emp.name))];
-        let cancelled = false;
-
-        const loadProfiles = async () => {
-            // ✅ 캐시된 프로필 정보 먼저 확인
-            const profileMap = new Map<
-                string,
-                { email: string | null; position: string | null }
-            >();
-
-            try {
-                const cached = localStorage.getItem("employeeProfiles_cache");
-                if (cached) {
-                    const parsed = JSON.parse(cached);
-                    employeeNames.forEach((name) => {
-                        if (parsed[name]) {
-                            profileMap.set(name, parsed[name]);
-                        }
-                    });
-                }
-            } catch {
-                // 캐시 파싱 실패 시 무시
-            }
-
-            const uncachedNames = employeeNames.filter((name) => !profileMap.has(name));
-            if (uncachedNames.length > 0) {
-                const { data: profiles, error: profilesError } = await supabase
-                    .from("profiles")
-                    .select("name, email, position")
-                    .in("name", uncachedNames);
-
-                if (!profilesError && profiles) {
-                    profiles.forEach((profile: any) => {
-                        profileMap.set(profile.name, {
-                            email: profile.email || null,
-                            position: profile.position || null,
-                        });
-                    });
-                }
-            }
-
-            if (cancelled) return;
-            setEmployeeProfiles(profileMap);
-
-            try {
-                const cacheObject: Record<
-                    string,
-                    { email: string | null; position: string | null }
-                > = {};
-                profileMap.forEach((profile, name) => {
-                    cacheObject[name] = profile;
-                });
-                localStorage.setItem(
-                    "employeeProfiles_cache",
-                    JSON.stringify(cacheObject)
-                );
-            } catch {
-                // localStorage 저장 실패 시 무시
-            }
-        };
-
-        loadProfiles();
-        return () => {
-            cancelled = true;
-        };
-    }, [expenseSummary]);
+    }, [year, month, showError]);
 
     // 선택한 사용자의 상세 내역 로드
     useEffect(() => {
@@ -449,23 +335,20 @@ export default function MemberExpensePage() {
     };
 
     // 모바일: 카드 클릭 시 상세 모달 열기 및 데이터 로드
-    const columns: TableColumn<EmployeeExpenseSummary>[] = [
+    const columns: TableColumn<MemberExpenseSummaryItem>[] = [
         {
             key: "name",
             label: "직원 명",
-            render: (_, row) => {
-                const profile = employeeProfiles.get(row.name);
-                return (
-                    <div className="flex items-center gap-2">
-                        <Avatar
-                            email={profile?.email || null}
-                            size={24}
-                            position={profile?.position || null}
-                        />
-                        <span className="text-gray-900">{row.name}</span>
-                    </div>
-                );
-            },
+            render: (_, row) => (
+                <div className="flex items-center gap-2">
+                    <Avatar
+                        email={row.email}
+                        size={24}
+                        position={row.position}
+                    />
+                    <span className="text-gray-900">{row.name}</span>
+                </div>
+            ),
         },
         {
             key: "mileage",
@@ -638,7 +521,6 @@ export default function MemberExpensePage() {
                                 ) : (
                                     <ul className="flex flex-col gap-3 pb-4">
                                         {currentData.map((row) => {
-                                            const profile = employeeProfiles.get(row.name);
                                             const isExpanded = expandedRowKeys.includes(row.id);
                                             const details = expandedRowDetails.get(row.id);
                                             const rowTab = expandedRowActiveTab.get(row.id) || "mileage";
@@ -650,9 +532,9 @@ export default function MemberExpensePage() {
                                                         onClick={() => toggleRowExpand(row.id)}
                                                     >
                                                         <Avatar
-                                                            email={profile?.email ?? null}
+                                                            email={row.email}
                                                             size={40}
-                                                            position={profile?.position ?? null}
+                                                            position={row.position}
                                                         />
                                                         <div className="flex-1 min-w-0">
                                                             <p className="font-medium text-gray-900 truncate">{row.name.replace(/^[A-Z]{2,3} /, "")}</p>

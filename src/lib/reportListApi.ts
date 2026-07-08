@@ -27,7 +27,8 @@ export type ReportListQuery = {
     search?: string;
     year?: number | null;
     month?: number | null;
-    tab: ReportListTab;
+    /** 미지정 시 출장·교육 모두 포함 */
+    tab?: ReportListTab;
 };
 
 export type ReportListResult = {
@@ -109,7 +110,7 @@ export async function fetchReportList(
         p_search: query.search?.trim() || null,
         p_year: query.year ?? null,
         p_month: query.month ?? null,
-        p_tab: query.tab,
+        p_tab: query.tab ?? null,
     });
 
     if (error) {

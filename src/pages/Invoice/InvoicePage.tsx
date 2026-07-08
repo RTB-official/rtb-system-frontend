@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageContainer from "../../components/common/PageContainer";
 import Header from "../../components/common/Header";
@@ -10,130 +10,70 @@ import Button from "../../components/common/Button";
 import Avatar from "../../components/common/Avatar";
 import { IconInvoice } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
-import { getWorkLogs, type WorkLog } from "../../lib/workLogApi";
-import { supabase } from "../../lib/supabase";
+import {
+    fetchReportList,
+    parseReportListMonth,
+    parseReportListYear,
+    type ReportListItem,
+} from "../../lib/reportListApi";
 import { PATHS } from "../../utils/paths";
-import { formatInvoiceReportTableTitle } from "../../utils/invoiceReportDisplayTitle";
-import { fetchWorkLogEntryPeriodMap } from "../../lib/workLogEntryPeriodMap";
 
-type ReportStatus = "submitted" | "pending" | "not_submitted";
+type InvoiceReportItem = ReportListItem;
 
-interface InvoiceReportItem {
-    id: number;
-    title: string;
-    place: string;
-    supervisor: string;
-    owner: string;
-    ownerEmail?: string | null;
-    ownerPosition?: string | null;
-    date: string;
-    createdAt: string;
-    status: ReportStatus;
-}
-
-function formatDate(dateString: string) {
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return "";
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}.${m}.${day}.`;
-}
+const DEFAULT_YEAR = "년도 전체";
+const DEFAULT_MONTH = "월 전체";
+const ITEMS_PER_PAGE = 30;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function InvoicePage() {
     const navigate = useNavigate();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [search, setSearch] = useState("");
-    const [year, setYear] = useState<string>("년도 전체");
-    const [month, setMonth] = useState<string>("월 전체");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+    const [year, setYear] = useState<string>(DEFAULT_YEAR);
+    const [month, setMonth] = useState<string>(DEFAULT_MONTH);
     const [reports, setReports] = useState<InvoiceReportItem[]>([]);
+    const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(true);
+    const [selectAllLoading, setSelectAllLoading] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 30;
+    const itemsPerPage = ITEMS_PER_PAGE;
 
     const { showError } = useToast();
+    const isFirstSearchDebounceRef = useRef(true);
+
+    const listQuery = useMemo(
+        () => ({
+            search: debouncedSearch,
+            year: parseReportListYear(year),
+            month: parseReportListMonth(month),
+        }),
+        [debouncedSearch, year, month]
+    );
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            setDebouncedSearch(search);
+            if (!isFirstSearchDebounceRef.current) {
+                setCurrentPage(1);
+            }
+            isFirstSearchDebounceRef.current = false;
+        }, SEARCH_DEBOUNCE_MS);
+
+        return () => window.clearTimeout(timer);
+    }, [search]);
 
     const loadReports = async () => {
         setLoading(true);
         try {
-            const workLogs = await getWorkLogs();
-
-            const baseItems: InvoiceReportItem[] = workLogs.map((w: WorkLog) => ({
-                id: w.id,
-                title: w.subject || "(제목 없음)",
-                place: w.location || "",
-                supervisor: w.order_person || "",
-                owner: w.author || "(작성자 없음)",
-                date: formatDate(w.created_at),
-                createdAt: w.created_at,
-                status: w.is_draft ? "pending" : "submitted",
-            }));
-
-            // WorkLog id 목록
-            const workLogIds = workLogs.map((w) => w.id).filter(Boolean);
-
-            const ownerNames = Array.from(
-                new Set(baseItems.map((i) => i.owner).filter(Boolean))
-            );
-            let profileMap = new Map<
-                string,
-                { email: string | null; position: string | null }
-            >();
-
-            const [periodMap, profilesResult] = await Promise.all([
-                fetchWorkLogEntryPeriodMap(workLogIds),
-                ownerNames.length > 0
-                    ? supabase
-                          .from("profiles")
-                          .select("name, email, position")
-                          .in("name", ownerNames)
-                    : Promise.resolve({ data: [], error: null }),
-            ]);
-
-            const { data: profiles, error: profilesError } = profilesResult;
-            if (!profilesError && profiles) {
-                profiles.forEach((profile: any) => {
-                    profileMap.set(profile.name, {
-                        email: profile.email || null,
-                        position: profile.position || null,
-                    });
-                });
-            }
-
-            // 제목을 "기간 / 호선(vessel) / 출장목적(subject)"으로 재조합
-            const reportsWithTitle = baseItems.map((item) => {
-                const wl = workLogs.find((w) => w.id === item.id) as any;
-
-                const vessel = wl?.vessel?.trim() ? wl.vessel.trim() : "";
-                const purpose = wl?.subject?.trim() ? wl.subject.trim() : "";
-
-                const p = periodMap.get(item.id);
-                const combinedTitle = formatInvoiceReportTableTitle({
-                    periodStart: p?.start,
-                    periodEnd: p?.end,
-                    vessel,
-                    subject: purpose,
-                    createdAt: item.createdAt,
-                });
-
-                return {
-                    ...item,
-                    title: combinedTitle,
-                };
+            const result = await fetchReportList({
+                page: currentPage,
+                pageSize: itemsPerPage,
+                ...listQuery,
             });
-
-            // 프로필 정보 추가
-            const itemsWithProfile = reportsWithTitle.map((item) => {
-                const profile = profileMap.get(item.owner);
-                return {
-                    ...item,
-                    ownerEmail: profile?.email ?? null,
-                    ownerPosition: profile?.position ?? null,
-                };
-            });
-
-            setReports(itemsWithProfile);
+            setReports(result.items);
+            setTotalCount(result.totalCount);
         } catch (e) {
             console.error("인보이스용 보고서 목록 로드 실패:", e);
             showError("보고서 목록을 불러오는 중 오류가 발생했습니다.");
@@ -144,62 +84,80 @@ export default function InvoicePage() {
 
     useEffect(() => {
         loadReports();
-    }, []);
+    }, [currentPage, itemsPerPage, listQuery]);
 
-    const isFilterActive = year !== "년도 전체" || month !== "월 전체" || search.trim() !== "";
+    const isFilterActive =
+        year !== DEFAULT_YEAR ||
+        month !== DEFAULT_MONTH ||
+        debouncedSearch.trim() !== "";
 
     const handleResetFilter = () => {
-        setYear("년도 전체");
-        setMonth("월 전체");
+        setYear(DEFAULT_YEAR);
+        setMonth(DEFAULT_MONTH);
         setSearch("");
+        setCurrentPage(1);
     };
 
-    const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        return reports.filter((r) => {
-            const matchSearch =
-                q === "" ||
-                r.title.toLowerCase().includes(q) ||
-                r.owner.toLowerCase().includes(q) ||
-                r.place.toLowerCase().includes(q);
+    const totalPages = Math.ceil(totalCount / itemsPerPage) || 0;
 
-            if (!matchSearch) return false;
+    useEffect(() => {
+        if (loading) return;
 
-            if (year !== "년도 전체") {
-                const y = Number(year.replace("년", ""));
-                const d = new Date(r.createdAt);
-                if (d.getFullYear() !== y) return false;
-            }
+        if (totalPages === 0 && currentPage !== 1) {
+            setCurrentPage(1);
+            return;
+        }
+        if (totalPages > 0 && currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, loading, totalPages]);
 
-            if (month !== "월 전체") {
-                const m = Number(month.replace("월", ""));
-                const d = new Date(r.createdAt);
-                if (d.getMonth() + 1 !== m) return false;
-            }
+    const fetchAllMatchingIds = async (): Promise<number[]> => {
+        if (totalCount === 0) return [];
 
-            return true;
+        const result = await fetchReportList({
+            page: 1,
+            pageSize: totalCount,
+            ...listQuery,
         });
-    }, [reports, search, year, month]);
+        return result.items.map((r) => r.id);
+    };
 
-    /** 현재 필터 목록이 모두 선택됐는지(버튼 라벨·토글용) */
-    const allFilteredSelected = useMemo(
-        () =>
-            filtered.length > 0 &&
-            filtered.every((r) => selectedIds.has(r.id)),
-        [filtered, selectedIds]
-    );
+    const allFilteredSelected =
+        totalCount > 0 && selectedIds.size === totalCount;
 
-    /** 검색·년/월 필터 변경 시 이전 페이지 번호가 유지되면 빈 목록이 될 수 있음 */
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [search, year, month]);
+    const handleToggleSelectAllFiltered = async () => {
+        if (totalCount === 0 || selectAllLoading) return;
 
-    const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
+        if (allFilteredSelected) {
+            setSelectAllLoading(true);
+            try {
+                const ids = await fetchAllMatchingIds();
+                setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    ids.forEach((id) => next.delete(id));
+                    return next;
+                });
+            } catch (e) {
+                console.error("전체 해제용 목록 조회 실패:", e);
+                showError("선택 해제 중 오류가 발생했습니다.");
+            } finally {
+                setSelectAllLoading(false);
+            }
+            return;
+        }
 
-    /** 필터 결과 건수 변화로 총 페이지가 줄었을 때 보정 */
-    useEffect(() => {
-        setCurrentPage((p) => Math.min(p, Math.max(1, totalPages)));
-    }, [totalPages]);
+        setSelectAllLoading(true);
+        try {
+            const ids = await fetchAllMatchingIds();
+            setSelectedIds(new Set(ids));
+        } catch (e) {
+            console.error("전체 선택용 목록 조회 실패:", e);
+            showError("전체 선택 중 오류가 발생했습니다.");
+        } finally {
+            setSelectAllLoading(false);
+        }
+    };
 
     const toggleSelect = (row: InvoiceReportItem) => {
         setSelectedIds((prev) => {
@@ -213,31 +171,10 @@ export default function InvoicePage() {
         });
     };
 
-    /** 필터 결과 전체 선택 ↔ 현재 필터에 해당하는 항목만 선택 해제 */
-    const handleToggleSelectAllFiltered = () => {
-        if (filtered.length === 0) return;
-        if (allFilteredSelected) {
-            setSelectedIds((prev) => {
-                const next = new Set(prev);
-                filtered.forEach((r) => next.delete(r.id));
-                return next;
-            });
-        } else {
-            setSelectedIds(new Set(filtered.map((r) => r.id)));
-        }
-    };
-
     const hasSelection = selectedIds.size > 0;
-
-    const currentData = useMemo(() => {
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = startIndex + itemsPerPage;
-        return filtered.slice(startIndex, endIndex);
-    }, [filtered, currentPage, itemsPerPage]);
 
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
-            {/* Sidebar */}
             <div
                 className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
                     sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
@@ -246,7 +183,6 @@ export default function InvoicePage() {
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
 
-            {/* Main */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
                     title="보고서"
@@ -258,7 +194,6 @@ export default function InvoicePage() {
                                 size="lg"
                                 icon={<IconInvoice />}
                                 onClick={() => {
-                                    // 선택된 모든 보고서 ID를 쉼표로 구분하여 전달
                                     const selectedIdsArray = Array.from(selectedIds);
                                     if (selectedIdsArray.length > 0) {
                                         const idsParam = selectedIdsArray.join(",");
@@ -276,7 +211,6 @@ export default function InvoicePage() {
 
                 <PageContainer className="flex-1 overflow-y-auto pt-0 pb-24">
                     <div className="space-y-4">
-                        {/* 검색 & 필터 (상단 고정) */}
                         <div className="flex flex-wrap items-center gap-3 justify-between sticky top-0 z-10 bg-white border-b border-gray-200 pb-4 pt-4 -mx-4 md:-mx-6 lg:-mx-9 px-4 md:px-6 lg:px-9">
                             <div className="flex flex-1 min-w-0 flex-wrap items-center gap-3">
                                 <Input
@@ -304,8 +238,14 @@ export default function InvoicePage() {
                                 <YearMonthSelector
                                     year={year}
                                     month={month}
-                                    onYearChange={setYear}
-                                    onMonthChange={setMonth}
+                                    onYearChange={(value) => {
+                                        setYear(value);
+                                        setCurrentPage(1);
+                                    }}
+                                    onMonthChange={(value) => {
+                                        setMonth(value);
+                                        setCurrentPage(1);
+                                    }}
                                     yearOptions={[
                                         { value: "년도 전체", label: "년도 전체" },
                                         { value: "2025년", label: "2025년" },
@@ -333,10 +273,18 @@ export default function InvoicePage() {
                                     size="lg"
                                     className="min-w-[5.75rem] shrink-0 rounded-xl px-4"
                                     onClick={handleToggleSelectAllFiltered}
-                                    disabled={loading || filtered.length === 0}
+                                    disabled={
+                                        loading ||
+                                        selectAllLoading ||
+                                        totalCount === 0
+                                    }
                                     aria-pressed={allFilteredSelected}
                                 >
-                                    {allFilteredSelected ? "전체 해제" : "전체 선택"}
+                                    {selectAllLoading
+                                        ? "처리 중..."
+                                        : allFilteredSelected
+                                          ? "전체 해제"
+                                          : "전체 선택"}
                                 </Button>
                                 {isFilterActive && (
                                     <button
@@ -364,7 +312,6 @@ export default function InvoicePage() {
                             </div>
                         </div>
 
-                        {/* 테이블 */}
                         <div className="bg-white border border-gray-200 rounded-2xl p-0 md:p-0 shadow-sm mt-4">
                             {loading ? (
                                 <div className="py-10 text-center text-gray-500 text-sm">
@@ -375,76 +322,78 @@ export default function InvoicePage() {
                                     className="text-[14px]"
                                     emptyText="조회된 보고서가 없습니다."
                                     columns={[
-                                            {
-                                                key: "owner",
-                                                label: "작성자",
-                                                width: "14%",
-                                                render: (_: any, row: InvoiceReportItem) => (
-                                                    <div className="flex items-center gap-2">
-                                                        <Avatar
-                                                            email={row.ownerEmail ?? null}
-                                                            position={row.ownerPosition ?? null}
-                                                            size={24}
-                                                        />
-                                                        <span className="text-gray-900">
-                                                            {row.owner}
-                                                        </span>
-                                                    </div>
-                                                ),
-                                            },
-                                            {
-                                                key: "title",
-                                                label: "제목",
-                                                width: "44%",
-                                            },
-                                            {
-                                                key: "place",
-                                                label: "출장지",
-                                                width: "14%",
-                                                render: (value: string) =>
-                                                    value?.trim() ? (
-                                                        <span className="text-gray-600">
-                                                            {value}
-                                                        </span>
-                                                    ) : (
-                                                        ""
-                                                    ),
-                                            },
-                                            {
-                                                key: "supervisor",
-                                                label: "참관감독",
-                                                width: "14%",
-                                                render: (value: string) =>
-                                                    value?.trim() ? (
-                                                        <span className="text-gray-500">
-                                                            {value}
-                                                        </span>
-                                                    ) : (
-                                                        ""
-                                                    ),
-                                            },
-                                            {
-                                                key: "date",
-                                                label: "작성일",
-                                                width: "14%",
-                                                render: (value: string) => (
+                                        {
+                                            key: "owner",
+                                            label: "작성자",
+                                            width: "14%",
+                                            render: (_: unknown, row: InvoiceReportItem) => (
+                                                <div className="flex items-center gap-2">
+                                                    <Avatar
+                                                        email={row.ownerEmail ?? null}
+                                                        position={row.ownerPosition ?? null}
+                                                        size={24}
+                                                    />
+                                                    <span className="text-gray-900">
+                                                        {row.owner}
+                                                    </span>
+                                                </div>
+                                            ),
+                                        },
+                                        {
+                                            key: "title",
+                                            label: "제목",
+                                            width: "44%",
+                                        },
+                                        {
+                                            key: "place",
+                                            label: "출장지",
+                                            width: "14%",
+                                            render: (value: string) =>
+                                                value?.trim() ? (
                                                     <span className="text-gray-600">
                                                         {value}
                                                     </span>
+                                                ) : (
+                                                    ""
                                                 ),
-                                            },
-                                        ]}
-                                    data={currentData}
+                                        },
+                                        {
+                                            key: "supervisor",
+                                            label: "참관감독",
+                                            width: "14%",
+                                            render: (value: string) =>
+                                                value?.trim() ? (
+                                                    <span className="text-gray-500">
+                                                        {value}
+                                                    </span>
+                                                ) : (
+                                                    ""
+                                                ),
+                                        },
+                                        {
+                                            key: "date",
+                                            label: "작성일",
+                                            width: "14%",
+                                            render: (value: string) => (
+                                                <span className="text-gray-600">
+                                                    {value}
+                                                </span>
+                                            ),
+                                        },
+                                    ]}
+                                    data={reports}
                                     rowKey="id"
-                                    rowClassName={(row: any) =>
+                                    rowClassName={(row: InvoiceReportItem) =>
                                         selectedIds.has(row.id)
                                             ? "!bg-blue-100 hover:!bg-blue-200"
                                             : ""
                                     }
-                                    onRowClick={(row: InvoiceReportItem) => toggleSelect(row)}
+                                    onRowClick={(row: InvoiceReportItem) =>
+                                        toggleSelect(row)
+                                    }
                                     pagination={{
                                         currentPage,
-                                        totalPages,
+                                        totalPages: Math.max(1, totalPages),
                                         onPageChange: setCurrentPage,
                                     }}
                                 />
