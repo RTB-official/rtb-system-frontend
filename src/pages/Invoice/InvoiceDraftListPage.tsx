@@ -11,15 +11,15 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { IconTrash } from "../../components/icons/Icons";
 import {
     deleteInvoiceDraft,
-    listInvoiceDraftsByUser,
     type InvoiceDraftRow,
 } from "../../lib/invoiceDraftApi";
+import {
+    fetchInvoiceDraftsByVesselGroup,
+    fetchInvoiceDraftVesselGroups,
+    type InvoiceDraftVesselGroupItem,
+} from "../../lib/invoiceDraftListApi";
 import { PATHS } from "../../utils/paths";
 import { useUser } from "../../hooks/useUser";
-import {
-    doesInvoiceDraftVesselGroupMatchSearch,
-    groupInvoiceDraftsByVessel,
-} from "../../utils/invoiceDraftVesselGrouping";
 
 function formatInvoiceDraftModifiedAt(value: string): {
     date: string;
@@ -52,14 +52,24 @@ function formatInvoiceDraftModifiedAt(value: string): {
     return { date, time };
 }
 
+function vesselGroupMatchesSearch(vessel: string, query: string): boolean {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return false;
+    return vessel.toLowerCase().includes(normalized);
+}
+
 export default function InvoiceDraftListPage() {
     const navigate = useNavigate();
     const { showError, showSuccess } = useToast();
     const { userPermissions } = useUser();
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [drafts, setDrafts] = useState<InvoiceDraftRow[]>([]);
+    const [vesselGroups, setVesselGroups] = useState<InvoiceDraftVesselGroupItem[]>(
+        []
+    );
     const [loading, setLoading] = useState(true);
     const [selectedVessel, setSelectedVessel] = useState<string | null>(null);
+    const [modalDrafts, setModalDrafts] = useState<InvoiceDraftRow[]>([]);
+    const [modalLoading, setModalLoading] = useState(false);
     const [draftDeleteTarget, setDraftDeleteTarget] =
         useState<InvoiceDraftRow | null>(null);
     const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
@@ -68,48 +78,59 @@ export default function InvoiceDraftListPage() {
     const showErrorRef = useRef(showError);
     showErrorRef.current = showError;
 
-    useEffect(() => {
-        let cancelled = false;
-
-        const loadDrafts = async () => {
-            setLoading(true);
-            try {
-                const rows = await listInvoiceDraftsByUser();
-                if (!cancelled) {
-                    setDrafts(rows);
-                }
-            } catch (e) {
-                console.error(e);
-                if (!cancelled) {
-                    showErrorRef.current(
-                        e instanceof Error
-                            ? e.message
-                            : "저장 목록을 불러오는 중 오류가 발생했습니다."
-                    );
-                }
-            } finally {
-                if (!cancelled) {
-                    setLoading(false);
-                }
-            }
-        };
-
-        void loadDrafts();
-
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-
-    const vesselGroups = useMemo(
-        () => groupInvoiceDraftsByVessel(drafts),
-        [drafts]
-    );
-
     const searchQuery = search.trim();
     const isSearchActive = searchQuery.length > 0;
 
-    const modalVesselGroup = useMemo(
+    const loadVesselGroups = useCallback(async () => {
+        setLoading(true);
+        try {
+            const rows = await fetchInvoiceDraftVesselGroups();
+            setVesselGroups(rows);
+        } catch (e) {
+            console.error(e);
+            showErrorRef.current(
+                e instanceof Error
+                    ? e.message
+                    : "저장 목록을 불러오는 중 오류가 발생했습니다."
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadVesselGroups();
+    }, [loadVesselGroups]);
+
+    const loadModalDrafts = useCallback(async (vessel: string) => {
+        setModalLoading(true);
+        try {
+            const rows = await fetchInvoiceDraftsByVesselGroup(vessel);
+            setModalDrafts(rows);
+            if (rows.length === 0) {
+                setSelectedVessel(null);
+            }
+        } catch (e) {
+            console.error(e);
+            showErrorRef.current(
+                e instanceof Error
+                    ? e.message
+                    : "드래프트 목록을 불러오는 중 오류가 발생했습니다."
+            );
+        } finally {
+            setModalLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!selectedVessel) {
+            setModalDrafts([]);
+            return;
+        }
+        void loadModalDrafts(selectedVessel);
+    }, [loadModalDrafts, selectedVessel]);
+
+    const selectedGroup = useMemo(
         () =>
             selectedVessel
                 ? vesselGroups.find((group) => group.vessel === selectedVessel) ??
@@ -119,10 +140,15 @@ export default function InvoiceDraftListPage() {
     );
 
     useEffect(() => {
-        if (selectedVessel && !modalVesselGroup) {
+        if (selectedVessel && !selectedGroup && !modalLoading) {
             setSelectedVessel(null);
         }
-    }, [selectedVessel, modalVesselGroup]);
+    }, [modalLoading, selectedGroup, selectedVessel]);
+
+    const closeVesselModal = useCallback(() => {
+        setSelectedVessel(null);
+        setModalDrafts([]);
+    }, []);
 
     const openDraft = useCallback(
         (row: InvoiceDraftRow) => {
@@ -133,24 +159,22 @@ export default function InvoiceDraftListPage() {
         [navigate]
     );
 
-    const closeVesselModal = useCallback(() => {
-        setSelectedVessel(null);
-    }, []);
-
     const handleConfirmDeleteDraft = useCallback(async () => {
         if (!draftDeleteTarget || deletingDraftId) {
             return;
         }
 
         const draftId = draftDeleteTarget.id;
+        const vesselForReload = selectedVessel;
         setDeletingDraftId(draftId);
         try {
             await deleteInvoiceDraft(draftId);
-            setDrafts((previous) =>
-                previous.filter((draft) => draft.id !== draftId)
-            );
             showSuccess("드래프트를 삭제했습니다.");
             setDraftDeleteTarget(null);
+            await loadVesselGroups();
+            if (vesselForReload) {
+                await loadModalDrafts(vesselForReload);
+            }
         } catch (error) {
             console.error(error);
             showError(
@@ -161,7 +185,15 @@ export default function InvoiceDraftListPage() {
         } finally {
             setDeletingDraftId(null);
         }
-    }, [deletingDraftId, draftDeleteTarget, showError, showSuccess]);
+    }, [
+        deletingDraftId,
+        draftDeleteTarget,
+        loadModalDrafts,
+        loadVesselGroups,
+        selectedVessel,
+        showError,
+        showSuccess,
+    ]);
 
     const draftTableColumns = useMemo(
         () => [
@@ -315,8 +347,8 @@ export default function InvoiceDraftListPage() {
                                     : "";
                                 const isSearchMatch =
                                     isSearchActive &&
-                                    doesInvoiceDraftVesselGroupMatchSearch(
-                                        group,
+                                    vesselGroupMatchesSearch(
+                                        group.vessel,
                                         searchQuery
                                     );
 
@@ -339,10 +371,8 @@ export default function InvoiceDraftListPage() {
                                             {group.vessel}
                                         </p>
                                         <p className="mt-1 text-[12px] text-gray-500 line-clamp-2">
-                                            {group.drafts.length}건
-                                            {latestLabel
-                                                ? ` · ${latestLabel}`
-                                                : ""}
+                                            {group.draftCount}건
+                                            {latestLabel ? ` · ${latestLabel}` : ""}
                                         </p>
                                     </button>
                                 );
@@ -353,29 +383,35 @@ export default function InvoiceDraftListPage() {
             </div>
 
             <BaseModal
-                isOpen={modalVesselGroup !== null}
+                isOpen={selectedVessel !== null}
                 onClose={closeVesselModal}
                 title={
-                    modalVesselGroup
-                        ? `${modalVesselGroup.vessel} · 총 ${modalVesselGroup.drafts.length}건`
+                    selectedVessel
+                        ? `${selectedVessel} · 총 ${modalDrafts.length}건`
                         : "드래프트 목록"
                 }
                 maxWidth="max-w-4xl"
             >
-                {modalVesselGroup && (
+                {selectedVessel && (
                     <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200">
-                        <Table
-                            className="text-[14px] table-fixed"
-                            columns={draftTableColumns}
-                            data={modalVesselGroup.drafts}
-                            rowKey="id"
-                            rowClassName={() => "group"}
-                            outerBorder={false}
-                            scrollX={false}
-                            onRowClick={(row: InvoiceDraftRow) =>
-                                openDraft(row)
-                            }
-                        />
+                        {modalLoading ? (
+                            <div className="py-10 text-center text-sm text-gray-500">
+                                로딩 중...
+                            </div>
+                        ) : (
+                            <Table
+                                className="text-[14px] table-fixed"
+                                columns={draftTableColumns}
+                                data={modalDrafts}
+                                rowKey="id"
+                                rowClassName={() => "group"}
+                                outerBorder={false}
+                                scrollX={false}
+                                onRowClick={(row: InvoiceDraftRow) =>
+                                    openDraft(row)
+                                }
+                            />
+                        )}
                     </div>
                 )}
             </BaseModal>
