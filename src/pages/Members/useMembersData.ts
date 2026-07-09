@@ -16,6 +16,133 @@ function getPassportNotifyStorageKey(memberId: string, expiryISO: string) {
     return `passport_expiry_notify:${memberId}:${expiryISO.slice(0, 10)}`;
 }
 
+type ProfilePassportRow = {
+    passport_last_name?: string | null;
+    passport_first_name?: string | null;
+    passport_number?: string | null;
+    passport_expiry_date?: string | null;
+    passport_image_bucket?: string | null;
+    passport_image_path?: string | null;
+    passport_image_name?: string | null;
+};
+
+type ProfileWithPassportRow = {
+    id: string;
+    username?: string | null;
+    name?: string | null;
+    role?: string | null;
+    department?: string | null;
+    email?: string | null;
+    join_date?: string | null;
+    birth_date?: string | null;
+    phone_number?: string | null;
+    address?: string | null;
+    position?: string | null;
+    profile_photo_bucket?: string | null;
+    profile_photo_path?: string | null;
+    profile_photo_name?: string | null;
+    signature_bucket?: string | null;
+    signature_path?: string | null;
+    signature_name?: string | null;
+    created_at?: string | null;
+    profile_passports?: ProfilePassportRow | ProfilePassportRow[] | null;
+};
+
+function getNestedPassport(
+    row: ProfileWithPassportRow,
+): ProfilePassportRow | undefined {
+    const nested = row.profile_passports;
+    if (!nested) return undefined;
+    return Array.isArray(nested) ? nested[0] : nested;
+}
+
+const MEMBERS_PROFILE_SELECT = `
+    id, username, name, role, department, email, join_date, birth_date, phone_number, address, position,
+    profile_photo_bucket, profile_photo_path, profile_photo_name,
+    signature_bucket, signature_path, signature_name, created_at,
+    profile_passports (
+        passport_last_name, passport_first_name, passport_number, passport_expiry_date,
+        passport_image_bucket, passport_image_path, passport_image_name
+    )
+`;
+
+function mapProfileRowsToMembers(
+    rows: ProfileWithPassportRow[],
+    myUserId: string,
+    isStaff: boolean,
+): Member[] {
+    return rows.map((p) => {
+        const pp = getNestedPassport(p);
+        const isOwnProfile = myUserId === p.id;
+        const shouldMaskOtherFields = isStaff && !isOwnProfile;
+        const shouldMaskPassport = shouldMaskOtherFields;
+        return {
+            id: p.id,
+            name: p.name ?? "",
+            username: shouldMaskOtherFields ? "" : (p.username ?? ""),
+            team: p.department ?? "",
+            role: p.position ?? p.role ?? "",
+            email: shouldMaskOtherFields ? "" : (p.email ?? ""),
+            avatarEmail: p.email ?? "",
+            phone: p.phone_number ?? "",
+            address1: shouldMaskOtherFields ? "" : (p.address ?? ""),
+            address2: "",
+            joinDate: shouldMaskOtherFields
+                ? ""
+                : p.join_date
+                  ? toYYMMDD(p.join_date)
+                  : "",
+            birth: shouldMaskOtherFields
+                ? ""
+                : p.birth_date
+                  ? toYYMMDD(p.birth_date)
+                  : "",
+            passportNo: shouldMaskPassport ? "" : (pp?.passport_number ?? ""),
+            passportLastName: shouldMaskPassport
+                ? ""
+                : (pp?.passport_last_name ?? ""),
+            passportFirstName: shouldMaskPassport
+                ? ""
+                : (pp?.passport_first_name ?? ""),
+            passportExpiry: shouldMaskPassport
+                ? ""
+                : pp?.passport_expiry_date
+                  ? toYYMMDD(pp.passport_expiry_date)
+                  : "",
+            passportExpiryISO: shouldMaskPassport
+                ? ""
+                : (pp?.passport_expiry_date ?? ""),
+            profilePhotoBucket: shouldMaskOtherFields
+                ? ""
+                : (p.profile_photo_bucket ?? ""),
+            profilePhotoPath: shouldMaskOtherFields
+                ? ""
+                : (p.profile_photo_path ?? ""),
+            profilePhotoName: shouldMaskOtherFields
+                ? ""
+                : (p.profile_photo_name ?? ""),
+            passportPhotoBucket: shouldMaskPassport
+                ? ""
+                : (pp?.passport_image_bucket ?? ""),
+            passportPhotoPath: shouldMaskPassport
+                ? ""
+                : (pp?.passport_image_path ?? ""),
+            passportPhotoName: shouldMaskPassport
+                ? ""
+                : (pp?.passport_image_name ?? ""),
+            signatureBucket: shouldMaskOtherFields
+                ? ""
+                : (p.signature_bucket ?? ""),
+            signaturePath: shouldMaskOtherFields
+                ? ""
+                : (p.signature_path ?? ""),
+            signatureName: shouldMaskOtherFields
+                ? ""
+                : (p.signature_name ?? ""),
+        };
+    });
+}
+
 export function useMembersData() {
     const { showSuccess } = useToast();
     const [members, setMembers] = useState<Member[]>(() => {
@@ -140,49 +267,25 @@ export function useMembersData() {
         }
     };
 
-    const fetchMyRole = async () => {
+    const fetchMembers = async () => {
+        setLoadError(null);
+        if (members.length === 0) setLoading(true);
+
         const {
             data: { user },
             error: userError,
         } = await supabase.auth.getUser();
-        if (userError || !user) return;
-        setMyUserId(user.id);
-        const { data, error } = await supabase
-            .from("profiles")
-            .select("role, department")
-            .eq("id", user.id)
-            .single();
-        if (error) {
-            console.error("내 role 조회 실패:", error.message);
-            return;
-        }
-        setIsAdmin(data?.role === "admin" || data?.department === "공무팀");
-        setIsStaff(data?.role === "staff" || data?.department === "공사팀");
-    };
-
-    const fetchMembers = async (opts?: {
-        isAdmin?: boolean;
-        myUserId?: string | null;
-        isStaff?: boolean;
-    }) => {
-        setLoadError(null);
-        const uid = opts?.myUserId ?? myUserId;
-        if (members.length === 0) setLoading(true);
-        if (!uid) {
+        if (userError || !user) {
             setMembers([]);
             setLoading(false);
             return;
         }
 
+        setMyUserId(user.id);
+
         const { data, error } = await supabase
             .from("profiles")
-            .select(
-                `
-                id, username, name, role, department, email, join_date, birth_date, phone_number, address, position,
-                profile_photo_bucket, profile_photo_path, profile_photo_name,
-                signature_bucket, signature_path, signature_name, created_at
-            `,
-            )
+            .select(MEMBERS_PROFILE_SELECT)
             .order("created_at", { ascending: true });
 
         if (error) {
@@ -192,139 +295,35 @@ export function useMembersData() {
             return;
         }
 
-        const ids = (data ?? []).map((p: any) => p.id);
-        const [passportsResult] = await Promise.allSettled([
-            supabase
-                .from("profile_passports")
-                .select(
-                    "user_id, passport_last_name, passport_first_name, passport_number, passport_expiry_date, passport_image_bucket, passport_image_path, passport_image_name",
-                )
-                .in("user_id", ids),
-        ]);
+        const rows = (data ?? []) as ProfileWithPassportRow[];
+        const myProfile = rows.find((p) => p.id === user.id);
+        const adminVal =
+            myProfile?.role === "admin" || myProfile?.department === "공무팀";
+        const isStaffVal =
+            myProfile?.role === "staff" || myProfile?.department === "공사팀";
 
-        let passportsData: any[] = [];
-        if (
-            passportsResult.status === "fulfilled" &&
-            !passportsResult.value.error
-        ) {
-            passportsData = passportsResult.value.data ?? [];
-        }
-        const passportsMap = new Map<string, any>();
-        passportsData.forEach((pp: any) => passportsMap.set(pp.user_id, pp));
+        setIsAdmin(adminVal);
+        setIsStaff(isStaffVal);
 
-        const resolvedIsStaff = opts?.isStaff ?? isStaff;
-        const mapped: Member[] = (data ?? []).map((p: any) => {
-            const pp = passportsMap.get(p.id);
-            const resolvedMyUserId = opts?.myUserId ?? myUserId;
-            const isOwnProfile = resolvedMyUserId === p.id;
-            const shouldMaskOtherFields = resolvedIsStaff && !isOwnProfile;
-            const shouldMaskPassport = shouldMaskOtherFields;
-            return {
-                id: p.id,
-                name: p.name ?? "",
-                username: shouldMaskOtherFields ? "" : (p.username ?? ""),
-                team: p.department ?? "",
-                role: p.position ?? p.role ?? "",
-                email: shouldMaskOtherFields ? "" : (p.email ?? ""),
-                avatarEmail: p.email ?? "",
-                phone: p.phone_number ?? "",
-                address1: shouldMaskOtherFields ? "" : (p.address ?? ""),
-                address2: "",
-                joinDate: shouldMaskOtherFields
-                    ? ""
-                    : p.join_date
-                      ? toYYMMDD(p.join_date)
-                      : "",
-                birth: shouldMaskOtherFields
-                    ? ""
-                    : p.birth_date
-                      ? toYYMMDD(p.birth_date)
-                      : "",
-                passportNo: shouldMaskPassport
-                    ? ""
-                    : (pp?.passport_number ?? ""),
-                passportLastName: shouldMaskPassport
-                    ? ""
-                    : (pp?.passport_last_name ?? ""),
-                passportFirstName: shouldMaskPassport
-                    ? ""
-                    : (pp?.passport_first_name ?? ""),
-                passportExpiry: shouldMaskPassport
-                    ? ""
-                    : pp?.passport_expiry_date
-                      ? toYYMMDD(pp.passport_expiry_date)
-                      : "",
-                passportExpiryISO: shouldMaskPassport
-                    ? ""
-                    : (pp?.passport_expiry_date ?? ""),
-                profilePhotoBucket: shouldMaskOtherFields
-                    ? ""
-                    : (p.profile_photo_bucket ?? ""),
-                profilePhotoPath: shouldMaskOtherFields
-                    ? ""
-                    : (p.profile_photo_path ?? ""),
-                profilePhotoName: shouldMaskOtherFields
-                    ? ""
-                    : (p.profile_photo_name ?? ""),
-                passportPhotoBucket: shouldMaskPassport
-                    ? ""
-                    : (pp?.passport_image_bucket ?? ""),
-                passportPhotoPath: shouldMaskPassport
-                    ? ""
-                    : (pp?.passport_image_path ?? ""),
-                passportPhotoName: shouldMaskPassport
-                    ? ""
-                    : (pp?.passport_image_name ?? ""),
-                signatureBucket: shouldMaskOtherFields
-                    ? ""
-                    : (p.signature_bucket ?? ""),
-                signaturePath: shouldMaskOtherFields
-                    ? ""
-                    : (p.signature_path ?? ""),
-                signatureName: shouldMaskOtherFields
-                    ? ""
-                    : (p.signature_name ?? ""),
-            };
-        });
+        const mapped = mapProfileRowsToMembers(rows, user.id, isStaffVal);
 
-        if (!passportNotifyRanRef.current) {
-            passportNotifyRanRef.current = true;
-            await notifyPassportExpiryWithinOneYear(mapped);
-        }
         setMembers(mapped);
         try {
             localStorage.setItem(MEMBERS_CACHE_KEY, JSON.stringify(mapped));
         } catch {}
         setLoading(false);
+
+        if (!passportNotifyRanRef.current) {
+            passportNotifyRanRef.current = true;
+            void notifyPassportExpiryWithinOneYear(mapped);
+        }
     };
 
     useEffect(() => {
         let cancelled = false;
         const init = async () => {
             setRoleReady(false);
-            await fetchMyRole();
-            const {
-                data: { user },
-            } = await supabase.auth.getUser();
-            if (cancelled) return;
-            let isStaffVal = false;
-            let adminVal = false;
-            if (user) {
-                const { data } = await supabase
-                    .from("profiles")
-                    .select("role, position, department")
-                    .eq("id", user.id)
-                    .single();
-                adminVal =
-                    data?.role === "admin" || data?.department === "공무팀";
-                isStaffVal =
-                    data?.role === "staff" || data?.department === "공사팀";
-            }
-            await fetchMembers({
-                isAdmin: adminVal,
-                myUserId: user?.id ?? null,
-                isStaff: isStaffVal,
-            });
+            await fetchMembers();
             if (!cancelled) setRoleReady(true);
         };
         init();
