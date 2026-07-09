@@ -771,12 +771,19 @@ export async function uploadReceiptFile(
 
 /**
  * 출장 보고서 목록 조회
+ * @param limit 최대 건수 (미지정 시 전체)
  */
-export async function getWorkLogs(): Promise<WorkLog[]> {
-    const { data, error } = await supabase
+export async function getWorkLogs(limit?: number): Promise<WorkLog[]> {
+    let query = supabase
         .from("work_logs")
         .select("*")
         .order("created_at", { ascending: false });
+
+    if (typeof limit === "number" && limit > 0) {
+        query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
         console.error("Error fetching work logs:", error);
@@ -814,48 +821,35 @@ export async function getDraftWorkLog(
     return data;
 }
 
-export async function getWorkLogById(
-    workLogId: number
-): Promise<WorkLogFullData | null> {
-    // 1. work_logs 기본 정보 조회
-    const { data: workLog, error: workLogError } = await supabase
-        .from("work_logs")
-        .select("*")
-        .eq("id", workLogId)
-        .single();
+type WorkLogByIdJoinedRow = WorkLog & {
+    work_log_persons?: Array<{ person_name: string }>;
+    work_log_entries?: Array<
+        WorkLogEntry & {
+            work_log_entry_persons?: Array<{ person_name: string }>;
+        }
+    >;
+    work_log_expenses?: WorkLogExpense[];
+    work_log_materials?: WorkLogMaterial[];
+};
 
-    if (workLogError || !workLog) {
-        console.error("Error fetching work log:", workLogError);
-        return null;
-    }
+function mapJoinedWorkLogRow(row: WorkLogByIdJoinedRow): WorkLogFullData {
+    const {
+        work_log_persons: personsRows = [],
+        work_log_entries: entriesRows = [],
+        work_log_expenses: expensesRows = [],
+        work_log_materials: materialsRows = [],
+        ...workLog
+    } = row;
 
-    // 2. 작업자 목록 조회
-    const { data: personsData } = await supabase
-        .from("work_log_persons")
-        .select("person_name")
-        .eq("work_log_id", workLogId);
+    const workers = personsRows.map((p) => p.person_name).filter(Boolean);
 
-    const workers = personsData?.map((p) => p.person_name) || [];
-
-    // 3. 업무 일지 조회 (entries + entry_persons)
-    const { data: entriesData } = await supabase
-        .from("work_log_entries")
-        .select("*")
-        .eq("work_log_id", workLogId)
-        .order("date_from", { ascending: true })
-        .order("time_from", { ascending: true });
-
-    const entries = [];
-    if (entriesData) {
-        for (const entry of entriesData) {
-            // 각 entry의 참여자 조회
-            const { data: entryPersonsData } = await supabase
-                .from("work_log_entry_persons")
-                .select("person_name")
-                .eq("entry_id", entry.id);
-
-            const persons = entryPersonsData?.map((p) => p.person_name) || [];
-
+    const entries = [...entriesRows]
+        .sort((a, b) => {
+            const dateCmp = String(a.date_from ?? "").localeCompare(String(b.date_from ?? ""));
+            if (dateCmp !== 0) return dateCmp;
+            return String(a.time_from ?? "").localeCompare(String(b.time_from ?? ""));
+        })
+        .map((entry) => {
             if (
                 workLogEntriesSplitGroupIdSupported !== true &&
                 Object.prototype.hasOwnProperty.call(entry, "split_group_id")
@@ -863,7 +857,10 @@ export async function getWorkLogById(
                 workLogEntriesSplitGroupIdSupported = true;
             }
 
-            entries.push({
+            const persons =
+                entry.work_log_entry_persons?.map((p) => p.person_name).filter(Boolean) ?? [];
+
+            return {
                 id: entry.id,
                 dateFrom: entry.date_from || "",
                 timeFrom: entry.time_from || undefined,
@@ -877,57 +874,28 @@ export async function getWorkLogById(
                 moveTo: entry.move_to || undefined,
                 lunch_worked: entry.lunch_worked ?? false,
                 splitGroupId: (entry as { split_group_id?: string | null }).split_group_id ?? undefined,
-            });
-        }
-    }
+            };
+        });
 
-    // 4. 경비 내역 조회
-    const { data: expensesData } = await supabase
-        .from("work_log_expenses")
-        .select("*")
-        .eq("work_log_id", workLogId)
-        .order("expense_date", { ascending: true });
-
-    const expenses =
-        expensesData?.map((exp) => ({
+    const expenses = [...expensesRows]
+        .sort((a, b) => String(a.expense_date ?? "").localeCompare(String(b.expense_date ?? "")))
+        .map((exp) => ({
             id: exp.id,
             date: exp.expense_date,
             type: exp.expense_type,
             detail: exp.detail,
             amount: exp.amount,
-            currency: (exp as any).currency || "원",
-        })) || [];
+            currency: (exp as WorkLogExpense & { currency?: string }).currency || "원",
+        }));
 
-    // 5. 소모품 조회
-    const { data: materialsData } = await supabase
-        .from("work_log_materials")
-        .select("*")
-        .eq("work_log_id", workLogId)
-        .order("created_at", { ascending: true });
-
-    const materials =
-        materialsData?.map((mat) => ({
+    const materials = [...materialsRows]
+        .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
+        .map((mat) => ({
             id: mat.id,
             name: mat.material_name,
             qty: mat.qty,
             unit: mat.unit || undefined,
-        })) || [];
-
-    // 6. 첨부파일 조회
-    const { data: receiptsData } = await supabase
-        .from("work_log_receipt")
-        .select("*")
-        .eq("work_log_id", workLogId);
-
-    const receipts =
-        receiptsData?.map((rec) => ({
-            id: rec.id,
-            file_path: rec.storage_path || rec.file_path,
-            orig_name: rec.original_name || rec.orig_name,
-            mime_type: rec.mime_type || undefined,
-            file_size: rec.file_size || undefined,
-            ext: rec.ext || undefined,
-        })) || [];
+        }));
 
     return {
         workLog,
@@ -935,8 +903,36 @@ export async function getWorkLogById(
         entries,
         expenses,
         materials,
-        receipts,
+        receipts: [],
     };
+}
+
+export async function getWorkLogById(
+    workLogId: number
+): Promise<WorkLogFullData | null> {
+    const { data, error } = await supabase
+        .from("work_logs")
+        .select(
+            `
+            *,
+            work_log_persons ( person_name ),
+            work_log_entries (
+                *,
+                work_log_entry_persons ( person_name )
+            ),
+            work_log_expenses ( * ),
+            work_log_materials ( * )
+        `
+        )
+        .eq("id", workLogId)
+        .single();
+
+    if (error || !data) {
+        console.error("Error fetching work log:", error);
+        return null;
+    }
+
+    return mapJoinedWorkLogRow(data as WorkLogByIdJoinedRow);
 }
 
 export async function prefetchWorkLogById(
@@ -1400,7 +1396,7 @@ export async function getWorkLogReceipts(
             let fileUrl: string | undefined;
             
             // 디버깅: 각 영수증의 정보 로그
-            if (process.env.NODE_ENV === 'development') {
+            if (import.meta.env.DEV) {
                 console.log(`getWorkLogReceipts - Receipt ${index + 1}:`, {
                     id: receipt.id,
                     storage_path: receipt.storage_path,
@@ -1428,7 +1424,7 @@ export async function getWorkLogReceipts(
                 }
                 
                 // 디버깅: 생성된 URL 로그
-                if (process.env.NODE_ENV === 'development') {
+                if (import.meta.env.DEV) {
                     console.log(`getWorkLogReceipts - Receipt ${index + 1} URL:`, {
                         id: receipt.id,
                         storage_path: receipt.storage_path,

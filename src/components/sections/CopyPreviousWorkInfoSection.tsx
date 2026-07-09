@@ -6,6 +6,11 @@ import { getWorkLogs, type WorkLog } from "../../lib/workLogApi";
 import { useWorkReportStore } from "../../store/workReportStore";
 import { useUser } from "../../hooks/useUser";
 
+type CopyPreviousWorkInfoSectionProps = {
+    /** 최대 건수 (미지정 시 전체 조회) */
+    limit?: number;
+};
+
 interface ReportOption {
     id: number;
     title: string;
@@ -40,7 +45,9 @@ function formatKoreanPeriod(start?: string | null, end?: string | null): string 
     return `${s.month}월${s.day}일~${e.month}월${e.day}일`;
 }
 
-export default function CopyPreviousWorkInfoSection() {
+export default function CopyPreviousWorkInfoSection({
+    limit,
+}: CopyPreviousWorkInfoSectionProps) {
     const { currentUserId } = useUser();
     const [loading, setLoading] = useState(false);
     const [reportOptions, setReportOptions] = useState<ReportOption[]>([]);
@@ -85,8 +92,8 @@ export default function CopyPreviousWorkInfoSection() {
                 const userRole = profile?.role;
                 const userName = profile?.name;
 
-                // 모든 보고서 조회 (제출된 것만)
-                let workLogs = await getWorkLogs();
+                // 제출된 보고서 최신 N건 조회
+                let workLogs = await getWorkLogs(limit);
                 console.log("getWorkLogs() 결과:", workLogs.length, "개");
                 workLogs = workLogs.filter((log) => !log.is_draft);
                 console.log("제출된 보고서 수 (is_draft=false):", workLogs.length);
@@ -179,7 +186,7 @@ export default function CopyPreviousWorkInfoSection() {
                     // 최종 필터링
                     const allowedIds = new Set([...myOwnIds, ...allParticipatedIds]);
                     workLogs = workLogs.filter((log) => allowedIds.has(log.id));
-                    
+
                     console.log("필터링 후 보고서 수:", workLogs.length);
                 } else if (userRole === "admin") {
                     console.log("Admin 계정: 모든 보고서 표시");
@@ -187,10 +194,7 @@ export default function CopyPreviousWorkInfoSection() {
                     console.log("사용자 이름이 없습니다:", userName);
                 }
 
-                // 최대 30개로 제한
-                workLogs = workLogs.slice(0, 30);
-
-                console.log("최종 보고서 수 (30개 제한 후):", workLogs.length);
+                console.log("최종 보고서 수:", workLogs.length);
 
                 if (workLogs.length === 0) {
                     console.log("사용 가능한 보고서가 없습니다.");
@@ -202,7 +206,7 @@ export default function CopyPreviousWorkInfoSection() {
                 // 각 보고서의 기간 정보 조회
                 const workLogIds = workLogs.map((log) => log.id);
                 let entries: any[] = [];
-                
+
                 if (workLogIds.length > 0) {
                     const { data: entriesData, error: entriesError } = await supabase
                         .from("work_log_entries")
@@ -321,7 +325,7 @@ export default function CopyPreviousWorkInfoSection() {
         } catch (error) {
             console.error("인원 정보 로드 실패:", error);
         }
-        
+
         // 복사 완료
         return Promise.resolve();
     };
