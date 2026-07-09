@@ -427,7 +427,7 @@ export default function ReportCreatePage() {
                         {/* Sections based on Report Type */}
                         {activeTab === "work" ? (
                             <>
-                                <BasicInfoSection />
+                                <BasicInfoSection previousWorkLimit={30} />
                                 <WorkerSection title="투입 인원" />
                                 <WorkLogSection />
                                 <ConsumablesSection />

@@ -15,7 +15,12 @@ import {
 import CopyPreviousWorkInfoSection from "./CopyPreviousWorkInfoSection";
 import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocompleteOptions";
 
-export default function BasicInfoSection() {
+type BasicInfoSectionProps = {
+    /** 이전 작업 불러오기 최대 건수 (미지정 시 전체) */
+    previousWorkLimit?: number;
+};
+
+export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSectionProps) {
     const {
         vessel,
         setVessel,
@@ -159,7 +164,7 @@ export default function BasicInfoSection() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:items-start">
                     {/* 이전 작업 기본정보 복사 */}
                     <div className="relative z-10">
-                        <CopyPreviousWorkInfoSection />
+                        <CopyPreviousWorkInfoSection limit={previousWorkLimit} />
                     </div>
                     
                     {/* 참관감독 선택 */}

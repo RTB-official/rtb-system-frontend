@@ -368,37 +368,36 @@ export default function ReportViewPage() {
     }, [expenseRows]);
 
     useEffect(() => {
-        const load = async () => {
-            if (!id) {
-                showError("보고서 ID가 없습니다.");
-                navigate("/report");
-                return;
-            }
+        if (!id) {
+            showError("보고서 ID가 없습니다.");
+            navigate("/report");
+            return;
+        }
 
+        let cancelled = false;
+
+        const loadReport = async () => {
             setLoading(true);
             try {
                 const res = await getWorkLogById(Number(id));
+                if (cancelled) return;
+
                 if (!res) {
                     showError("보고서를 찾을 수 없습니다.");
                     navigate("/report");
                     return;
                 }
+
                 setData(res as ViewData);
                 setDraftStatusHint(!!res.workLog.is_draft);
                 writeDraftHint(String(id), !!res.workLog.is_draft);
 
-                // 리포트 타입 판별
                 const isEducation = res.workLog.subject?.includes("[교육]");
                 setReportType(isEducation ? "education" : "work");
 
-
-                // ✅ TimelineSummarySection을 위한 WorkLogEntry 형식으로 변환하여 store에 주입
                 try {
-                    const viewData = res as ViewData;
-
-                    const mapped = (viewData.entries || []).map((e: any, idx: number) => {
+                    const mapped = (res.entries || []).map((e: any, idx: number) => {
                         const note = String(e.note ?? "");
-
                         const noLunch =
                             !!e.noLunch ||
                             !!e.lunch_worked ||
@@ -420,36 +419,49 @@ export default function ReportViewPage() {
                             moveTo: e.moveTo,
                         };
                     });
-
                     setWorkLogEntries(mapped);
                 } catch (err) {
                     console.error("Failed to set workLogEntries for timeline:", err);
                 }
-
-
-                setReceiptLoading(true);
-                try {
-                    const list = await getWorkLogReceipts(Number(id));
-                    setReceipts((list || []) as ReceiptItem[]);
-                } catch (e) {
-                    console.error("Error loading receipts:", e);
-                    setReceipts([]);
-                } finally {
-                    setReceiptLoading(false);
-                }
-
             } catch (e: any) {
+                if (cancelled) return;
                 console.error("Error loading report:", e);
                 showError(
                     `보고서 로드 실패: ${e?.message || "알 수 없는 오류가 발생했습니다."}`
                 );
                 navigate("/report");
             } finally {
-                setLoading(false);
+                if (!cancelled) {
+                    setLoading(false);
+                }
             }
         };
 
-        load();
+        const loadReceipts = async () => {
+            setReceiptLoading(true);
+            try {
+                const list = await getWorkLogReceipts(Number(id));
+                if (!cancelled) {
+                    setReceipts((list || []) as ReceiptItem[]);
+                }
+            } catch (e) {
+                if (!cancelled) {
+                    console.error("Error loading receipts:", e);
+                    setReceipts([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setReceiptLoading(false);
+                }
+            }
+        };
+
+        void loadReport();
+        void loadReceipts();
+
+        return () => {
+            cancelled = true;
+        };
     }, [id]);
 
     const workLog = data?.workLog;

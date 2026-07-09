@@ -911,7 +911,7 @@ if (newFiles.length > 0) {
                         <div className="max-w-[960px] mx-auto flex flex-col gap-4 md:gap-6">
                             {/* 기본 정보 */}
                             {reportType === "work" ? (
-                                <BasicInfoSection />
+                                <BasicInfoSection previousWorkLimit={30} />
                             ) : (
                                 <EducationBasicInfoSection />
                             )}
