@@ -210,13 +210,15 @@ export default function NotificationPopup({
     };
 
 
+    const hasUnread = items.some((it) => !it.read_at);
+
     const content = (
         <>
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-50 shrink-0">
                 <h4 className="text-[20px] font-bold text-[#1e293b]">알림</h4>
                 <div className="flex items-center gap-2">
-                    {items.length > 0 && onMarkAllAsRead && (
+                    {hasUnread && onMarkAllAsRead && (
                         <button
                             onClick={onMarkAllAsRead}
                             className="text-[14px] text-gray-400 hover:text-gray-600 font-medium transition-colors"

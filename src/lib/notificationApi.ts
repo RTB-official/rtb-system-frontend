@@ -228,16 +228,21 @@ export async function markNotificationAsRead(
 }
 
 /**
- * 모든 알림을 읽음으로 표시
+ * 읽지 않은 알림만 일괄 읽음 처리 (2주 이내, 조회 목록과 동일 범위)
  */
 export async function markAllNotificationsAsRead(
     userId: string
 ): Promise<void> {
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const twoWeeksAgoISO = twoWeeksAgo.toISOString();
+
     const { error } = await supabase
         .from("notifications")
         .update({ read_at: new Date().toISOString() })
         .eq("user_id", userId)
-        .is("read_at", null);
+        .is("read_at", null)
+        .gte("created_at", twoWeeksAgoISO);
 
     if (error) {
         console.error("Error marking all notifications as read:", error);
