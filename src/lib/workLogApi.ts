@@ -234,6 +234,7 @@ export interface CreateWorkLogInput {
     }>;
     is_draft?: boolean;
     created_by?: string;
+    memo?: string | null;
 }
 
 export interface WorkLogFullData {
@@ -400,6 +401,7 @@ export async function createWorkLog(
     data: CreateWorkLogInput
 ): Promise<WorkLog> {
     // 1. work_logs 테이블에 기본 정보 저장
+    const memoText = data.memo?.trim() || null;
     const { data: workLog, error: workLogError } = await supabase
         .from("work_logs")
         .insert([
@@ -414,6 +416,9 @@ export async function createWorkLog(
                 subject: data.subject || null,
                 is_draft: data.is_draft ?? false,
                 created_by: data.created_by || null,
+                memo: memoText,
+                memo_updated_at: null,
+                memo_read_at: null,
             },
         ])
         .select()
@@ -979,7 +984,7 @@ export async function updateWorkLog(
     // ✅ 업데이트 전에 "이전 draft 상태"를 먼저 읽어둠
     const { data: prevRow, error: prevError } = await supabase
       .from("work_logs")
-      .select("is_draft, created_by")
+      .select("is_draft, created_by, memo")
       .eq("id", workLogId)
       .single();
   
@@ -987,21 +992,38 @@ export async function updateWorkLog(
   
     const wasDraft = prevRow?.is_draft ?? false;
     const prevCreatedBy = prevRow?.created_by ?? null;
+
+    const updatePayload: Record<string, unknown> = {
+      author: data.author || null,
+      vessel: data.vessel || null,
+      engine: data.engine || null,
+      order_group: data.order_group || null,
+      order_person: data.order_person || null,
+      location: data.location || null,
+      vehicle: data.vehicle || null,
+      subject: data.subject || null,
+      is_draft: data.is_draft ?? false,
+    };
+
+    // 메모가 payload에 포함된 경우만 비교·반영 (빈 문자열은 저장하지 않고 null)
+    if (data.memo !== undefined) {
+      const normalizeMemo = (value: string | null | undefined): string | null => {
+        const trimmed = String(value ?? "").trim();
+        return trimmed.length > 0 ? trimmed : null;
+      };
+      const prevMemo = normalizeMemo(prevRow?.memo);
+      const nextMemo = normalizeMemo(data.memo);
+      updatePayload.memo = nextMemo; // "" 금지, 없으면 항상 null
+      if (prevMemo !== nextMemo) {
+        updatePayload.memo_read_at = null;
+        updatePayload.memo_updated_at = new Date().toISOString();
+      }
+    }
   
     // 1) work_logs 테이블 업데이트
     const { data: workLog, error: workLogError } = await supabase
       .from("work_logs")
-      .update({
-        author: data.author || null,
-        vessel: data.vessel || null,
-        engine: data.engine || null,
-        order_group: data.order_group || null,
-        order_person: data.order_person || null,
-        location: data.location || null,
-        vehicle: data.vehicle || null,
-        subject: data.subject || null,
-        is_draft: data.is_draft ?? false,
-      })
+      .update(updatePayload)
       .eq("id", workLogId)
       .select()
       .single();

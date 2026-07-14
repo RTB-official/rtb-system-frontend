@@ -125,6 +125,7 @@ interface WorkReportState {
   locationCustom: string;
   vehicles: string[];
   subject: string;
+  memo: string;
   
   // 전체 인원원 (전체)
   workers: string[];
@@ -168,6 +169,7 @@ interface WorkReportState {
   toggleVehicle: (vehicle: string) => void;
   setVehicles: (vehicles: string[]) => void;
   setSubject: (subject: string) => void;
+  setMemo: (memo: string) => void;
   
   // Actions - 모드/추가필드 (삭제했던 중복 제거 확인됨)
   setReportType: (type: 'work' | 'education') => void;
@@ -256,6 +258,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   locationCustom: '',
   vehicles: [],
   subject: '',
+  memo: '',
   workers: [],
   workLogEntries: [],
   editingEntryId: null,
@@ -322,6 +325,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   })),
   setVehicles: (vehicles) => set({ vehicles }),
   setSubject: (subject) => set({ subject }),
+  setMemo: (memo) => set({ memo }),
   
   setReportType: (reportType) => set({ reportType }),
   setInstructor: (instructor) => set({ instructor }),
@@ -554,6 +558,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     locationCustom: '',
     vehicles: [],
     subject: '',
+    memo: '',
     workers: [],
     workLogEntries: [],
     editingEntryId: null,

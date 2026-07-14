@@ -12,6 +12,7 @@ import ExpenseSection from "../../components/sections/ExpenseSection";
 import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
+import MemoSection from "../../components/sections/MemoSection";
 import CreationSkeleton from "../../components/common/CreationSkeleton";
 import SectionCard from "../../components/ui/SectionCard";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
@@ -102,12 +103,14 @@ export default function ReportEditPage() {
         materials,
         uploadedFiles,
         pendingDeletedReceipts,
+        memo,
         clearPendingDeletedReceipts,
         resetForm,
         setReportType: setReportTypeInStore,
         setVessel,
         setEngine,
         setSubject,
+        setMemo,
         setOrderGroup,
         setOrderPerson,
         setLocations,
@@ -146,6 +149,7 @@ export default function ReportEditPage() {
             workLogEntries,
             expenses,
             materials,
+            memo,
             uploadedFiles: uploadedFiles?.map((f: any) => ({
                 name: f?.file?.name,
                 category: f?.category,
@@ -165,6 +169,7 @@ export default function ReportEditPage() {
         workLogEntries,
         expenses,
         materials,
+        memo,
         uploadedFiles,
     ]);
 
@@ -281,6 +286,9 @@ export default function ReportEditPage() {
                 if (data.workLog.vessel) setVessel(data.workLog.vessel);
                 if (data.workLog.engine) setEngine(data.workLog.engine);
                 if (data.workLog.subject) setSubject(data.workLog.subject);
+                setMemo(
+                    String((data.workLog as { memo?: string | null }).memo ?? "").trim()
+                );
                 if (data.workLog.order_group)
                     setOrderGroup(data.workLog.order_group);
                 if (data.workLog.order_person)
@@ -437,6 +445,7 @@ export default function ReportEditPage() {
                 })),
                 is_draft: false,
                 created_by: originalCreatedBy || user?.id || undefined,
+                memo: useWorkReportStore.getState().memo,
             };
 
 
@@ -633,6 +642,7 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
                     })),
                     is_draft: true,
                     created_by: originalCreatedBy || user?.id || undefined,
+                    memo: useWorkReportStore.getState().memo,
                 };
 
 
@@ -931,26 +941,29 @@ if (newFiles.length > 0) {
                             {/* 경비 내역 */}
                             <ExpenseSection />
 
-                            {/* 타임라인 요약 */}
+                            {/* 타임라인 요약 + 메모 */}
                             {reportType === "work" && (
-                                <SectionCard
-                                    title="타임라인"
-                                    headerContent={
-                                        <WorkloadLegend
-                                            items={[
-                                                { key: "work", label: "작업", color: "#3b82f6" },
-                                                { key: "move", label: "이동", color: "#10b981" },
-                                                { key: "wait", label: "대기", color: "#f59e0b" },
-                                            ]}
-                                            className="flex items-center gap-4"
-                                            itemClassName="flex items-center gap-1.5"
-                                            labelClassName="text-[12px] text-[#6a7282]"
-                                            swatchClassName="w-[14px] h-[14px] rounded-md"
-                                        />
-                                    }
-                                >
-                                    <TimelineSummarySection />
-                                </SectionCard>
+                                <>
+                                    <SectionCard
+                                        title="타임라인"
+                                        headerContent={
+                                            <WorkloadLegend
+                                                items={[
+                                                    { key: "work", label: "작업", color: "#3b82f6" },
+                                                    { key: "move", label: "이동", color: "#10b981" },
+                                                    { key: "wait", label: "대기", color: "#f59e0b" },
+                                                ]}
+                                                className="flex items-center gap-4"
+                                                itemClassName="flex items-center gap-1.5"
+                                                labelClassName="text-[12px] text-[#6a7282]"
+                                                swatchClassName="w-[14px] h-[14px] rounded-md"
+                                            />
+                                        }
+                                    >
+                                        <TimelineSummarySection />
+                                    </SectionCard>
+                                    <MemoSection />
+                                </>
                             )}
                         </div>
                     </div>

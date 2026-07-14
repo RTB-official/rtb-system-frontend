@@ -22,6 +22,7 @@ import ExpenseSection from "../../components/sections/ExpenseSection";
 import ConsumablesSection from "../../components/sections/ConsumablesSection";
 import FileUploadSection from "../../components/sections/FileUploadSection";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
+import MemoSection from "../../components/sections/MemoSection";
 import SectionCard from "../../components/ui/SectionCard";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
 
@@ -91,6 +92,7 @@ export default function ReportCreatePage() {
         expenses,
         materials,
         uploadedFiles,
+        memo,
         fetchAllStaff,
     } = useWorkReportStore();
 
@@ -112,6 +114,7 @@ export default function ReportCreatePage() {
             workLogEntries,
             expenses,
             materials,
+            memo,
             uploadedFiles: uploadedFiles?.map((f: any) => ({
                 name: f?.file?.name,
                 category: f?.category,
@@ -121,7 +124,7 @@ export default function ReportCreatePage() {
     }, [
         reportType, author, instructor, vessel, engine, orderGroup, orderPerson,
         locations, locationCustom, vehicles, subject, workers,
-        workLogEntries, expenses, materials, uploadedFiles
+        workLogEntries, expenses, materials, memo, uploadedFiles
     ]);
 
     const makeSnapshotRef = useRef(makeSnapshot);
@@ -286,7 +289,8 @@ export default function ReportCreatePage() {
                 materials: materials,
                 receipts: [],
                 is_draft: isDraft,
-                created_by: user.id
+                created_by: user.id,
+                memo,
             }));
 
             // 2. 파일 업로드
@@ -451,6 +455,7 @@ export default function ReportCreatePage() {
                                 >
                                     <TimelineSummarySection />
                                 </SectionCard>
+                                <MemoSection />
                             </>
                         ) : (
                             <>

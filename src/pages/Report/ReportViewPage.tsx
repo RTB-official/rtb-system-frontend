@@ -12,6 +12,7 @@ import { getWorkLogById, getWorkLogReceipts, updateWorkLog } from "../../lib/wor
 import { useToast } from "../../components/ui/ToastProvider";
 import { useUser } from "../../hooks/useUser";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
+import MemoSection from "../../components/sections/MemoSection";
 import { useWorkReportStore } from "../../store/workReportStore";
 import WorkloadLegend from "../../components/common/WorkloadLegend";
 import WorkLogEntryCard from "../../components/sections/WorkLogEntryCard";
@@ -1231,24 +1232,30 @@ export default function ReportViewPage() {
                             </SectionCard>
 
                             {!isEducationReport && (
-                                <SectionCard
-                                    title="타임라인"
-                                    headerContent={
-                                        <WorkloadLegend
-                                            items={[
-                                                { key: "work", label: "작업", color: "#3b82f6" },
-                                                { key: "move", label: "이동", color: "#10b981" },
-                                                { key: "wait", label: "대기", color: "#f59e0b" },
-                                            ]}
-                                            className="flex items-center gap-4"
-                                            itemClassName="flex items-center gap-1.5"
-                                            labelClassName="text-[12px] text-[#6a7282]"
-                                            swatchClassName="w-[14px] h-[14px] rounded-md"
-                                        />
-                                    }
-                                >
-                                    <TimelineSummarySection />
-                                </SectionCard>
+                                <>
+                                    <SectionCard
+                                        title="타임라인"
+                                        headerContent={
+                                            <WorkloadLegend
+                                                items={[
+                                                    { key: "work", label: "작업", color: "#3b82f6" },
+                                                    { key: "move", label: "이동", color: "#10b981" },
+                                                    { key: "wait", label: "대기", color: "#f59e0b" },
+                                                ]}
+                                                className="flex items-center gap-4"
+                                                itemClassName="flex items-center gap-1.5"
+                                                labelClassName="text-[12px] text-[#6a7282]"
+                                                swatchClassName="w-[14px] h-[14px] rounded-md"
+                                            />
+                                        }
+                                    >
+                                        <TimelineSummarySection />
+                                    </SectionCard>
+                                    <MemoSection
+                                        readOnly
+                                        value={(workLog as { memo?: string | null } | null)?.memo}
+                                    />
+                                </>
                             )}
 
 
