@@ -19,6 +19,9 @@ export type ReportListItem = {
     periodStart?: string;
     periodEnd?: string;
     status: ReportListStatus;
+    memo: string | null;
+    memoUpdatedAt: string | null;
+    memoReadAt: string | null;
 };
 
 export type ReportListQuery = {
@@ -50,6 +53,9 @@ type ReportListRpcRow = {
     owner_position: string | null;
     period_start: string | null;
     period_end: string | null;
+    memo: string | null;
+    memo_updated_at: string | null;
+    memo_read_at: string | null;
     total_count: number | string | null;
 };
 
@@ -86,6 +92,9 @@ function mapRpcRowToItem(row: ReportListRpcRow): ReportListItem {
         periodStart,
         periodEnd,
         status: row.is_draft ? "pending" : "submitted",
+        memo: row.memo?.trim() ? row.memo : null,
+        memoUpdatedAt: row.memo_updated_at ?? null,
+        memoReadAt: row.memo_read_at ?? null,
     };
 }
 
@@ -126,4 +135,21 @@ export async function fetchReportList(
         items: rows.map(mapRpcRowToItem),
         totalCount: Number.isFinite(totalCount) ? totalCount : 0,
     };
+}
+
+/** 메모 읽음/미읽음 표시 */
+export async function setReportMemoReadState(
+    reportId: number,
+    read: boolean
+): Promise<void> {
+    const { error } = await supabase
+        .from("work_logs")
+        .update({
+            memo_read_at: read ? new Date().toISOString() : null,
+        })
+        .eq("id", reportId);
+
+    if (error) {
+        throw new Error(`메모 읽음 상태 변경 실패: ${error.message}`);
+    }
 }

@@ -10,13 +10,16 @@ import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
 import Chip from "../../components/ui/Chip";
+import BaseModal from "../../components/ui/BaseModal";
 import ReportListSkeleton from "../../components/common/skeletons/ReportListSkeleton";
+import ReportMemoBadge from "../../components/report/ReportMemoBadge";
 import { IconMore, IconMoreVertical, IconPlus, IconReport } from "../../components/icons/Icons";
 import { deleteWorkLog } from "../../lib/workLogApi";
 import {
     fetchReportList,
     parseReportListMonth,
     parseReportListYear,
+    setReportMemoReadState,
     type ReportListItem,
     type ReportListStatus,
 } from "../../lib/reportListApi";
@@ -60,6 +63,8 @@ export default function ReportListPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [memoModalOpen, setMemoModalOpen] = useState(false);
+    const [memoModalTarget, setMemoModalTarget] = useState<ReportItem | null>(null);
     const [loading, setLoading] = useState(true);
     // ✅ 탭 상태 추가 ("work" | "education")
     const [activeTab, setActiveTab] = useState<"work" | "education">(
@@ -83,6 +88,45 @@ export default function ReportListPage() {
             },
         });
     };
+
+    const openMemoModal = (row: ReportItem) => {
+        if (!row.memo?.trim()) return;
+        setMemoModalTarget(row);
+        setMemoModalOpen(true);
+    };
+
+    const closeMemoModal = () => {
+        setMemoModalOpen(false);
+        setMemoModalTarget(null);
+    };
+
+    const markMemoAsRead = async () => {
+        if (!memoModalTarget) return;
+        try {
+            await setReportMemoReadState(memoModalTarget.id, true);
+            closeMemoModal();
+            await loadReports();
+        } catch (error) {
+            console.error("메모 읽음 표시 실패:", error);
+            showError("메모 읽음 표시 중 오류가 발생했습니다.");
+        }
+    };
+
+    const markMemoAsUnread = async () => {
+        if (!memoModalTarget) return;
+        try {
+            await setReportMemoReadState(memoModalTarget.id, false);
+            closeMemoModal();
+            await loadReports();
+        } catch (error) {
+            console.error("메모 읽지 않음 표시 실패:", error);
+            showError("메모 읽지 않음 표시 중 오류가 발생했습니다.");
+        }
+    };
+
+    const isMemoUnread = Boolean(
+        memoModalTarget?.memo?.trim() && !memoModalTarget.memoReadAt
+    );
 
     // ✅ 안전문구/슬로건 토스트 (세션당 1회)
     useEffect(() => {
@@ -455,6 +499,11 @@ export default function ReportListPage() {
                                                             <Chip color={color} variant="solid" size="sm">
                                                                 {label}
                                                             </Chip>
+                                                            <ReportMemoBadge
+                                                                memo={row.memo}
+                                                                memoReadAt={row.memoReadAt}
+                                                                onClick={() => openMemoModal(row)}
+                                                            />
                                                         </div>
                                                     </div>
                                                     {canManageRow && (
@@ -631,12 +680,12 @@ export default function ReportListPage() {
                                     {
                                         key: "title",
                                         label: "제목",
-                                        width: "36%",
+                                        width: "32%",
                                     },
                                     {
                                         key: "place",
                                         label: "출장지",
-                                        width: "12%",
+                                        width: "10%",
                                         render: (value) => {
                                             if (
                                                 value &&
@@ -655,7 +704,7 @@ export default function ReportListPage() {
                                     {
                                         key: "supervisor",
                                         label: "참관감독",
-                                        width: "12%",
+                                        width: "10%",
                                         render: (value) => {
                                             if (
                                                 value &&
@@ -674,7 +723,7 @@ export default function ReportListPage() {
                                     {
                                         key: "date",
                                         label: "작성일",
-                                        width: "12%",
+                                        width: "10%",
                                         render: (value) => (
                                             <span className="text-gray-600">
                                                 {value}
@@ -717,6 +766,19 @@ export default function ReportListPage() {
                                                 </Chip>
                                             );
                                         },
+                                    },
+                                    {
+                                        key: "memo",
+                                        label: "메모",
+                                        width: "8%",
+                                        showEmptyIndicator: false,
+                                        render: (_, row: ReportItem) => (
+                                            <ReportMemoBadge
+                                                memo={row.memo}
+                                                memoReadAt={row.memoReadAt}
+                                                onClick={() => openMemoModal(row)}
+                                            />
+                                        ),
                                     },
                                     {
                                         key: "actions",
@@ -834,6 +896,49 @@ export default function ReportListPage() {
                     </Button>
                 </div>
             )}
+
+            {/* 메모 보기 모달 */}
+            <BaseModal
+                isOpen={memoModalOpen}
+                onClose={closeMemoModal}
+                title="메모"
+                maxWidth="max-w-[440px]"
+                footer={
+                    <div className="flex gap-2 w-full">
+                        <Button
+                            variant="outline"
+                            size="lg"
+                            fullWidth
+                            onClick={closeMemoModal}
+                        >
+                            닫기
+                        </Button>
+                        {isMemoUnread ? (
+                            <Button
+                                variant="primary"
+                                size="lg"
+                                fullWidth
+                                onClick={markMemoAsRead}
+                            >
+                                읽음으로 표시
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                fullWidth
+                                onClick={markMemoAsUnread}
+                            >
+                                읽지 않음으로 표시
+                            </Button>
+                        )}
+                    </div>
+                }
+            >
+                <p className="text-[15px] text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
+                    {memoModalTarget?.memo?.trim() || ""}
+                </p>
+            </BaseModal>
 
             {/* 삭제 확인 다이얼로그 */}
             <ConfirmDialog
