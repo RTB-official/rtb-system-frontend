@@ -32,7 +32,7 @@ const DEFAULT_YEAR = "년도 전체";
 const DEFAULT_MONTH = "월 전체";
 const DEFAULT_TAB = "work";
 const ITEMS_PER_PAGE = 10;
-const SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_DEBOUNCE_MS = 500;
 
 const parsePage = (value: string | null) => {
     const page = Number.parseInt(value || "", 10);
@@ -234,9 +234,10 @@ export default function ReportListPage() {
     const totalPages = Math.ceil(totalCount / itemsPerPage);
 
     const handleResetFilter = () => {
+        setSearch("");
+        setDebouncedSearch("");
         setYear(DEFAULT_YEAR);
         setMonth(DEFAULT_MONTH);
-        setSearch("");
         setCurrentPage(1);
     };
 
@@ -320,16 +321,7 @@ export default function ReportListPage() {
                 />
 
                 <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-12 pt-4 md:pt-6 pb-24 relative">
-                    {loading ? (
-                        isMobile ? (
-                            <div className="flex flex-col items-center justify-center py-20 gap-4">
-                                <div className="w-10 h-10 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin" />
-                                <p className="text-sm text-gray-500">로딩 중...</p>
-                            </div>
-                        ) : (
-                            <ReportListSkeleton />
-                        )
-                    ) : isMobile ? (
+                    {isMobile ? (
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-3">
                                 <Input
@@ -395,7 +387,12 @@ export default function ReportListPage() {
                                     )}
                                 </div>
                             </div>
-                            {totalCount === 0 ? (
+                            {loading ? (
+                                <div className="flex flex-col items-center justify-center py-20 gap-4">
+                                    <div className="w-10 h-10 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin" />
+                                    <p className="text-sm text-gray-500">로딩 중...</p>
+                                </div>
+                            ) : totalCount === 0 ? (
                                 <div className="py-10 text-center text-gray-500 text-sm flex flex-col items-center gap-3">
                                     <span>
                                         {hasActiveQuery
@@ -599,6 +596,9 @@ export default function ReportListPage() {
                                 </div>
                             </div>
 
+                            {loading ? (
+                                <ReportListSkeleton />
+                            ) : (
                             <Table
                                 className="text-[14px]"
                                 emptyText="조회된 보고서가 없습니다."
@@ -814,6 +814,7 @@ export default function ReportListPage() {
                                     onPageChange: setCurrentPage,
                                 }}
                             />
+                            )}
                         </div>
                     )}
                 </div>
