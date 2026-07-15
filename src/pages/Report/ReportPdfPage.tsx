@@ -14,6 +14,10 @@ import { prepareReportPdfHtml2CanvasClone } from "../../lib/reportPdfHtml2Canvas
 import { formatReportPdfFilename } from "../../utils/reportPdfFilename";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
+import {
+    getOtherLineNoteLine,
+    isOtherLineNoteLine,
+} from "../../utils/otherLineWorkNote";
 
 function toHM(t?: string | null) {
     if (!t) return "";
@@ -29,6 +33,14 @@ function weekday_kr(ymd?: string | null) {
     const d = new Date(ymd);
     if (Number.isNaN(d.getTime())) return "";
     return w[d.getDay()];
+}
+
+function stripOtherLineFromNote(note: string) {
+    return (note || "")
+        .split("\n")
+        .filter((line) => line.trim() && !isOtherLineNoteLine(line))
+        .join("\n")
+        .trim();
 }
 
 function toLocalYMD(d: Date) {
@@ -956,6 +968,21 @@ export default function ReportPdfPage() {
       color:#d00000;
     }
 
+    /* 다른호선 작업진행 — 작성/수정 페이지와 동일한 보라 배지 */
+    .detail-other-line-badge{
+      display:inline-block;
+      margin-top:4px;
+      padding:2px 8px;
+      border-radius:999px;
+      background:#ede9fe;
+      color:#5b21b6;
+      border:1px solid #ddd6fe;
+      font-size:8pt;
+      font-weight:700;
+      line-height:1.3;
+      white-space:nowrap;
+    }
+
     /* ✅ 타임라인 섹션: 다른 섹션과 동일한 A4 폭(=sheet 내부 100%)로 고정 */
     .timeline-section{
       width:100%;
@@ -1335,11 +1362,28 @@ export default function ReportPdfPage() {
 
                                                         <td className="detail-pre">
                                                             {r.desc}
-                                                            {r.note?.trim() ? (
-                                                                <div className="detail-note">
-                                                                    특이사항 : {r.note}
-                                                                </div>
-                                                            ) : null}
+                                                            {(() => {
+                                                                const otherLineBadge =
+                                                                    getOtherLineNoteLine(r.note);
+                                                                const plainNote =
+                                                                    stripOtherLineFromNote(r.note);
+                                                                return (
+                                                                    <>
+                                                                        {otherLineBadge ? (
+                                                                            <div>
+                                                                                <span className="detail-other-line-badge">
+                                                                                    {otherLineBadge}
+                                                                                </span>
+                                                                            </div>
+                                                                        ) : null}
+                                                                        {plainNote ? (
+                                                                            <div className="detail-note">
+                                                                                특이사항 : {plainNote}
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </>
+                                                                );
+                                                            })()}
                                                         </td>
 
                                                         <td className="detail-pre">{r.rmk}</td>
