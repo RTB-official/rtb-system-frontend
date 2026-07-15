@@ -23,6 +23,7 @@ import {
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Avatar from "../../components/common/Avatar";
+import ReportMultiLineTitle from "../../components/common/ReportMultiLineTitle";
 import { supabase } from "../../lib/supabase";
 import useIsMobile from "../../hooks/useIsMobile";
 
@@ -69,6 +70,7 @@ export default function ReportListPage() {
     const { showSuccess, showError } = useToast();
     const safetyToastOnceRef = useRef(false);
     const isFirstSearchDebounceRef = useRef(true);
+    const hasLoadedOnceRef = useRef(false);
     const isMobile = useIsMobile();
     const itemsPerPage = ITEMS_PER_PAGE;
 
@@ -204,7 +206,11 @@ export default function ReportListPage() {
     }, [search]);
 
     const loadReports = async () => {
-        setLoading(true);
+        // 최초 로드에만 전체 스켈레톤을 띄운다.
+        // 검색/필터 재조회 시 loading으로 검색창을 언마운트하면 포커스가 풀린다.
+        if (!hasLoadedOnceRef.current) {
+            setLoading(true);
+        }
         try {
             const result = await fetchReportList({
                 page: currentPage,
@@ -220,6 +226,7 @@ export default function ReportListPage() {
             console.error("Error loading reports:", error);
             showError("보고서 목록을 불러오는 중 오류가 발생했습니다.");
         } finally {
+            hasLoadedOnceRef.current = true;
             setLoading(false);
         }
     };
@@ -243,7 +250,8 @@ export default function ReportListPage() {
     useEffect(() => {
         const nextParams = new URLSearchParams();
 
-        if (search) nextParams.set("search", search);
+        // 입력 중 URL을 매 글자마다 바꾸지 않고, 디바운스된 검색어만 반영
+        if (debouncedSearch) nextParams.set("search", debouncedSearch);
         if (year !== DEFAULT_YEAR) nextParams.set("year", year);
         if (month !== DEFAULT_MONTH) nextParams.set("month", month);
         if (activeTab !== DEFAULT_TAB) nextParams.set("tab", activeTab);
@@ -254,7 +262,7 @@ export default function ReportListPage() {
         if (nextQuery !== currentQuery) {
             setSearchParams(nextParams, { replace: true });
         }
-    }, [search, year, month, activeTab, currentPage, searchParams, setSearchParams]);
+    }, [debouncedSearch, year, month, activeTab, currentPage, searchParams, setSearchParams]);
 
     useEffect(() => {
         if (loading) return;
@@ -632,6 +640,12 @@ export default function ReportListPage() {
                                         key: "title",
                                         label: "제목",
                                         width: "36%",
+                                        render: (_: unknown, row: ReportItem) => (
+                                            <ReportMultiLineTitle
+                                                title={row.title}
+                                                badge={row.multiLineBadge}
+                                            />
+                                        ),
                                     },
                                     {
                                         key: "place",

@@ -104,6 +104,18 @@ export default function Chip({
                 border: "border-purple-500",
                 borderOutline: "border-purple-500",
             },
+            "purple-700": {
+                text: "text-purple-700",
+                bg: "bg-purple-50",
+                border: "border-purple-700",
+                borderOutline: "border-purple-700",
+            },
+            "purple-800": {
+                text: "text-purple-800",
+                bg: "bg-purple-50",
+                border: "border-purple-800",
+                borderOutline: "border-purple-800",
+            },
             "gray-400": {
                 text: "text-gray-500",
                 bg: "bg-gray-500/10",
@@ -153,6 +165,8 @@ export default function Chip({
                 "text-green-500": "bg-green-500",
                 "text-green-700": "bg-green-700",
                 "text-purple-500": "bg-purple-500",
+                "text-purple-700": "bg-purple-700",
+                "text-purple-800": "bg-purple-800",
                 "text-gray-500": "bg-gray-500",
                 "text-red-600": "bg-red-600",
                 "text-red-700": "bg-red-700",

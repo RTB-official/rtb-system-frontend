@@ -205,6 +205,45 @@ function splitEntryByDayForDisplay<T extends {
 
 const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
 const NO_DINNER_TEXT = "저녁 안 먹고 작업진행(18:00~19:00)";
+const OTHER_LINE_PREFIX = "다른호선에서 작업진행";
+
+function isOtherLineNoteLine(line: string) {
+    const t = line.trim();
+    return t === OTHER_LINE_PREFIX || t.startsWith(`${OTHER_LINE_PREFIX}(`);
+}
+
+function formatOtherLineNote(lineName: string) {
+    const name = lineName.trim();
+    return name ? `${OTHER_LINE_PREFIX}(${name})` : OTHER_LINE_PREFIX;
+}
+
+function getOtherLineNoteLine(note: string): string | null {
+    for (const line of (note || "").split("\n")) {
+        if (isOtherLineNoteLine(line)) return line.trim();
+    }
+    return null;
+}
+
+function parseOtherLineName(note: string): string {
+    const line = getOtherLineNoteLine(note);
+    if (!line || line === OTHER_LINE_PREFIX) return "";
+    const match = line.match(/^다른호선에서 작업진행\((.*)\)$/);
+    return match?.[1] ?? "";
+}
+
+function stripOtherLineFromNote(note: string) {
+    return (note || "")
+        .split("\n")
+        .filter((line) => line.trim() && !isOtherLineNoteLine(line))
+        .join("\n");
+}
+
+function setOtherLineInNote(note: string, checked: boolean, lineName = "") {
+    const base = stripOtherLineFromNote(note);
+    if (!checked) return base;
+    const line = formatOtherLineNote(lineName);
+    return base ? `${base}\n${line}` : line;
+}
 
 function stripSpecialText(note: string, target: string) {
     return (note || "")
@@ -217,7 +256,12 @@ function stripSpecialText(note: string, target: string) {
 function stripSpecialNotes(note: string) {
     return (note || "")
         .split("\n")
-        .filter((line) => line.trim() !== NO_LUNCH_TEXT && line.trim() !== NO_DINNER_TEXT)
+        .filter(
+            (line) =>
+                line.trim() !== NO_LUNCH_TEXT &&
+                line.trim() !== NO_DINNER_TEXT &&
+                !isOtherLineNoteLine(line)
+        )
         .join("\n");
 }
 
@@ -389,10 +433,11 @@ export default function WorkLogSection() {
     useEffect(() => {
         const hasNoLunchText = (currentEntry.note || "").includes(NO_LUNCH_TEXT);
         const hasNoDinnerText = (currentEntry.note || "").includes(NO_DINNER_TEXT);
+        const hasOtherLineText = !!getOtherLineNoteLine(currentEntry.note || "");
 
         // 작업이 아니면: 체크 해제 + note에서 문구 제거
         if (currentEntry.descType !== "작업") {
-            if (currentEntry.noLunch || hasNoLunchText || hasNoDinnerText) {
+            if (currentEntry.noLunch || hasNoLunchText || hasNoDinnerText || hasOtherLineText) {
                 setCurrentEntry({
                     noLunch: false,
                     note: stripSpecialNotes(currentEntry.note || ""),
@@ -1220,9 +1265,9 @@ export default function WorkLogSection() {
                                 {errors.persons}
                             </p>
                         )}
-                        {/* 작업일 때 점심/저녁 체크박스 */}
+                        {/* 작업일 때 점심/저녁/다른호선 체크박스 */}
                         {currentEntry.descType === "작업" && (
-                            <div className="flex flex-col md:flex-row gap-2">
+                            <div className="flex flex-col md:flex-row flex-wrap gap-2">
                                 <label className="flex-1 min-w-[260px] flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
                                     <input
                                         type="checkbox"
@@ -1286,6 +1331,69 @@ export default function WorkLogSection() {
                                         </span>
                                     </div>
                                 </label>
+
+                                {(() => {
+                                    const otherLineChecked = !!getOtherLineNoteLine(currentEntry.note || "");
+                                    const otherLineName = parseOtherLineName(currentEntry.note || "");
+
+                                    return (
+                                        <div className="flex-1 min-w-[260px] flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#f5f3ff] hover:bg-[#ede9fe] transition-colors">
+                                            <input
+                                                type="checkbox"
+                                                checked={otherLineChecked}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setCurrentEntry({
+                                                        note: setOtherLineInNote(
+                                                            currentEntry.note || "",
+                                                            checked,
+                                                            checked ? otherLineName : ""
+                                                        ),
+                                                    });
+                                                }}
+                                                className="w-5 h-5 mt-0.5 accent-violet-500 shrink-0"
+                                            />
+
+                                            <div className="flex flex-col gap-2 flex-1 min-w-0">
+                                                <button
+                                                    type="button"
+                                                    className="text-left"
+                                                    onClick={() => {
+                                                        setCurrentEntry({
+                                                            note: setOtherLineInNote(
+                                                                currentEntry.note || "",
+                                                                !otherLineChecked,
+                                                                !otherLineChecked ? otherLineName : ""
+                                                            ),
+                                                        });
+                                                    }}
+                                                >
+                                                    <span className="text-[14px] font-semibold text-violet-900">
+                                                        {OTHER_LINE_PREFIX}
+                                                    </span>
+                                                </button>
+                                                {otherLineChecked && (
+                                                    <input
+                                                        type="text"
+                                                        value={otherLineName}
+                                                        onChange={(e) => {
+                                                            setCurrentEntry({
+                                                                note: setOtherLineInNote(
+                                                                    currentEntry.note || "",
+                                                                    true,
+                                                                    e.target.value
+                                                                ),
+                                                            });
+                                                        }}
+                                                        placeholder="호선명 입력"
+                                                        autoFocus
+                                                        className="w-full h-9 px-3 border border-violet-200 rounded-lg text-[14px] text-violet-950 bg-white placeholder:text-violet-300 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20"
+                                                    />
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         )}
                     </div>
@@ -1296,7 +1404,7 @@ export default function WorkLogSection() {
                             특이 사항
                         </label>
 
-                        {/* ✅ 점심/저녁 문구는 textarea에서 삭제/수정 불가: 칩으로만 표시 */}
+                        {/* ✅ 특수 문구는 textarea에서 삭제/수정 불가: 칩으로만 표시 */}
                         {currentEntry.descType === "작업" && (
                             <div className="flex flex-wrap gap-2">
                                 {currentEntry.noLunch && (
@@ -1309,6 +1417,11 @@ export default function WorkLogSection() {
                                         {NO_DINNER_TEXT}
                                     </span>
                                 )}
+                                {getOtherLineNoteLine(currentEntry.note || "") && (
+                                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-violet-100 text-violet-800 text-[13px] font-semibold border border-violet-200">
+                                        {getOtherLineNoteLine(currentEntry.note || "")}
+                                    </span>
+                                )}
                             </div>
                         )}
 
@@ -1317,6 +1430,7 @@ export default function WorkLogSection() {
                             value={stripSpecialNotes(currentEntry.note || "")}
                             onChange={(e) => {
                                 const cleaned = stripSpecialNotes(e.target.value);
+                                const otherLineLine = getOtherLineNoteLine(currentEntry.note || "");
 
                                 // ✅ 문구는 체크박스로만 관리되므로, textarea 입력값에는 항상 문구를 제거한 값만 반영
                                 const withLunch = currentEntry.noLunch
@@ -1329,8 +1443,13 @@ export default function WorkLogSection() {
                                         ? `${withLunch}\n${NO_DINNER_TEXT}`
                                         : NO_DINNER_TEXT
                                     : withLunch;
+                                const withOtherLine = otherLineLine
+                                    ? withDinner
+                                        ? `${withDinner}\n${otherLineLine}`
+                                        : otherLineLine
+                                    : withDinner;
 
-                                setCurrentEntry({ note: withDinner });
+                                setCurrentEntry({ note: withOtherLine });
                             }}
                             className="w-full min-h-[60px] p-3 border border-[#e5e7eb] rounded-xl text-[16px] resize-none outline-none focus:border-[#9ca3af]"
                         />
@@ -1373,6 +1492,8 @@ export default function WorkLogSection() {
                             const effectiveNoLunch =
                                 !!entry.noLunch || (entry.note || "").includes(noLunchText);
                             const effectiveNoDinner = (entry.note || "").includes(NO_DINNER_TEXT);
+                            const otherLineBadgeText = getOtherLineNoteLine(entry.note || "");
+                            const effectiveOtherLine = !!otherLineBadgeText;
 
                             const minutes = calcWorkMinutesWithLunchRule({
                                 dateFrom: entry.dateFrom,
@@ -1453,6 +1574,8 @@ export default function WorkLogSection() {
                                         noLunchText={NO_LUNCH_TEXT}
                                         showNoDinner={entry.descType === "작업" && effectiveNoDinner}
                                         noDinnerText={NO_DINNER_TEXT}
+                                        showOtherLine={entry.descType === "작업" && effectiveOtherLine}
+                                        otherLineText={otherLineBadgeText || OTHER_LINE_PREFIX}
                                         isExpanded={isExpanded}
                                         onToggle={() => toggleCard(entry.__segId)}
                                     >

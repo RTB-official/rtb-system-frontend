@@ -276,6 +276,17 @@ function splitEntryByDayForDisplay(entry: any, fallbackKey: string) {
 
 const NO_LUNCH_TEXT = "점심 안 먹고 작업진행(12:00~13:00)";
 const NO_DINNER_TEXT = "저녁 안 먹고 작업진행(18:00~19:00)";
+const OTHER_LINE_PREFIX = "다른호선에서 작업진행";
+
+function getOtherLineNoteLine(note: string): string | null {
+    for (const line of (note || "").split("\n")) {
+        const t = line.trim();
+        if (t === OTHER_LINE_PREFIX || t.startsWith(`${OTHER_LINE_PREFIX}(`)) {
+            return t;
+        }
+    }
+    return null;
+}
 
 function getExpenseTypeRowClass(t?: string) {
     if (!t) return "bg-white";
@@ -841,6 +852,8 @@ export default function ReportViewPage() {
                                                     !!e.noDinner ||
                                                     note.includes("저녁 안 먹고 작업진행(18:00~19:00)") ||
                                                     note.includes("저녁 안먹고 작업진행(18:00~19:00)");
+                                                const otherLineBadgeText = getOtherLineNoteLine(note);
+                                                const effectiveOtherLine = !!otherLineBadgeText;
 
                                                 const minutes = calcWorkMinutesWithLunchRule({
                                                     dateFrom: e.dateFrom,
@@ -922,6 +935,8 @@ export default function ReportViewPage() {
                                                             noLunchText={NO_LUNCH_TEXT}
                                                             showNoDinner={effectiveNoDinner}
                                                             noDinnerText={NO_DINNER_TEXT}
+                                                            showOtherLine={effectiveOtherLine}
+                                                            otherLineText={otherLineBadgeText || OTHER_LINE_PREFIX}
                                                             isExpanded={isExpanded}
                                                             onToggle={() => toggleCard(String(key))}
                                                         >

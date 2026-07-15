@@ -1,5 +1,9 @@
 import { supabase } from "./supabase";
 import { formatInvoiceReportTableTitle } from "../utils/invoiceReportDisplayTitle";
+import {
+    OTHER_LINE_PREFIX,
+    formatMultiLineBadgeFromNotes,
+} from "../utils/otherLineWorkNote";
 
 export type ReportListTab = "work" | "education";
 
@@ -19,6 +23,8 @@ export type ReportListItem = {
     periodStart?: string;
     periodEnd?: string;
     status: ReportListStatus;
+    /** 다른호선 작업 시 제목 우측 배지 (예: 복수호선(A호선)) */
+    multiLineBadge?: string | null;
 };
 
 export type ReportListQuery = {
@@ -101,6 +107,40 @@ export function parseReportListMonth(value: string): number | null {
     return Number.isNaN(parsed) ? null : parsed;
 }
 
+async function fetchMultiLineBadgesByWorkLogIds(
+    workLogIds: number[]
+): Promise<Map<number, string>> {
+    const badgeById = new Map<number, string>();
+    if (workLogIds.length === 0) return badgeById;
+
+    const { data, error } = await supabase
+        .from("work_log_entries")
+        .select("work_log_id, note")
+        .in("work_log_id", workLogIds)
+        .ilike("note", `%${OTHER_LINE_PREFIX}%`);
+
+    if (error) {
+        console.error("다른호선 배지 조회 실패:", error);
+        return badgeById;
+    }
+
+    const notesByWorkLogId = new Map<number, string[]>();
+    for (const row of data ?? []) {
+        const id = Number(row.work_log_id);
+        if (!Number.isFinite(id)) continue;
+        const list = notesByWorkLogId.get(id) ?? [];
+        if (row.note) list.push(String(row.note));
+        notesByWorkLogId.set(id, list);
+    }
+
+    for (const [id, notes] of notesByWorkLogId) {
+        const badge = formatMultiLineBadgeFromNotes(notes);
+        if (badge) badgeById.set(id, badge);
+    }
+
+    return badgeById;
+}
+
 export async function fetchReportList(
     query: ReportListQuery
 ): Promise<ReportListResult> {
@@ -122,8 +162,16 @@ export async function fetchReportList(
         ? Number(rows[0].total_count ?? 0)
         : 0;
 
+    const items = rows.map(mapRpcRowToItem);
+    const badgeById = await fetchMultiLineBadgesByWorkLogIds(
+        items.map((item) => item.id)
+    );
+
     return {
-        items: rows.map(mapRpcRowToItem),
+        items: items.map((item) => ({
+            ...item,
+            multiLineBadge: badgeById.get(item.id) ?? null,
+        })),
         totalCount: Number.isFinite(totalCount) ? totalCount : 0,
     };
 }

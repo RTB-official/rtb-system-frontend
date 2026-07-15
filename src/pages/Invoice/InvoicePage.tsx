@@ -8,6 +8,7 @@ import Input from "../../components/common/Input";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import Avatar from "../../components/common/Avatar";
+import ReportMultiLineTitle from "../../components/common/ReportMultiLineTitle";
 import { IconInvoice } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
@@ -343,6 +344,12 @@ export default function InvoicePage() {
                                             key: "title",
                                             label: "제목",
                                             width: "44%",
+                                            render: (_: unknown, row: InvoiceReportItem) => (
+                                                <ReportMultiLineTitle
+                                                    title={row.title}
+                                                    badge={row.multiLineBadge}
+                                                />
+                                            ),
                                         },
                                         {
                                             key: "place",

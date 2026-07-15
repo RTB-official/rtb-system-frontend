@@ -1,6 +1,7 @@
 import React from "react";
 import Chip from "../ui/Chip";
 import { IconChevronRight } from "../icons/Icons";
+import { OTHER_LINE_BADGE_CLASS } from "../../utils/otherLineWorkNote";
 
 type DescType = "작업" | "이동" | "대기" | "";
 
@@ -15,6 +16,8 @@ type WorkLogEntryCardProps = {
     showNoLunch?: boolean;
     noDinnerText?: string;
     showNoDinner?: boolean;
+    otherLineText?: string;
+    showOtherLine?: boolean;
     children?: React.ReactNode;
 };
 
@@ -46,6 +49,7 @@ const lunchBadgeClass =
     "inline-flex items-center px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[12px] font-semibold border border-amber-200 shadow-sm";
 const dinnerBadgeClass =
     "inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-[12px] font-semibold border border-blue-200 shadow-sm";
+const otherLineBadgeClass = OTHER_LINE_BADGE_CLASS;
 
 export default function WorkLogEntryCard({
     descType,
@@ -58,9 +62,12 @@ export default function WorkLogEntryCard({
     showNoLunch = false,
     noDinnerText,
     showNoDinner = false,
+    otherLineText,
+    showOtherLine = false,
     children,
 }: WorkLogEntryCardProps) {
     const style = typeStyles[descType as keyof typeof typeStyles] || typeStyles["작업"];
+    const hasSpecialBadges = showNoLunch || showNoDinner || showOtherLine;
     return (
         <div
             className={`relative rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${style.border} ${style.bg}`}
@@ -88,13 +95,16 @@ export default function WorkLogEntryCard({
                         {/* 데스크: 인원만. 모바일: 인원 아래 뱃지 */}
                         <div className="min-w-0">
                             {meta}
-                            {(showNoLunch || showNoDinner) && (
+                            {hasSpecialBadges && (
                                 <div className="mt-3 flex flex-wrap gap-2 md:hidden">
                                     {showNoDinner && noDinnerText && (
                                         <span className={dinnerBadgeClass}>{noDinnerText}</span>
                                     )}
                                     {showNoLunch && noLunchText && (
                                         <span className={lunchBadgeClass}>{noLunchText}</span>
+                                    )}
+                                    {showOtherLine && otherLineText && (
+                                        <span className={otherLineBadgeClass}>{otherLineText}</span>
                                     )}
                                 </div>
                             )}
@@ -118,13 +128,16 @@ export default function WorkLogEntryCard({
                                 }`}
                             />
                         </button>
-                        {(showNoLunch || showNoDinner) && (
+                        {hasSpecialBadges && (
                             <div className="hidden md:flex flex-wrap gap-2 justify-end">
                                 {showNoDinner && noDinnerText && (
                                     <span className={dinnerBadgeClass}>{noDinnerText}</span>
                                 )}
                                 {showNoLunch && noLunchText && (
                                     <span className={lunchBadgeClass}>{noLunchText}</span>
+                                )}
+                                {showOtherLine && otherLineText && (
+                                    <span className={otherLineBadgeClass}>{otherLineText}</span>
                                 )}
                             </div>
                         )}
