@@ -212,37 +212,11 @@ function isOtherLineNoteLine(line: string) {
     return t === OTHER_LINE_PREFIX || t.startsWith(`${OTHER_LINE_PREFIX}(`);
 }
 
-function formatOtherLineNote(lineName: string) {
-    const name = lineName.trim();
-    return name ? `${OTHER_LINE_PREFIX}(${name})` : OTHER_LINE_PREFIX;
-}
-
 function getOtherLineNoteLine(note: string): string | null {
     for (const line of (note || "").split("\n")) {
         if (isOtherLineNoteLine(line)) return line.trim();
     }
     return null;
-}
-
-function parseOtherLineName(note: string): string {
-    const line = getOtherLineNoteLine(note);
-    if (!line || line === OTHER_LINE_PREFIX) return "";
-    const match = line.match(/^다른호선에서 작업진행\((.*)\)$/);
-    return match?.[1] ?? "";
-}
-
-function stripOtherLineFromNote(note: string) {
-    return (note || "")
-        .split("\n")
-        .filter((line) => line.trim() && !isOtherLineNoteLine(line))
-        .join("\n");
-}
-
-function setOtherLineInNote(note: string, checked: boolean, lineName = "") {
-    const base = stripOtherLineFromNote(note);
-    if (!checked) return base;
-    const line = formatOtherLineNote(lineName);
-    return base ? `${base}\n${line}` : line;
 }
 
 function stripSpecialText(note: string, target: string) {
@@ -1265,7 +1239,7 @@ export default function WorkLogSection() {
                                 {errors.persons}
                             </p>
                         )}
-                        {/* 작업일 때 점심/저녁/다른호선 체크박스 */}
+                        {/* 작업일 때 점심/저녁 체크박스 */}
                         {currentEntry.descType === "작업" && (
                             <div className="flex flex-col md:flex-row flex-wrap gap-2">
                                 <label className="flex-1 min-w-[260px] flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#fffbeb] cursor-pointer hover:bg-[#fef3c7] transition-colors">
@@ -1331,69 +1305,6 @@ export default function WorkLogSection() {
                                         </span>
                                     </div>
                                 </label>
-
-                                {(() => {
-                                    const otherLineChecked = !!getOtherLineNoteLine(currentEntry.note || "");
-                                    const otherLineName = parseOtherLineName(currentEntry.note || "");
-
-                                    return (
-                                        <div className="flex-1 min-w-[260px] flex items-start gap-3 p-3 border border-[#e5e7eb] rounded-xl bg-[#f5f3ff] hover:bg-[#ede9fe] transition-colors">
-                                            <input
-                                                type="checkbox"
-                                                checked={otherLineChecked}
-                                                onChange={(e) => {
-                                                    const checked = e.target.checked;
-                                                    setCurrentEntry({
-                                                        note: setOtherLineInNote(
-                                                            currentEntry.note || "",
-                                                            checked,
-                                                            checked ? otherLineName : ""
-                                                        ),
-                                                    });
-                                                }}
-                                                className="w-5 h-5 mt-0.5 accent-violet-500 shrink-0"
-                                            />
-
-                                            <div className="flex flex-col gap-2 flex-1 min-w-0">
-                                                <button
-                                                    type="button"
-                                                    className="text-left"
-                                                    onClick={() => {
-                                                        setCurrentEntry({
-                                                            note: setOtherLineInNote(
-                                                                currentEntry.note || "",
-                                                                !otherLineChecked,
-                                                                !otherLineChecked ? otherLineName : ""
-                                                            ),
-                                                        });
-                                                    }}
-                                                >
-                                                    <span className="text-[14px] font-semibold text-violet-900">
-                                                        {OTHER_LINE_PREFIX}
-                                                    </span>
-                                                </button>
-                                                {otherLineChecked && (
-                                                    <input
-                                                        type="text"
-                                                        value={otherLineName}
-                                                        onChange={(e) => {
-                                                            setCurrentEntry({
-                                                                note: setOtherLineInNote(
-                                                                    currentEntry.note || "",
-                                                                    true,
-                                                                    e.target.value
-                                                                ),
-                                                            });
-                                                        }}
-                                                        placeholder="호선명 입력"
-                                                        autoFocus
-                                                        className="w-full h-9 px-3 border border-violet-200 rounded-lg text-[14px] text-violet-950 bg-white placeholder:text-violet-300 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-500/20"
-                                                    />
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
                             </div>
                         )}
                     </div>
@@ -1415,11 +1326,6 @@ export default function WorkLogSection() {
                                 {(currentEntry.note || "").includes(NO_DINNER_TEXT) && (
                                     <span className="inline-flex items-center px-3 py-1 rounded-full bg-sky-100 text-sky-800 text-[13px] font-semibold border border-sky-200">
                                         {NO_DINNER_TEXT}
-                                    </span>
-                                )}
-                                {getOtherLineNoteLine(currentEntry.note || "") && (
-                                    <span className="inline-flex items-center px-3 py-1 rounded-full bg-violet-100 text-violet-800 text-[13px] font-semibold border border-violet-200">
-                                        {getOtherLineNoteLine(currentEntry.note || "")}
                                     </span>
                                 )}
                             </div>

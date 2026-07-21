@@ -633,11 +633,21 @@ type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
     invoiceSkilledFitterOptOutByTimesheetRowKey?: Record<string, string[]>;
     entryInvoiceSkilledFitterByEntryId?: Record<number, string>;
     invoiceWorkItemOverride?: string | null;
+    invoiceWorkPlaceOverride?: string | null;
+    invoiceHullNoOverride?: string | null;
+    invoiceEngineTypeOverride?: string | null;
+    invoiceWorkPeriodPlaceOverride?: string | null;
     timesheetCommentOverridesBySectionKey?: Record<
         string,
         TimesheetCommentOverrideState
     >;
 };
+
+type InvoiceInlineEditFieldKey =
+    | "workPlace"
+    | "hullNo"
+    | "engineType"
+    | "workPeriodPlace";
 
 type InvoiceUndoSnapshot = {
     workLogDataList: WorkLogFullData[];
@@ -651,6 +661,10 @@ type InvoiceUndoSnapshot = {
     selectedTimesheetRow: TimesheetRowModalData | null;
     /** null = 보고서 목적 합성 표기 */
     invoiceWorkItemOverride: string | null;
+    invoiceWorkPlaceOverride: string | null;
+    invoiceHullNoOverride: string | null;
+    invoiceEngineTypeOverride: string | null;
+    invoiceWorkPeriodPlaceOverride: string | null;
 };
 
 const MAX_INVOICE_UNDO = 40;
@@ -739,6 +753,24 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
             s.invoiceWorkItemOverride === undefined || s.invoiceWorkItemOverride === null
                 ? null
                 : s.invoiceWorkItemOverride,
+        invoiceWorkPlaceOverride:
+            s.invoiceWorkPlaceOverride === undefined || s.invoiceWorkPlaceOverride === null
+                ? null
+                : s.invoiceWorkPlaceOverride,
+        invoiceHullNoOverride:
+            s.invoiceHullNoOverride === undefined || s.invoiceHullNoOverride === null
+                ? null
+                : s.invoiceHullNoOverride,
+        invoiceEngineTypeOverride:
+            s.invoiceEngineTypeOverride === undefined ||
+            s.invoiceEngineTypeOverride === null
+                ? null
+                : s.invoiceEngineTypeOverride,
+        invoiceWorkPeriodPlaceOverride:
+            s.invoiceWorkPeriodPlaceOverride === undefined ||
+            s.invoiceWorkPeriodPlaceOverride === null
+                ? null
+                : s.invoiceWorkPeriodPlaceOverride,
     };
 }
 
@@ -1468,6 +1500,24 @@ export default function InvoiceCreatePage() {
     const [invoiceWorkItemOverride, setInvoiceWorkItemOverride] = useState<
         string | null
     >(null);
+    const [invoiceWorkPlaceOverride, setInvoiceWorkPlaceOverride] = useState<
+        string | null
+    >(null);
+    const [invoiceHullNoOverride, setInvoiceHullNoOverride] = useState<
+        string | null
+    >(null);
+    const [invoiceEngineTypeOverride, setInvoiceEngineTypeOverride] = useState<
+        string | null
+    >(null);
+    const [invoiceWorkPeriodPlaceOverride, setInvoiceWorkPeriodPlaceOverride] =
+        useState<string | null>(null);
+    const [invoiceInlineEditField, setInvoiceInlineEditField] =
+        useState<InvoiceInlineEditFieldKey | null>(null);
+    const [invoiceInlineEditDraft, setInvoiceInlineEditDraft] = useState("");
+    const [invoiceInlineEditDefault, setInvoiceInlineEditDefault] =
+        useState("");
+    const invoiceInlineEditInputRef = useRef<HTMLInputElement | null>(null);
+    const invoiceInlineEditSkipCommitRef = useRef(false);
     const [invoiceReportsModalOpen, setInvoiceReportsModalOpen] =
         useState(false);
     const [invoiceWorkItemModalOpen, setInvoiceWorkItemModalOpen] =
@@ -1654,6 +1704,10 @@ export default function InvoiceCreatePage() {
         selectedTimesheetDateGroupPanel,
         selectedTimesheetRow,
         invoiceWorkItemOverride,
+        invoiceWorkPlaceOverride,
+        invoiceHullNoOverride,
+        invoiceEngineTypeOverride,
+        invoiceWorkPeriodPlaceOverride,
     };
 
     const resetInvoiceUndoRedoStacks = useCallback(() => {
@@ -1705,6 +1759,10 @@ export default function InvoiceCreatePage() {
                 )
             ),
             invoiceWorkItemOverride,
+            invoiceWorkPlaceOverride,
+            invoiceHullNoOverride,
+            invoiceEngineTypeOverride,
+            invoiceWorkPeriodPlaceOverride,
             timesheetCommentOverridesBySectionKey,
         };
     }, [
@@ -1720,6 +1778,10 @@ export default function InvoiceCreatePage() {
         invoiceSkilledFitterByTimesheetRowKey,
         invoiceSkilledFitterOptOutByTimesheetRowKey,
         invoiceWorkItemOverride,
+        invoiceWorkPlaceOverride,
+        invoiceHullNoOverride,
+        invoiceEngineTypeOverride,
+        invoiceWorkPeriodPlaceOverride,
         timesheetCommentOverridesBySectionKey,
     ]);
 
@@ -1841,6 +1903,27 @@ export default function InvoiceCreatePage() {
                     ? null
                     : normalized.invoiceWorkItemOverride
             );
+            setInvoiceWorkPlaceOverride(
+                normalized.invoiceWorkPlaceOverride === undefined
+                    ? null
+                    : normalized.invoiceWorkPlaceOverride
+            );
+            setInvoiceHullNoOverride(
+                normalized.invoiceHullNoOverride === undefined
+                    ? null
+                    : normalized.invoiceHullNoOverride
+            );
+            setInvoiceEngineTypeOverride(
+                normalized.invoiceEngineTypeOverride === undefined
+                    ? null
+                    : normalized.invoiceEngineTypeOverride
+            );
+            setInvoiceWorkPeriodPlaceOverride(
+                normalized.invoiceWorkPeriodPlaceOverride === undefined
+                    ? null
+                    : normalized.invoiceWorkPeriodPlaceOverride
+            );
+            setInvoiceInlineEditField(null);
             setTimesheetCommentOverridesBySectionKey(
                 normalized.timesheetCommentOverridesBySectionKey ?? {}
             );
@@ -2577,6 +2660,13 @@ export default function InvoiceCreatePage() {
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceWorkItemOverride(snapshot.invoiceWorkItemOverride ?? null);
+        setInvoiceWorkPlaceOverride(snapshot.invoiceWorkPlaceOverride ?? null);
+        setInvoiceHullNoOverride(snapshot.invoiceHullNoOverride ?? null);
+        setInvoiceEngineTypeOverride(snapshot.invoiceEngineTypeOverride ?? null);
+        setInvoiceWorkPeriodPlaceOverride(
+            snapshot.invoiceWorkPeriodPlaceOverride ?? null
+        );
+        setInvoiceInlineEditField(null);
         setInvoiceUndoRedoCounts({
             past: invoiceUndoPastRef.current.length,
             future: invoiceUndoFutureRef.current.length,
@@ -2608,6 +2698,13 @@ export default function InvoiceCreatePage() {
         setSelectedTimesheetDateGroupPanel(snapshot.selectedTimesheetDateGroupPanel);
         setSelectedTimesheetRow(snapshot.selectedTimesheetRow);
         setInvoiceWorkItemOverride(snapshot.invoiceWorkItemOverride ?? null);
+        setInvoiceWorkPlaceOverride(snapshot.invoiceWorkPlaceOverride ?? null);
+        setInvoiceHullNoOverride(snapshot.invoiceHullNoOverride ?? null);
+        setInvoiceEngineTypeOverride(snapshot.invoiceEngineTypeOverride ?? null);
+        setInvoiceWorkPeriodPlaceOverride(
+            snapshot.invoiceWorkPeriodPlaceOverride ?? null
+        );
+        setInvoiceInlineEditField(null);
         setInvoiceUndoRedoCounts({
             past: invoiceUndoPastRef.current.length,
             future: invoiceUndoFutureRef.current.length,
@@ -2651,6 +2748,11 @@ export default function InvoiceCreatePage() {
         setSelectedTimesheetRow(null);
         setPersonnelEditor(null);
         setInvoiceWorkItemOverride(null);
+        setInvoiceWorkPlaceOverride(null);
+        setInvoiceHullNoOverride(null);
+        setInvoiceEngineTypeOverride(null);
+        setInvoiceWorkPeriodPlaceOverride(null);
+        setInvoiceInlineEditField(null);
         showSuccess("최초 로드 상태로 되돌렸습니다.");
     }, [pushInvoiceUndoSnapshot, showError, showSuccess]);
 
@@ -3616,6 +3718,11 @@ export default function InvoiceCreatePage() {
                     setInvoiceSkilledFitterByTimesheetRowKey({});
                     setInvoiceSkilledFitterOptOutByTimesheetRowKey({});
                     setInvoiceWorkItemOverride(null);
+                    setInvoiceWorkPlaceOverride(null);
+                    setInvoiceHullNoOverride(null);
+                    setInvoiceEngineTypeOverride(null);
+                    setInvoiceWorkPeriodPlaceOverride(null);
+                    setInvoiceInlineEditField(null);
 
                     const rawEntriesForHoliday: InvoiceTimesheetEntry[] = validData.flatMap(
                         (data) =>
@@ -5782,7 +5889,13 @@ export default function InvoiceCreatePage() {
     };
 
     const shipNameDisplay = workLogDataList[0]?.workLog.vessel || "";
-    const workPlaceDisplay = mapWorkPlace(workLogDataList[0]?.workLog.location || null);
+    const workPlaceBase = mapWorkPlace(
+        workLogDataList[0]?.workLog.location || null
+    );
+    const workPlaceDisplay =
+        invoiceWorkPlaceOverride !== null
+            ? invoiceWorkPlaceOverride
+            : workPlaceBase;
     const primaryOrderGroup = useMemo(
         () =>
             resolvePrimaryWorkLogOrderGroup(
@@ -5798,7 +5911,13 @@ export default function InvoiceCreatePage() {
         () => resolveInvoiceRecipientInfo(primaryOrderGroup),
         [primaryOrderGroup]
     );
-    const engineTypeDisplay = workLogDataList[0]?.workLog.engine || "";
+    const engineTypeBase = workLogDataList[0]?.workLog.engine || "";
+    const engineTypeDisplay =
+        invoiceEngineTypeOverride !== null
+            ? invoiceEngineTypeOverride
+            : engineTypeBase;
+    const hullNoDisplay =
+        invoiceHullNoOverride !== null ? invoiceHullNoOverride : shipNameDisplay;
     const workItemDisplay = useMemo(
         () =>
             resolveInvoiceWorkItemDisplay(
@@ -6078,11 +6197,15 @@ export default function InvoiceCreatePage() {
     const sortedTimesheetDates = Array.from(
         new Set(timesheetRows.map((row) => row.date).filter(Boolean))
     ).sort();
-    const invoiceWorkPeriodDisplay = formatWorkPeriodAndPlace(
+    const invoiceWorkPeriodBase = formatWorkPeriodAndPlace(
         sortedTimesheetDates[0] ?? "",
         sortedTimesheetDates[sortedTimesheetDates.length - 1] ?? "",
         workPlaceDisplay
     );
+    const invoiceWorkPeriodDisplay =
+        invoiceWorkPeriodPlaceOverride !== null
+            ? invoiceWorkPeriodPlaceOverride
+            : invoiceWorkPeriodBase;
     const formatHourQuantity = (value: number) => {
         const rounded = Math.round(value * 10) / 10;
         return Number.isInteger(rounded) ? String(rounded) : String(rounded);
@@ -7770,6 +7893,154 @@ export default function InvoiceCreatePage() {
             [scopeKey]: person,
         }));
     };
+
+    const startInvoiceInlineEdit = (
+        field: InvoiceInlineEditFieldKey,
+        currentValue: string,
+        defaultValue: string
+    ) => {
+        invoiceInlineEditSkipCommitRef.current = false;
+        setInvoiceInlineEditField(field);
+        setInvoiceInlineEditDraft(currentValue);
+        setInvoiceInlineEditDefault(defaultValue);
+    };
+
+    const cancelInvoiceInlineEdit = () => {
+        invoiceInlineEditSkipCommitRef.current = true;
+        setInvoiceInlineEditField(null);
+        setInvoiceInlineEditDraft("");
+        setInvoiceInlineEditDefault("");
+    };
+
+    const commitInvoiceInlineEdit = () => {
+        if (invoiceInlineEditSkipCommitRef.current) {
+            invoiceInlineEditSkipCommitRef.current = false;
+            return;
+        }
+        if (!invoiceInlineEditField) {
+            return;
+        }
+        const field = invoiceInlineEditField;
+        const trimmed = invoiceInlineEditDraft.trim();
+        const nextOverride =
+            trimmed === "" || trimmed === invoiceInlineEditDefault
+                ? null
+                : trimmed;
+        const currentOverride =
+            field === "workPlace"
+                ? invoiceWorkPlaceOverride
+                : field === "hullNo"
+                  ? invoiceHullNoOverride
+                  : field === "engineType"
+                    ? invoiceEngineTypeOverride
+                    : invoiceWorkPeriodPlaceOverride;
+        // blur 중복 호출 방지(Enter → unmount → blur)
+        invoiceInlineEditSkipCommitRef.current = true;
+        if (currentOverride === nextOverride) {
+            setInvoiceInlineEditField(null);
+            setInvoiceInlineEditDraft("");
+            setInvoiceInlineEditDefault("");
+            return;
+        }
+        pushInvoiceUndoSnapshot();
+        if (field === "workPlace") {
+            setInvoiceWorkPlaceOverride(nextOverride);
+        } else if (field === "hullNo") {
+            setInvoiceHullNoOverride(nextOverride);
+        } else if (field === "engineType") {
+            setInvoiceEngineTypeOverride(nextOverride);
+        } else {
+            setInvoiceWorkPeriodPlaceOverride(nextOverride);
+        }
+        setInvoiceInlineEditField(null);
+        setInvoiceInlineEditDraft("");
+        setInvoiceInlineEditDefault("");
+    };
+
+    useEffect(() => {
+        if (!invoiceInlineEditField) {
+            return;
+        }
+        const input = invoiceInlineEditInputRef.current;
+        if (!input) {
+            return;
+        }
+        input.focus();
+        input.select();
+    }, [invoiceInlineEditField]);
+
+    const renderInvoiceInlineEditInput = (options?: {
+        className?: string;
+    }) => (
+        <input
+            ref={invoiceInlineEditInputRef}
+            type="text"
+            value={invoiceInlineEditDraft}
+            onChange={(e) => setInvoiceInlineEditDraft(e.target.value)}
+            onBlur={() => commitInvoiceInlineEdit()}
+            onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitInvoiceInlineEdit();
+                } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelInvoiceInlineEdit();
+                }
+            }}
+            className={
+                options?.className ??
+                "min-w-0 flex-1 rounded-md border border-blue-300 bg-white px-2 py-1 text-sm text-gray-900 shadow-sm outline-none ring-2 ring-blue-500/20"
+            }
+            aria-label="인라인 수정"
+        />
+    );
+
+    const renderEditableInvoiceJobInfoRow = (
+        field: InvoiceInlineEditFieldKey,
+        label: string,
+        displayValue: string,
+        defaultValue: string
+    ) => {
+        const isEditing = invoiceInlineEditField === field;
+        return (
+            <div
+                className={`group inline-flex w-max max-w-full flex-wrap items-center gap-x-2 gap-y-1 self-start rounded-md border border-transparent transition-shadow ${
+                    isEditing
+                        ? "border-gray-200 bg-gray-50 shadow-sm ring-1 ring-blue-200"
+                        : "hover:border-gray-200 hover:bg-gray-50 hover:shadow-sm hover:ring-1 hover:ring-blue-200"
+                }`}
+            >
+                <span className="shrink-0 text-sm text-gray-700">{label}</span>
+                {isEditing ? (
+                    renderInvoiceInlineEditInput({
+                        className:
+                            "min-w-[12rem] max-w-full flex-1 rounded-md border border-blue-300 bg-white px-2 py-1 text-sm text-gray-900 shadow-sm outline-none ring-2 ring-blue-500/20",
+                    })
+                ) : (
+                    <>
+                        <span className="min-w-0 max-w-full break-words text-sm text-gray-900">
+                            {displayValue || "—"}
+                        </span>
+                        <button
+                            type="button"
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group-hover:opacity-100"
+                            onClick={() =>
+                                startInvoiceInlineEdit(
+                                    field,
+                                    displayValue,
+                                    defaultValue
+                                )
+                            }
+                            aria-label={`${label} 수정`}
+                        >
+                            <IconEdit className="h-4 w-4" />
+                        </button>
+                    </>
+                )}
+            </div>
+        );
+    };
+
     const renderEditablePersonnelCard = (
         label: string,
         value: string,
@@ -11472,7 +11743,7 @@ export default function InvoiceCreatePage() {
                     recipientCompany: invoiceRecipientDisplay.companyName,
                     recipientAddressLines: invoiceRecipientDisplay.addressLines,
                     jobInformation: {
-                        hullNo: shipNameDisplay,
+                        hullNo: hullNoDisplay,
                         engineType: engineTypeDisplay,
                         workPeriodAndPlace: invoiceWorkPeriodDisplay,
                         workItem: workItemDisplay,
@@ -11572,6 +11843,7 @@ export default function InvoiceCreatePage() {
         normalTimesheetSectionsByDate,
         shipNameDisplay,
         workPlaceDisplay,
+        hullNoDisplay,
         engineTypeDisplay,
         workItemDisplay,
         invoiceWorkPeriodDisplay,
@@ -12061,7 +12333,7 @@ export default function InvoiceCreatePage() {
                                                             {workLogDataList[0]?.workLog.vessel || ""}
                                                         </td>
                                                         <td className="px-4 py-2 text-gray-900 border-b border-l border-gray-300">
-                                                            {mapWorkPlace(workLogDataList[0]?.workLog.location || null)}
+                                                            {workPlaceDisplay}
                                                         </td>
                                                         <td className="px-4 py-2 text-gray-900 border-b border-l border-gray-300">
                                                             {workOrderFromDisplay}
@@ -12890,9 +13162,45 @@ export default function InvoiceCreatePage() {
                                             <div className="text-sm text-gray-900">{jobDescriptionDepartureDisplay}</div>
                                         </div>
                                         {/* Row 2 - Card 5: WORK PLACE */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                            <div className="text-xs font-semibold text-gray-700 mb-2">WORK PLACE</div>
-                                            <div className="text-sm text-gray-900">{workPlaceDisplay}</div>
+                                        <div
+                                            className={`group relative rounded-lg border border-gray-200 bg-white p-4 transition-shadow ${
+                                                invoiceInlineEditField ===
+                                                "workPlace"
+                                                    ? "shadow-sm ring-1 ring-blue-200"
+                                                    : "hover:shadow-sm hover:ring-1 hover:ring-blue-200"
+                                            }`}
+                                        >
+                                            {invoiceInlineEditField ===
+                                            "workPlace" ? null : (
+                                                <button
+                                                    type="button"
+                                                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group-hover:opacity-100"
+                                                    onClick={() =>
+                                                        startInvoiceInlineEdit(
+                                                            "workPlace",
+                                                            workPlaceDisplay,
+                                                            workPlaceBase
+                                                        )
+                                                    }
+                                                    aria-label="WORK PLACE 수정"
+                                                >
+                                                    <IconEdit className="h-4 w-4" />
+                                                </button>
+                                            )}
+                                            <div className="mb-2 pr-10 text-xs font-semibold text-gray-700">
+                                                WORK PLACE
+                                            </div>
+                                            {invoiceInlineEditField ===
+                                            "workPlace" ? (
+                                                renderInvoiceInlineEditInput({
+                                                    className:
+                                                        "w-full rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm text-gray-900 shadow-sm outline-none ring-2 ring-blue-500/20",
+                                                })
+                                            ) : (
+                                                <div className="text-sm text-gray-900">
+                                                    {workPlaceDisplay || "—"}
+                                                </div>
+                                            )}
                                         </div>
                                         {/* Row 2 - Card 6: Mechanic names and numbers */}
                                         {renderEditablePersonnelCard(
@@ -12941,26 +13249,24 @@ export default function InvoiceCreatePage() {
                                         {/* Job Information (Middle Column) */}
                                         <div className="flex min-w-0 flex-col gap-3">
                                             <h3 className="text-sm font-semibold text-gray-900">Job information</h3>
-                                            <div className="flex min-w-0 items-start gap-2">
-                                                <span className="shrink-0 text-sm text-gray-700">Hull no.</span>
-                                                <span className="min-w-0 break-words text-sm text-gray-900">
-                                                    {shipNameDisplay}
-                                                </span>
-                                            </div>
-                                            <div className="flex min-w-0 items-start gap-2">
-                                                <span className="shrink-0 text-sm text-gray-700">Engine type:</span>
-                                                <span className="min-w-0 break-words text-sm text-gray-900">
-                                                    {engineTypeDisplay}
-                                                </span>
-                                            </div>
-                                            <div className="flex min-w-0 items-start gap-2">
-                                                <span className="shrink-0 text-sm text-gray-700">
-                                                    Work Period & Place:
-                                                </span>
-                                                <span className="min-w-0 break-words text-sm text-gray-900">
-                                                    {invoiceWorkPeriodDisplay}
-                                                </span>
-                                            </div>
+                                            {renderEditableInvoiceJobInfoRow(
+                                                "hullNo",
+                                                "Hull no.",
+                                                hullNoDisplay,
+                                                shipNameDisplay
+                                            )}
+                                            {renderEditableInvoiceJobInfoRow(
+                                                "engineType",
+                                                "Engine type:",
+                                                engineTypeDisplay,
+                                                engineTypeBase
+                                            )}
+                                            {renderEditableInvoiceJobInfoRow(
+                                                "workPeriodPlace",
+                                                "Work Period & Place:",
+                                                invoiceWorkPeriodDisplay,
+                                                invoiceWorkPeriodBase
+                                            )}
                                             <div className="group inline-flex w-max max-w-full flex-wrap items-center gap-x-2 gap-y-1 self-start rounded-md border border-transparent transition-shadow hover:border-gray-200 hover:bg-gray-50 hover:shadow-sm hover:ring-1 hover:ring-blue-200">
                                                 <span className="shrink-0 text-sm text-gray-700">
                                                     Work Item:
