@@ -44,6 +44,14 @@ export type InvoiceDraftPayloadV1 = {
      * 인보이스 섹션 Work Item 표시용. 생략·null = 선택 보고서 목적 중 한글 제외 길이가 가장 긴 subject 하나.
      */
     invoiceWorkItemOverride?: string | null;
+    /** JOB DESCRIPTION / 타임시트 WORK PLACE. 생략·null = 보고서 location 매핑값 */
+    invoiceWorkPlaceOverride?: string | null;
+    /** 인보이스 Hull no. 생략·null = 보고서 vessel */
+    invoiceHullNoOverride?: string | null;
+    /** 인보이스 Engine type. 생략·null = 보고서 engine */
+    invoiceEngineTypeOverride?: string | null;
+    /** 인보이스 Work Period & Place. 생략·null = 타임시트 기간 + WORK PLACE 합성 */
+    invoiceWorkPeriodPlaceOverride?: string | null;
 };
 
 export type InvoiceDraftPayload = InvoiceDraftPayloadV1;
