@@ -240,6 +240,7 @@ const NORMAL_TIMESHEET_EXCEL = {
     tableStartRow: 14,
     /** 양식에 미리 잡힌 마지막 데이터 행 (B25) */
     lastDataRow: 25,
+    numberedNoteStartRow: 29,
     commentsStartRow: 38,
     /** 양식 코멘트 영역 마지막 행 (B38~B40) */
     commentsLastRow: 40,
@@ -256,6 +257,7 @@ const RD_TIMESHEET_EXCEL = {
     lastDataRow: 28,
     /** 요약 행(2행 단위) 스타일 복사용 */
     stylePatternRows: [27, 28] as const,
+    numberedNoteStartRow: 33,
     commentsStartRow: 42,
     /** 양식 코멘트 영역 마지막 행 (B42~B44) */
     commentsLastRow: 44,
@@ -905,6 +907,53 @@ function setCellValue(ws: ExcelJS.Worksheet, address: string, value: unknown) {
         cell.value = "";
     } else {
         cell.value = sanitizeExcelCellString(String(value));
+    }
+}
+
+function setBoldRichText(
+    ws: ExcelJS.Worksheet,
+    address: string,
+    value: string,
+    fontSize: number,
+    fontName?: string
+) {
+    ws.getCell(address).value = {
+        richText: [
+            {
+                font: {
+                    bold: true,
+                    size: fontSize,
+                    ...(fontName ? { name: fontName } : {}),
+                },
+                text: sanitizeExcelCellString(value),
+            },
+        ],
+    };
+}
+
+function numberFirstFourTimesheetNotes(
+    ws: ExcelJS.Worksheet,
+    startRow: number,
+    boldThirdNoteFontName?: string
+) {
+    for (let index = 0; index < 4; index += 1) {
+        const address = `B${startRow + index}`;
+        const text = ws.getCell(address).text;
+        const numberedText = text.replace(
+            /^\s*\*\s*/,
+            ` ${index + 1}. `
+        );
+        if (index === 2) {
+            setBoldRichText(
+                ws,
+                address,
+                numberedText,
+                11,
+                boldThirdNoteFontName
+            );
+        } else {
+            setCellValue(ws, address, numberedText);
+        }
     }
 }
 
@@ -3090,6 +3139,16 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
             NORMAL_TIMESHEET_EXCEL.commentsStartRow + insertedRows;
         const commentsLastRow =
             NORMAL_TIMESHEET_EXCEL.commentsLastRow + insertedRows;
+        numberFirstFourTimesheetNotes(
+            ws,
+            NORMAL_TIMESHEET_EXCEL.numberedNoteStartRow + insertedRows
+        );
+        setBoldRichText(
+            ws,
+            `B${commentsStartRow - 1}`,
+            " *Comments",
+            11
+        );
 
         rowRecords.forEach((rec, rowIdx) => {
             const lineNo = startRow + rowIdx;
@@ -3111,7 +3170,12 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
             comments.length + 1
         );
         comments.forEach((comment, idx) => {
-            setCellValue(ws, `B${commentsStartRow + idx}`, ` * ${comment}`);
+            setBoldRichText(
+                ws,
+                `B${commentsStartRow + idx}`,
+                ` ${comment}`,
+                11
+            );
         });
         void commentsStartRow;
     }
@@ -3170,6 +3234,18 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
     const commentsStartRow =
         RD_TIMESHEET_EXCEL.commentsStartRow + insertedRows;
     const commentsLastRow = RD_TIMESHEET_EXCEL.commentsLastRow + insertedRows;
+    numberFirstFourTimesheetNotes(
+        ws,
+        RD_TIMESHEET_EXCEL.numberedNoteStartRow + insertedRows,
+        "Arial"
+    );
+    setBoldRichText(
+        ws,
+        `B${commentsStartRow - 1}`,
+        " *Comments",
+        11,
+        "Arial"
+    );
 
     setCellValue(ws, "E3", "TIMESHEET");
     setCellValue(
@@ -3253,7 +3329,13 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
         data.comments.length
     );
     data.comments.forEach((comment, idx) => {
-        setCellValue(ws, `B${commentsStartRow + idx}`, ` * ${comment}`);
+        setBoldRichText(
+            ws,
+            `B${commentsStartRow + idx}`,
+            ` ${comment}`,
+            11,
+            "Arial"
+        );
     });
 
     const commentAreaRowCount = Math.max(

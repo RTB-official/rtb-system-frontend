@@ -815,10 +815,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                 : autoBuckets;
 
         const afterBuckets = buildAfterRoundedBillableFourBuckets(
-            roundedBillableConfirm.hours,
-            autoBuckets,
-            entry.dateFrom,
-            isWeekendOrHolidayYmd
+            roundedBillableConfirm.hours
         );
 
         const tier = getManpowerTierCountsForEntry(
@@ -842,6 +839,43 @@ export default function TimesheetDateGroupDetailSidePanel({
         holidayDateKeys,
         manualBillableHoursByEntryId,
     ]);
+
+    const roundedBillableAdjacentWorkMessage = useMemo(() => {
+        if (!roundedBillableConfirm) {
+            return null;
+        }
+        const targetEntry = fullGroupEntries.find(
+            (entry) => entry.id === roundedBillableConfirm.entryId
+        );
+        if (!targetEntry?.dateFrom) {
+            return null;
+        }
+
+        const hasOtherWorkOn = (ymd: string) =>
+            fullGroupEntries.some(
+                (entry) =>
+                    entry.id !== targetEntry.id &&
+                    entry.descType === "작업" &&
+                    entryTouchesCalendarDay(entry, ymd)
+            );
+        const hasPreviousWork = hasOtherWorkOn(
+            shiftDateByDays(targetEntry.dateFrom, -1)
+        );
+        const hasNextWork = hasOtherWorkOn(
+            shiftDateByDays(targetEntry.dateFrom, 1)
+        );
+
+        if (hasPreviousWork && hasNextWork) {
+            return "경고 : 전날과 다음날 작업이 있습니다.";
+        }
+        if (hasPreviousWork) {
+            return "경고 : 전날 작업이 있습니다.";
+        }
+        if (hasNextWork) {
+            return "경고 : 다음날 작업이 있습니다.";
+        }
+        return null;
+    }, [roundedBillableConfirm, fullGroupEntries]);
 
     const expandedRemarkKeyRef = useRef<string | null>(null);
     expandedRemarkKeyRef.current = expandedRemarkKey;
@@ -1829,7 +1863,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                 personEntries.filter(
                     (candidate) => candidate.descType === "\uC774\uB3D9"
                 ),
-                true
+                false
             );
         }
 
@@ -4127,6 +4161,11 @@ export default function TimesheetDateGroupDetailSidePanel({
                         일정 정보를 확인해 주세요.
                     </p>
                 )}
+                {roundedBillableAdjacentWorkMessage ? (
+                    <p className="mt-4 text-center text-sm font-medium leading-relaxed text-amber-700">
+                        {roundedBillableAdjacentWorkMessage}
+                    </p>
+                ) : null}
             </BaseModal>
             <BaseModal
                 isOpen={datePersonnelEditModal !== null}

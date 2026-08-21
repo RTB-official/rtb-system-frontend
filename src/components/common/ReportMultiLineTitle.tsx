@@ -16,11 +16,13 @@ export default function ReportMultiLineTitle({
     className = "",
 }: ReportMultiLineTitleProps) {
     return (
-        <div className={`flex items-center justify-between gap-2 min-w-0 w-full ${className}`}>
+        <div
+            className={`flex items-center gap-2 min-w-0 w-full max-w-full overflow-hidden ${className}`}
+        >
             <span
-                className={`min-w-0 text-gray-900 ${
+                className={`min-w-0 flex-1 text-gray-900 ${
                     clamp
-                        ? "line-clamp-2 break-words flex-1 text-[13px] md:text-[16px] font-semibold"
+                        ? "line-clamp-2 break-words text-[13px] md:text-[16px] font-semibold"
                         : "truncate"
                 }`}
             >

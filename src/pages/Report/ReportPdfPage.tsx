@@ -1,7 +1,7 @@
 // src/pages/Report/ReportPdfPage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import html2canvas from "html2canvas";
+import { domToCanvas } from "modern-screenshot";
 import {
     getReportPdfData,
     PdfEntry,
@@ -10,7 +10,6 @@ import {
     PdfReceipt,
 } from "../../lib/reportPdfData";
 import { saveCanvasAsMultiPagePdf } from "../../lib/reportPdfCanvasToPdf";
-import { prepareReportPdfHtml2CanvasClone } from "../../lib/reportPdfHtml2Canvas";
 import { formatReportPdfFilename } from "../../utils/reportPdfFilename";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
@@ -527,21 +526,12 @@ export default function ReportPdfPage() {
                     throw new Error("PDF 렌더 영역을 찾지 못했습니다.");
                 }
 
-                const canvas = await html2canvas(sheet, {
+                const canvas = await domToCanvas(sheet, {
                     scale: 2,
                     backgroundColor: "#ffffff",
-                    useCORS: true,
-                    allowTaint: true,
-                    logging: false,
-                    /** oklch 등은 html2canvas CSS 파서가 처리 못 함 → SVG foreignObject로 렌더(파싱 우회) */
-                    foreignObjectRendering: true,
-                    onclone(clonedDoc, clonedSheet) {
-                        prepareReportPdfHtml2CanvasClone(
-                            clonedDoc,
-                            clonedSheet,
-                            sheet
-                        );
-                    },
+                    width: sheet.scrollWidth,
+                    height: sheet.scrollHeight,
+                    timeout: 30000,
                 });
                 if (cancelled) return;
 

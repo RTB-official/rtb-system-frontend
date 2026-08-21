@@ -18,6 +18,7 @@ interface WorkloadReasonSectionProps {
     reasonDetailPage: number;
     onReasonDetailPageChange: (page: number) => void;
     onReasonDetailRowClick: (row: WorkloadDetailEntry) => void;
+    holidayDateKeys?: ReadonlySet<string>;
 }
 
 export default function WorkloadReasonSection({
@@ -35,6 +36,7 @@ export default function WorkloadReasonSection({
     reasonDetailPage,
     onReasonDetailPageChange,
     onReasonDetailRowClick,
+    holidayDateKeys,
 }: WorkloadReasonSectionProps) {
     /** 막대 클릭 직후·인원 변경 시 기본 접힘; 제목 클릭으로 펼침 */
     const [reasonExpanded, setReasonExpanded] = useState(false);
@@ -148,6 +150,7 @@ export default function WorkloadReasonSection({
                             onPageChange={onReasonDetailPageChange}
                             onRowClick={onReasonDetailRowClick}
                             bordered={false}
+                            holidayDateKeys={holidayDateKeys}
                         />
                     </div>
                 </div>
