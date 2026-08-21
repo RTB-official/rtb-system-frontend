@@ -208,6 +208,22 @@ export function getWorkEntryAutoBillableFourBuckets(
     };
 }
 
+/**
+ * 올림 청구(4h/8h)를 반영할 날짜.
+ * 평일이 하나라도 있으면 첫 평일, 아니면 구간의 첫날을 반환한다.
+ */
+export function getRoundedBillableApplyYmd(
+    dateFrom: string,
+    dateTo: string,
+    isWeekendOrHoliday: (ymd: string) => boolean
+): string | null {
+    const dates = enumerateYmdInclusive(dateFrom, dateTo);
+    if (dates.length === 0) {
+        return null;
+    }
+    return dates.find((ymd) => !isWeekendOrHoliday(ymd)) ?? dates[0] ?? null;
+}
+
 /** `manual` 총 시가 있을 때 자동 4박스 비율에 맞춰 분배(합이 `manual` 에 가깝게). */
 export function distributeWorkManualToFourBuckets(
     manual: number,

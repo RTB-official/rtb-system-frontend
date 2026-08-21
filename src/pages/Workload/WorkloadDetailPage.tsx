@@ -1,5 +1,5 @@
 //workloadDetailPage.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -8,8 +8,10 @@ import WorkloadDetailSkeleton from "../../components/common/WorkloadDetailSkelet
 import { IconArrowBack } from "../../components/icons/Icons";
 import WorkloadDailyDetailAnalysis from "./components/WorkloadDailyDetailAnalysis";
 import useIsMobile from "../../hooks/useIsMobile";
+import { useHolidayDateSet } from "../../hooks/useHolidayDateSet";
 import { useUser } from "../../hooks/useUser";
 import { supabase } from "../../lib/supabase";
+import { getDatesInMonth } from "../../utils/holidayDates";
 import {
     getWorkerWorkloadDetail,
     formatHours,
@@ -90,6 +92,17 @@ export default function WorkloadDetailPage() {
 
     const itemsPerPage = 10;
 
+    const holidayTargetDates = useMemo(() => {
+        if (detailEntries.length > 0) {
+            return Array.from(new Set(detailEntries.map((entry) => entry.date)));
+        }
+
+        const yearNum = parseInt(selectedYear.replace("년", ""), 10);
+        const monthNum = parseInt(selectedMonth.replace("월", ""), 10);
+        return getDatesInMonth(yearNum, monthNum);
+    }, [detailEntries, selectedYear, selectedMonth]);
+
+    const holidayDateSet = useHolidayDateSet(holidayTargetDates);
 
     const personName = id ? decodeURIComponent(id) : "";
 
@@ -265,6 +278,7 @@ export default function WorkloadDetailPage() {
                                 onPageChange={setCurrentPage}
                                 itemsPerPage={itemsPerPage}
                                 onRowClick={handleRowClick}
+                                holidayDateKeys={holidayDateSet}
                             />
                         </div>
                     )}

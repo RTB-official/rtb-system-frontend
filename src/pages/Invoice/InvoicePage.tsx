@@ -320,21 +320,22 @@ export default function InvoicePage() {
                                 </div>
                             ) : (
                                 <Table
-                                    className="text-[14px]"
+                                    className="text-[14px] table-fixed"
                                     emptyText="조회된 보고서가 없습니다."
                                     columns={[
                                         {
                                             key: "owner",
                                             label: "작성자",
                                             width: "14%",
+                                            cellClassName: "overflow-hidden",
                                             render: (_: unknown, row: InvoiceReportItem) => (
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 min-w-0">
                                                     <Avatar
                                                         email={row.ownerEmail ?? null}
                                                         position={row.ownerPosition ?? null}
                                                         size={24}
                                                     />
-                                                    <span className="text-gray-900">
+                                                    <span className="text-gray-900 truncate">
                                                         {row.owner}
                                                     </span>
                                                 </div>
@@ -344,6 +345,7 @@ export default function InvoicePage() {
                                             key: "title",
                                             label: "제목",
                                             width: "44%",
+                                            cellClassName: "max-w-0 overflow-hidden",
                                             render: (_: unknown, row: InvoiceReportItem) => (
                                                 <ReportMultiLineTitle
                                                     title={row.title}
@@ -355,9 +357,10 @@ export default function InvoicePage() {
                                             key: "place",
                                             label: "출장지",
                                             width: "14%",
+                                            cellClassName: "overflow-hidden",
                                             render: (value: string) =>
                                                 value?.trim() ? (
-                                                    <span className="text-gray-600">
+                                                    <span className="text-gray-600 truncate block">
                                                         {value}
                                                     </span>
                                                 ) : (
@@ -368,9 +371,10 @@ export default function InvoicePage() {
                                             key: "supervisor",
                                             label: "참관감독",
                                             width: "14%",
+                                            cellClassName: "overflow-hidden",
                                             render: (value: string) =>
                                                 value?.trim() ? (
-                                                    <span className="text-gray-500">
+                                                    <span className="text-gray-500 truncate block">
                                                         {value}
                                                     </span>
                                                 ) : (
@@ -381,6 +385,7 @@ export default function InvoicePage() {
                                             key: "date",
                                             label: "작성일",
                                             width: "14%",
+                                            cellClassName: "overflow-hidden whitespace-nowrap",
                                             render: (value: string) => (
                                                 <span className="text-gray-600">
                                                     {value}

@@ -29,7 +29,6 @@ import {
     getWorkLogSplitChainMemberIds,
     propagateWorkLogSplitChainPatch,
 } from "../../lib/workLogSplitChain";
-import { getCalendarEvents } from "../../lib/dashboardApi";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
@@ -38,9 +37,15 @@ import {
 } from "../../constants/skilledFitter";
 import { INVOICE_MANPOWER_UNIT_PRICE_KRW } from "../../constants/invoiceManpowerUnitPriceKrw";
 import {
+    getRoundedBillableApplyYmd,
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
 } from "../../utils/workEntryBillableHours";
+import {
+    enumerateDateRange,
+    fetchHolidayDateSet,
+    isWeekend,
+} from "../../utils/holidayDates";
 import {
     aggregateWorkLogEntryDateRange,
     formatInvoiceReportTableTitle,
@@ -97,8 +102,7 @@ interface TimesheetRow {
     chargeWindowStart?: string;
     chargeWindowEnd?: string;
     /**
-     * 4h/8h 올림 청구 시 타임시트 그리드에만 자동(N+A) 분할 표시.
-     * 인보이스 합산·행 weekdayNormal 등은 올림 반영 값 유지.
+     * 타임시트 그리드에 별도 표시할 청구시간 분할 값.
      */
     timesheetChargeDisplay?: {
         weekdayNormal: number;
@@ -107,8 +111,7 @@ interface TimesheetRow {
         weekendAfter: number;
     };
     /**
-     * 타임시트 총시간 열·해당 합계 행용: 실제 근무·구간 합(자동 분류 합 + 이동 등).
-     * `totalHours`는 인보이스/수동 올림 청구 반영 값일 수 있음.
+     * 타임시트 총시간 열·해당 합계 행용 청구시간 합계.
      */
     timesheetTotalHoursDisplay?: number;
 }
@@ -265,6 +268,15 @@ type TimesheetCommentOverrideState = {
     hiddenAutoComments: string[];
     addedComments: string[];
     trashedComments: Array<{ comment: string; isManual: boolean }>;
+    /** 자동 생성 코멘트 원문 → 수정된 표시 문구 */
+    autoCommentEdits: Record<string, string>;
+};
+
+type ResolvedTimesheetCommentItem = {
+    text: string;
+    isManual: boolean;
+    /** 자동: 원문 키 / 수동: addedComments 항목 문자열 */
+    sourceKey: string;
 };
 
 function cloneTimesheetCommentOverrideState(
@@ -275,6 +287,7 @@ function cloneTimesheetCommentOverrideState(
     const trashedComments = (state?.trashedComments ?? []).map((item) => ({
         ...item,
     }));
+    const autoCommentEdits = { ...(state?.autoCommentEdits ?? {}) };
     for (const comment of hiddenAutoComments) {
         if (
             !trashedComments.some(
@@ -288,6 +301,7 @@ function cloneTimesheetCommentOverrideState(
         hiddenAutoComments,
         addedComments,
         trashedComments,
+        autoCommentEdits,
     };
 }
 
@@ -297,7 +311,8 @@ function isTimesheetCommentOverrideEmpty(
     return (
         state.hiddenAutoComments.length === 0 &&
         state.addedComments.length === 0 &&
-        state.trashedComments.length === 0
+        state.trashedComments.length === 0 &&
+        Object.keys(state.autoCommentEdits).length === 0
     );
 }
 
@@ -840,10 +855,6 @@ type InvoiceTimesheetEntry = WorkLogEntryItem & {
     fixedHomeTravelWindowApplied?: boolean;
 };
 
-const HOLIDAY_API_KEY =
-    "cac7adf961a1b55472fa90319e4cb89dde6c04242edcb3d3970ae9e09c931e98";
-const HOLIDAY_API_ENDPOINT =
-    "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo";
 const SKILLED_FITTER_PRIORITY = [...SKILLED_FITTER_KOREAN_NAMES];
 const SKILLED_FITTER_SET = SKILLED_FITTER_NAME_SET;
 
@@ -1565,7 +1576,6 @@ export default function InvoiceCreatePage() {
     const [invoicePdfSelectedIds, setInvoicePdfSelectedIds] = useState<number[]>(
         []
     );
-    /** 인보이스 PDF: 숨김 iframe으로 순차 파일 다운로드 (팝업/인쇄 없음) */
     const invoicePdfDownloadQueueRef = useRef<number[]>([]);
     const [invoicePdfDownloadIframeId, setInvoicePdfDownloadIframeId] =
         useState<number | null>(null);
@@ -1607,6 +1617,16 @@ export default function InvoiceCreatePage() {
         useState(false);
     const [timesheetCommentTrashModalSectionKey, setTimesheetCommentTrashModalSectionKey] =
         useState<string | null>(null);
+    const [timesheetCommentInlineEdit, setTimesheetCommentInlineEdit] = useState<{
+        sectionKey: string;
+        sourceKey: string;
+        isManual: boolean;
+        draft: string;
+    } | null>(null);
+    const timesheetCommentInlineEditInputRef = useRef<HTMLInputElement | null>(
+        null
+    );
+    const timesheetCommentInlineEditSkipCommitRef = useRef(false);
     const timesheetCommentUndoPastRef = useRef<
         Record<string, TimesheetCommentOverrideState[]>
     >({});
@@ -2862,6 +2882,61 @@ export default function InvoiceCreatePage() {
         return formatTimeHHMM(shifted);
     };
 
+    const getFourHourRoundedWorkWindow = (
+        date: string,
+        actualStartTime: string
+    ): { start: string; end: string } => {
+        const workStart = toDateSafe(date, "08:00");
+        const lunchStart = toDateSafe(date, "12:00");
+        const lunchEnd = toDateSafe(date, "13:00");
+        const workEnd = toDateSafe(date, "17:00");
+        const parsedActualStart = toDateSafe(date, actualStartTime);
+        const actualStart = Number.isNaN(parsedActualStart.getTime())
+            ? new Date(workStart)
+            : new Date(
+                  Math.min(
+                      Math.max(parsedActualStart.getTime(), workStart.getTime()),
+                      workEnd.getTime()
+                  )
+              );
+        const displayStart = new Date(actualStart);
+        const cursor = new Date(actualStart);
+        let remainingMinutes = 4 * 60;
+
+        while (remainingMinutes > 0 && cursor < workEnd) {
+            if (cursor >= lunchStart && cursor < lunchEnd) {
+                cursor.setTime(lunchEnd.getTime());
+                continue;
+            }
+            const segmentEnd =
+                cursor < lunchStart ? lunchStart : workEnd;
+            const availableMinutes = Math.max(
+                0,
+                Math.floor(
+                    (segmentEnd.getTime() - cursor.getTime()) / 60000
+                )
+            );
+            const consumedMinutes = Math.min(
+                remainingMinutes,
+                availableMinutes
+            );
+            cursor.setMinutes(cursor.getMinutes() + consumedMinutes);
+            remainingMinutes -= consumedMinutes;
+
+            if (remainingMinutes > 0 && cursor.getTime() === lunchStart.getTime()) {
+                cursor.setTime(lunchEnd.getTime());
+            }
+        }
+
+        if (remainingMinutes > 0 || cursor > workEnd) {
+            return { start: "13:00", end: "17:00" };
+        }
+        return {
+            start: formatTimeHHMM(displayStart),
+            end: formatTimeHHMM(cursor),
+        };
+    };
+
     const getPrimaryLocation = (location: string | null): string => {
         return location?.split(",")[0].trim() ?? "";
     };
@@ -3378,34 +3453,6 @@ export default function InvoiceCreatePage() {
         return `${day}.${month}`;
     };
 
-    // 주말/공휴일 체크 함수
-    const isWeekend = (dateString: string): boolean => {
-        const date = new Date(`${dateString}T00:00:00`);
-        const day = date.getDay();
-        return day === 0 || day === 6; // 일요일 또는 토요일
-    };
-
-    const enumerateDateRange = (startDate: string, endDate: string): string[] => {
-        const dates: string[] = [];
-        const start = new Date(`${startDate}T00:00:00`);
-        const end = new Date(`${endDate}T00:00:00`);
-
-        if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-            return dates;
-        }
-
-        const cursor = new Date(start);
-        while (cursor <= end) {
-            const yyyy = cursor.getFullYear();
-            const mm = String(cursor.getMonth() + 1).padStart(2, "0");
-            const dd = String(cursor.getDate()).padStart(2, "0");
-            dates.push(`${yyyy}-${mm}-${dd}`);
-            cursor.setDate(cursor.getDate() + 1);
-        }
-
-        return dates;
-    };
-
     const shiftDateByDays = (dateString: string, days: number): string => {
         const date = new Date(`${dateString}T00:00:00`);
         date.setDate(date.getDate() + days);
@@ -3417,28 +3464,6 @@ export default function InvoiceCreatePage() {
         return `${yyyy}-${mm}-${dd}`;
     };
 
-    const fetchPublicHolidays = async (
-        year: number,
-        monthZeroBased: number
-    ): Promise<string[]> => {
-        const monthStr = String(monthZeroBased + 1).padStart(2, "0");
-        const url = `${HOLIDAY_API_ENDPOINT}?serviceKey=${HOLIDAY_API_KEY}&solYear=${year}&solMonth=${monthStr}&_type=json&numOfRows=100`;
-        const response = await fetch(url);
-        const data = await response.json();
-        const items = data.response?.body?.items?.item;
-
-        if (!items) return [];
-
-        const itemList = Array.isArray(items) ? items : [items];
-        return itemList.map((item: { locdate: string | number }) => {
-            const dateStr = String(item.locdate);
-            return `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(
-                6,
-                8
-            )}`;
-        });
-    };
-
     const loadHolidayDates = async (
         targetDates: string[]
     ): Promise<Set<string>> => {
@@ -3448,51 +3473,8 @@ export default function InvoiceCreatePage() {
             return empty;
         }
 
-        const uniqueDates = Array.from(new Set(targetDates));
-        const yearMonthPairs = Array.from(
-            new Set(uniqueDates.map((date) => date.slice(0, 7)))
-        );
-        const years = Array.from(
-            new Set(uniqueDates.map((date) => Number(date.slice(0, 4))))
-        );
-
         try {
-            const publicHolidayResults = await Promise.all(
-                yearMonthPairs.map(async (pair) => {
-                    const [year, month] = pair.split("-").map(Number);
-                    return fetchPublicHolidays(year, month - 1);
-                })
-            );
-
-            const calendarEventsResults = await Promise.all(
-                years.map((year) => getCalendarEvents({ year }))
-            );
-
-            const holidayKeywords = [
-                "휴일",
-                "공휴일",
-                "대체공휴일",
-                "임시공휴일",
-                "선거",
-            ];
-
-            const merged = new Set<string>();
-
-            publicHolidayResults.flat().forEach((date) => merged.add(date));
-
-            calendarEventsResults.flat().forEach((event) => {
-                const title = event.title?.trim() ?? "";
-                const isHolidayLikeEvent = holidayKeywords.some((keyword) =>
-                    title.includes(keyword)
-                );
-
-                if (!isHolidayLikeEvent) return;
-
-                enumerateDateRange(event.start_date, event.end_date).forEach((date) =>
-                    merged.add(date)
-                );
-            });
-
+            const merged = await fetchHolidayDateSet(targetDates);
             setHolidayDateSet(merged);
             return merged;
         } catch (error) {
@@ -3760,7 +3742,8 @@ export default function InvoiceCreatePage() {
                 );
                 const allEntries = mergeContinuousTravelEntries(rawEntries);
                 const getMergedTravelHoursWithManualOverride = (
-                    entry: InvoiceTimesheetEntry
+                    entry: InvoiceTimesheetEntry,
+                    useFixedHomeWindow = true
                 ): { hours: number; hasManualOverride: boolean } => {
                     const sourceIds =
                         entry.sourceEntryIds.length > 0
@@ -3768,7 +3751,8 @@ export default function InvoiceCreatePage() {
                             : [entry.id];
                     let hasManualOverride = false;
                     let hours = 0;
-                    const fixedWindowHours = entry.fixedHomeTravelWindowApplied
+                    const fixedWindowHours =
+                        useFixedHomeWindow && entry.fixedHomeTravelWindowApplied
                         ? calculateRawTravelHours(entry)
                         : null;
 
@@ -3821,6 +3805,14 @@ export default function InvoiceCreatePage() {
                         parentEntry.sourceEntryIds.length > 0
                             ? parentEntry.sourceEntryIds
                             : [parentEntry.id];
+                    /**
+                     * 자택 고정 청구시간은 병합된 이동 체인의 표시/청구 구간만
+                     * 보정한다. 보정 구간과 겹치는 원본만 남기면 실제 이동 체인의
+                     * 일부가 Date Group 상세에서 누락되므로 원본 연결은 모두 유지한다.
+                     */
+                    if (parentEntry.fixedHomeTravelWindowApplied) {
+                        return sourceIds;
+                    }
                     const overlapped = sourceIds.filter((sourceEntryId) => {
                         const rawSource = rawEntryById.get(sourceEntryId);
                         if (!rawSource) {
@@ -4206,7 +4198,6 @@ export default function InvoiceCreatePage() {
 
                         const lastEntry = entries[entries.length - 1];
                         const fixedHours = getHomeTravelHours(lastEntry.location) ?? 0;
-                        const hasHome = entries.some((entry) => hasHomeInTravel(entry));
                         const earliest =
                             entries
                                 .map((entry) => entry.timeFrom)
@@ -4219,13 +4210,36 @@ export default function InvoiceCreatePage() {
                                 .sort();
                         const latestValue =
                             latest.length > 0 ? latest[latest.length - 1] : null;
+                        const rawWindowEntries = Array.from(
+                            new Set(entries.flatMap((entry) => entry.sourceEntryIds))
+                        )
+                            .map((entryId) => rawEntryById.get(entryId))
+                            .filter(
+                                (
+                                    entry
+                                ): entry is InvoiceTimesheetEntry => Boolean(entry)
+                            );
+                        const rawEarliest =
+                            rawWindowEntries
+                                .map((entry) => entry.timeFrom)
+                                .filter((value): value is string => Boolean(value))
+                                .sort()[0] ?? earliest;
+                        const rawLatestValues = rawWindowEntries
+                            .map((entry) => entry.timeTo)
+                            .filter((value): value is string => Boolean(value))
+                            .sort();
+                        const rawLatest =
+                            rawLatestValues.length > 0
+                                ? rawLatestValues[rawLatestValues.length - 1]
+                                : latestValue;
 
                         if (entriesHaveManualBillableTravel(entries)) {
                             const mixedHours = entries.reduce(
                                 (acc, entry) => {
                                     const result =
                                         getMergedTravelHoursWithManualOverride(
-                                            entry
+                                            entry,
+                                            false
                                         );
                                     return {
                                         hours: acc.hours + result.hours,
@@ -4238,17 +4252,14 @@ export default function InvoiceCreatePage() {
                             );
                             return {
                                 hours: roundHours(mixedHours.hours),
-                                start: earliest,
-                                end: latestValue,
+                                start: rawEarliest,
+                                end: rawLatest,
                             };
                         }
 
                         const override = getLatestTravelChargeOverrideForEntries(
                             entries,
                             person
-                        );
-                        const hasAdjustedFixedHomeWindow = entries.some(
-                            (entry) => entry.fixedHomeTravelWindowApplied
                         );
 
                         if (override?.target === "lodging") {
@@ -4261,20 +4272,7 @@ export default function InvoiceCreatePage() {
 
                         if (
                             override?.target === "home" &&
-                            fixedHours > 0 &&
-                            !hasAdjustedFixedHomeWindow
-                        ) {
-                            return {
-                                hours: fixedHours,
-                                start: earliest,
-                                end: latestValue,
-                            };
-                        }
-
-                        if (
-                            hasHome &&
-                            fixedHours > 0 &&
-                            !hasAdjustedFixedHomeWindow
+                            fixedHours > 0
                         ) {
                             return {
                                 hours: fixedHours,
@@ -4286,7 +4284,10 @@ export default function InvoiceCreatePage() {
                         const mixedHours = entries.reduce(
                             (acc, entry) => {
                                 const result =
-                                    getMergedTravelHoursWithManualOverride(entry);
+                                    getMergedTravelHoursWithManualOverride(
+                                        entry,
+                                        false
+                                    );
                                 return {
                                     hours: acc.hours + result.hours,
                                     hasManualOverride:
@@ -4299,8 +4300,8 @@ export default function InvoiceCreatePage() {
 
                         return {
                             hours: roundHours(mixedHours.hours),
-                            start: earliest,
-                            end: latestValue,
+                            start: rawEarliest,
+                            end: rawLatest,
                         };
                     };
 
@@ -4514,6 +4515,19 @@ export default function InvoiceCreatePage() {
 
                             const manual = entryManualBillableHours[entry.id];
                             if (manual !== undefined) {
+                                if (isManualRoundedBillableFourOrEight(manual)) {
+                                    const raw = rawEntryById.get(entry.id) ?? entry;
+                                    const applyYmd = getRoundedBillableApplyYmd(
+                                        raw.dateFrom,
+                                        raw.dateTo,
+                                        (ymd) =>
+                                            isWeekend(ymd) ||
+                                            holidaySetForTimesheet.has(ymd)
+                                    );
+                                    if (applyYmd && applyYmd !== date) {
+                                        return;
+                                    }
+                                }
                                 normal += manual;
                                 return;
                             }
@@ -4527,6 +4541,44 @@ export default function InvoiceCreatePage() {
                             normal: roundHours(normal),
                             after: roundHours(after),
                             total: roundHours(normal + after),
+                        };
+                    };
+
+                    const getRoundedManualWorkForEntries = (
+                        entries: InvoiceTimesheetEntry[]
+                    ): { hours: number; actualStart: string | null } => {
+                        let hours = 0;
+                        let actualStart: string | null = null;
+                        for (const entry of entries) {
+                            if (entry.descType !== "작업") {
+                                continue;
+                            }
+                            const manual = entryManualBillableHours[entry.id];
+                            if (!isManualRoundedBillableFourOrEight(manual)) {
+                                continue;
+                            }
+                            const raw = rawEntryById.get(entry.id) ?? entry;
+                            const applyYmd = getRoundedBillableApplyYmd(
+                                raw.dateFrom,
+                                raw.dateTo,
+                                (ymd) =>
+                                    isWeekend(ymd) ||
+                                    holidaySetForTimesheet.has(ymd)
+                            );
+                            if (applyYmd !== date) {
+                                continue;
+                            }
+                            hours += manual;
+                            if (
+                                entry.timeFrom &&
+                                (!actualStart || entry.timeFrom < actualStart)
+                            ) {
+                                actualStart = entry.timeFrom;
+                            }
+                        }
+                        return {
+                            hours: roundHours(hours),
+                            actualStart,
                         };
                     };
 
@@ -4676,6 +4728,28 @@ export default function InvoiceCreatePage() {
                                 .sort();
                         const latestValue =
                             latest.length > 0 ? latest[latest.length - 1] : null;
+                        const rawWindowEntries = Array.from(
+                            new Set(entries.flatMap((entry) => entry.sourceEntryIds))
+                        )
+                            .map((entryId) => rawEntryById.get(entryId))
+                            .filter(
+                                (
+                                    entry
+                                ): entry is InvoiceTimesheetEntry => Boolean(entry)
+                            );
+                        const rawEarliest =
+                            rawWindowEntries
+                                .map((entry) => entry.timeFrom)
+                                .filter((value): value is string => Boolean(value))
+                                .sort()[0] ?? earliest;
+                        const rawLatestValues = rawWindowEntries
+                            .map((entry) => entry.timeTo)
+                            .filter((value): value is string => Boolean(value))
+                            .sort();
+                        const rawLatest =
+                            rawLatestValues.length > 0
+                                ? rawLatestValues[rawLatestValues.length - 1]
+                                : latestValue;
                         const manualOrAutoMixedHours = (() => {
                             let hasManualOverride = false;
                             let sum = 0;
@@ -4694,8 +4768,8 @@ export default function InvoiceCreatePage() {
                             return {
                                 kind: fallbackLabel,
                                 hours: manualOrAutoMixedHours,
-                                start: earliest,
-                                end: latestValue,
+                                start: useFixedHomeHours ? earliest : rawEarliest,
+                                end: useFixedHomeHours ? latestValue : rawLatest,
                                 label: destination || fallbackLabel,
                             };
                         }
@@ -4751,7 +4825,14 @@ export default function InvoiceCreatePage() {
                             };
                         }
                         const hours = entries.reduce(
-                            (sum, entry) => sum + calculateRawTravelHours(entry),
+                            (sum, entry) =>
+                                sum +
+                                (useFixedHomeHours
+                                    ? calculateRawTravelHours(entry)
+                                    : getMergedTravelHoursWithManualOverride(
+                                          entry,
+                                          false
+                                      ).hours),
                             0
                         );
                         const destination = getFinalDestination(lastEntry);
@@ -4759,8 +4840,8 @@ export default function InvoiceCreatePage() {
                         return {
                             kind: fallbackLabel,
                             hours: roundHours(hours),
-                            start: earliest,
-                            end: latestValue,
+                            start: useFixedHomeHours ? earliest : rawEarliest,
+                            end: useFixedHomeHours ? latestValue : rawLatest,
                             label: destination || "최종 철수",
                         };
                     };
@@ -5286,7 +5367,8 @@ export default function InvoiceCreatePage() {
 
                     const buildTravelOnlyRow = (
                         person: string,
-                        entries: InvoiceTimesheetEntry[]
+                        entries: InvoiceTimesheetEntry[],
+                        useFixedHomeHours = false
                     ): PersonDayRow | null => {
                         const moveEntries = entries.filter(
                             (entry) => entry.descType === "이동"
@@ -5294,7 +5376,7 @@ export default function InvoiceCreatePage() {
                         const travel = summarizeTravelEntries(
                             moveEntries,
                             "최종 철수",
-                            true,
+                            useFixedHomeHours,
                             person
                         );
 
@@ -5385,7 +5467,8 @@ export default function InvoiceCreatePage() {
                                     .length > 0
                                     ? buildTravelOnlyRow(
                                           person,
-                                          firstBlockLeadingTravel.detachedLeadingEntries
+                                          firstBlockLeadingTravel.detachedLeadingEntries,
+                                          true
                                       )
                                     : null;
 
@@ -5407,7 +5490,11 @@ export default function InvoiceCreatePage() {
                                         afterTravelGroups
                                             .slice(1)
                                             .map((entries) =>
-                                                buildTravelOnlyRow(person, entries)
+                                                buildTravelOnlyRow(
+                                                    person,
+                                                    entries,
+                                                    true
+                                                )
                                             )
                                             .filter(
                                                 (row): row is PersonDayRow =>
@@ -5427,15 +5514,20 @@ export default function InvoiceCreatePage() {
                                     );
                                 const manualWorkSplit =
                                     getManualWorkSplitForEntries(block.workEntries);
-                                const hasRoundedManualWorkInBlock =
-                                    !manualWorkSplit &&
-                                    block.workEntries.some(
-                                        (e) =>
-                                            e.descType === "작업" &&
-                                            isManualRoundedBillableFourOrEight(
-                                                entryManualBillableHours[e.id]
-                                            )
+                                const roundedManualWork =
+                                    getRoundedManualWorkForEntries(
+                                        block.workEntries
                                     );
+                                const roundedManualWorkHours =
+                                    roundedManualWork.hours;
+                                const hasRoundedManualWorkInBlock =
+                                    roundedManualWorkHours > 0;
+                                const nonRoundedNormalHours = roundHours(
+                                    Math.max(
+                                        0,
+                                        working.normal - roundedManualWorkHours
+                                    )
+                                );
                                 const waitingHours = getWaitingHoursForEntries(
                                     block.workEntries
                                 );
@@ -5554,12 +5646,42 @@ export default function InvoiceCreatePage() {
                                 ].filter(
                                     (value): value is string => Boolean(value)
                                 );
-                                const chargeWindowStart =
-                                    chargedStartCandidates.sort()[0] ?? timeFrom;
-                                const chargeWindowEnd =
-                                    chargedEndCandidates.sort()[
-                                        chargedEndCandidates.length - 1
-                                    ] ?? timeTo;
+                                const roundedWorkWindow =
+                                    roundedManualWorkHours === 4
+                                        ? getFourHourRoundedWorkWindow(
+                                              date,
+                                              roundedManualWork.actualStart ??
+                                                  blockSpan.earliest
+                                          )
+                                        : roundedManualWorkHours === 8
+                                          ? {
+                                                start: "08:00",
+                                                end: "17:00",
+                                            }
+                                          : null;
+                                /**
+                                 * 4h 올림청구는 실제 시작 시각을 기준으로 08~17시 안에서
+                                 * 점심(12~13시)을 제외해 4시간을 확보한다. 17시를 넘으면
+                                 * 작업창을 앞으로 당긴다. 8h는 08~17시로 고정한다.
+                                 * 작업 전·후 이동은 숙소 1h 또는 출장지별 자택 고정시간 등
+                                 * 위에서 계산한 청구 이동시간을 작업창 앞뒤에 붙인다.
+                                 */
+                                const chargeWindowStart = roundedWorkWindow
+                                    ? shiftTimeByHours(
+                                          date,
+                                          roundedWorkWindow.start,
+                                          -beforeMoveHours
+                                      )
+                                    : chargedStartCandidates.sort()[0] ?? timeFrom;
+                                const chargeWindowEnd = roundedWorkWindow
+                                    ? shiftTimeByHours(
+                                          date,
+                                          roundedWorkWindow.end,
+                                          afterMoveHours
+                                      )
+                                    : chargedEndCandidates.sort()[
+                                          chargedEndCandidates.length - 1
+                                      ] ?? timeTo;
                                 const label =
                                     afterTravel.kind.startsWith("final")
                                         ? afterTravel.label
@@ -5572,19 +5694,6 @@ export default function InvoiceCreatePage() {
                                         : afterTravel.kind.startsWith("final")
                                           ? 2
                                           : 1;
-
-                                const displayWeekdayNormal = isWeekendDay
-                                    ? 0
-                                    : workingDisplay.normal;
-                                const displayWeekdayAfter = isWeekendDay
-                                    ? 0
-                                    : workingDisplay.after;
-                                const displayWeekendNormal = isWeekendDay
-                                    ? workingDisplay.normal
-                                    : 0;
-                                const displayWeekendAfter = isWeekendDay
-                                    ? workingDisplay.after
-                                    : 0;
 
                                     const blockRow: PersonDayRow = {
                                         person,
@@ -5617,15 +5726,19 @@ export default function InvoiceCreatePage() {
                                             working.total + travelHours
                                         ),
                                         timesheetTotalHoursDisplay: roundHours(
-                                            (manualWorkSplit
+                                            (manualWorkSplit ||
+                                            hasRoundedManualWorkInBlock
                                                 ? working.total
                                                 : workingDisplay.total) + travelHours
                                         ),
-                                        weekdayNormal: manualWorkSplit
-                                            ? manualWorkSplit.weekdayNormal
-                                            : isWeekendDay
-                                              ? 0
-                                              : working.normal,
+                                        weekdayNormal: roundHours(
+                                            (manualWorkSplit
+                                                ? manualWorkSplit.weekdayNormal
+                                                : isWeekendDay
+                                                  ? 0
+                                                  : nonRoundedNormalHours) +
+                                                roundedManualWorkHours
+                                        ),
                                         weekdayAfter: manualWorkSplit
                                             ? manualWorkSplit.weekdayAfter
                                             : isWeekendDay
@@ -5634,7 +5747,7 @@ export default function InvoiceCreatePage() {
                                         weekendNormal: manualWorkSplit
                                             ? manualWorkSplit.weekendNormal
                                             : isWeekendDay
-                                              ? working.normal
+                                              ? nonRoundedNormalHours
                                               : 0,
                                         weekendAfter: manualWorkSplit
                                             ? manualWorkSplit.weekendAfter
@@ -5658,19 +5771,7 @@ export default function InvoiceCreatePage() {
                                         label,
                                         chargeWindowStart,
                                         chargeWindowEnd,
-                                        timesheetChargeDisplay:
-                                            hasRoundedManualWorkInBlock
-                                                ? {
-                                                      weekdayNormal:
-                                                          displayWeekdayNormal,
-                                                      weekdayAfter:
-                                                          displayWeekdayAfter,
-                                                      weekendNormal:
-                                                          displayWeekendNormal,
-                                                      weekendAfter:
-                                                          displayWeekendAfter,
-                                                  }
-                                                : undefined,
+                                        timesheetChargeDisplay: undefined,
                                     };
 
                                     return [blockRow, ...detachedTrailingTravelRows];
@@ -8072,7 +8173,7 @@ export default function InvoiceCreatePage() {
         return match?.[1] ?? "?";
     };
 
-    /** 타임시트 그리드 총시간 열: 실제 구간 합(올림 청구 미반영). */
+    /** 타임시트 그리드 총시간 열: 수동·올림 청구를 포함한 표시 합계. */
     const getTimesheetRowTotalHoursForGrid = (row: TimesheetRow) =>
         row.timesheetTotalHoursDisplay ?? row.totalHours;
 
@@ -8792,6 +8893,16 @@ export default function InvoiceCreatePage() {
     const getManualRoundedOneTimeJobInvoiceComments = (
         section: NormalTimesheetSection
     ): string[] => {
+        const formatCommentTime = (value: string): string => {
+            const match =
+                /^(\d{1,2})(?::(\d{2}))?(?::\d{2}(?:\.\d+)?)?$/.exec(
+                    value.trim()
+                );
+            if (!match) {
+                return value;
+            }
+            return `${match[1].padStart(2, "0")}:${match[2] ?? "00"}`;
+        };
         const entryById = new Map<number, TimesheetSourceEntryData>();
         for (const row of section.rows) {
             for (const entry of row.sourceEntries) {
@@ -8818,9 +8929,102 @@ export default function InvoiceCreatePage() {
             if (invoicedH === originalH) {
                 continue;
             }
-            const dateLabel = formatDate(entry.dateFrom);
+            const applyYmd = getRoundedBillableApplyYmd(
+                entry.dateFrom,
+                entry.dateTo,
+                (ymd) => isWeekend(ymd) || holidayDateSet.has(ymd)
+            );
+            const invoicedRow = section.rows.find(
+                (row) =>
+                    row.date === applyYmd &&
+                    row.sourceEntries.some(
+                        (sourceEntry) => sourceEntry.id === entry.id
+                    )
+            );
+            const invoicedTimeFrom = formatCommentTime(
+                invoicedRow?.timeFrom ?? entry.timeFrom
+            );
+            const invoicedTimeTo = formatCommentTime(
+                invoicedRow?.timeTo ?? entry.timeTo
+            );
+            const originalRowEntries = invoicedRow?.sourceEntries ?? [entry];
+            const originalTimeFrom = formatCommentTime(
+                originalRowEntries
+                    .map((sourceEntry) => sourceEntry.timeFrom)
+                    .filter(Boolean)
+                    .sort()[0] ?? entry.timeFrom
+            );
+            const originalTimeToValues = originalRowEntries
+                .map((sourceEntry) => sourceEntry.timeTo)
+                .filter(Boolean)
+                .sort();
+            const originalTimeTo = formatCommentTime(
+                originalTimeToValues[originalTimeToValues.length - 1] ??
+                    entry.timeTo
+            );
+            const commentDate = formatDate(applyYmd ?? entry.dateFrom);
             lines.push(
-                `${invoicedH} hours will be invoiced instead of ${originalH} hours on ${dateLabel} since the work was non-consecutive job.`
+                `${invoicedH} hours will be invoiced instead of ${originalH} hours (${invoicedTimeFrom}-${invoicedTimeTo} instead of ${originalTimeFrom}-${originalTimeTo}) according to Note3. and service tariff on ${commentDate}.`
+            );
+        }
+        return lines;
+    };
+
+    const getNoLunchBreakInvoiceComments = (
+        section: NormalTimesheetSection
+    ): string[] => {
+        const formatCommentTime = (value: string): string => {
+            const match =
+                /^(\d{1,2})(?::(\d{2}))?(?::\d{2}(?:\.\d+)?)?$/.exec(
+                    value.trim()
+                );
+            if (!match) {
+                return value;
+            }
+            return `${match[1].padStart(2, "0")}:${match[2] ?? "00"}`;
+        };
+        const entryById = new Map<number, TimesheetSourceEntryData>();
+        for (const row of section.rows) {
+            for (const entry of row.sourceEntries) {
+                entryById.set(entry.id, entry);
+            }
+        }
+
+        const lines: string[] = [];
+        for (const entry of entryById.values()) {
+            const noLunchSourceText = `${entry.details ?? ""}\n${entry.note ?? ""}`;
+            const hasNoLunchMarker =
+                entry.lunchWorked === true ||
+                noLunchSourceText.includes(
+                    "점심 안 먹고 작업진행(12:00~13:00)"
+                ) ||
+                noLunchSourceText.includes(
+                    "점심 안먹고 작업진행(12:00~13:00)"
+                );
+            if (
+                entry.descType !== "작업" ||
+                !hasNoLunchMarker
+            ) {
+                continue;
+            }
+
+            const workStart = toDateSafe(entry.dateFrom, entry.timeFrom);
+            const workEnd = toDateSafe(entry.dateTo, entry.timeTo);
+            const normalStart = toDateSafe(entry.dateFrom, "08:00");
+            const normalEnd = toDateSafe(entry.dateFrom, "17:00");
+            const normalMinutes = Math.max(
+                0,
+                Math.min(workEnd.getTime(), normalEnd.getTime()) -
+                    Math.max(workStart.getTime(), normalStart.getTime())
+            );
+            const normalHours =
+                Math.round((normalMinutes / 3_600_000) * 10) / 10;
+            if (normalHours <= 0) {
+                continue;
+            }
+
+            lines.push(
+                `As Fitters worked continuously from ${formatCommentTime(entry.timeFrom)} to ${formatCommentTime(entry.timeTo)} without a lunch break on ${formatDate(entry.dateFrom)}, ${normalHours} hours are charged as Normal Working Hours.`
             );
         }
         return lines;
@@ -8830,6 +9034,32 @@ export default function InvoiceCreatePage() {
         section: NormalTimesheetSection
     ): string[] => {
         const oneTimeJobComments = getManualRoundedOneTimeJobInvoiceComments(section);
+        const noLunchBreakComments = getNoLunchBreakInvoiceComments(section);
+        const orderCommentsByDate = (items: string[]): string[] => {
+            const dateLabels = Array.from(
+                new Set(section.rows.map((row) => row.date).filter(Boolean))
+            )
+                .sort()
+                .map(formatDate);
+            const uniqueItems = Array.from(new Set(items));
+            const getDateOrder = (comment: string) => {
+                const index = dateLabels.findIndex((label) =>
+                    comment.includes(label)
+                );
+                return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+            };
+            return uniqueItems
+                .map((comment, index) => ({
+                    comment,
+                    index,
+                    dateOrder: getDateOrder(comment),
+                }))
+                .sort(
+                    (a, b) =>
+                        a.dateOrder - b.dateOrder || a.index - b.index
+                )
+                .map(({ comment }) => comment);
+        };
 
         const currentVessel = shipNameDisplay.trim();
         const tripLocation = workLogDataList[0]?.workLog.location ?? null;
@@ -8838,7 +9068,10 @@ export default function InvoiceCreatePage() {
             resolvePlaceToCity(getPrimaryLocation(tripLocation), tripLocation);
 
         if (!currentVessel || !tripCity) {
-            return Array.from(new Set(oneTimeJobComments));
+            return orderCommentsByDate([
+                ...noLunchBreakComments,
+                ...oneTimeJobComments,
+            ]);
         }
 
         const dates = Array.from(
@@ -9104,7 +9337,11 @@ export default function InvoiceCreatePage() {
             }
         });
 
-        return Array.from(new Set([...comments, ...oneTimeJobComments]));
+        return orderCommentsByDate([
+            ...comments,
+            ...noLunchBreakComments,
+            ...oneTimeJobComments,
+        ]);
     };
 
     const getTimesheetSectionCommentKey = (
@@ -9114,21 +9351,38 @@ export default function InvoiceCreatePage() {
             ? "R&D TIMESHEET"
             : `${section.title}::${section.key}`;
 
-    const resolveTimesheetSectionComments = (
+    const resolveTimesheetSectionCommentItems = (
         section: NormalTimesheetSection,
         autoComments: string[]
-    ): string[] => {
+    ): ResolvedTimesheetCommentItem[] => {
         const key = getTimesheetSectionCommentKey(section);
         const override = cloneTimesheetCommentOverrideState(
             timesheetCommentOverridesBySectionKey[key]
         );
-        if (!override) {
-            return autoComments;
-        }
         const hidden = new Set(override.hiddenAutoComments);
-        const autoFiltered = autoComments.filter((comment) => !hidden.has(comment));
-        return [...autoFiltered, ...override.addedComments];
+        const autoItems: ResolvedTimesheetCommentItem[] = autoComments
+            .filter((comment) => !hidden.has(comment))
+            .map((comment) => ({
+                text: override.autoCommentEdits[comment] ?? comment,
+                isManual: false,
+                sourceKey: comment,
+            }));
+        const manualItems: ResolvedTimesheetCommentItem[] =
+            override.addedComments.map((comment) => ({
+                text: comment,
+                isManual: true,
+                sourceKey: comment,
+            }));
+        return [...autoItems, ...manualItems];
     };
+
+    const resolveTimesheetSectionComments = (
+        section: NormalTimesheetSection,
+        autoComments: string[]
+    ): string[] =>
+        resolveTimesheetSectionCommentItems(section, autoComments).map(
+            (item, index) => `${index + 1}. ${item.text}`
+        );
 
     const deleteTimesheetSectionComment = (
         sectionKey: string,
@@ -9157,6 +9411,10 @@ export default function InvoiceCreatePage() {
             const trashedComments = alreadyTrashed
                 ? nextCurrent.trashedComments
                 : [...nextCurrent.trashedComments, { comment, isManual }];
+            const autoCommentEdits = { ...nextCurrent.autoCommentEdits };
+            if (!isManual) {
+                delete autoCommentEdits[comment];
+            }
             const next: TimesheetCommentOverrideState = isManual
                 ? {
                       ...nextCurrent,
@@ -9164,6 +9422,7 @@ export default function InvoiceCreatePage() {
                           (c) => c !== comment
                       ),
                       trashedComments,
+                      autoCommentEdits,
                   }
                 : {
                       ...nextCurrent,
@@ -9172,7 +9431,77 @@ export default function InvoiceCreatePage() {
                           comment,
                       ],
                       trashedComments,
+                      autoCommentEdits,
                   };
+            if (isTimesheetCommentOverrideEmpty(next)) {
+                const { [sectionKey]: _removed, ...rest } = previous;
+                return rest;
+            }
+            return { ...previous, [sectionKey]: next };
+        });
+    };
+
+    const editTimesheetSectionComment = (
+        sectionKey: string,
+        sourceKey: string,
+        isManual: boolean,
+        nextText: string
+    ) => {
+        const trimmed = nextText.trim();
+        if (!trimmed) {
+            return;
+        }
+        const current = cloneTimesheetCommentOverrideState(
+            timesheetCommentOverridesBySectionKey[sectionKey]
+        );
+        if (isManual) {
+            if (!current.addedComments.includes(sourceKey)) {
+                return;
+            }
+            if (trimmed === sourceKey) {
+                return;
+            }
+            if (
+                current.addedComments.some(
+                    (c) => c === trimmed && c !== sourceKey
+                )
+            ) {
+                return;
+            }
+        } else {
+            const currentDisplay =
+                current.autoCommentEdits[sourceKey] ?? sourceKey;
+            if (trimmed === currentDisplay) {
+                return;
+            }
+        }
+
+        pushTimesheetCommentUndoSnapshot(sectionKey);
+        setTimesheetCommentOverridesBySectionKey((previous) => {
+            const nextCurrent = cloneTimesheetCommentOverrideState(
+                previous[sectionKey]
+            );
+            let next: TimesheetCommentOverrideState;
+            if (isManual) {
+                next = {
+                    ...nextCurrent,
+                    addedComments: nextCurrent.addedComments.map((c) =>
+                        c === sourceKey ? trimmed : c
+                    ),
+                };
+            } else if (trimmed === sourceKey) {
+                const autoCommentEdits = { ...nextCurrent.autoCommentEdits };
+                delete autoCommentEdits[sourceKey];
+                next = { ...nextCurrent, autoCommentEdits };
+            } else {
+                next = {
+                    ...nextCurrent,
+                    autoCommentEdits: {
+                        ...nextCurrent.autoCommentEdits,
+                        [sourceKey]: trimmed,
+                    },
+                };
+            }
             if (isTimesheetCommentOverrideEmpty(next)) {
                 const { [sectionKey]: _removed, ...rest } = previous;
                 return rest;
@@ -9345,13 +9674,64 @@ export default function InvoiceCreatePage() {
         </button>
     );
 
+    const startTimesheetCommentInlineEdit = (
+        sectionKey: string,
+        item: ResolvedTimesheetCommentItem
+    ) => {
+        timesheetCommentInlineEditSkipCommitRef.current = false;
+        setTimesheetCommentInlineEdit({
+            sectionKey,
+            sourceKey: item.sourceKey,
+            isManual: item.isManual,
+            draft: item.text,
+        });
+    };
+
+    const cancelTimesheetCommentInlineEdit = () => {
+        timesheetCommentInlineEditSkipCommitRef.current = true;
+        setTimesheetCommentInlineEdit(null);
+    };
+
+    const commitTimesheetCommentInlineEdit = () => {
+        if (timesheetCommentInlineEditSkipCommitRef.current) {
+            timesheetCommentInlineEditSkipCommitRef.current = false;
+            return;
+        }
+        if (!timesheetCommentInlineEdit) {
+            return;
+        }
+        const { sectionKey, sourceKey, isManual, draft } =
+            timesheetCommentInlineEdit;
+        timesheetCommentInlineEditSkipCommitRef.current = true;
+        setTimesheetCommentInlineEdit(null);
+        editTimesheetSectionComment(sectionKey, sourceKey, isManual, draft);
+    };
+
+    useEffect(() => {
+        if (!timesheetCommentInlineEdit) {
+            return;
+        }
+        const input = timesheetCommentInlineEditInputRef.current;
+        if (!input) {
+            return;
+        }
+        input.focus();
+        input.select();
+        // draft 변경 시에는 재실행하지 않음 (타이핑마다 전체 선택되는 문제 방지)
+    }, [
+        timesheetCommentInlineEdit?.sectionKey,
+        timesheetCommentInlineEdit?.sourceKey,
+        timesheetCommentInlineEdit?.isManual,
+    ]);
+
     const renderTimesheetCommentsBlock = (
         section: NormalTimesheetSection,
-        comments: string[]
+        autoComments: string[]
     ) => {
         const sectionKey = getTimesheetSectionCommentKey(section);
-        const addedCommentSet = new Set(
-            timesheetCommentOverridesBySectionKey[sectionKey]?.addedComments ?? []
+        const commentItems = resolveTimesheetSectionCommentItems(
+            section,
+            autoComments
         );
         void timesheetCommentUndoRedoTick;
         const { past: commentUndoCount, future: commentRedoCount } =
@@ -9400,32 +9780,101 @@ export default function InvoiceCreatePage() {
                         삭제된 코멘트 {trashedCommentCount}개
                     </div>
                 ) : null}
-                {comments.length > 0 ? (
+                {commentItems.length > 0 ? (
                     <div className="mt-2 flex flex-col gap-1.5">
-                        {comments.map((comment, index) => (
-                            <div
-                                key={`${sectionKey}-${index}-${comment}`}
-                                className="group -mx-2 flex items-start gap-2 rounded-md border border-transparent px-2 py-1.5 transition-colors hover:border-gray-200 hover:bg-gray-50"
-                            >
-                                <span className="min-w-0 flex-1 leading-relaxed">
-                                    {comment}
-                                </span>
-                                <button
-                                    type="button"
-                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 opacity-0 shadow-sm transition-all hover:border-red-200 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100"
-                                    onClick={() =>
-                                        deleteTimesheetSectionComment(
-                                            sectionKey,
-                                            comment,
-                                            addedCommentSet.has(comment)
-                                        )
-                                    }
-                                    aria-label="코멘트 삭제"
+                        {commentItems.map((item, index) => {
+                            const isEditing =
+                                timesheetCommentInlineEdit?.sectionKey ===
+                                    sectionKey &&
+                                timesheetCommentInlineEdit.sourceKey ===
+                                    item.sourceKey &&
+                                timesheetCommentInlineEdit.isManual ===
+                                    item.isManual;
+                            return (
+                                <div
+                                    key={`${sectionKey}-${index}-${item.sourceKey}`}
+                                    className={`group relative -mx-2 flex items-start rounded-md border px-2 py-1.5 transition-colors ${
+                                        isEditing
+                                            ? "border-gray-200 bg-gray-50"
+                                            : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+                                    }`}
                                 >
-                                    <IconClose className="h-4 w-4" />
-                                </button>
-                            </div>
-                        ))}
+                                    {isEditing ? (
+                                        <input
+                                            ref={
+                                                timesheetCommentInlineEditInputRef
+                                            }
+                                            type="text"
+                                            value={
+                                                timesheetCommentInlineEdit
+                                                    ?.draft ?? item.text
+                                            }
+                                            onChange={(e) =>
+                                                setTimesheetCommentInlineEdit(
+                                                    (prev) =>
+                                                        prev
+                                                            ? {
+                                                                  ...prev,
+                                                                  draft: e.target
+                                                                      .value,
+                                                              }
+                                                            : prev
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                commitTimesheetCommentInlineEdit()
+                                            }
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    commitTimesheetCommentInlineEdit();
+                                                } else if (e.key === "Escape") {
+                                                    e.preventDefault();
+                                                    cancelTimesheetCommentInlineEdit();
+                                                }
+                                            }}
+                                            className="min-w-0 flex-1 rounded-md border border-blue-300 bg-white px-2 py-1 text-sm leading-relaxed text-gray-900 shadow-sm outline-none ring-2 ring-blue-500/20"
+                                            aria-label="코멘트 수정"
+                                        />
+                                    ) : (
+                                        <span className="w-full whitespace-nowrap text-[14px] leading-relaxed tracking-tight">
+                                            {index + 1}. {item.text}
+                                        </span>
+                                    )}
+                                    {isEditing ? null : (
+                                        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 bg-gray-50/95 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                                            <button
+                                                type="button"
+                                                className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 shadow-sm transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+                                                onClick={() =>
+                                                    startTimesheetCommentInlineEdit(
+                                                        sectionKey,
+                                                        item
+                                                    )
+                                                }
+                                                aria-label="코멘트 수정"
+                                            >
+                                                <IconEdit className="h-4 w-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 shadow-sm transition-all hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                onClick={() =>
+                                                    deleteTimesheetSectionComment(
+                                                        sectionKey,
+                                                        item.sourceKey,
+                                                        item.isManual
+                                                    )
+                                                }
+                                                aria-label="코멘트 삭제"
+                                            >
+                                                <IconClose className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 ) : (
                     <div className="mt-1 text-gray-400">-</div>
@@ -9440,9 +9889,12 @@ export default function InvoiceCreatePage() {
         people: allTimesheetPeople,
         rows: timesheetRows,
     };
+    const rndTimesheetAutoComments = getNormalTimesheetComments(
+        rndTimesheetSection
+    );
     const rndTimesheetComments = resolveTimesheetSectionComments(
         rndTimesheetSection,
-        getNormalTimesheetComments(rndTimesheetSection)
+        rndTimesheetAutoComments
     );
     const invoiceSkilledFitterPeople = sortPeopleForMention(
         jobDescriptionPersonnel.engineerPeople
@@ -11575,29 +12027,34 @@ export default function InvoiceCreatePage() {
             return;
         }
         setInvoicePdfDownloadIframeId(next);
-        setInvoicePdfDownloadIframeNonce((n) => n + 1);
+        setInvoicePdfDownloadIframeNonce((nonce) => nonce + 1);
     }, []);
 
     const startInvoicePdfFileDownloads = useCallback((ids: number[]) => {
         if (ids.length === 0) return;
         invoicePdfDownloadQueueRef.current = ids.slice(1);
         setInvoicePdfDownloadIframeId(ids[0]);
-        setInvoicePdfDownloadIframeNonce((n) => n + 1);
+        setInvoicePdfDownloadIframeNonce((nonce) => nonce + 1);
     }, []);
 
     useEffect(() => {
-        const onMsg = (e: MessageEvent) => {
-            if (e.data?.type !== "rtb-report-pdf-download") return;
-            if (e.source !== invoicePdfDownloadIframeRef.current?.contentWindow) {
+        const onMessage = (event: MessageEvent) => {
+            if (event.data?.type !== "rtb-report-pdf-download") return;
+            if (
+                event.source !==
+                invoicePdfDownloadIframeRef.current?.contentWindow
+            ) {
                 return;
             }
-            if (e.data.status === "error") {
-                showError(e.data.message ?? "PDF 다운로드에 실패했습니다.");
+            if (event.data.status === "error") {
+                showError(
+                    event.data.message ?? "PDF 다운로드에 실패했습니다."
+                );
             }
             advanceInvoicePdfDownload();
         };
-        window.addEventListener("message", onMsg);
-        return () => window.removeEventListener("message", onMsg);
+        window.addEventListener("message", onMessage);
+        return () => window.removeEventListener("message", onMessage);
     }, [advanceInvoicePdfDownload, showError]);
 
     const toggleInvoicePdfSelectedId = useCallback((id: number) => {
@@ -11879,7 +12336,13 @@ export default function InvoiceCreatePage() {
                     key={`${invoicePdfDownloadIframeId}-${invoicePdfDownloadIframeNonce}`}
                     title="PDF 다운로드"
                     src={`/report/pdf?id=${invoicePdfDownloadIframeId}&download=file`}
-                    className="fixed left-0 top-0 w-px h-px opacity-0 pointer-events-none border-0"
+                    className="fixed pointer-events-none border-0"
+                    style={{
+                        left: "-10000px",
+                        top: 0,
+                        width: "980px",
+                        height: "820px",
+                    }}
                     aria-hidden
                 />
             ) : null}
@@ -12677,7 +13140,7 @@ export default function InvoiceCreatePage() {
                                             <div className="text-sm text-gray-700">
                                                 {renderTimesheetCommentsBlock(
                                                     rndTimesheetSection,
-                                                    rndTimesheetComments
+                                                    rndTimesheetAutoComments
                                                 )}
                                             </div>
                                         </div>
@@ -12697,11 +13160,8 @@ export default function InvoiceCreatePage() {
                                               );
                                     const section =
                                         total === 0 ? null : normalTimesheetSections[safeIndex];
-                                    const sectionComments = section
-                                        ? resolveTimesheetSectionComments(
-                                              section,
-                                              getNormalTimesheetComments(section)
-                                          )
+                                    const sectionAutoComments = section
+                                        ? getNormalTimesheetComments(section)
                                         : [];
 
                                     return (
@@ -13115,7 +13575,7 @@ export default function InvoiceCreatePage() {
                                                             {section
                                                                 ? renderTimesheetCommentsBlock(
                                                                       section,
-                                                                      sectionComments
+                                                                      sectionAutoComments
                                                                   )
                                                                 : null}
                                                         </div>

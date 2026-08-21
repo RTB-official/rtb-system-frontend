@@ -7,6 +7,7 @@ import PageContainer from "../../components/common/PageContainer";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import WorkloadSkeleton from "../../components/common/WorkloadSkeleton";
 import useIsMobile from "../../hooks/useIsMobile";
+import { useHolidayDateSet } from "../../hooks/useHolidayDateSet";
 import { useUser } from "../../hooks/useUser";
 import Toast, { type ToastItem } from "../../components/ui/Toast";
 import { supabase } from "../../lib/supabase";
@@ -32,6 +33,7 @@ import {
     getWorkerWorkloadDetail,
     type WorkloadDetailEntry,
 } from "../../lib/workloadDetailApi";
+import { getDatesInMonth } from "../../utils/holidayDates";
 
 export default function WorkloadPage() {
     const navigate = useNavigate();
@@ -286,6 +288,27 @@ export default function WorkloadPage() {
         () => parseInt(selectedMonth.replace("월", "")),
         [selectedMonth]
     );
+
+    const holidayTargetDates = useMemo(() => {
+        if (reasonDetailEntries.length > 0) {
+            return Array.from(
+                new Set(reasonDetailEntries.map((entry) => entry.date))
+            );
+        }
+
+        if (!reasonTargetName) {
+            return [];
+        }
+
+        return getDatesInMonth(selectedYearNum, selectedMonthNum);
+    }, [
+        reasonDetailEntries,
+        reasonTargetName,
+        selectedYearNum,
+        selectedMonthNum,
+    ]);
+
+    const holidayDateSet = useHolidayDateSet(holidayTargetDates);
 
     // ✅ 막대 클릭으로 연 사유 패널: 상세 페이지와 동일한 날짜별 세부 분석 데이터
     useEffect(() => {
@@ -917,6 +940,7 @@ export default function WorkloadPage() {
                                 reasonDetailPage={reasonDetailPage}
                                 onReasonDetailPageChange={setReasonDetailPage}
                                 onReasonDetailRowClick={handleReasonDetailRowClick}
+                                holidayDateKeys={holidayDateSet}
                             />
 
                             <WorkloadTableSection

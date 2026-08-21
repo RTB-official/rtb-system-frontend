@@ -608,16 +608,17 @@ export default function ReportListPage() {
                             </div>
 
                             <Table
-                                className="text-[14px]"
+                                className="text-[14px] table-fixed"
                                 emptyText="조회된 보고서가 없습니다."
                                 columns={[
                                     {
                                         key: "owner",
                                         label: "작성자",
                                         width: "12%",
+                                        cellClassName: "overflow-hidden",
                                         render: (_, row: ReportItem) => {
                                             return (
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 min-w-0">
                                                     <Avatar
                                                         email={
                                                             row.ownerEmail ||
@@ -629,7 +630,7 @@ export default function ReportListPage() {
                                                             null
                                                         }
                                                     />
-                                                    <span className="text-gray-900">
+                                                    <span className="text-gray-900 truncate">
                                                         {row.owner}
                                                     </span>
                                                 </div>
@@ -639,7 +640,8 @@ export default function ReportListPage() {
                                     {
                                         key: "title",
                                         label: "제목",
-                                        width: "36%",
+                                        width: "34%",
+                                        cellClassName: "max-w-0 overflow-hidden",
                                         render: (_: unknown, row: ReportItem) => (
                                             <ReportMultiLineTitle
                                                 title={row.title}
@@ -651,6 +653,7 @@ export default function ReportListPage() {
                                         key: "place",
                                         label: "출장지",
                                         width: "12%",
+                                        cellClassName: "overflow-hidden",
                                         render: (value) => {
                                             if (
                                                 value &&
@@ -658,7 +661,7 @@ export default function ReportListPage() {
                                                 value !== "—"
                                             ) {
                                                 return (
-                                                    <span className="text-gray-600">
+                                                    <span className="text-gray-600 truncate block">
                                                         {value}
                                                     </span>
                                                 );
@@ -670,6 +673,7 @@ export default function ReportListPage() {
                                         key: "supervisor",
                                         label: "참관감독",
                                         width: "12%",
+                                        cellClassName: "overflow-hidden",
                                         render: (value) => {
                                             if (
                                                 value &&
@@ -677,7 +681,7 @@ export default function ReportListPage() {
                                                 value !== "—"
                                             ) {
                                                 return (
-                                                    <span className="text-gray-500">
+                                                    <span className="text-gray-500 truncate block">
                                                         {value}
                                                     </span>
                                                 );
@@ -688,7 +692,8 @@ export default function ReportListPage() {
                                     {
                                         key: "date",
                                         label: "작성일",
-                                        width: "12%",
+                                        width: "11%",
+                                        cellClassName: "overflow-hidden whitespace-nowrap",
                                         render: (value) => (
                                             <span className="text-gray-600">
                                                 {value}
@@ -698,7 +703,8 @@ export default function ReportListPage() {
                                     {
                                         key: "status",
                                         label: "상태",
-                                        width: "10%",
+                                        width: "11%",
+                                        cellClassName: "overflow-hidden",
                                         render: (_, row: ReportItem) => {
                                             const statusConfig: Record<
                                                 ReportListStatus,
@@ -735,7 +741,7 @@ export default function ReportListPage() {
                                     {
                                         key: "actions",
                                         label: "",
-                                        width: "12%",
+                                        width: "8%",
                                         align: "right",
                                         showEmptyIndicator: false,
                                         render: (_, row: ReportItem) => {

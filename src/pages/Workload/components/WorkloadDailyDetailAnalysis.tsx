@@ -7,6 +7,7 @@ import {
     formatTimeRange,
     type WorkloadDetailEntry,
 } from "../../../lib/workloadDetailApi";
+import { getWorkloadDateColorClass } from "../../../utils/holidayDates";
 import { useMemo } from "react";
 
 export interface WorkloadDailyDetailAnalysisProps {
@@ -19,6 +20,8 @@ export interface WorkloadDailyDetailAnalysisProps {
     onRowClick: (row: WorkloadDetailEntry) => void;
     /** false면 테두리/패딩 없이 제목+본문만 (부모 레이아웃에 맞출 때) */
     bordered?: boolean;
+    /** 인보이스 생성 페이지와 동일: 행정 API·캘린더 키워드 공휴일. 주말은 별도 판별. */
+    holidayDateKeys?: ReadonlySet<string>;
 }
 
 function TableLoadingRows() {
@@ -48,6 +51,7 @@ export default function WorkloadDailyDetailAnalysis({
     itemsPerPage = 10,
     onRowClick,
     bordered = true,
+    holidayDateKeys,
 }: WorkloadDailyDetailAnalysisProps) {
     const totalPages = useMemo(() => {
         return Math.ceil(entries.length / itemsPerPage);
@@ -78,11 +82,10 @@ export default function WorkloadDailyDetailAnalysis({
                     <ul className="flex flex-col gap-2">
                         {currentTableData.map((row) => {
                             const formattedDate = formatDetailDate(row.date);
-                            const date = new Date(row.date + "T00:00:00");
-                            const dayOfWeek = date.getDay();
-                            let dateColor = "text-gray-800";
-                            if (dayOfWeek === 0) dateColor = "text-red-600";
-                            else if (dayOfWeek === 6) dateColor = "text-blue-600";
+                            const dateColor = getWorkloadDateColorClass(
+                                row.date,
+                                holidayDateKeys
+                            );
                             return (
                                 <li key={row.id}>
                                     <button
@@ -127,11 +130,10 @@ export default function WorkloadDailyDetailAnalysis({
                                     return <span className="text-transparent">-</span>;
                                 }
                                 const formattedDate = formatDetailDate(row.date);
-                                const date = new Date(row.date + "T00:00:00");
-                                const dayOfWeek = date.getDay();
-                                let colorClass = "text-gray-800";
-                                if (dayOfWeek === 0) colorClass = "text-red-600";
-                                else if (dayOfWeek === 6) colorClass = "text-blue-600";
+                                const colorClass = getWorkloadDateColorClass(
+                                    row.date,
+                                    holidayDateKeys
+                                );
                                 return (
                                     <span className={`font-medium ${colorClass}`}>
                                         {formattedDate}

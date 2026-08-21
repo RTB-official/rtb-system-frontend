@@ -1,6 +1,5 @@
 import { INVOICE_MANPOWER_UNIT_PRICE_KRW } from "../constants/invoiceManpowerUnitPriceKrw";
 import {
-    distributeWorkManualToFourBuckets,
     roundHours,
     type WorkEntryBillableFourBuckets,
 } from "./workEntryBillableHours";
@@ -99,57 +98,11 @@ export function sumManpowerSkilledFitterFromRows(rows: ManpowerMoneyDetailRow[])
 }
 
 /**
- * 올림 청구(4h/8h) 인보이스 반영: After 구간 없이 Normal 단가만,
- * 평일 N·주말 N에만 시간 배분(자동 Normal 비율, 전부 A였으면 대표 일 기준 N).
+ * 올림 청구(4h/8h)는 실제 작업일과 관계없이 평일 Normal로 반영한다.
  */
 export function buildAfterRoundedBillableFourBuckets(
-    roundedHours: number,
-    autoBuckets: WorkEntryBillableFourBuckets,
-    primaryYmd: string,
-    isWeekendOrHoliday: (ymd: string) => boolean
+    roundedHours: number
 ): WorkEntryBillableFourBuckets {
-    const nOnly: WorkEntryBillableFourBuckets = {
-        weekdayN: autoBuckets.weekdayN,
-        weekdayA: 0,
-        weekendN: autoBuckets.weekendN,
-        weekendA: 0,
-    };
-    const sumN = roundHours(nOnly.weekdayN + nOnly.weekendN);
-    if (sumN > 0.001) {
-        return distributeWorkManualToFourBuckets(roundedHours, nOnly);
-    }
-
-    const totalAuto = roundHours(
-        autoBuckets.weekdayN +
-            autoBuckets.weekdayA +
-            autoBuckets.weekendN +
-            autoBuckets.weekendA
-    );
-    if (totalAuto <= 0) {
-        if (isWeekendOrHoliday(primaryYmd)) {
-            return {
-                weekdayN: 0,
-                weekdayA: 0,
-                weekendN: roundHours(roundedHours),
-                weekendA: 0,
-            };
-        }
-        return {
-            weekdayN: roundHours(roundedHours),
-            weekdayA: 0,
-            weekendN: 0,
-            weekendA: 0,
-        };
-    }
-
-    if (isWeekendOrHoliday(primaryYmd)) {
-        return {
-            weekdayN: 0,
-            weekdayA: 0,
-            weekendN: roundHours(roundedHours),
-            weekendA: 0,
-        };
-    }
     return {
         weekdayN: roundHours(roundedHours),
         weekdayA: 0,
