@@ -1437,13 +1437,14 @@ export default function TimesheetRowDetailSidePanel({
                                             <td
                                                 className={`border-b border-r border-gray-200 px-3 py-2 text-gray-900 ${dateBoundaryTopClass}`}
                                             >
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <EntryDescriptionWithOtherLineBadges
-                                                        text={descriptionText}
-                                                        className="min-w-0 flex-1"
-                                                    />
+                                                <div className="flex flex-wrap-reverse items-start gap-x-3 gap-y-1">
+                                                    <div className="min-w-[16rem] flex-1 basis-[16rem]">
+                                                        <EntryDescriptionWithOtherLineBadges
+                                                            text={descriptionText}
+                                                        />
+                                                    </div>
                                                     {descriptionBadges.length > 0 ? (
-                                                        <div className="flex shrink-0 flex-col items-end gap-1">
+                                                        <div className="ml-auto flex max-w-full shrink-0 flex-col items-end gap-1">
                                                             {descriptionBadges.map((badge) => (
                                                                 <TravelDescriptionBadge
                                                                     key={badge.label}
@@ -2547,15 +2548,25 @@ export default function TimesheetRowDetailSidePanel({
             return roundHours(totalHours);
         }
 
+        /**
+         * 자택 출발 체인은 고정 청구시간이 도착 시각 기준으로 역산되므로
+         * 마지막 이동부터 채운다. 자택 도착 체인은 출발 시각 기준이라 그대로 둔다.
+         */
+        const departsFromHome =
+            normalizeLocationName(getTravelEntryOrigin(targetGroup[0])) === "자택";
+        const allocationOrder = departsFromHome
+            ? [...targetGroup].reverse()
+            : targetGroup;
+
         let remaining = roundHours(totalHours);
         const allocationByEntryId = new Map<number, number>();
-        targetGroup.forEach((groupEntry, index) => {
+        allocationOrder.forEach((groupEntry, index) => {
             if (remaining <= 0) {
                 allocationByEntryId.set(groupEntry.id, 0);
                 return;
             }
             const rawHours = roundHours(calculateRawTravelHours(groupEntry));
-            const isLast = index === targetGroup.length - 1;
+            const isLast = index === allocationOrder.length - 1;
             const allocated = isLast
                 ? remaining
                 : Math.min(rawHours > 0 ? rawHours : remaining, remaining);
