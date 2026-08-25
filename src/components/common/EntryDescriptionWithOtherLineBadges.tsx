@@ -22,9 +22,15 @@ export default function EntryDescriptionWithOtherLineBadges({
     }
 
     return (
-        <div className={`flex flex-col gap-1.5 min-w-0 ${className}`}>
+        <div
+            className={
+                className
+                    ? `flex flex-col gap-1.5 ${className}`
+                    : "flex min-w-0 flex-col gap-1.5"
+            }
+        >
             {plainText ? (
-                <span className="whitespace-pre-wrap break-words">{plainText}</span>
+                <span className="break-keep whitespace-pre-wrap">{plainText}</span>
             ) : null}
             {otherLineBadges.map((badge) => (
                 <span key={badge} className={`${OTHER_LINE_BADGE_CLASS} w-fit`}>

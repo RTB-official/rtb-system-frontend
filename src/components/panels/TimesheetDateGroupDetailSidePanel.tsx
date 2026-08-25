@@ -880,9 +880,22 @@ export default function TimesheetDateGroupDetailSidePanel({
     const expandedRemarkKeyRef = useRef<string | null>(null);
     expandedRemarkKeyRef.current = expandedRemarkKey;
     const closeRemarkTimerRef = useRef<number | null>(null);
+    /** 의도적으로 날짜 점프할 때만 스크롤. 엔트리 저장으로 fullGroupEntries가 바뀌어도 재실행하지 않음. */
+    const lastScrolledToFullGroupNonceRef = useRef<number | undefined>(
+        undefined
+    );
+    const scrollBodyScrollTopRef = useRef(0);
 
     useLayoutEffect(() => {
-        if (!isOpen || !scrollToFullGroupDate) {
+        if (!isOpen) {
+            lastScrolledToFullGroupNonceRef.current = undefined;
+            return;
+        }
+        if (
+            !scrollToFullGroupDate ||
+            scrollToFullGroupNonce == null ||
+            lastScrolledToFullGroupNonceRef.current === scrollToFullGroupNonce
+        ) {
             return;
         }
         const body = scrollBodyRef.current;
@@ -890,6 +903,12 @@ export default function TimesheetDateGroupDetailSidePanel({
             return;
         }
         const run = () => {
+            if (
+                lastScrolledToFullGroupNonceRef.current ===
+                scrollToFullGroupNonce
+            ) {
+                return;
+            }
             const matchingEntries = fullGroupEntries.filter((e) =>
                 entryTouchesCalendarDay(e, scrollToFullGroupDate)
             );
@@ -940,10 +959,12 @@ export default function TimesheetDateGroupDetailSidePanel({
             const prefersReducedMotion =
                 typeof window !== "undefined" &&
                 window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            lastScrolledToFullGroupNonceRef.current = scrollToFullGroupNonce;
             body.scrollTo({
                 top: clampedTop,
                 behavior: prefersReducedMotion ? "auto" : "smooth",
             });
+            scrollBodyScrollTopRef.current = clampedTop;
         };
         requestAnimationFrame(() => {
             requestAnimationFrame(run);
@@ -954,6 +975,27 @@ export default function TimesheetDateGroupDetailSidePanel({
         scrollToFullGroupNonce,
         fullGroupEntries,
     ]);
+
+    /** 엔트리 저장 등으로 목록이 다시 그려져도 스크롤 위치 유지 */
+    useLayoutEffect(() => {
+        if (!isOpen) {
+            return;
+        }
+        const body = scrollBodyRef.current;
+        if (!body) {
+            return;
+        }
+        if (
+            scrollToFullGroupNonce != null &&
+            lastScrolledToFullGroupNonceRef.current !== scrollToFullGroupNonce
+        ) {
+            return;
+        }
+        const restoreTop = scrollBodyScrollTopRef.current;
+        if (body.scrollTop !== restoreTop) {
+            body.scrollTop = restoreTop;
+        }
+    }, [isOpen, fullGroupEntries, scrollToFullGroupNonce]);
 
     useEffect(() => {
         setRemarkPersonReplacePickerKey(null);
@@ -1008,6 +1050,7 @@ export default function TimesheetDateGroupDetailSidePanel({
         } else if (editorRect.top < bodyRect.top + padding) {
             body.scrollTop -= bodyRect.top + padding - editorRect.top;
         }
+        scrollBodyScrollTopRef.current = body.scrollTop;
     }, []);
 
     const closeRemarkEditor = useCallback(() => {
@@ -1811,6 +1854,26 @@ export default function TimesheetDateGroupDetailSidePanel({
         });
     };
 
+    /** 날짜와 무관하게 이어지는 한 번의 이동 체인(2시간 이상 끊기면 분리). */
+    const getPersonTravelChainForEntry = (
+        entry: TimesheetSourceEntryData,
+        person: string
+    ): TimesheetSourceEntryData[] | null => {
+        const personTravelEntries = sortEntriesByStart(
+            fullGroupEntries.filter(
+                (candidate) =>
+                    candidate.descType === "\uC774\uB3D9" &&
+                    (candidate.persons ?? []).includes(person)
+            )
+        );
+
+        return (
+            splitTravelEntriesByGap(personTravelEntries, 2).find((group) =>
+                group.some((candidate) => candidate.id === entry.id)
+            ) ?? null
+        );
+    };
+
     const getTravelChargeResultForPerson = (
         entry: TimesheetSourceEntryData,
         person: string,
@@ -1859,12 +1922,19 @@ export default function TimesheetDateGroupDetailSidePanel({
                 return { hours: 0, kind: "zero-billing" };
             }
 
-            return summarizeTravelEntries(
-                personEntries.filter(
-                    (candidate) => candidate.descType === "\uC774\uB3D9"
-                ),
-                false
+            /**
+             * 작업이 없는 날이라도 자택 이동 체인이면 그날 원본 시간이 아니라
+             * 체인 전체의 고정 청구시간을 기준으로 배분한다.
+             */
+            const dayTravelEntries = personEntries.filter(
+                (candidate) => candidate.descType === "\uC774\uB3D9"
             );
+            const travelChain = getPersonTravelChainForEntry(entry, person);
+
+            return travelChain &&
+                travelChain.some((candidate) => hasHomeInTravel(candidate))
+                ? summarizeTravelEntries(travelChain, true)
+                : summarizeTravelEntries(dayTravelEntries, false);
         }
 
         for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
@@ -1991,34 +2061,32 @@ export default function TimesheetDateGroupDetailSidePanel({
             return 0;
         }
 
-        const personTravelEntries = sortEntriesByStart(
-            fullGroupEntries.filter(
-                (candidate) =>
-                    candidate.descType === "\uC774\uB3D9" &&
-                    (candidate.persons ?? []).includes(person)
-            )
-        );
-        if (personTravelEntries.length <= 1) {
-            return roundHours(totalHours);
-        }
-
-        const targetGroup = splitTravelEntriesByGap(personTravelEntries, 2).find((group) =>
-            group.some((candidate) => candidate.id === entry.id)
-        );
+        const targetGroup = getPersonTravelChainForEntry(entry, person);
         if (!targetGroup || targetGroup.length <= 1) {
             return roundHours(totalHours);
         }
 
+        /**
+         * 자택 출발 체인은 고정 청구시간이 도착 시각 기준으로 역산되므로
+         * 마지막 이동부터 채운다. 자택 도착 체인은 출발 시각 기준이라 그대로 둔다.
+         */
+        const departsFromHome =
+            normalizeLocationName(getTravelEntryOrigin(targetGroup[0])) ===
+            "\uC790\uD0DD";
+        const allocationOrder = departsFromHome
+            ? [...targetGroup].reverse()
+            : targetGroup;
+
         let remaining = roundHours(totalHours);
         const allocationByEntryId = new Map<number, number>();
-        targetGroup.forEach((groupEntry, index) => {
+        allocationOrder.forEach((groupEntry, index) => {
             if (remaining <= 0) {
                 allocationByEntryId.set(groupEntry.id, 0);
                 return;
             }
 
             const rawHours = roundHours(calculateRawTravelHours(groupEntry));
-            const isLast = index === targetGroup.length - 1;
+            const isLast = index === allocationOrder.length - 1;
             const allocated = isLast
                 ? remaining
                 : Math.min(rawHours > 0 ? rawHours : remaining, remaining);
@@ -2971,7 +3039,13 @@ export default function TimesheetDateGroupDetailSidePanel({
                     </div>
                 </div>
 
-                <div ref={scrollBodyRef} className="flex-1 overflow-y-auto px-6 py-6">
+                <div
+                    ref={scrollBodyRef}
+                    className="flex-1 overflow-y-auto px-6 py-6"
+                    onScroll={(event) => {
+                        scrollBodyScrollTopRef.current = event.currentTarget.scrollTop;
+                    }}
+                >
                     <div className="rounded-xl border border-gray-200 bg-white overflow-visible">
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-blue-50 px-4 py-3">
                             <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
@@ -3399,13 +3473,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                         <td
                                                             className={`border-b border-r border-gray-200 px-3 py-2 text-gray-900 ${dateBoundaryTopClass}`}
                                                         >
-                                                            <div className="flex items-start justify-between gap-3">
-                                                                <EntryDescriptionWithOtherLineBadges
-                                                                    text={descriptionText}
-                                                                    className="min-w-0"
-                                                                />
+                                                            <div className="flex flex-wrap-reverse items-start gap-x-3 gap-y-1">
+                                                                <div className="min-w-[16rem] flex-1 basis-[16rem]">
+                                                                    <EntryDescriptionWithOtherLineBadges
+                                                                        text={descriptionText}
+                                                                    />
+                                                                </div>
                                                                 {descriptionBadges.length > 0 ? (
-                                                                    <div className="flex shrink-0 flex-col items-end gap-1">
+                                                                    <div className="ml-auto flex max-w-full shrink-0 flex-col items-end gap-1">
                                                                         {descriptionBadges.map(
                                                                             (badge) => (
                                                                                 <TravelDescriptionBadge

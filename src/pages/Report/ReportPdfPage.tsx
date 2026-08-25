@@ -9,7 +9,10 @@ import {
     PdfMaterial,
     PdfReceipt,
 } from "../../lib/reportPdfData";
-import { saveCanvasAsMultiPagePdf } from "../../lib/reportPdfCanvasToPdf";
+import {
+    collectBreakAvoidBlocks,
+    saveCanvasAsMultiPagePdf,
+} from "../../lib/reportPdfCanvasToPdf";
 import { formatReportPdfFilename } from "../../utils/reportPdfFilename";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
@@ -526,16 +529,30 @@ export default function ReportPdfPage() {
                     throw new Error("PDF 렌더 영역을 찾지 못했습니다.");
                 }
 
-                const canvas = await domToCanvas(sheet, {
-                    scale: 2,
-                    backgroundColor: "#ffffff",
-                    width: sheet.scrollWidth,
-                    height: sheet.scrollHeight,
-                    timeout: 30000,
-                });
+                // .sheet 의 인쇄용 상하 여백은 jsPDF 쪽 여백과 중복되므로 캡처 동안만 제거한다.
+                const prevPadding = sheet.style.padding;
+                sheet.style.padding = "0";
+
+                const breakAvoidBlocks = collectBreakAvoidBlocks(sheet);
+                const sourceHeight = sheet.scrollHeight;
+                let canvas: HTMLCanvasElement;
+                try {
+                    canvas = await domToCanvas(sheet, {
+                        scale: 2,
+                        backgroundColor: "#ffffff",
+                        width: sheet.scrollWidth,
+                        height: sourceHeight,
+                        timeout: 30000,
+                    });
+                } finally {
+                    sheet.style.padding = prevPadding;
+                }
                 if (cancelled) return;
 
-                saveCanvasAsMultiPagePdf(canvas, filenameBase);
+                saveCanvasAsMultiPagePdf(canvas, filenameBase, {
+                    breakAvoidBlocks,
+                    sourceHeight,
+                });
 
                 if (window.parent !== window) {
                     window.parent.postMessage(
@@ -707,7 +724,9 @@ export default function ReportPdfPage() {
       font-weight:700; font-style:normal;
     }
     
-    @page { size: A4 portrait; margin: 12mm 10mm; }
+    /* margin:0 이어야 브라우저가 페이지마다 넣는 머리글/바닥글(날짜·URL·쪽번호)이 사라진다.
+       대신 여백은 .sheet 의 padding 으로 직접 만든다. */
+    @page { size: A4 portrait; margin: 0; }
     body { font-family:'NanumGothic', sans-serif; color:#1b1d22; font-size:11.5pt; }
     
     :root{
@@ -719,6 +738,7 @@ export default function ReportPdfPage() {
     .sheet{
       width: 190mm;
       margin: 0 auto;
+      padding: 12mm 0;
     }
     
     /* ✅ 우측 상단 고정 PDF 저장 버튼 (내용과 완전 분리) */
@@ -1102,6 +1122,9 @@ export default function ReportPdfPage() {
     
     @media print {
       html, body { background:#fff; }
+
+      /* @page margin 이 0 이라 페이지가 넘어간 직후 내용이 종이 끝에 붙는 것을 막는다. */
+      .section{ padding: 4mm 0; }
 
       /* ✅ 인쇄 프리뷰에서 색상/배경색이 빠지는 현상 최소화 */
       * {

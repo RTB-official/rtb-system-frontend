@@ -1576,12 +1576,10 @@ export default function InvoiceCreatePage() {
     const [invoicePdfSelectedIds, setInvoicePdfSelectedIds] = useState<number[]>(
         []
     );
-    const invoicePdfDownloadQueueRef = useRef<number[]>([]);
-    const [invoicePdfDownloadIframeId, setInvoicePdfDownloadIframeId] =
-        useState<number | null>(null);
-    const [invoicePdfDownloadIframeNonce, setInvoicePdfDownloadIframeNonce] =
-        useState(0);
-    const invoicePdfDownloadIframeRef = useRef<HTMLIFrameElement | null>(null);
+    const [invoicePdfDownloadIds, setInvoicePdfDownloadIds] = useState<
+        number[]
+    >([]);
+    const [invoicePdfDownloadNonce, setInvoicePdfDownloadNonce] = useState(0);
     const invoicePdfMenuButtonRef = useRef<HTMLButtonElement | null>(null);
     const invoicePdfMenuPanelRef = useRef<HTMLDivElement | null>(null);
     const [invoiceExcelExporting, setInvoiceExcelExporting] = useState(false);
@@ -4750,6 +4748,16 @@ export default function InvoiceCreatePage() {
                             rawLatestValues.length > 0
                                 ? rawLatestValues[rawLatestValues.length - 1]
                                 : latestValue;
+                        const hasAdjustedFixedHomeWindow = entries.some(
+                            (entry) => entry.fixedHomeTravelWindowApplied
+                        );
+                        /**
+                         * 자택 고정 청구시간으로 이미 좁혀진 이동 체인은 원본 구간이 아니라
+                         * 보정된 구간을 그대로 쓴다. 자정 분할된 조각마다 원본 시간을 다시
+                         * 집계하면 고정시간이 중복 청구된다.
+                         */
+                        const useAdjustedTravelWindow =
+                            useFixedHomeHours || hasAdjustedFixedHomeWindow;
                         const manualOrAutoMixedHours = (() => {
                             let hasManualOverride = false;
                             let sum = 0;
@@ -4768,8 +4776,12 @@ export default function InvoiceCreatePage() {
                             return {
                                 kind: fallbackLabel,
                                 hours: manualOrAutoMixedHours,
-                                start: useFixedHomeHours ? earliest : rawEarliest,
-                                end: useFixedHomeHours ? latestValue : rawLatest,
+                                start: useAdjustedTravelWindow
+                                    ? earliest
+                                    : rawEarliest,
+                                end: useAdjustedTravelWindow
+                                    ? latestValue
+                                    : rawLatest,
                                 label: destination || fallbackLabel,
                             };
                         }
@@ -4791,10 +4803,6 @@ export default function InvoiceCreatePage() {
                                 label: fallbackLabel,
                             };
                         }
-
-                        const hasAdjustedFixedHomeWindow = entries.some(
-                            (entry) => entry.fixedHomeTravelWindowApplied
-                        );
 
                         if (
                             override?.target === "home" &&
@@ -4827,7 +4835,8 @@ export default function InvoiceCreatePage() {
                         const hours = entries.reduce(
                             (sum, entry) =>
                                 sum +
-                                (useFixedHomeHours
+                                (useFixedHomeHours ||
+                                entry.fixedHomeTravelWindowApplied
                                     ? calculateRawTravelHours(entry)
                                     : getMergedTravelHoursWithManualOverride(
                                           entry,
@@ -4840,8 +4849,12 @@ export default function InvoiceCreatePage() {
                         return {
                             kind: fallbackLabel,
                             hours: roundHours(hours),
-                            start: useFixedHomeHours ? earliest : rawEarliest,
-                            end: useFixedHomeHours ? latestValue : rawLatest,
+                            start: useAdjustedTravelWindow
+                                ? earliest
+                                : rawEarliest,
+                            end: useAdjustedTravelWindow
+                                ? latestValue
+                                : rawLatest,
                             label: destination || "최종 철수",
                         };
                     };
@@ -5035,6 +5048,22 @@ export default function InvoiceCreatePage() {
                         );
                         const overrideFixedHours =
                             getHomeTravelHours(beforeTravelEntries[0].location) ?? 0;
+                        /**
+                         * 이미 고정 청구시간으로 좁혀진 체인은 자정 분할된 조각만 남을 수
+                         * 있으므로 고정시간을 다시 적용하지 않고 보정된 구간만큼만 청구한다.
+                         */
+                        const resolveFixedHomeHours = (fixedHours: number) =>
+                            beforeTravelEntries.some(
+                                (entry) => entry.fixedHomeTravelWindowApplied
+                            )
+                                ? roundHours(
+                                      beforeTravelEntries.reduce(
+                                          (sum, entry) =>
+                                              sum + calculateRawTravelHours(entry),
+                                          0
+                                      )
+                                  )
+                                : fixedHours;
 
                         if (override?.target === "lodging") {
                             const { anchorDate, anchorTime } =
@@ -5054,6 +5083,8 @@ export default function InvoiceCreatePage() {
                         }
 
                         if (override?.target === "home" && overrideFixedHours > 0) {
+                            const chargeHours =
+                                resolveFixedHomeHours(overrideFixedHours);
                             const { anchorDate, anchorTime } =
                                 blockIndex === 0
                                     ? getInitialBeforeTravelChargeEndAnchor(
@@ -5067,11 +5098,11 @@ export default function InvoiceCreatePage() {
                                       );
                             return {
                                 kind: blockIndex === 0 ? "initial-home" : "이동-home",
-                                hours: overrideFixedHours,
+                                hours: chargeHours,
                                 start: shiftTimeByHours(
                                     anchorDate,
                                     anchorTime,
-                                    -overrideFixedHours
+                                    -chargeHours
                                 ),
                                 end: anchorTime,
                                 label: blockIndex === 0 ? "최초투입" : "이동",
@@ -5096,6 +5127,8 @@ export default function InvoiceCreatePage() {
                                 );
 
                                 if (hasHome && fixedHours > 0) {
+                                    const chargeHours =
+                                        resolveFixedHomeHours(fixedHours);
                                     const { anchorDate, anchorTime } =
                                         getInitialBeforeTravelChargeEndAnchor(
                                             beforeTravelEntries,
@@ -5103,11 +5136,11 @@ export default function InvoiceCreatePage() {
                                         );
                                     return {
                                         kind: "initial-home",
-                                        hours: fixedHours,
+                                        hours: chargeHours,
                                         start: shiftTimeByHours(
                                             anchorDate,
                                             anchorTime,
-                                            -fixedHours
+                                            -chargeHours
                                         ),
                                         end: anchorTime,
                                         label: "최초투입",
@@ -5185,6 +5218,23 @@ export default function InvoiceCreatePage() {
                         );
                         const overrideFixedHours =
                             getHomeTravelHours(afterTravelEntries[0].location) ?? 0;
+                        /**
+                         * 이미 고정 청구시간으로 좁혀진 체인은 자정 분할된 조각만 남을 수
+                         * 있으므로 고정시간을 다시 적용하지 않고 보정된 구간만큼만 청구한다.
+                         */
+                        const hasAdjustedFixedHomeWindow = afterTravelEntries.some(
+                            (entry) => entry.fixedHomeTravelWindowApplied
+                        );
+                        const resolveFixedHomeHours = (fixedHours: number) =>
+                            hasAdjustedFixedHomeWindow
+                                ? roundHours(
+                                      afterTravelEntries.reduce(
+                                          (sum, entry) =>
+                                              sum + calculateRawTravelHours(entry),
+                                          0
+                                      )
+                                  )
+                                : fixedHours;
 
                         if (override?.target === "lodging") {
                             return {
@@ -5197,6 +5247,8 @@ export default function InvoiceCreatePage() {
                         }
 
                         if (override?.target === "home" && overrideFixedHours > 0) {
+                            const chargeHours =
+                                resolveFixedHomeHours(overrideFixedHours);
                             const { anchorDate, anchorTime } =
                                 getAfterTravelChainStartAnchor(
                                     afterTravelEntries,
@@ -5208,12 +5260,12 @@ export default function InvoiceCreatePage() {
                                     blockIndex < totalBlocks - 1
                                         ? "이동-home"
                                         : "최종 철수-home",
-                                hours: overrideFixedHours,
+                                hours: chargeHours,
                                 start: anchorTime,
                                 end: shiftTimeByHours(
                                     anchorDate,
                                     anchorTime,
-                                    overrideFixedHours
+                                    chargeHours
                                 ),
                                 label: blockIndex < totalBlocks - 1 ? "이동" : "최종 철수",
                             };
@@ -7784,7 +7836,7 @@ export default function InvoiceCreatePage() {
         } (Total ${sortedPeople.length} fitters)`;
     };
     const getTopSelectableSkilledFitters = (people: string[]) =>
-        SKILLED_FITTER_PRIORITY.filter((person) => people.includes(person)).slice(0, 3);
+        SKILLED_FITTER_PRIORITY.filter((person) => people.includes(person));
     const getTopSelectableMechanics = (people: string[]) =>
         sortPeopleForMention(people).slice(0, 3);
     const getScopedMechanicRepresentative = (
@@ -12020,42 +12072,35 @@ export default function InvoiceCreatePage() {
         }
     }, [invoicePdfMenuOpen]);
 
-    const advanceInvoicePdfDownload = useCallback(() => {
-        const next = invoicePdfDownloadQueueRef.current.shift();
-        if (next == null) {
-            setInvoicePdfDownloadIframeId(null);
-            return;
-        }
-        setInvoicePdfDownloadIframeId(next);
-        setInvoicePdfDownloadIframeNonce((nonce) => nonce + 1);
-    }, []);
-
-    const startInvoicePdfFileDownloads = useCallback((ids: number[]) => {
-        if (ids.length === 0) return;
-        invoicePdfDownloadQueueRef.current = ids.slice(1);
-        setInvoicePdfDownloadIframeId(ids[0]);
-        setInvoicePdfDownloadIframeNonce((nonce) => nonce + 1);
-    }, []);
+    const startInvoicePdfFileDownloads = useCallback(
+        (ids: number[]) => {
+            if (ids.length === 0) return;
+            setInvoicePdfDownloadNonce((nonce) => nonce + 1);
+            setInvoicePdfDownloadIds(ids);
+            showSuccess(
+                ids.length > 1
+                    ? `보고서 ${ids.length}건의 PDF를 생성하고 있습니다.`
+                    : "보고서 PDF를 생성하고 있습니다."
+            );
+        },
+        [showSuccess]
+    );
 
     useEffect(() => {
         const onMessage = (event: MessageEvent) => {
             if (event.data?.type !== "rtb-report-pdf-download") return;
-            if (
-                event.source !==
-                invoicePdfDownloadIframeRef.current?.contentWindow
-            ) {
-                return;
-            }
+            const workLogId = Number(event.data.workLogId);
+            if (!Number.isFinite(workLogId)) return;
             if (event.data.status === "error") {
-                showError(
-                    event.data.message ?? "PDF 다운로드에 실패했습니다."
-                );
+                showError(event.data.message ?? "PDF 다운로드에 실패했습니다.");
             }
-            advanceInvoicePdfDownload();
+            setInvoicePdfDownloadIds((prev) =>
+                prev.filter((id) => id !== workLogId)
+            );
         };
         window.addEventListener("message", onMessage);
         return () => window.removeEventListener("message", onMessage);
-    }, [advanceInvoicePdfDownload, showError]);
+    }, [showError]);
 
     const toggleInvoicePdfSelectedId = useCallback((id: number) => {
         setInvoicePdfSelectedIds((prev) =>
@@ -12330,12 +12375,11 @@ export default function InvoiceCreatePage() {
 
     return (
         <div className="flex h-screen bg-white overflow-hidden font-pretendard">
-            {invoicePdfDownloadIframeId != null ? (
+            {invoicePdfDownloadIds.map((pdfWorkLogId) => (
                 <iframe
-                    ref={invoicePdfDownloadIframeRef}
-                    key={`${invoicePdfDownloadIframeId}-${invoicePdfDownloadIframeNonce}`}
-                    title="PDF 다운로드"
-                    src={`/report/pdf?id=${invoicePdfDownloadIframeId}&download=file`}
+                    key={`${pdfWorkLogId}-${invoicePdfDownloadNonce}`}
+                    title={`PDF 다운로드 ${pdfWorkLogId}`}
+                    src={`/report/pdf?id=${pdfWorkLogId}&download=file`}
                     className="fixed pointer-events-none border-0"
                     style={{
                         left: "-10000px",
@@ -12345,7 +12389,7 @@ export default function InvoiceCreatePage() {
                     }}
                     aria-hidden
                 />
-            ) : null}
+            ))}
             {/* Overlay - 사이드바가 열려있을 때만 표시 */}
             {sidebarOpen && (
                 <div
