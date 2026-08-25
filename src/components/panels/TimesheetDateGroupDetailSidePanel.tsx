@@ -1647,6 +1647,141 @@ export default function TimesheetDateGroupDetailSidePanel({
         return destination === workPlace;
     };
 
+    /**
+     * 출장지별 고정 이동시간이 걸리는 구간인지 판단한다.
+     * 자택과 출장지를 직접 잇는 이동만 해당하고, 자택→태성재처럼 출장지가 아닌
+     * 곳으로 가는 이동은 실제 이동시간을 그대로 청구한다.
+     */
+    const isHomeWorkSiteCommute = (
+        entry: TimesheetSourceEntryData
+    ): boolean => {
+        const workPlace = getPrimaryLocation(entry.location);
+        if (!workPlace) {
+            return false;
+        }
+
+        const origin = normalizeLocationName(getTravelEntryOrigin(entry));
+        const destination = normalizeLocationName(getFinalDestination(entry));
+        // "자택및숙소"처럼 붙어 적히는 경우가 있어 포함 여부로 본다.
+        const isHome = (place: string) => place.includes("자택");
+
+        return (
+            (isHome(origin) && destination === workPlace) ||
+            (origin === workPlace && isHome(destination))
+        );
+    };
+
+    /** 출발지·도착지가 같으면 같은 이동으로 본다(자정에서 잘린 구간 판별용). */
+    const getTravelJourneyKey = (entry: TimesheetSourceEntryData): string =>
+        [
+            normalizeLocationName(getTravelEntryOrigin(entry)),
+            normalizeLocationName(getFinalDestination(entry)),
+        ].join("\u2192");
+
+    /**
+     * 자정에서 잘린 같은 구간(23:00~24:00 + 00:00~01:00)을 한 번의 이동으로 묶는다.
+     * 묶지 않으면 조각마다 출장지별 고정시간이 통째로 붙어 중복 청구된다.
+     */
+    const groupTravelEntriesByJourney = (
+        entries: TimesheetSourceEntryData[]
+    ): TimesheetSourceEntryData[][] => {
+        const sortedEntries = sortEntriesByStart(entries);
+        const journeys: TimesheetSourceEntryData[][] = [];
+
+        sortedEntries.forEach((entry) => {
+            const currentJourney = journeys[journeys.length - 1];
+            const previousEntry = currentJourney?.[currentJourney.length - 1];
+            const previousEnd = previousEntry
+                ? getEntryEndTime(previousEntry)
+                : null;
+            const currentStart = getEntryStartTime(entry);
+
+            if (
+                currentJourney &&
+                previousEntry &&
+                previousEnd !== null &&
+                currentStart !== null &&
+                previousEnd === currentStart &&
+                getTravelJourneyKey(previousEntry) === getTravelJourneyKey(entry)
+            ) {
+                currentJourney.push(entry);
+                return;
+            }
+
+            journeys.push([entry]);
+        });
+
+        return journeys;
+    };
+
+    /**
+     * 이동 체인의 청구시간을 구간(journey)별로 계산해 각 엔트리에 나눠 담는다.
+     * 자택 ↔ 출장지 구간은 출장지별 고정시간, 그 외 구간은 실제 이동시간을 쓴다.
+     */
+    const getFixedTravelHoursByEntryId = (
+        entries: TimesheetSourceEntryData[]
+    ): Map<number, number> => {
+        const allocationByEntryId = new Map<number, number>();
+
+        groupTravelEntriesByJourney(entries).forEach((journey) => {
+            const fixedHours = getHomeTravelHours(journey[0].location) ?? 0;
+            const isCommute = fixedHours > 0 && isHomeWorkSiteCommute(journey[0]);
+
+            if (!isCommute) {
+                journey.forEach((item) => {
+                    allocationByEntryId.set(
+                        item.id,
+                        roundHours(calculateRawTravelHours(item))
+                    );
+                });
+                return;
+            }
+
+            /**
+             * 자택에서 출발하는 구간은 도착 시각 기준으로 역산되므로 뒤 조각부터,
+             * 자택으로 돌아오는 구간은 출발 시각 기준이라 앞 조각부터 채운다.
+             */
+            const departsFromHome = normalizeLocationName(
+                getTravelEntryOrigin(journey[0])
+            ).includes("\uC790\uD0DD");
+            const fillOrder = departsFromHome ? [...journey].reverse() : journey;
+
+            let remaining = roundHours(fixedHours);
+            fillOrder.forEach((item, index) => {
+                const rawHours = roundHours(calculateRawTravelHours(item));
+                const isLast = index === fillOrder.length - 1;
+                const allocated = isLast
+                    ? remaining
+                    : Math.min(Math.max(rawHours, 0), remaining);
+                allocationByEntryId.set(item.id, roundHours(Math.max(0, allocated)));
+                remaining = roundHours(Math.max(0, remaining - allocated));
+            });
+        });
+
+        return allocationByEntryId;
+    };
+
+    /** 자택 ↔ 출장지 구간은 출장지별 고정시간, 그 외 구간은 실제 이동시간. */
+    const getHomeFixedTravelHours = (
+        entry: TimesheetSourceEntryData
+    ): number => {
+        const fixedHours = getHomeTravelHours(entry.location) ?? 0;
+
+        return fixedHours > 0 && isHomeWorkSiteCommute(entry)
+            ? fixedHours
+            : calculateRawTravelHours(entry);
+    };
+
+    const sumFixedTravelHours = (
+        entries: TimesheetSourceEntryData[]
+    ): number => {
+        let total = 0;
+        getFixedTravelHoursByEntryId(entries).forEach((hours) => {
+            total += hours;
+        });
+        return roundHours(total);
+    };
+
     const summarizeTravelEntries = (
         entries: TimesheetSourceEntryData[],
         useFixedHomeHours: boolean
@@ -1655,19 +1790,19 @@ export default function TimesheetDateGroupDetailSidePanel({
             return { hours: 0, kind: "none" };
         }
 
-        const lastEntry = entries[entries.length - 1];
-        const fixedHours = getHomeTravelHours(lastEntry.location) ?? 0;
         const hasHome = entries.some((item) => hasHomeInTravel(item));
-
-        if (useFixedHomeHours && hasHome && fixedHours > 0) {
-            return { hours: fixedHours, kind: "home" };
-        }
+        const hours = useFixedHomeHours
+            ? sumFixedTravelHours(entries)
+            : roundHours(
+                  entries.reduce(
+                      (sum, item) => sum + calculateRawTravelHours(item),
+                      0
+                  )
+              );
 
         return {
-            hours: roundHours(
-                entries.reduce((sum, item) => sum + calculateRawTravelHours(item), 0)
-            ),
-            kind: "travel",
+            hours,
+            kind: useFixedHomeHours && hasHome ? "home" : "travel",
         };
     };
 
@@ -1980,7 +2115,13 @@ export default function TimesheetDateGroupDetailSidePanel({
                         );
 
                         if (hasHome && fixedHours > 0) {
-                            return { hours: fixedHours, kind: "initial-home" };
+                            return {
+                                hours: summarizeTravelEntries(
+                                    block.beforeTravelEntries,
+                                    true
+                                ).hours,
+                                kind: "initial-home",
+                            };
                         }
 
                         return summarizeTravelEntries(block.beforeTravelEntries, false);
@@ -2064,6 +2205,22 @@ export default function TimesheetDateGroupDetailSidePanel({
         const targetGroup = getPersonTravelChainForEntry(entry, person);
         if (!targetGroup || targetGroup.length <= 1) {
             return roundHours(totalHours);
+        }
+
+        /**
+         * 체인 합계가 구간별 계산 합과 같으면(일반 경로) 각 구간이 자기 몫을 그대로 가진다.
+         * 총량이 따로 지정된 경우(수동 override 등)에만 아래 순차 배분으로 넘어간다.
+         */
+        const fixedHoursByEntryId = getFixedTravelHoursByEntryId(targetGroup);
+        let fixedTotal = 0;
+        fixedHoursByEntryId.forEach((hours) => {
+            fixedTotal += hours;
+        });
+        if (Math.abs(roundHours(fixedTotal) - roundHours(totalHours)) < 0.01) {
+            return (
+                fixedHoursByEntryId.get(entry.id) ??
+                roundHours(getHomeFixedTravelHours(entry))
+            );
         }
 
         /**
