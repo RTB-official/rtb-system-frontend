@@ -2971,6 +2971,30 @@ export default function InvoiceCreatePage() {
         )}-${String(date.getDate()).padStart(2, "0")}`;
     };
 
+    /**
+     * 출장지별 고정 이동시간이 걸리는 구간인지 판단한다.
+     * 자택과 출장지를 직접 잇는 이동(자택→HD중공업(해양), HD중공업(해양)→…→자택)만 해당한다.
+     * 자택→태성재처럼 출장지가 아닌 곳으로 가는 이동은 실제 이동시간을 그대로 청구한다.
+     */
+    const isHomeWorkSiteCommute = (entry: InvoiceTimesheetEntry): boolean => {
+        const workPlace = normalizeLocationName(
+            getPrimaryLocation(entry.location)
+        );
+        if (!workPlace) {
+            return false;
+        }
+
+        const origin = normalizeLocationName(getTravelEntryOrigin(entry));
+        const destination = normalizeLocationName(getFinalDestination(entry));
+        // "자택및숙소"처럼 붙어 적히는 경우가 있어 포함 여부로 본다.
+        const isHome = (place: string) => place.includes("자택");
+
+        return (
+            (isHome(origin) && destination === workPlace) ||
+            (origin === workPlace && isHome(destination))
+        );
+    };
+
     const getAdjustedTravelDateTimes = (
         entry: InvoiceTimesheetEntry
     ): Pick<
@@ -3008,12 +3032,8 @@ export default function InvoiceCreatePage() {
         }
 
         const details = entry.details ?? "";
-        const containsHome =
-            details.includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택";
 
-        if (!containsHome) {
+        if (!isHomeWorkSiteCommute(entry)) {
             return {
                 dateFrom: entry.dateFrom,
                 dateTo: entry.dateTo,
@@ -3092,6 +3112,14 @@ export default function InvoiceCreatePage() {
         ].join("::");
     };
 
+    /** 출발지·도착지가 같으면 같은 이동으로 본다(자정에서 잘린 구간 판별용). */
+    const getTravelJourneyKey = (entry: InvoiceTimesheetEntry): string => {
+        return [
+            normalizeLocationName(getTravelEntryOrigin(entry)),
+            normalizeLocationName(getFinalDestination(entry)),
+        ].join("→");
+    };
+
     const mergeContinuousTravelEntries = (
         entries: InvoiceTimesheetEntry[]
     ): InvoiceTimesheetEntry[] => {
@@ -3124,8 +3152,26 @@ export default function InvoiceCreatePage() {
             const lastEnd = lastEntry ? getEntryEndTime(lastEntry) : null;
             const currentStart = getEntryStartTime(entry);
 
+            /**
+             * 자택이 걸린 구간은 출발지·도착지가 같을 때만 병합한다.
+             *
+             * - 같은 구간이 자정에서 잘린 경우(23:00~24:00 + 00:00~01:00)는 원래 하나의
+             *   이동이므로 반드시 합쳐야 고정시간이 조각마다 중복 적용되지 않는다.
+             * - 반대로 `자택→태성재` + `태성재→강동동 공장`처럼 서로 다른 구간을 합치면
+             *   `자택→자택` 같은 덩어리가 되어 어느 구간이 자택과 출장지를 직접
+             *   잇는지 판단할 수 없게 된다.
+             */
+            const journeyKey = getTravelJourneyKey(entry);
+            const sameJourney =
+                lastEntry !== null &&
+                getTravelJourneyKey(lastEntry) === journeyKey;
+            const touchesHome =
+                hasHomeInTravel(entry) ||
+                (lastEntry ? hasHomeInTravel(lastEntry) : false);
+
             if (
                 lastEntry &&
+                (!touchesHome || sameJourney) &&
                 lastEntry.descType === "이동" &&
                 lastEnd !== null &&
                 currentStart !== null &&
@@ -3143,9 +3189,14 @@ export default function InvoiceCreatePage() {
                 lastEntry.moveFrom = firstMoveFrom || lastEntry.moveFrom;
                 lastEntry.moveTo = lastMoveTo || lastEntry.moveTo;
                 lastEntry.details =
-                    firstMoveFrom && lastMoveTo
-                        ? `${firstMoveFrom}→${lastMoveTo} 이동.`
-                        : [firstDetails, lastDetails].filter(Boolean).join(" / ");
+                    firstDetails && firstDetails === lastDetails
+                        ? // 자정에서 잘린 같은 구간: 경유지가 살아있는 원문을 그대로 둔다.
+                          firstDetails
+                        : firstMoveFrom && lastMoveTo
+                          ? `${firstMoveFrom}→${lastMoveTo} 이동.`
+                          : [firstDetails, lastDetails]
+                                .filter(Boolean)
+                                .join(" / ");
                 lastEntry.sourceEntryIds = Array.from(
                     new Set([...lastEntry.sourceEntryIds, ...entry.sourceEntryIds])
                 );
@@ -4711,9 +4762,6 @@ export default function InvoiceCreatePage() {
                         const lastEntry = entries[entries.length - 1];
                         const fixedHours =
                             getHomeTravelHours(lastEntry.location) ?? 0;
-                        const hasHome = entries.some((entry) =>
-                            hasHomeInTravel(entry)
-                        );
                         const earliest =
                             entries
                                 .map((entry) => entry.timeFrom)
@@ -4773,15 +4821,54 @@ export default function InvoiceCreatePage() {
 
                         if (manualOrAutoMixedHours !== null) {
                             const destination = getFinalDestination(lastEntry);
+                            const windowStart = useAdjustedTravelWindow
+                                ? earliest
+                                : rawEarliest;
+                            const windowEnd = useAdjustedTravelWindow
+                                ? latestValue
+                                : rawLatest;
+                            /**
+                             * 수동 청구시간은 자택 고정시간 상한을 덮어쓴다.
+                             * 이때 구간 길이도 수동 청구시간에 맞춰야 타임시트 From/To가
+                             * 어긋나지 않는다. 청구 구간은 항상 작업지에 붙은 쪽에 둔다.
+                             * (자택으로 복귀 → 출발 시각 기준, 자택에서 출발 → 도착 시각 기준)
+                             */
+                            const manualWindow = (() => {
+                                if (
+                                    !hasAdjustedFixedHomeWindow ||
+                                    !windowStart ||
+                                    !windowEnd
+                                ) {
+                                    return { start: windowStart, end: windowEnd };
+                                }
+
+                                const returnsHome =
+                                    normalizeLocationName(destination) === "자택";
+
+                                return returnsHome
+                                    ? {
+                                          start: windowStart,
+                                          end: shiftTimeByHours(
+                                              date,
+                                              windowStart,
+                                              manualOrAutoMixedHours
+                                          ),
+                                      }
+                                    : {
+                                          start: shiftTimeByHours(
+                                              date,
+                                              windowEnd,
+                                              -manualOrAutoMixedHours
+                                          ),
+                                          end: windowEnd,
+                                      };
+                            })();
+
                             return {
                                 kind: fallbackLabel,
                                 hours: manualOrAutoMixedHours,
-                                start: useAdjustedTravelWindow
-                                    ? earliest
-                                    : rawEarliest,
-                                end: useAdjustedTravelWindow
-                                    ? latestValue
-                                    : rawLatest,
+                                start: manualWindow.start,
+                                end: manualWindow.end,
                                 label: destination || fallbackLabel,
                             };
                         }
@@ -4818,20 +4905,11 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
-                        if (
-                            useFixedHomeHours &&
-                            hasHome &&
-                            fixedHours > 0 &&
-                            !hasAdjustedFixedHomeWindow
-                        ) {
-                            return {
-                                kind: `${fallbackLabel}-home`,
-                                hours: fixedHours,
-                                start: earliest,
-                                end: latestValue,
-                                label: fallbackLabel,
-                            };
-                        }
+                        /**
+                         * 자택 고정시간은 이미 getAdjustedTravelDateTimes 에서 구간별
+                         * 상한으로 반영돼 있다. 여기서 체인 전체를 고정시간 하나로
+                         * 덮어쓰면 자택과 무관한 구간의 실제 이동시간까지 사라진다.
+                         */
                         const hours = entries.reduce(
                             (sum, entry) =>
                                 sum +
@@ -5127,8 +5205,18 @@ export default function InvoiceCreatePage() {
                                 );
 
                                 if (hasHome && fixedHours > 0) {
-                                    const chargeHours =
-                                        resolveFixedHomeHours(fixedHours);
+                                    /**
+                                     * 고정시간 상한은 자택이 맞닿은 구간에만 이미
+                                     * 반영돼 있으므로, 보정된 구간들의 합이 곧 청구시간이다.
+                                     */
+                                    const chargeHours = roundHours(
+                                        beforeTravelEntries.reduce(
+                                            (sum, entry) =>
+                                                sum +
+                                                calculateRawTravelHours(entry),
+                                            0
+                                        )
+                                    );
                                     const { anchorDate, anchorTime } =
                                         getInitialBeforeTravelChargeEndAnchor(
                                             beforeTravelEntries,
