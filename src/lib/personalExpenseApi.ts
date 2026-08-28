@@ -21,6 +21,7 @@ export interface PersonalExpense {
     expense_type: string;
     detail: string | null;
     amount: number;
+    currency?: string;
     receipt_path: string | null;
     is_submitted: boolean;
     created_at: string;
@@ -46,6 +47,7 @@ export interface CreateExpenseInput {
     expense_type: string;
     detail?: string;
     amount: number;
+    currency?: string;
     receipt_path?: string;
 }
 
@@ -64,6 +66,7 @@ export interface UpdateExpenseInput {
     expense_type?: string;
     detail?: string;
     amount?: number;
+    currency?: string;
     receipt_path?: string;
     is_submitted?: boolean;
 }
@@ -455,6 +458,7 @@ export interface EmployeeCardExpenseDetail {
     dateRaw?: string; // 원본 날짜 (YYYY-MM-DD 형식)
     merchant: string;
     amount: number;
+    currency?: string;
     category: string;
     details: string;
     receipt_path?: string | null;
@@ -746,7 +750,7 @@ export async function getUserCardExpenseDetails(
 ): Promise<EmployeeCardExpenseDetail[]> {
     let query = supabase
         .from("personal_expenses")
-        .select("id, expense_date, expense_type, amount, detail, receipt_path")
+        .select("id, expense_date, expense_type, amount, currency, detail, receipt_path")
         .eq("user_id", userId)
         .order("expense_date", { ascending: false })
         .order("created_at", { ascending: false });
@@ -782,6 +786,7 @@ export async function getUserCardExpenseDetails(
         dateRaw: e.expense_date, // 원본 날짜 추가
         merchant: "N/A", // 가맹점 정보는 현재 스키마에 없음
         amount: e.amount || 0,
+        currency: e.currency || "원",
         category: e.expense_type || "기타",
         details: e.detail || "",
         receipt_path: e.receipt_path || null,

@@ -28,6 +28,7 @@ import { IconChevronRight } from "../../components/icons/Icons";
 import { useUser } from "../../hooks/useUser";
 import { useToast } from "../../components/ui/ToastProvider";
 import useIsMobile from "../../hooks/useIsMobile";
+import { formatCurrency } from "../../store/workReportStore";
 
 export default function MemberExpensePage() {
     const navigate = useNavigate();
@@ -198,10 +199,11 @@ export default function MemberExpensePage() {
         ];
     }, [expenseSummary]);
 
-    // 금액 포맷팅
-    const formatCurrency = (amount: number) => {
-        return amount.toLocaleString("ko-KR") + "원";
-    };
+    const formatWonAmount = (amount: number) =>
+        amount.toLocaleString("ko-KR") + "원";
+
+    const formatCardAmount = (amount: number, currency = "원") =>
+        `${formatCurrency(amount)}${currency}`;
 
     // 마일리지 내역 테이블 컬럼
     const mileageColumns: TableColumn<EmployeeMileageDetail>[] = [
@@ -221,7 +223,7 @@ export default function MemberExpensePage() {
         {
             key: "amount",
             label: "금액",
-            render: (value) => formatCurrency(value),
+            render: (value) => formatWonAmount(value),
         },
         {
             key: "details",
@@ -248,7 +250,7 @@ export default function MemberExpensePage() {
         {
             key: "amount",
             label: "금액",
-            render: (value) => formatCurrency(value),
+            render: (value, row) => formatCardAmount(value, row.currency),
         },
         {
             key: "details",
@@ -353,7 +355,7 @@ export default function MemberExpensePage() {
         {
             key: "mileage",
             label: "마일리지",
-            render: (value) => formatCurrency(value),
+            render: (value) => formatWonAmount(value),
         },
         {
             key: "distance",
@@ -363,13 +365,13 @@ export default function MemberExpensePage() {
         {
             key: "cardExpense",
             label: "카드지출",
-            render: (value) => formatCurrency(value),
+            render: (value) => formatWonAmount(value),
         },
         {
             key: "total",
             label: "합계",
             render: (value) => (
-                <span className="font-semibold">{formatCurrency(value)}</span>
+                <span className="font-semibold">{formatWonAmount(value)}</span>
             ),
         },
         {
@@ -539,7 +541,7 @@ export default function MemberExpensePage() {
                                                         <div className="flex-1 min-w-0">
                                                             <p className="font-medium text-gray-900 truncate">{row.name.replace(/^[A-Z]{2,3} /, "")}</p>
                                                             <p className="text-sm text-gray-500 mt-0.5">
-                                                                마일리지 {formatCurrency(row.mileage)} · 카드 {formatCurrency(row.cardExpense)} · 합계 {formatCurrency(row.total)}
+                                                                마일리지 {formatWonAmount(row.mileage)} · 카드 {formatWonAmount(row.cardExpense)} · 합계 {formatWonAmount(row.total)}
                                                             </p>
                                                         </div>
                                                         <IconChevronRight

@@ -5,10 +5,17 @@ import {
     IconCalendar,
 } from "../../../components/icons/Icons";
 import DatePicker from "../../../components/ui/DatePicker";
-import Input from "../../../components/common/Input";
+import TextInput from "../../../components/ui/TextInput";
 import Select from "../../../components/common/Select";
 import Button from "../../../components/common/Button";
 import SectionCard from "../../../components/ui/SectionCard";
+import RequiredIndicator from "../../../components/ui/RequiredIndicator";
+import {
+    EXPENSE_CURRENCY_OPTIONS,
+    formatCurrency,
+    parseCurrency,
+    sanitizeDecimalAmountInput,
+} from "../../../store/workReportStore";
 
 export default function ExpenseFormCard({
     onAdd,
@@ -23,6 +30,8 @@ export default function ExpenseFormCard({
     }, [initialDate]);
     const [type, setType] = React.useState("");
     const [amount, setAmount] = React.useState("");
+    const [currency, setCurrency] = React.useState("원");
+    const [isAmountFocused, setIsAmountFocused] = React.useState(false);
     const [detail, setDetail] = React.useState("");
     const [preview, setPreview] = React.useState<string | null>(null);
     const [selectedFile, setSelectedFile] = React.useState<File | null>(null);
@@ -38,9 +47,11 @@ export default function ExpenseFormCard({
     const canAddExpense =
         (date || "").trim() !== "" &&
         (type || "").trim() !== "" &&
-        (amount || "").trim() !== "" &&
-        !isNaN(Number(amount)) &&
-        Number(amount) > 0;
+        parseCurrency(amount) > 0;
+
+    const handleAmountChange = (value: string) => {
+        setAmount(sanitizeDecimalAmountInput(value));
+    };
 
     const handleAdd = async () => {
         if (isAddingRef.current) return;
@@ -52,7 +63,7 @@ export default function ExpenseFormCard({
         if (!type || type.trim() === "") {
             newErrors.type = "유형을 선택해주세요.";
         }
-        if (!amount || amount.trim() === "" || isNaN(Number(amount)) || Number(amount) <= 0) {
+        if (parseCurrency(amount) <= 0) {
             newErrors.amount = "올바른 금액을 입력해주세요.";
         }
 
@@ -71,14 +82,14 @@ export default function ExpenseFormCard({
                         id: Date.now(),
                         date,
                         type,
-                        amount,
+                        amount: String(parseCurrency(amount)),
+                        currency: currency || "원",
                         detail,
                         img: preview,
-                        file: selectedFile, // 파일 객체 전달
+                        file: selectedFile,
                     })
                 );
             }
-            // Reset form
             setDate(initialDate || "");
             setType("");
             setAmount("");
@@ -152,23 +163,61 @@ export default function ExpenseFormCard({
                             )}
                         </div>
 
-                        <div>
-                            <Input
-                                label="금액(원)"
-                                value={amount}
-                                onChange={(value) => {
-                                    setAmount(value.replace(/\D/g, ""));
-                                    if (errors.amount) {
-                                        setErrors((prev) => ({ ...prev, amount: undefined }));
-                                    }
-                                }}
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                autoComplete="off"
-                                placeholder="예) 26000"
-                            />
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm text-gray-600">
+                                금액
+                                <RequiredIndicator />
+                            </label>
+                            <div className="flex gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <TextInput
+                                        placeholder="0"
+                                        inputMode="decimal"
+                                        value={
+                                            isAmountFocused
+                                                ? amount
+                                                : amount
+                                                  ? formatCurrency(parseCurrency(amount))
+                                                  : ""
+                                        }
+                                        onChange={(val) => {
+                                            handleAmountChange(val);
+                                            if (errors.amount) {
+                                                setErrors((prev) => ({
+                                                    ...prev,
+                                                    amount: undefined,
+                                                }));
+                                            }
+                                        }}
+                                        onFocus={(e) => {
+                                            setIsAmountFocused(true);
+                                            const num = parseCurrency(e.target.value);
+                                            if (num > 0) {
+                                                setAmount(String(num));
+                                            }
+                                        }}
+                                        onBlur={(e) => {
+                                            setIsAmountFocused(false);
+                                            const num = parseCurrency(e.target.value);
+                                            if (num > 0) {
+                                                setAmount(formatCurrency(num));
+                                            } else {
+                                                setAmount("");
+                                            }
+                                        }}
+                                    />
+                                </div>
+                                <div className="w-20 md:w-24 shrink-0">
+                                    <Select
+                                        options={[...EXPENSE_CURRENCY_OPTIONS]}
+                                        value={currency}
+                                        onChange={setCurrency}
+                                        size="md"
+                                    />
+                                </div>
+                            </div>
                             {errors.amount && (
-                                <p className="text-red-500 text-xs mt-1">{errors.amount}</p>
+                                <p className="text-red-500 text-xs">{errors.amount}</p>
                             )}
                         </div>
                     </div>
@@ -176,7 +225,7 @@ export default function ExpenseFormCard({
 
                 <div className="space-y-6">
                     <div>
-                        <Input
+                        <TextInput
                             label="상세내역"
                             value={detail}
                             onChange={setDetail}
