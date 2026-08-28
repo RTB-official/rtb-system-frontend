@@ -24,7 +24,7 @@ export interface ExpenseEntry {
   type: string;
   detail: string;
   amount: number;
-  currency?: string; // 화폐 단위 (원, 엔, 달러, 유로)
+  currency?: string; // 화폐 단위 (원, 엔, 달러, 유로, 위안)
 }
 
 export interface MaterialEntry {
@@ -109,6 +109,14 @@ export const EXPENSE_TYPES = [
   '소모품 구입',
   '기타',
 ];
+
+export const EXPENSE_CURRENCY_OPTIONS = [
+  { value: '원', label: '원' },
+  { value: '엔', label: '엔' },
+  { value: '달러', label: '달러' },
+  { value: '유로', label: '유로' },
+  { value: '위안', label: '위안' },
+] as const;
 
 interface WorkReportState {
   // 모드

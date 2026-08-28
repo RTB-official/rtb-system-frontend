@@ -6,7 +6,7 @@ import Button from "../common/Button";
 import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
 import RequiredIndicator from "../ui/RequiredIndicator";
-import { useWorkReportStore, formatCurrency, parseCurrency, sanitizeDecimalAmountInput, EXPENSE_TYPES, FileCategory, UploadedFile, ExpenseEntry } from "../../store/workReportStore";
+import { useWorkReportStore, formatCurrency, parseCurrency, sanitizeDecimalAmountInput, EXPENSE_TYPES, EXPENSE_CURRENCY_OPTIONS, FileCategory, UploadedFile, ExpenseEntry } from "../../store/workReportStore";
 import { IconChevronLeft, IconChevronRight } from "../icons/Icons";
 
 interface ReceiptExpenseModalProps {
@@ -932,12 +932,7 @@ export default function ReceiptExpenseModal({
                                     </div>
                                     <div className="w-24 shrink-0 flex-shrink-0">
                                         <Select
-                                            options={[
-                                                { value: "원", label: "원" },
-                                                { value: "엔", label: "엔" },
-                                                { value: "달러", label: "달러" },
-                                                { value: "유로", label: "유로" },
-                                            ]}
+                                            options={[...EXPENSE_CURRENCY_OPTIONS]}
                                             value={currency}
                                             onChange={setCurrency}
                                             size="md"
