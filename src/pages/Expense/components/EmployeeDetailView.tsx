@@ -6,6 +6,7 @@ import {
     type EmployeeCardExpenseDetail,
 } from "../../../lib/personalExpenseApi";
 import { generateExpenseReportPDF } from "../../../lib/pdfUtils";
+import { formatCurrency } from "../../../store/workReportStore";
 import useIsMobile from "../../../hooks/useIsMobile";
 import { useToast } from "../../../components/ui/ToastProvider";
 import { IconDownload } from "../../../components/icons/Icons";
@@ -25,8 +26,11 @@ interface EmployeeDetailViewProps {
     onReceiptClick?: (receiptPath: string) => void;
 }
 
-const formatCurrency = (amount: number) =>
+const formatMileageAmount = (amount: number) =>
     amount.toLocaleString("ko-KR") + "원";
+
+const formatCardAmount = (amount: number, currency = "원") =>
+    `${formatCurrency(amount)}${currency}`;
 
 export default function EmployeeDetailView({
     employeeName,
@@ -118,7 +122,7 @@ export default function EmployeeDetailView({
                                 >
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-500">{row.date}</span>
-                                        <span className="font-semibold text-gray-900">{formatCurrency(row.amount)}</span>
+                                        <span className="font-semibold text-gray-900">{formatMileageAmount(row.amount)}</span>
                                     </div>
                                     <p className="text-gray-800 text-sm">{row.route}</p>
                                     <p className="text-gray-500 text-xs">
@@ -154,7 +158,7 @@ export default function EmployeeDetailView({
                                 >
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-500">{row.date}</span>
-                                        <span className="font-semibold text-gray-900">{formatCurrency(row.amount)}</span>
+                                        <span className="font-semibold text-gray-900">{formatCardAmount(row.amount, row.currency)}</span>
                                     </div>
                                     <p className="text-gray-800 text-sm">{row.category}</p>
                                     {row.details?.trim() ? (

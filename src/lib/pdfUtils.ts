@@ -10,6 +10,7 @@ import {
     type EmployeeCardExpenseDetail,
 } from "./personalExpenseApi";
 import { getPersonalExpenseReceiptUrl } from "./personalExpenseApi";
+import { formatCurrency } from "../store/workReportStore";
 
 // =====================
 // 공통 유틸
@@ -378,13 +379,14 @@ export async function generateExpenseReportPDF({
 
         const cardTableData = cardDetails.map((item) => {
             const dateInfo = parseDate(item.dateRaw || item.date || "");
+            const currency = item.currency || "원";
             return [
                 dateInfo.year.toString(),
                 dateInfo.month.toString(),
                 dateInfo.day.toString(),
                 dateInfo.dayOfWeek,
                 item.category || "기타",
-                `${(item.amount || 0).toLocaleString("ko-KR")} 원`,
+                `${formatCurrency(item.amount || 0)}${currency}`,
                 item.details || "",
             ];
         });
@@ -405,7 +407,7 @@ export async function generateExpenseReportPDF({
 
                 autoTable(doc, {
                     startY: yPos,
-                    head: [["년", "월", "일", "요일", "구분", "금액 (KRW)", "비고"]],
+                    head: [["년", "월", "일", "요일", "구분", "금액", "비고"]],
                     body: cardTableData,
                     styles: {
                         fontSize: 9,
@@ -472,16 +474,28 @@ export async function generateExpenseReportPDF({
             yPos += 15;
         }
 
-        // 카드 지출 합계
-        const totalExpense = cardDetails.reduce((sum, item) => sum + (item.amount || 0), 0);
+        // 카드 지출 합계 (통화별)
+        const expenseTotalsByCurrency = cardDetails.reduce<Record<string, number>>((totals, item) => {
+            const currency = item.currency || "원";
+            totals[currency] = (totals[currency] || 0) + (item.amount || 0);
+            return totals;
+        }, {});
 
         doc.setFontSize(11);
         doc.setFont(fontName, normalStyle);
-        doc.text(`총 지출: ${totalExpense.toLocaleString("ko-KR")}원`, margin, yPos);
+        const expenseTotalLines = Object.entries(expenseTotalsByCurrency).map(
+            ([currency, total]) => `총 지출 (${currency}): ${formatCurrency(total)}${currency}`
+        );
+        doc.text(
+            expenseTotalLines.length > 0 ? expenseTotalLines.join(" | ") : "총 지출: 0원",
+            margin,
+            yPos
+        );
         yPos += 15;
 
-        // 총 청구 금액 (크게, normal)
-        const totalClaim = totalMileage + totalExpense;
+        // 총 청구 금액 (마일리지 + 카드 지출 원화 합산은 별도 표시)
+        const totalCardExpense = cardDetails.reduce((sum, item) => sum + (item.amount || 0), 0);
+        const totalClaim = totalMileage + totalCardExpense;
         doc.setFontSize(18);
         try {
             if (fontAdded) {
@@ -518,9 +532,7 @@ export async function generateExpenseReportPDF({
                 // 텍스트
                 doc.setFontSize(10);
                 doc.setFont(fontName, normalStyle);
-                const receiptText = `${dateStr} - ${item.category || "기타"} (${(item.amount || 0).toLocaleString(
-                    "ko-KR"
-                )}원)`;
+                const receiptText = `${dateStr} - ${item.category || "기타"} (${formatCurrency(item.amount || 0)}${item.currency || "원"})`;
                 doc.text(receiptText, margin, yPos);
 
                 const receiptUrl = item.receipt_path ? getReceiptUrl(item.receipt_path) : null;

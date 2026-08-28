@@ -29,6 +29,7 @@ import {
 } from "../../lib/personalExpenseApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import useIsMobile from "../../hooks/useIsMobile";
+import { formatCurrency, parseCurrency } from "../../store/workReportStore";
 
 /** DatePicker 등 `YYYY-MM-DD` 문자열에서 연·월(1–12) 파싱 (UTC 보정 이슈 회피) */
 function parseDateToCalendarYearMonth(
@@ -222,6 +223,7 @@ export default function PersonalExpensePage() {
         date: string;
         type: string;
         amount: string;
+        currency?: string;
         detail: string;
         img?: string | null;
         file?: File | null;
@@ -232,7 +234,7 @@ export default function PersonalExpensePage() {
         }
 
         try {
-            const amountNum = parseInt(item.amount || "0");
+            const amountNum = parseCurrency(item.amount || "0");
             if (amountNum <= 0) {
                 showError("금액을 입력해주세요.");
                 return;
@@ -259,6 +261,7 @@ export default function PersonalExpensePage() {
                 expense_type: item.type,
                 detail: item.detail || undefined,
                 amount: amountNum,
+                currency: item.currency || "원",
                 receipt_path: receiptPath,
             });
 
@@ -368,7 +371,7 @@ export default function PersonalExpensePage() {
                 id: it.id,
                 variant: "card" as const,
                 date: formatDate(it.expense_date),
-                amount: `${Number(it.amount || 0).toLocaleString("ko-KR")}원`,
+                amount: `${formatCurrency(Number(it.amount || 0))}${it.currency || "원"}`,
                 tag: it.expense_type || "기타",
                 desc: it.detail || "",
                 img: it.receipt_path
