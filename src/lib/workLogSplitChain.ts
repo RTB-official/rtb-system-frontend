@@ -88,7 +88,7 @@ function boundaryChainMemberIds(
 ): number[] {
     const withIds = entries.filter(
         (e): e is WorkLogSplitChainEntry & { id: number } =>
-            typeof e.id === "number" && Number.isFinite(e.id) && e.id > 0
+            typeof e.id === "number" && Number.isFinite(e.id)
     );
     if (withIds.length === 0) {
         return [startId];
@@ -148,7 +148,12 @@ export function getWorkLogSplitChainMemberIds(
     const gid = anchor.splitGroupId?.trim();
     if (gid) {
         const ids = entries
-            .filter((e) => typeof e.id === "number" && e.id > 0 && (e.splitGroupId?.trim() ?? "") === gid)
+            .filter(
+                (e) =>
+                    typeof e.id === "number" &&
+                    Number.isFinite(e.id) &&
+                    (e.splitGroupId?.trim() ?? "") === gid
+            )
             .map((e) => e.id!);
         return ids.length > 0 ? ids : [anchorEntryId];
     }
@@ -174,9 +179,10 @@ export function propagateWorkLogSplitChainPatch<T extends WorkLogSplitChainEntry
     }
 
     const memberIds = new Set(getWorkLogSplitChainMemberIds(entries, changedEntryId));
+    memberIds.add(changedEntryId);
 
     return entries.map((e) => {
-        if (!e.id || !memberIds.has(e.id)) {
+        if (e.id == null || !memberIds.has(e.id)) {
             return e;
         }
         if (e.id === changedEntryId) {

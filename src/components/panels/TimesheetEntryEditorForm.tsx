@@ -549,6 +549,11 @@ export function TimesheetEntryEditorForm({
               : ""
     );
 
+    /**
+     * 패널·타임시트 재동기화로 entry 객체 참조만 바뀌는 경우(복사 직후 등)에
+     * 입력 중이던 날짜·인원이 초기화되지 않도록, 의도된 remount(entry.id / remountTick)
+     * 에서만 폼을 다시 채운다.
+     */
     useEffect(() => {
         setDescType(entry.descType);
         setDateFrom(entry.dateFrom);
@@ -574,19 +579,9 @@ export function TimesheetEntryEditorForm({
                   ? String(manualBillableHours)
                   : ""
         );
-    }, [
-        entry.id,
-        entry.clientDuplicated,
-        entry.descType,
-        entry.dateFrom,
-        entry.dateTo,
-        entry.timeFrom,
-        entry.timeTo,
-        entry.persons,
-        entry.details,
-        manualBillableHours,
-        manualBillableSplitHours,
-    ]);
+        // entry 필드·manual* 는 remount 시점에만 읽는다.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- remount gate
+    }, [entry.id, remountTick]);
 
     const normalizedTimeFrom = normalizeHHMM(timeFrom) ?? "";
     const normalizedTimeTo =
@@ -796,6 +791,19 @@ export function TimesheetEntryEditorForm({
         setManualInput(String(next));
     };
 
+    const handleDateFromChange = (nextDateFrom: string) => {
+        setDateFrom((prevFrom) => {
+            setDateTo((prevTo) => {
+                // 하루짜리 엔트리에서 시작일만 바꾸면 종료일도 같이 맞춘다.
+                if (prevFrom && prevTo && prevFrom === prevTo && nextDateFrom) {
+                    return nextDateFrom;
+                }
+                return prevTo;
+            });
+            return nextDateFrom;
+        });
+    };
+
     const handleSave = () => {
         if (!normalizedTimeFrom || !normalizedTimeTo) {
             window.alert("From / To 시간을 HH:mm 형식으로 입력해 주세요.");
@@ -803,6 +811,10 @@ export function TimesheetEntryEditorForm({
         }
         if (!dateFrom || !dateTo) {
             window.alert("시작일·종료일을 입력해 주세요.");
+            return;
+        }
+        if (dateFrom > dateTo) {
+            window.alert("시작일이 종료일보다 늦을 수 없습니다.");
             return;
         }
         if (selectedPersons.length === 0) {
@@ -948,7 +960,7 @@ export function TimesheetEntryEditorForm({
                     <input
                         type="date"
                         value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
+                        onChange={(e) => handleDateFromChange(e.target.value)}
                         className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
                     />
                 </label>

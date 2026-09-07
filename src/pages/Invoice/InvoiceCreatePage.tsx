@@ -7978,6 +7978,37 @@ export default function InvoiceCreatePage() {
             remainingCount > 1 ? "s" : ""
         } (Total ${sortedPeople.length} fitters)`;
     };
+    /** Job description Description: `MAN POWER : 1 Skilled fitter and 6 fitters (KT On with …)` */
+    const formatJobDescriptionManPowerLine = (
+        skilledPeople: string[],
+        fitterPeople: string[]
+    ) => {
+        const skilledNames = sortPeopleForMention(skilledPeople).map((person) =>
+            getEnglishPersonName(person)
+        );
+        const fitterNames = sortPeopleForMention(fitterPeople).map((person) =>
+            getEnglishPersonName(person)
+        );
+        const skilledCount = skilledNames.length;
+        const fitterCount = fitterNames.length;
+        const skilledLabel =
+            skilledCount === 1 ? "Skilled fitter" : "Skilled fitters";
+        const fitterLabel = fitterCount === 1 ? "fitter" : "fitters";
+
+        let body = "";
+        if (skilledCount > 0 && fitterCount > 0) {
+            body = `${skilledCount} ${skilledLabel} and ${fitterCount} ${fitterLabel} (${skilledNames.join(", ")} with ${fitterNames.join(", ")})`;
+        } else if (skilledCount > 0) {
+            body = `${skilledCount} ${skilledLabel} (${skilledNames.join(", ")})`;
+        } else if (fitterCount > 0) {
+            body = `${fitterCount} ${fitterLabel} (${fitterNames.join(", ")})`;
+        }
+
+        if (!body) {
+            return "MAN POWER :";
+        }
+        return `MAN POWER : ${body}`;
+    };
     const getTopSelectableSkilledFitters = (people: string[]) =>
         SKILLED_FITTER_PRIORITY.filter((person) => people.includes(person));
     const getTopSelectableMechanics = (people: string[]) =>
@@ -11394,12 +11425,14 @@ export default function InvoiceCreatePage() {
                     payload.entryId
                 );
                 const memberIdSet = new Set(memberIds);
+                // 복사 엔트리(음수 id)도 반드시 저장 대상에 포함
+                memberIdSet.add(payload.entryId);
                 const entries = propagatedEntries.map((entry) =>
                     memberIdSet.has(entry.id) && entry.clientDuplicated === true
                         ? { ...entry, clientDuplicated: false }
                         : entry
                 );
-                for (const mid of memberIds) {
+                for (const mid of memberIdSet) {
                     const u = entries.find((e) => e.id === mid);
                     if (u) {
                         panelMappedById.set(
@@ -11474,7 +11507,9 @@ export default function InvoiceCreatePage() {
                 p && p.fullGroupEntries.some((e) => panelMappedById.has(e.id))
                     ? {
                           ...p,
-                          fullGroupEntries: mergePanel(p.fullGroupEntries),
+                          fullGroupEntries: mergePanel(p.fullGroupEntries).sort(
+                              compareTimesheetSourceEntriesByTimeThenId
+                          ),
                       }
                     : p
             );
@@ -11681,6 +11716,8 @@ export default function InvoiceCreatePage() {
                 note: "",
                 persons: [...(src.persons ?? [])],
                 clientDuplicated: true,
+                // 원본의 자정분할 체인에 묶이지 않도록 독립 엔트리로 둔다.
+                splitGroupId: null,
             };
 
             setWorkLogDataList((prev) => {
@@ -11701,6 +11738,7 @@ export default function InvoiceCreatePage() {
                 dateTo: copyRaw.dateTo,
                 timeFrom: copyRaw.timeFrom ?? "",
                 timeTo: copyRaw.timeTo ?? "",
+                details: copyRaw.details ?? "",
                 manualBillableHours: undefined,
             };
 
@@ -12612,6 +12650,11 @@ export default function InvoiceCreatePage() {
                     poNumber: "",
                     departureDisplay: jobDescriptionDepartureDisplay,
                     returnDisplay: jobDescriptionReturnDisplay,
+                    manPowerLine: formatJobDescriptionManPowerLine(
+                        jobDescriptionPersonnel.engineerPeople,
+                        jobDescriptionPersonnel.mechanicPeople
+                    ),
+                    picLine: "Everllence PIC : Mr.",
                 });
 
             const invoiceSheetInput = buildInvoiceExcelSheetInput();
