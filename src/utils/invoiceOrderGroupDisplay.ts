@@ -39,6 +39,14 @@ const INVOICE_RECIPIENT_BY_GROUP: Record<string, InvoiceRecipientInfo> = {
     },
 };
 
+/** 엑셀 파일명용 업체명 (감독 이름 제외, `-` 대신 `_`) */
+const ORDER_GROUP_FILENAME_LABEL: Record<string, string> = {
+    ELU: "Everllence_ELU",
+    PRIME: "Everllence_Prime",
+    MITSUI: "Mitsui",
+    OTHER: "",
+};
+
 const DEFAULT_ORDER_GROUP = "ELU";
 
 function normalizeOrderGroupKey(orderGroup: string | null | undefined): string {
@@ -71,5 +79,16 @@ export function resolveInvoiceRecipientInfo(
     return (
         INVOICE_RECIPIENT_BY_GROUP[key] ??
         INVOICE_RECIPIENT_BY_GROUP[DEFAULT_ORDER_GROUP]
+    );
+}
+
+/** 엑셀 파일명 앞부분: Everllence_ELU / Everllence_Prime 등 */
+export function resolveOrderGroupExcelFilenameLabel(
+    orderGroup: string | null | undefined
+): string {
+    const key = normalizeOrderGroupKey(orderGroup);
+    return (
+        ORDER_GROUP_FILENAME_LABEL[key] ??
+        ORDER_GROUP_FILENAME_LABEL[DEFAULT_ORDER_GROUP]
     );
 }

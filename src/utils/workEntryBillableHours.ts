@@ -301,7 +301,15 @@ function areWorkPersonListsEqual(
 }
 
 /**
- * 앞 엔트리 종료 시각 === 뒤 엔트리 시작 시각, 둘 다 작업, 인원 동일할 때만 연속으로 묶음.
+ * 점심처럼 잠깐 비는 구간을 사이에 두고 이어지는 작업도 한 묶음으로 본다.
+ * 호출부가 시각순으로 모든 엔트리를 훑기 때문에, 사이에 이동·대기가 끼면
+ * 애초에 이 함수까지 오지 않는다.
+ */
+const WORK_CLUSTER_MAX_GAP_MS = 60 * 60 * 1000;
+
+/**
+ * 둘 다 작업이고 인원이 같으며, 앞 엔트리가 끝난 뒤 같은 날 안에서
+ * 최대 1시간 안에 뒤 엔트리가 시작할 때 연속으로 묶음.
  */
 function canMergeConsecutiveWorkPair(
     earlier: {
@@ -328,7 +336,16 @@ function canMergeConsecutiveWorkPair(
     if (endEarlier === null || startLater === null) {
         return false;
     }
-    return endEarlier === startLater;
+    if (endEarlier === startLater) {
+        return true;
+    }
+    if (startLater < endEarlier) {
+        return false;
+    }
+    return (
+        earlier.dateTo === later.dateFrom &&
+        startLater - endEarlier <= WORK_CLUSTER_MAX_GAP_MS
+    );
 }
 
 export type WorkEntryClusterable = {
@@ -410,4 +427,57 @@ export function sumClusterWorkBillableHours(
         sum += h;
     }
     return roundHours(sum);
+}
+
+/**
+ * `entryId` 가 속한 연속 작업 묶음의 엔트리 id를 시작 시각 순으로 반환.
+ * 올림 청구는 묶음 전체에 한 번만 적용되므로 대상 id를 이 순서로 쓴다.
+ */
+export function getConsecutiveWorkClusterEntryIds(
+    allEntries: WorkEntryClusterable[],
+    entryId: number
+): number[] {
+    const targetIndex = allEntries.findIndex((entry) => entry.id === entryId);
+    if (targetIndex === -1) {
+        return [entryId];
+    }
+    return buildConsecutiveWorkClusterIndices(allEntries, targetIndex)
+        .map((index) => allEntries[index])
+        .sort((a, b) => {
+            const sa = getWorkEntryIntervalStartMs(a);
+            const sb = getWorkEntryIntervalStartMs(b);
+            if (sa !== null && sb !== null && sa !== sb) {
+                return sa - sb;
+            }
+            return (a.id ?? 0) - (b.id ?? 0);
+        })
+        .map((entry) => entry.id);
+}
+
+/**
+ * 연속 작업 묶음의 자동 청구시간(N+A) 합계. 올림 청구 전 "원래 시간" 표기에 쓴다.
+ */
+export function sumConsecutiveWorkClusterAutoBillableHours(
+    allEntries: (WorkEntryClusterable & {
+        lunchWorked?: boolean | null;
+    })[],
+    entryId: number
+): number | null {
+    const clusterIds = new Set(
+        getConsecutiveWorkClusterEntryIds(allEntries, entryId)
+    );
+    let sum = 0;
+    let hasValue = false;
+    for (const entry of allEntries) {
+        if (!clusterIds.has(entry.id)) {
+            continue;
+        }
+        const hours = getWorkEntryAutoBillableTotalHours(entry);
+        if (hours === null) {
+            continue;
+        }
+        hasValue = true;
+        sum += hours;
+    }
+    return hasValue ? roundHours(sum) : null;
 }

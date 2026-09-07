@@ -3,9 +3,14 @@ import JSZip from "jszip";
 import type { WorkLogFullData } from "./workLogApi";
 import {
     aggregateWorkLogEntryDateRange,
+    formatInvoiceExcelFilenamePeriod,
     formatInvoiceReportTableTitle,
     formatKoreanPeriod,
 } from "../utils/invoiceReportDisplayTitle";
+import {
+    resolveOrderGroupExcelFilenameLabel,
+    resolvePrimaryWorkLogOrderGroup,
+} from "../utils/invoiceOrderGroupDisplay";
 import type { InvoiceExcelFieldMappings } from "./invoiceExcelTemplateApi";
 import { INVOICE_MANPOWER_UNIT_PRICE_KRW } from "../constants/invoiceManpowerUnitPriceKrw";
 
@@ -285,6 +290,47 @@ function uniqJoin(values: (string | null | undefined)[], sep: string): string {
     return [...set].join(sep);
 }
 
+/**
+ * 인보이스 엑셀 다운로드 파일명
+ * `{업체명}_{호선}_{출장목적}_{기간}_{R}.xlsx`
+ * 예: Everllence_ELU_YZJ2023-1552_SOU-booster retrofit_22.Jul~24.Aug.2026_R.xlsx
+ */
+export function buildInvoiceExcelDownloadFilename(
+    workLogDataList: WorkLogFullData[]
+): string {
+    if (workLogDataList.length === 0) {
+        return "invoice_R.xlsx";
+    }
+
+    const orderGroup = resolvePrimaryWorkLogOrderGroup(
+        workLogDataList.map((w) => w.workLog)
+    );
+    const company = resolveOrderGroupExcelFilenameLabel(orderGroup);
+    const vessel = uniqJoin(
+        workLogDataList.map((w) => w.workLog.vessel),
+        "-"
+    );
+    const subject = uniqJoin(
+        workLogDataList.map((w) => w.workLog.subject),
+        "-"
+    );
+    const flatEntries = workLogDataList.flatMap((w) => w.entries);
+    const { start, end } = aggregateWorkLogEntryDateRange(flatEntries);
+    const period = formatInvoiceExcelFilenamePeriod(start, end);
+
+    const parts = [company, vessel, subject, period, "R"].filter(
+        (part) => part.length > 0
+    );
+    const safeBase = parts
+        .join("_")
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 180);
+
+    return `${safeBase.length > 0 ? safeBase : "invoice_R"}.xlsx`;
+}
+
 export function buildInvoiceExcelMeta(
     workLogDataList: WorkLogFullData[]
 ): InvoiceExcelMeta {
@@ -448,6 +494,54 @@ export function fillJobDescriptionSheet(
         cols.returnDisplay,
         withLeadingSpace(input.returnDisplay)
     );
+    normalizeJobDescriptionManPowerLabel(ws);
+}
+
+/** 템플릿의 " MAN POWER" 앞 공백 제거 → "MAN POWER" */
+function normalizeJobDescriptionManPowerLabel(ws: ExcelJS.Worksheet) {
+    const stripLeadingSpace = (text: string) =>
+        text.replace(/(^|\n) MAN POWER/g, "$1MAN POWER");
+
+    ws.eachRow((row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+            const value = cell.value;
+            if (typeof value === "string") {
+                const next = stripLeadingSpace(value);
+                if (next !== value) {
+                    cell.value = next;
+                }
+                return;
+            }
+            if (
+                value &&
+                typeof value === "object" &&
+                "richText" in value &&
+                Array.isArray(
+                    (value as ExcelJS.CellRichTextValue).richText
+                )
+            ) {
+                const rich = value as ExcelJS.CellRichTextValue;
+                let changed = false;
+                const nextRich = rich.richText.map((part, index) => {
+                    if (typeof part.text !== "string") {
+                        return part;
+                    }
+                    const nextText =
+                        index === 0
+                            ? stripLeadingSpace(part.text)
+                            : part.text.replace(/^ MAN POWER/, "MAN POWER");
+                    if (nextText !== part.text) {
+                        changed = true;
+                        return { ...part, text: nextText };
+                    }
+                    return part;
+                });
+                if (changed) {
+                    cell.value = { richText: nextRich };
+                }
+            }
+        });
+    });
 }
 
 export function applyNormalJobDescriptionSheetBorderFormatting(

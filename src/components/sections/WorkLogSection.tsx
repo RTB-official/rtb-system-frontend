@@ -588,11 +588,10 @@ export default function WorkLogSection() {
         if (!currentEntry.details) {
             newErrors.details = "상세 내용을 입력해주세요";
         }
-        if (currentEntry.descType === "작업") {
-            if (currentEntryPersons.length === 0) {
-                newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
-            }
-        } else if (currentEntry.descType === "이동") {
+        if (currentEntryPersons.length === 0) {
+            newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
+        }
+        if (currentEntry.descType === "이동") {
             if (!currentEntry.moveFrom) {
                 newErrors.details = "From을 선택해주세요";
             }
@@ -611,12 +610,10 @@ export default function WorkLogSection() {
                 newErrors.timeTo = msg;
             }
         }
-        if (currentEntry.descType === "작업" && currentEntryPersons.length === 0) {
-            newErrors.persons = "참여 인원을 1명 이상 선택해주세요";
-        }
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
+            showError("필수 항목을 모두 입력해주세요.");
             if (formRef.current) {
                 formRef.current.scrollIntoView({
                     behavior: "smooth",
@@ -685,9 +682,10 @@ export default function WorkLogSection() {
         setIsSavingEntry(true);
         try {
             const isEdit = !!editingEntryId;
-            saveWorkLogEntry(showError);
+            const saved = saveWorkLogEntry(showError);
+            if (!saved) return;
+
             setHasDetour(false);
-            // ✅ 추가/수정 성공 토스트
             if (isEdit) {
                 showSuccess("출장 업무 일지가 수정되었습니다.");
             } else {

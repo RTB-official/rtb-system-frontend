@@ -68,6 +68,59 @@ export function formatKoreanPeriod(start?: string, end?: string) {
     return `${s.month}월${s.day}일~${e.month}월${e.day}일`;
 }
 
+const ENGLISH_MONTH_ABBR = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+] as const;
+
+/** 엑셀 파일명용 기간: `22.Jul.2026` / `22.Jul~24.Jul.2026` / `22.Jul~24.Aug.2026` */
+export function formatInvoiceExcelFilenamePeriod(
+    start?: string,
+    end?: string
+): string {
+    const startKey = normalizeCalendarDateKey(start);
+    const endKey = normalizeCalendarDateKey(end) ?? startKey;
+    const fromKey = startKey ?? endKey;
+    if (!fromKey || !endKey) {
+        return "";
+    }
+
+    const parse = (ymd: string) => {
+        const [year, month, day] = ymd.split("-").map(Number);
+        return {
+            year,
+            day,
+            monthAbbr: ENGLISH_MONTH_ABBR[month - 1] ?? "",
+        };
+    };
+
+    const s = parse(fromKey);
+    const e = parse(endKey);
+    if (!s.monthAbbr || !e.monthAbbr) {
+        return "";
+    }
+
+    if (fromKey === endKey) {
+        return `${s.day}.${s.monthAbbr}.${s.year}`;
+    }
+
+    if (s.year === e.year) {
+        return `${s.day}.${s.monthAbbr}~${e.day}.${e.monthAbbr}.${e.year}`;
+    }
+
+    return `${s.day}.${s.monthAbbr}.${s.year}~${e.day}.${e.monthAbbr}.${e.year}`;
+}
+
 export function aggregateWorkLogEntryDateRange(
     entries: ReadonlyArray<{ dateFrom?: string; dateTo?: string }>
 ): { start?: string; end?: string } {

@@ -28,7 +28,11 @@ import { IconChevronRight } from "../../components/icons/Icons";
 import { useUser } from "../../hooks/useUser";
 import { useToast } from "../../components/ui/ToastProvider";
 import useIsMobile from "../../hooks/useIsMobile";
-import { formatCurrency } from "../../store/workReportStore";
+import {
+    formatExpenseTotalsByCurrency,
+    formatMemberExpenseSummaryTotal,
+    formatCurrency,
+} from "../../utils/expenseCurrency";
 
 export default function MemberExpensePage() {
     const navigate = useNavigate();
@@ -365,13 +369,19 @@ export default function MemberExpensePage() {
         {
             key: "cardExpense",
             label: "카드지출",
-            render: (value) => formatWonAmount(value),
+            render: (_value, row) =>
+                formatExpenseTotalsByCurrency(row.cardExpensesByCurrency),
         },
         {
             key: "total",
             label: "합계",
-            render: (value) => (
-                <span className="font-semibold">{formatWonAmount(value)}</span>
+            render: (_value, row) => (
+                <span className="font-semibold">
+                    {formatMemberExpenseSummaryTotal(
+                        row.mileage,
+                        row.cardExpensesByCurrency
+                    )}
+                </span>
             ),
         },
         {
@@ -541,7 +551,7 @@ export default function MemberExpensePage() {
                                                         <div className="flex-1 min-w-0">
                                                             <p className="font-medium text-gray-900 truncate">{row.name.replace(/^[A-Z]{2,3} /, "")}</p>
                                                             <p className="text-sm text-gray-500 mt-0.5">
-                                                                마일리지 {formatWonAmount(row.mileage)} · 카드 {formatWonAmount(row.cardExpense)} · 합계 {formatWonAmount(row.total)}
+                                                                마일리지 {formatWonAmount(row.mileage)} · 카드 {formatExpenseTotalsByCurrency(row.cardExpensesByCurrency)} · 합계 {formatMemberExpenseSummaryTotal(row.mileage, row.cardExpensesByCurrency)}
                                                             </p>
                                                         </div>
                                                         <IconChevronRight

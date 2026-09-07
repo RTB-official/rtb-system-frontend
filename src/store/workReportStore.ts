@@ -67,7 +67,7 @@ export interface StaffProfile {
 
 // 참관 감독 그룹별 인원
 export const ORDER_PERSONS: Record<string, string[]> = {
-  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형'],
+  ELU: ['김용웅', '허만기', '김재봉', '송준희', '이대겸', '김연형', '최재우'],
   PRIME: ['이유수', '김효민', '안희재'],
 };
 
@@ -193,7 +193,7 @@ interface WorkReportState {
   removeCurrentEntryPerson: (name: string) => void;
   addAllCurrentEntryPersons: () => void;
   addRegionPersonsToEntry: (region: string) => void;
-  saveWorkLogEntry: (onError?: (message: string) => void) => void;
+  saveWorkLogEntry: (onError?: (message: string) => void) => boolean;
   setWorkLogEntries: (entries: WorkLogEntry[]) => void;
   deleteWorkLogEntry: (id: number) => void;
   editWorkLogEntry: (id: number) => void;
@@ -381,18 +381,21 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     );
     return { currentEntryPersons: [...state.currentEntryPersons, ...validWorkers] };
   }),
-  saveWorkLogEntry: (onError?: (message: string) => void) => set((state) => {
+  saveWorkLogEntry: (onError?: (message: string) => void) => {
+    const state = get();
     const { currentEntry, currentEntryPersons, editingEntryId, workLogEntries } = state;
-    
-    if (!currentEntry.dateFrom || !currentEntry.dateTo || !currentEntry.descType || !currentEntry.details || currentEntryPersons.length === 0) {
-      const errorMessage = '필수 항목을 모두 입력해주세요.';
-      if (onError) {
-        onError(errorMessage);
-      }
-      // onError가 없으면 에러만 무시 (alert 제거)
-      return state;
+
+    if (
+      !currentEntry.dateFrom ||
+      !currentEntry.dateTo ||
+      !currentEntry.descType ||
+      !currentEntry.details ||
+      currentEntryPersons.length === 0
+    ) {
+      onError?.('필수 항목을 모두 입력해주세요.');
+      return false;
     }
-    
+
     const entry: WorkLogEntry = {
       id: editingEntryId ?? Date.now(),
       dateFrom: currentEntry.dateFrom || '',
@@ -407,7 +410,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       moveFrom: currentEntry.moveFrom,
       moveTo: currentEntry.moveTo,
     };
-    
+
     // 다음 엔트리의 시작 시간을 현재 종료 시간으로 자동 설정
     const toHourOnly = (time?: string) => {
       const raw = (time || '').trim();
@@ -423,22 +426,24 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       timeFrom: toHourOnly(currentEntry.timeTo),
       dateTo: currentEntry.dateTo || '',
     };
-    
+
     if (editingEntryId) {
-      return {
+      set({
         workLogEntries: workLogEntries.map((e) => (e.id === editingEntryId ? entry : e)),
         currentEntry: nextEntry,
         currentEntryPersons: [],
         editingEntryId: null,
-      };
+      });
+    } else {
+      set({
+        workLogEntries: [...workLogEntries, entry],
+        currentEntry: nextEntry,
+        currentEntryPersons: [],
+      });
     }
-    
-    return {
-      workLogEntries: [...workLogEntries, entry],
-      currentEntry: nextEntry,
-      currentEntryPersons: [],
-    };
-  }),
+
+    return true;
+  },
   setWorkLogEntries: (entries) => set({ workLogEntries: entries }),
   deleteWorkLogEntry: (id) => set((state) => ({
     workLogEntries: state.workLogEntries.filter((e) => e.id !== id),
@@ -577,10 +582,12 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
 }));
 
 // 유틸리티 함수들
-export const formatCurrency = (num: number): string => {
-  if (!Number.isFinite(num)) return "0";
-  return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
-};
+export {
+  formatCurrency,
+  parseExpenseTotalsByCurrency,
+  formatExpenseTotalsByCurrency,
+  formatMemberExpenseSummaryTotal,
+} from '../utils/expenseCurrency';
 
 export const parseCurrency = (str: string): number => {
   if (!str) return 0;

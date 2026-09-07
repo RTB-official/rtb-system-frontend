@@ -17,6 +17,8 @@ type TravelOverrideEditorAnimatedShellProps = {
     isExpanded: boolean;
     /** 닫힘 애니메이션 중 (행은 유지, 내용은 워크로드와 같이 먼저 제거) */
     isClosing: boolean;
+    /** 펼침 시 최대 높이 (기본: 짧은 이동 청구 편집용) */
+    maxHeightClass?: string;
     children: ReactNode;
 };
 
@@ -24,6 +26,7 @@ export function TravelOverrideEditorAnimatedShell({
     editorKey,
     isExpanded,
     isClosing,
+    maxHeightClass = "max-h-[min(32rem,70vh)]",
     children,
 }: TravelOverrideEditorAnimatedShellProps) {
     const [openedVisual, setOpenedVisual] = useState(false);
@@ -58,17 +61,16 @@ export function TravelOverrideEditorAnimatedShell({
     const showContent = isExpanded;
     const shellOpen = isExpanded && !isClosing && openedVisual;
 
-    const openClasses =
-        "max-h-[min(32rem,70vh)] opacity-100 translate-y-0 py-3";
+    const openClasses = `${maxHeightClass} overflow-y-auto opacity-100 translate-y-0 py-3`;
     const closedClasses =
-        "max-h-0 opacity-0 -translate-y-2 py-0 border-transparent";
+        "max-h-0 overflow-hidden opacity-0 -translate-y-2 py-0 border-transparent";
 
     return (
         <div
             data-travel-override-editor="true"
             data-editor-key={editorKey}
             className={[
-                "overflow-hidden transition-all duration-400 ease-out",
+                "transition-all duration-400 ease-out",
                 shellOpen ? openClasses : closedClasses,
             ]
                 .filter(Boolean)

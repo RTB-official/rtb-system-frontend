@@ -40,6 +40,8 @@ import {
     getRoundedBillableApplyYmd,
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
+    sumConsecutiveWorkClusterAutoBillableHours,
+    type WorkEntryClusterable,
 } from "../../utils/workEntryBillableHours";
 import {
     enumerateDateRange,
@@ -61,6 +63,7 @@ import {
 } from "../../lib/invoiceExcelTemplateApi";
 import {
     buildInvoiceExcelMeta,
+    buildInvoiceExcelDownloadFilename,
     buildInvoiceExcelRowRecords,
     buildInvoiceExcelManpowerGroupInput,
     fillNormalTimesheetInvoiceExcelWorkbook,
@@ -87,6 +90,12 @@ interface TimesheetRow {
     dateFormatted: string; // DD.MMM 형식
     timeFrom: string; // HH 형식
     timeTo: string; // HH 형식
+    /**
+     * 청구시간 창(chargeWindow) 적용 전 Time from/to.
+     * 올림청구 코멘트의 "instead of" 구간에 사용.
+     */
+    baseTimeFrom?: string;
+    baseTimeTo?: string;
     totalHours: number;
     weekdayNormal: number;
     weekdayAfter: number;
@@ -323,6 +332,8 @@ const applyChargedTimeWindowToTimesheetRows = (
     rows
         .map((row) => ({
             ...row,
+            baseTimeFrom: row.timeFrom,
+            baseTimeTo: row.timeTo,
             timeFrom: (row.chargeWindowStart ?? row.timeFrom).split(":")[0],
             timeTo: (row.chargeWindowEnd ?? row.timeTo).split(":")[0],
         }))
@@ -506,6 +517,8 @@ const mergeConsecutiveTimesheetRowsSamePersonnel = (
         return {
             ...a,
             timeTo: b.timeTo,
+            baseTimeFrom: a.baseTimeFrom ?? a.timeFrom,
+            baseTimeTo: b.baseTimeTo ?? b.timeTo,
             totalHours: round1(a.totalHours + b.totalHours),
             weekdayNormal: round1(a.weekdayNormal + b.weekdayNormal),
             weekdayAfter: round1(a.weekdayAfter + b.weekdayAfter),
@@ -820,6 +833,7 @@ export type TimesheetEntryEditBaseline = {
     dateTo: string;
     timeFrom: string;
     timeTo: string;
+    details: string;
     manualBillableHours?: number;
 };
 
@@ -839,6 +853,7 @@ function buildTimesheetEntryEditBaselineMap(
                             dateTo: entry.dateTo,
                             timeFrom: entry.timeFrom ?? "",
                             timeTo: entry.timeTo ?? "",
+                            details: entry.details ?? "",
                             manualBillableHours: manualMap[entry.id],
                         },
                     ] as const
@@ -1782,6 +1797,8 @@ export default function InvoiceCreatePage() {
             invoiceEngineTypeOverride,
             invoiceWorkPeriodPlaceOverride,
             timesheetCommentOverridesBySectionKey,
+            mealCountAdjustmentsBySectionDate,
+            lodgingCountAdjustmentsBySectionDate,
         };
     }, [
         workLogDataList,
@@ -1801,6 +1818,8 @@ export default function InvoiceCreatePage() {
         invoiceEngineTypeOverride,
         invoiceWorkPeriodPlaceOverride,
         timesheetCommentOverridesBySectionKey,
+        mealCountAdjustmentsBySectionDate,
+        lodgingCountAdjustmentsBySectionDate,
     ]);
 
     /** 드래프트의 엔트리 인원은 수정본일 수 있으므로, 표시용 원본은 API 보고서 기준으로 덮어쓴다. */
@@ -1944,6 +1963,12 @@ export default function InvoiceCreatePage() {
             setInvoiceInlineEditField(null);
             setTimesheetCommentOverridesBySectionKey(
                 normalized.timesheetCommentOverridesBySectionKey ?? {}
+            );
+            setMealCountAdjustmentsBySectionDate(
+                normalized.mealCountAdjustmentsBySectionDate ?? {}
+            );
+            setLodgingCountAdjustmentsBySectionDate(
+                normalized.lodgingCountAdjustmentsBySectionDate ?? {}
             );
             setSelectedTimesheetDateGroupAnchorKey(null);
             setSelectedTimesheetDateGroupPanel(null);
@@ -2276,6 +2301,9 @@ export default function InvoiceCreatePage() {
                   });
             setInvoiceDraftId(saved.id);
             setInvoiceDraftTitle(saved.title);
+            loadedDraftBaselinePayloadRef.current = JSON.parse(
+                JSON.stringify(payload)
+            ) as InvoiceDraftPayload;
             showSuccess("인보이스 드래프트를 저장했습니다.");
         } catch (error) {
             console.error(error);
@@ -6058,18 +6086,45 @@ export default function InvoiceCreatePage() {
                         Object.keys(
                             invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current
                         ).length === 0;
-                    const shouldInitializeInitialSnapshot =
-                        (!isDraftMode && !shouldReuseLoadedData) ||
-                        isPristineInvoiceState ||
-                        isIncrementalTimesheetRebuild;
-                    if (shouldInitializeInitialSnapshot) {
-                        initialTimesheetRowValueByIdentityRef.current =
-                            Object.fromEntries(
-                                finalTimesheetRows.map((row) => [
-                                    getTimesheetRowIdentityKey(row),
-                                    getTimesheetRowDisplayedValueSnapshot(row),
-                                ])
-                            );
+                    if (isIncrementalTimesheetRebuild) {
+                        /**
+                         * 보고서 추가 재빌드: 기존 행의 초기 스냅샷은 유지해
+                         * 파란 수정 표시(올림청구·시간 변경 등)가 풀리지 않게 한다.
+                         * 새로 생긴 identity만 현재 표시값을 baseline으로 추가한다.
+                         */
+                        const prev =
+                            initialTimesheetRowValueByIdentityRef.current;
+                        const next: typeof prev = { ...prev };
+                        const liveKeys = new Set<string>();
+                        for (const row of finalTimesheetRows) {
+                            const key = getTimesheetRowIdentityKey(row);
+                            liveKeys.add(key);
+                            if (next[key] === undefined) {
+                                next[key] =
+                                    getTimesheetRowDisplayedValueSnapshot(row);
+                            }
+                        }
+                        for (const key of Object.keys(next)) {
+                            if (!liveKeys.has(key)) {
+                                delete next[key];
+                            }
+                        }
+                        initialTimesheetRowValueByIdentityRef.current = next;
+                    } else {
+                        const shouldInitializeInitialSnapshot =
+                            (!isDraftMode && !shouldReuseLoadedData) ||
+                            isPristineInvoiceState;
+                        if (shouldInitializeInitialSnapshot) {
+                            initialTimesheetRowValueByIdentityRef.current =
+                                Object.fromEntries(
+                                    finalTimesheetRows.map((row) => [
+                                        getTimesheetRowIdentityKey(row),
+                                        getTimesheetRowDisplayedValueSnapshot(
+                                            row
+                                        ),
+                                    ])
+                                );
+                        }
                     }
                 }
             } catch (error) {
@@ -9060,7 +9115,12 @@ export default function InvoiceCreatePage() {
             if (!isManualRoundedBillableFourOrEight(manual)) {
                 continue;
             }
-            const autoHours = getWorkEntryAutoBillableTotalHours(entry);
+            // 올림 청구는 연속 작업 묶음 전체를 대체하므로 원래 시간도 묶음 합으로 적는다.
+            const autoHours =
+                sumConsecutiveWorkClusterAutoBillableHours(
+                    [...entryById.values()] as WorkEntryClusterable[],
+                    entry.id
+                ) ?? getWorkEntryAutoBillableTotalHours(entry);
             if (autoHours === null || autoHours <= 0) {
                 continue;
             }
@@ -9082,25 +9142,21 @@ export default function InvoiceCreatePage() {
                     )
             );
             const invoicedTimeFrom = formatCommentTime(
-                invoicedRow?.timeFrom ?? entry.timeFrom
+                invoicedRow?.chargeWindowStart ??
+                    invoicedRow?.timeFrom ??
+                    entry.timeFrom
             );
             const invoicedTimeTo = formatCommentTime(
-                invoicedRow?.timeTo ?? entry.timeTo
-            );
-            const originalRowEntries = invoicedRow?.sourceEntries ?? [entry];
-            const originalTimeFrom = formatCommentTime(
-                originalRowEntries
-                    .map((sourceEntry) => sourceEntry.timeFrom)
-                    .filter(Boolean)
-                    .sort()[0] ?? entry.timeFrom
-            );
-            const originalTimeToValues = originalRowEntries
-                .map((sourceEntry) => sourceEntry.timeTo)
-                .filter(Boolean)
-                .sort();
-            const originalTimeTo = formatCommentTime(
-                originalTimeToValues[originalTimeToValues.length - 1] ??
+                invoicedRow?.chargeWindowEnd ??
+                    invoicedRow?.timeTo ??
                     entry.timeTo
+            );
+            // 올림청구 전 타임시트에 보이던 구간(청구창 적용 전). 소스 엔트리 min/max(이동 포함)가 아님.
+            const originalTimeFrom = formatCommentTime(
+                invoicedRow?.baseTimeFrom ?? entry.timeFrom
+            );
+            const originalTimeTo = formatCommentTime(
+                invoicedRow?.baseTimeTo ?? entry.timeTo
             );
             const commentDate = formatDate(applyYmd ?? entry.dateFrom);
             lines.push(
@@ -9491,14 +9547,81 @@ export default function InvoiceCreatePage() {
             ? "R&D TIMESHEET"
             : `${section.title}::${section.key}`;
 
+    /** R&D ↔ NORMAL 코멘트 오버라이드 연동용 섹션 키 목록 */
+    const getLinkedTimesheetCommentSectionKeys = (
+        primarySectionKey: string,
+        overrideMap: Record<string, TimesheetCommentOverrideState> = timesheetCommentOverridesBySectionKey
+    ): string[] => {
+        const keys = new Set<string>([primarySectionKey, "R&D TIMESHEET"]);
+        for (const section of normalTimesheetSectionsByPerson) {
+            keys.add(getTimesheetSectionCommentKey(section));
+        }
+        for (const section of normalTimesheetSectionsByDate) {
+            keys.add(getTimesheetSectionCommentKey(section));
+        }
+        for (const key of Object.keys(overrideMap)) {
+            keys.add(key);
+        }
+        return Array.from(keys);
+    };
+
+    const mergeTimesheetCommentOverrideStates = (
+        states: TimesheetCommentOverrideState[]
+    ): TimesheetCommentOverrideState => {
+        const hiddenAutoComments = new Set<string>();
+        const addedComments = new Set<string>();
+        const trashedById = new Map<
+            string,
+            { comment: string; isManual: boolean }
+        >();
+        const autoCommentEdits: Record<string, string> = {};
+
+        for (const state of states) {
+            for (const comment of state.hiddenAutoComments) {
+                hiddenAutoComments.add(comment);
+            }
+            for (const comment of state.addedComments) {
+                addedComments.add(comment);
+            }
+            for (const item of state.trashedComments) {
+                trashedById.set(`${item.isManual ? "1" : "0"}\0${item.comment}`, {
+                    ...item,
+                });
+            }
+            Object.assign(autoCommentEdits, state.autoCommentEdits);
+        }
+
+        return {
+            hiddenAutoComments: Array.from(hiddenAutoComments),
+            addedComments: Array.from(addedComments),
+            trashedComments: Array.from(trashedById.values()),
+            autoCommentEdits,
+        };
+    };
+
+    const getMergedTimesheetCommentOverrideState = (
+        primarySectionKey?: string,
+        overrideMap: Record<
+            string,
+            TimesheetCommentOverrideState
+        > = timesheetCommentOverridesBySectionKey
+    ): TimesheetCommentOverrideState => {
+        const linked = getLinkedTimesheetCommentSectionKeys(
+            primarySectionKey ?? "R&D TIMESHEET",
+            overrideMap
+        );
+        return mergeTimesheetCommentOverrideStates(
+            linked.map((key) => cloneTimesheetCommentOverrideState(overrideMap[key]))
+        );
+    };
+
     const resolveTimesheetSectionCommentItems = (
         section: NormalTimesheetSection,
         autoComments: string[]
     ): ResolvedTimesheetCommentItem[] => {
         const key = getTimesheetSectionCommentKey(section);
-        const override = cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[key]
-        );
+        // R&D / NORMAL 어디서 지워도 동일하게 보이도록 전체 오버라이드를 합친다.
+        const override = getMergedTimesheetCommentOverrideState(key);
         const hidden = new Set(override.hiddenAutoComments);
         const autoItems: ResolvedTimesheetCommentItem[] = autoComments
             .filter((comment) => !hidden.has(comment))
@@ -9529,9 +9652,7 @@ export default function InvoiceCreatePage() {
         comment: string,
         isManual: boolean
     ) => {
-        const current = cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[sectionKey]
-        );
+        const current = getMergedTimesheetCommentOverrideState(sectionKey);
         if (isManual) {
             if (!current.addedComments.includes(comment)) {
                 return;
@@ -9542,42 +9663,53 @@ export default function InvoiceCreatePage() {
 
         pushTimesheetCommentUndoSnapshot(sectionKey);
         setTimesheetCommentOverridesBySectionKey((previous) => {
-            const nextCurrent = cloneTimesheetCommentOverrideState(
-                previous[sectionKey]
+            const linked = getLinkedTimesheetCommentSectionKeys(
+                sectionKey,
+                previous
             );
-            const alreadyTrashed = nextCurrent.trashedComments.some(
+            const merged = getMergedTimesheetCommentOverrideState(
+                sectionKey,
+                previous
+            );
+            const alreadyTrashed = merged.trashedComments.some(
                 (item) => item.comment === comment && item.isManual === isManual
             );
             const trashedComments = alreadyTrashed
-                ? nextCurrent.trashedComments
-                : [...nextCurrent.trashedComments, { comment, isManual }];
-            const autoCommentEdits = { ...nextCurrent.autoCommentEdits };
+                ? merged.trashedComments
+                : [...merged.trashedComments, { comment, isManual }];
+            const autoCommentEdits = { ...merged.autoCommentEdits };
             if (!isManual) {
                 delete autoCommentEdits[comment];
             }
-            const next: TimesheetCommentOverrideState = isManual
+            const nextState: TimesheetCommentOverrideState = isManual
                 ? {
-                      ...nextCurrent,
-                      addedComments: nextCurrent.addedComments.filter(
+                      ...merged,
+                      addedComments: merged.addedComments.filter(
                           (c) => c !== comment
                       ),
                       trashedComments,
                       autoCommentEdits,
                   }
                 : {
-                      ...nextCurrent,
+                      ...merged,
                       hiddenAutoComments: [
-                          ...nextCurrent.hiddenAutoComments,
+                          ...merged.hiddenAutoComments,
                           comment,
                       ],
                       trashedComments,
                       autoCommentEdits,
                   };
-            if (isTimesheetCommentOverrideEmpty(next)) {
-                const { [sectionKey]: _removed, ...rest } = previous;
-                return rest;
+            const result = { ...previous };
+            if (isTimesheetCommentOverrideEmpty(nextState)) {
+                for (const key of linked) {
+                    delete result[key];
+                }
+                return result;
             }
-            return { ...previous, [sectionKey]: next };
+            for (const key of linked) {
+                result[key] = cloneTimesheetCommentOverrideState(nextState);
+            }
+            return result;
         });
     };
 
@@ -9591,9 +9723,7 @@ export default function InvoiceCreatePage() {
         if (!trimmed) {
             return;
         }
-        const current = cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[sectionKey]
-        );
+        const current = getMergedTimesheetCommentOverrideState(sectionKey);
         if (isManual) {
             if (!current.addedComments.includes(sourceKey)) {
                 return;
@@ -9618,35 +9748,46 @@ export default function InvoiceCreatePage() {
 
         pushTimesheetCommentUndoSnapshot(sectionKey);
         setTimesheetCommentOverridesBySectionKey((previous) => {
-            const nextCurrent = cloneTimesheetCommentOverrideState(
-                previous[sectionKey]
+            const linked = getLinkedTimesheetCommentSectionKeys(
+                sectionKey,
+                previous
             );
-            let next: TimesheetCommentOverrideState;
+            const merged = getMergedTimesheetCommentOverrideState(
+                sectionKey,
+                previous
+            );
+            let nextState: TimesheetCommentOverrideState;
             if (isManual) {
-                next = {
-                    ...nextCurrent,
-                    addedComments: nextCurrent.addedComments.map((c) =>
+                nextState = {
+                    ...merged,
+                    addedComments: merged.addedComments.map((c) =>
                         c === sourceKey ? trimmed : c
                     ),
                 };
             } else if (trimmed === sourceKey) {
-                const autoCommentEdits = { ...nextCurrent.autoCommentEdits };
+                const autoCommentEdits = { ...merged.autoCommentEdits };
                 delete autoCommentEdits[sourceKey];
-                next = { ...nextCurrent, autoCommentEdits };
+                nextState = { ...merged, autoCommentEdits };
             } else {
-                next = {
-                    ...nextCurrent,
+                nextState = {
+                    ...merged,
                     autoCommentEdits: {
-                        ...nextCurrent.autoCommentEdits,
+                        ...merged.autoCommentEdits,
                         [sourceKey]: trimmed,
                     },
                 };
             }
-            if (isTimesheetCommentOverrideEmpty(next)) {
-                const { [sectionKey]: _removed, ...rest } = previous;
-                return rest;
+            const result = { ...previous };
+            if (isTimesheetCommentOverrideEmpty(nextState)) {
+                for (const key of linked) {
+                    delete result[key];
+                }
+                return result;
             }
-            return { ...previous, [sectionKey]: next };
+            for (const key of linked) {
+                result[key] = cloneTimesheetCommentOverrideState(nextState);
+            }
+            return result;
         });
     };
 
@@ -9657,14 +9798,23 @@ export default function InvoiceCreatePage() {
         }
         pushTimesheetCommentUndoSnapshot(sectionKey);
         setTimesheetCommentOverridesBySectionKey((previous) => {
-            const current = cloneTimesheetCommentOverrideState(previous[sectionKey]);
-            return {
-                ...previous,
-                [sectionKey]: {
-                    ...current,
-                    addedComments: [...current.addedComments, trimmed],
-                },
+            const linked = getLinkedTimesheetCommentSectionKeys(
+                sectionKey,
+                previous
+            );
+            const merged = getMergedTimesheetCommentOverrideState(
+                sectionKey,
+                previous
+            );
+            const nextState: TimesheetCommentOverrideState = {
+                ...merged,
+                addedComments: [...merged.addedComments, trimmed],
             };
+            const result = { ...previous };
+            for (const key of linked) {
+                result[key] = cloneTimesheetCommentOverrideState(nextState);
+            }
+            return result;
         });
     };
 
@@ -9673,9 +9823,7 @@ export default function InvoiceCreatePage() {
         comment: string,
         isManual: boolean
     ) => {
-        const current = cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[sectionKey]
-        );
+        const current = getMergedTimesheetCommentOverrideState(sectionKey);
         if (
             !current.trashedComments.some(
                 (item) => item.comment === comment && item.isManual === isManual
@@ -9686,32 +9834,44 @@ export default function InvoiceCreatePage() {
 
         pushTimesheetCommentUndoSnapshot(sectionKey);
         setTimesheetCommentOverridesBySectionKey((previous) => {
-            const nextCurrent = cloneTimesheetCommentOverrideState(
-                previous[sectionKey]
+            const linked = getLinkedTimesheetCommentSectionKeys(
+                sectionKey,
+                previous
             );
-            const trashedComments = nextCurrent.trashedComments.filter(
-                (item) => !(item.comment === comment && item.isManual === isManual)
+            const merged = getMergedTimesheetCommentOverrideState(
+                sectionKey,
+                previous
             );
-            const next: TimesheetCommentOverrideState = isManual
+            const trashedComments = merged.trashedComments.filter(
+                (item) =>
+                    !(item.comment === comment && item.isManual === isManual)
+            );
+            const nextState: TimesheetCommentOverrideState = isManual
                 ? {
-                      ...nextCurrent,
-                      addedComments: nextCurrent.addedComments.includes(comment)
-                          ? nextCurrent.addedComments
-                          : [...nextCurrent.addedComments, comment],
+                      ...merged,
+                      addedComments: merged.addedComments.includes(comment)
+                          ? merged.addedComments
+                          : [...merged.addedComments, comment],
                       trashedComments,
                   }
                 : {
-                      ...nextCurrent,
-                      hiddenAutoComments: nextCurrent.hiddenAutoComments.filter(
+                      ...merged,
+                      hiddenAutoComments: merged.hiddenAutoComments.filter(
                           (c) => c !== comment
                       ),
                       trashedComments,
                   };
-            if (isTimesheetCommentOverrideEmpty(next)) {
-                const { [sectionKey]: _removed, ...rest } = previous;
-                return rest;
+            const result = { ...previous };
+            if (isTimesheetCommentOverrideEmpty(nextState)) {
+                for (const key of linked) {
+                    delete result[key];
+                }
+                return result;
             }
-            return { ...previous, [sectionKey]: next };
+            for (const key of linked) {
+                result[key] = cloneTimesheetCommentOverrideState(nextState);
+            }
+            return result;
         });
     };
 
@@ -9719,31 +9879,20 @@ export default function InvoiceCreatePage() {
         setTimesheetCommentUndoRedoTick((tick) => tick + 1);
     };
 
-    const applyTimesheetCommentOverrideState = (
-        sectionKey: string,
-        state: TimesheetCommentOverrideState
-    ) => {
-        const next = cloneTimesheetCommentOverrideState(state);
-        setTimesheetCommentOverridesBySectionKey((previous) => {
-            if (isTimesheetCommentOverrideEmpty(next)) {
-                const { [sectionKey]: _removed, ...rest } = previous;
-                return rest;
-            }
-            return { ...previous, [sectionKey]: next };
-        });
-    };
-
     const pushTimesheetCommentUndoSnapshot = (sectionKey: string) => {
-        const current = cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[sectionKey]
-        );
-        const pastStack = timesheetCommentUndoPastRef.current[sectionKey] ?? [];
-        pastStack.push(current);
-        if (pastStack.length > MAX_INVOICE_UNDO) {
-            pastStack.shift();
+        const linked = getLinkedTimesheetCommentSectionKeys(sectionKey);
+        for (const key of linked) {
+            const current = cloneTimesheetCommentOverrideState(
+                timesheetCommentOverridesBySectionKey[key]
+            );
+            const pastStack = timesheetCommentUndoPastRef.current[key] ?? [];
+            pastStack.push(current);
+            if (pastStack.length > MAX_INVOICE_UNDO) {
+                pastStack.shift();
+            }
+            timesheetCommentUndoPastRef.current[key] = pastStack;
+            timesheetCommentUndoFutureRef.current[key] = [];
         }
-        timesheetCommentUndoPastRef.current[sectionKey] = pastStack;
-        timesheetCommentUndoFutureRef.current[sectionKey] = [];
         bumpTimesheetCommentUndoRedoTick();
     };
 
@@ -9752,15 +9901,28 @@ export default function InvoiceCreatePage() {
         if (!pastStack || pastStack.length === 0) {
             return;
         }
-        const snapshot = pastStack.pop()!;
-        const current = cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[sectionKey]
-        );
-        const futureStack =
-            timesheetCommentUndoFutureRef.current[sectionKey] ?? [];
-        futureStack.push(current);
-        timesheetCommentUndoFutureRef.current[sectionKey] = futureStack;
-        applyTimesheetCommentOverrideState(sectionKey, snapshot);
+        const linked = getLinkedTimesheetCommentSectionKeys(sectionKey);
+        setTimesheetCommentOverridesBySectionKey((previous) => {
+            const result = { ...previous };
+            for (const key of linked) {
+                const keyPast = timesheetCommentUndoPastRef.current[key];
+                if (!keyPast || keyPast.length === 0) {
+                    continue;
+                }
+                const snapshot = keyPast.pop()!;
+                const current = cloneTimesheetCommentOverrideState(previous[key]);
+                const futureStack =
+                    timesheetCommentUndoFutureRef.current[key] ?? [];
+                futureStack.push(current);
+                timesheetCommentUndoFutureRef.current[key] = futureStack;
+                if (isTimesheetCommentOverrideEmpty(snapshot)) {
+                    delete result[key];
+                } else {
+                    result[key] = snapshot;
+                }
+            }
+            return result;
+        });
         bumpTimesheetCommentUndoRedoTick();
     };
 
@@ -9769,14 +9931,28 @@ export default function InvoiceCreatePage() {
         if (!futureStack || futureStack.length === 0) {
             return;
         }
-        const snapshot = futureStack.pop()!;
-        const current = cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[sectionKey]
-        );
-        const pastStack = timesheetCommentUndoPastRef.current[sectionKey] ?? [];
-        pastStack.push(current);
-        timesheetCommentUndoPastRef.current[sectionKey] = pastStack;
-        applyTimesheetCommentOverrideState(sectionKey, snapshot);
+        const linked = getLinkedTimesheetCommentSectionKeys(sectionKey);
+        setTimesheetCommentOverridesBySectionKey((previous) => {
+            const result = { ...previous };
+            for (const key of linked) {
+                const keyFuture = timesheetCommentUndoFutureRef.current[key];
+                if (!keyFuture || keyFuture.length === 0) {
+                    continue;
+                }
+                const snapshot = keyFuture.pop()!;
+                const current = cloneTimesheetCommentOverrideState(previous[key]);
+                const pastStack =
+                    timesheetCommentUndoPastRef.current[key] ?? [];
+                pastStack.push(current);
+                timesheetCommentUndoPastRef.current[key] = pastStack;
+                if (isTimesheetCommentOverrideEmpty(snapshot)) {
+                    delete result[key];
+                } else {
+                    result[key] = snapshot;
+                }
+            }
+            return result;
+        });
         bumpTimesheetCommentUndoRedoTick();
     };
 
@@ -9786,9 +9962,7 @@ export default function InvoiceCreatePage() {
     });
 
     const getTimesheetSectionTrashedComments = (sectionKey: string) =>
-        cloneTimesheetCommentOverrideState(
-            timesheetCommentOverridesBySectionKey[sectionKey]
-        ).trashedComments;
+        getMergedTimesheetCommentOverrideState(sectionKey).trashedComments;
 
     const renderTimesheetCommentToolbarButton = (
         ariaLabel: string,
@@ -10874,6 +11048,7 @@ export default function InvoiceCreatePage() {
                     baseline.dateTo !== entry.dateTo ||
                     baseline.timeFrom !== (entry.timeFrom ?? "") ||
                     baseline.timeTo !== (entry.timeTo ?? "") ||
+                    (baseline.details ?? "").trim() !== (entry.details ?? "").trim() ||
                     (baselineManual ?? null) !== (currentManual ?? null)
                 );
             }),
@@ -11184,9 +11359,11 @@ export default function InvoiceCreatePage() {
         dateTo: string;
         timeFrom: string;
         timeTo: string;
+        details: string;
         persons: string[];
         manualBillableHours: number | null;
         manualBillableSplitHours?: ManualBillableSplitHours | null;
+        additionalManualBillableHoursByEntryId?: Record<number, number | null>;
     };
 
     const updateTimesheetEntry = useCallback(
@@ -11204,6 +11381,7 @@ export default function InvoiceCreatePage() {
                     dateTo: payload.dateTo,
                     timeFrom: payload.timeFrom,
                     timeTo: payload.timeTo,
+                    details: payload.details,
                     persons: [...payload.persons],
                 };
                 const propagatedEntries = propagateWorkLogSplitChainPatch(
@@ -11252,6 +11430,15 @@ export default function InvoiceCreatePage() {
                 } else {
                     next[payload.entryId] = payload.manualBillableHours;
                 }
+                for (const [id, hours] of Object.entries(
+                    payload.additionalManualBillableHoursByEntryId ?? {}
+                )) {
+                    if (hours === null) {
+                        delete next[Number(id)];
+                    } else {
+                        next[Number(id)] = hours;
+                    }
+                }
                 return next;
             });
             setEntryManualBillableSplitHours((prev) => {
@@ -11260,6 +11447,12 @@ export default function InvoiceCreatePage() {
                     delete next[payload.entryId];
                 } else {
                     next[payload.entryId] = payload.manualBillableSplitHours;
+                }
+                // 묶음의 다른 엔트리는 총 시간만 다루므로 N/A 분할값은 남기지 않는다.
+                for (const id of Object.keys(
+                    payload.additionalManualBillableHoursByEntryId ?? {}
+                )) {
+                    delete next[Number(id)];
                 }
                 return next;
             });
@@ -11327,26 +11520,47 @@ export default function InvoiceCreatePage() {
                 }
                 found = true;
                 const cur = wl.entries[idx];
-                const nextEn: WorkLogFullData["entries"][number] = fromSnap
-                    ? (JSON.parse(
-                          JSON.stringify(fromSnap)
-                      ) as WorkLogFullData["entries"][number])
+                const resetPatch = fromSnap
+                    ? {
+                          descType: fromSnap.descType,
+                          dateFrom: fromSnap.dateFrom,
+                          dateTo: fromSnap.dateTo,
+                          timeFrom: fromSnap.timeFrom ?? "",
+                          timeTo: fromSnap.timeTo ?? "",
+                          details: fromSnap.details ?? "",
+                          persons: [...(fromSnap.persons ?? [])],
+                          note: fromSnap.note,
+                          moveFrom: fromSnap.moveFrom,
+                          moveTo: fromSnap.moveTo,
+                          lunch_worked: fromSnap.lunch_worked,
+                      }
                     : {
-                          ...cur,
                           descType: baseline!.descType,
                           dateFrom: baseline!.dateFrom,
                           dateTo: baseline!.dateTo,
                           timeFrom: baseline!.timeFrom,
                           timeTo: baseline!.timeTo,
+                          details: baseline!.details,
                           persons: [
                               ...(originalEntryPersonsByIdRef.current[entryId] ??
                                   cur.persons ??
                                   []),
                           ],
                       };
-                nextEn.clientDuplicated = cur.clientDuplicated === true;
-                const entries = [...wl.entries];
-                entries[idx] = nextEn;
+                const propagatedEntries = propagateWorkLogSplitChainPatch(
+                    wl.entries,
+                    entryId,
+                    resetPatch
+                );
+                const entries = propagatedEntries.map((entry) =>
+                    entry.id === entryId
+                        ? {
+                              ...entry,
+                              clientDuplicated: cur.clientDuplicated === true,
+                          }
+                        : entry
+                );
+                const nextEn = entries.find((e) => e.id === entryId)!;
                 mapped = mapWorkLogEntryToTimesheetSource(
                     nextEn,
                     wl.workLog.id,
@@ -11382,8 +11596,33 @@ export default function InvoiceCreatePage() {
 
             resetTravelChargeOverridesForEntry(entryId);
 
+            const panelMappedById = new Map<number, TimesheetSourceEntryData>();
+            for (const wl of nextList) {
+                const idx = wl.entries.findIndex((e) => e.id === entryId);
+                if (idx === -1) {
+                    continue;
+                }
+                const memberIds = new Set(
+                    getWorkLogSplitChainMemberIds(wl.entries, entryId)
+                );
+                for (const entry of wl.entries) {
+                    if (!entry.id || !memberIds.has(entry.id)) {
+                        continue;
+                    }
+                    panelMappedById.set(
+                        entry.id,
+                        mapWorkLogEntryToTimesheetSource(
+                            entry,
+                            wl.workLog.id,
+                            wl.workLog.location ?? null
+                        )
+                    );
+                }
+                break;
+            }
+
             const mergePanel = (arr: TimesheetSourceEntryData[]) =>
-                arr.map((e) => (e.id === entryId ? mapped! : e));
+                arr.map((e) => panelMappedById.get(e.id) ?? e);
 
             setSelectedTimesheetRow((p) =>
                 p
@@ -12406,13 +12645,9 @@ export default function InvoiceCreatePage() {
                             buildInvoiceExcelRowRecords(timesheetRows)
                         );
             const blob = await invoiceExcelWorkbookToBlob(workbook);
-            const safeBase = String(meta.report_title ?? "invoice")
-                .replace(/[\\/:*?"<>|]/g, "_")
-                .trim()
-                .slice(0, 120);
             triggerExcelDownload(
                 blob,
-                `${safeBase.length > 0 ? safeBase : "invoice"}.xlsx`
+                buildInvoiceExcelDownloadFilename(workLogDataList)
             );
             showSuccess("엑셀 파일을 저장했습니다.");
         } catch (e) {
