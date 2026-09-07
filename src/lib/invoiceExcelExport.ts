@@ -118,6 +118,10 @@ export type InvoiceExcelJobDescriptionSheetInput = {
     poNumber?: string;
     departureDisplay: string;
     returnDisplay: string;
+    /** Description 영역 `MAN POWER : …` 한 줄 (없으면 템플릿 문구만 공백 정리) */
+    manPowerLine?: string;
+    /** Description 영역에서 MAN POWER 바로 위 행에 넣을 PIC 문구 */
+    picLine?: string;
 };
 
 /** Job description 시트 상단 정보표 (양식 템플릿 기준) */
@@ -140,6 +144,9 @@ const INVOICE_SHEET_MANPOWER_ROWS = {
     fitterHeader: 23,
     fitterHoursStart: 24,
     fitterSpacer: 30,
+    /** 2. Service material 헤더 (양식 기본값; 실제로는 텍스트로 탐색) */
+    serviceMaterialHeader: 31,
+    serviceMaterialDetail: 32,
     dailyAllowanceDetail: 35,
 } as const;
 
@@ -494,19 +501,195 @@ export function fillJobDescriptionSheet(
         cols.returnDisplay,
         withLeadingSpace(input.returnDisplay)
     );
-    normalizeJobDescriptionManPowerLabel(ws);
+    insertJobDescriptionPicRowAboveManPower(
+        ws,
+        input.picLine?.trim() || "Everllence PIC : Mr."
+    );
+    normalizeJobDescriptionManPowerLabel(ws, input.manPowerLine);
+    ensureJobDescriptionLongTextOverflow(ws);
 }
 
-/** 템플릿의 " MAN POWER" 앞 공백 제거 → "MAN POWER" */
-function normalizeJobDescriptionManPowerLabel(ws: ExcelJS.Worksheet) {
+/** Job description 시트에서 MAN POWER 셀 위치 찾기 */
+function findJobDescriptionManPowerCell(
+    ws: ExcelJS.Worksheet
+): { row: number; col: number } | null {
+    let found: { row: number; col: number } | null = null;
+    ws.eachRow((row, rowNumber) => {
+        if (found) return;
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+            if (found) return;
+            if (/MAN POWER/i.test(getWorksheetCellDisplayText(cell))) {
+                found = { row: rowNumber, col: colNumber };
+            }
+        });
+    });
+    return found;
+}
+
+/**
+ * PIC / MAN POWER / “carried out the following work” 긴 문구가
+ * B열에 갇히지 않고 우측으로 넘치도록 정리한다.
+ * (옆 칸 잔여값·wrapText 때문에 잘리는 문제 방지)
+ */
+function ensureJobDescriptionLongTextOverflow(ws: ExcelJS.Worksheet) {
+    const targets: Array<{ row: number; col: number }> = [];
+
+    ws.eachRow((row, rowNumber) => {
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+            const text = getWorksheetCellDisplayText(cell);
+            if (
+                /MAN POWER/i.test(text) ||
+                /PIC\s*:/i.test(text) ||
+                /carried out the following work/i.test(text)
+            ) {
+                targets.push({ row: rowNumber, col: colNumber });
+            }
+        });
+    });
+
+    for (const { row, col } of targets) {
+        clearJobDescriptionRowCellsToRight(ws, row, col);
+        const cell = ws.getCell(row, col);
+        cell.alignment = {
+            ...(cell.alignment ?? {}),
+            wrapText: false,
+            horizontal: "left",
+            vertical: cell.alignment?.vertical ?? "center",
+        };
+    }
+}
+
+function clearJobDescriptionRowCellsToRight(
+    ws: ExcelJS.Worksheet,
+    row: number,
+    startCol: number,
+    endCol = 20
+) {
+    for (let col = startCol + 1; col <= endCol; col += 1) {
+        const merge = findMergeContainingCell(ws, row, col);
+        // 가로로 이어진 병합(같은 행)은 텍스트 표시용일 수 있어 유지.
+        // 시작 열과 다른 병합·단독 셀 값만 비운다.
+        if (merge && merge.top === merge.bottom && merge.left === startCol) {
+            continue;
+        }
+        if (merge && (merge.left !== startCol || merge.top !== row)) {
+            try {
+                ws.unMergeCells(formatMergeRef(merge));
+            } catch {
+                // ignore
+            }
+        }
+        const cell = ws.getCell(row, col);
+        cell.value = null;
+    }
+}
+
+/**
+ * MAN POWER 행(보통 14) 위에 PIC 행을 삽입하고, MAN POWER 이하를 한 칸씩 내린다.
+ * 이미 바로 위에 PIC 행이 있으면 문구만 갱신한다.
+ */
+function insertJobDescriptionPicRowAboveManPower(
+    ws: ExcelJS.Worksheet,
+    picLine: string
+) {
+    const manPower = findJobDescriptionManPowerCell(ws);
+    if (!manPower) {
+        return;
+    }
+
+    const colLetter = columnNumberToLetter(manPower.col);
+    if (manPower.row > 1) {
+        const aboveText = getWorksheetCellDisplayText(
+            ws.getCell(manPower.row - 1, manPower.col)
+        );
+        if (/PIC\s*:/i.test(aboveText)) {
+            setCellValue(ws, `${colLetter}${manPower.row - 1}`, picLine);
+            return;
+        }
+    }
+
+    const insertAt = manPower.row;
+    spliceRowsWithLayoutRepair(ws, insertAt, 1);
+    // 삽입 후: insertAt = 새 PIC 행, insertAt+1 = MAN POWER
+    copyWorksheetRowStyle(ws, insertAt + 1, insertAt);
+    // PIC 행에 wrap 이 켜지거나 옆 칸이 생기면 긴 문구가 잘리므로 비활성
+    const picCell = ws.getCell(insertAt, manPower.col);
+    picCell.alignment = {
+        ...(picCell.alignment ?? {}),
+        wrapText: false,
+        horizontal: "left",
+        vertical: picCell.alignment?.vertical ?? "center",
+    };
+    setCellValue(ws, `${colLetter}${insertAt}`, picLine);
+    clearJobDescriptionRowCellsToRight(ws, insertAt, manPower.col);
+}
+
+/**
+ * Job description Description 영역의 MAN POWER 줄 정리/치환.
+ * - 템플릿 " MAN POWER" 앞 공백 제거
+ * - manPowerLine 이 있으면 해당 셀 전체를 그 문구로 교체
+ */
+function normalizeJobDescriptionManPowerLabel(
+    ws: ExcelJS.Worksheet,
+    manPowerLine?: string
+) {
     const stripLeadingSpace = (text: string) =>
         text.replace(/(^|\n) MAN POWER/g, "$1MAN POWER");
+    const replaceManPowerLine = (text: string) => {
+        const normalized = stripLeadingSpace(text);
+        if (!manPowerLine?.trim()) {
+            return normalized;
+        }
+        if (!/MAN POWER/i.test(normalized)) {
+            return normalized;
+        }
+        return manPowerLine.trim();
+    };
+
+    const updateRichText = (
+        rich: ExcelJS.CellRichTextValue
+    ): ExcelJS.CellRichTextValue | null => {
+        if (!manPowerLine?.trim()) {
+            let changed = false;
+            const nextRich = rich.richText.map((part, index) => {
+                if (typeof part.text !== "string") {
+                    return part;
+                }
+                const nextText =
+                    index === 0
+                        ? stripLeadingSpace(part.text)
+                        : part.text.replace(/^ MAN POWER/, "MAN POWER");
+                if (nextText !== part.text) {
+                    changed = true;
+                    return { ...part, text: nextText };
+                }
+                return part;
+            });
+            return changed ? { richText: nextRich } : null;
+        }
+
+        const joined = rich.richText
+            .map((part) => (typeof part.text === "string" ? part.text : ""))
+            .join("");
+        if (!/MAN POWER/i.test(joined)) {
+            return null;
+        }
+        const first = rich.richText[0];
+        return {
+            richText: [
+                {
+                    ...(first && typeof first === "object" ? first : {}),
+                    text: manPowerLine.trim(),
+                },
+            ],
+        };
+    };
 
     ws.eachRow((row) => {
         row.eachCell({ includeEmpty: false }, (cell) => {
             const value = cell.value;
             if (typeof value === "string") {
-                const next = stripLeadingSpace(value);
+                const next = replaceManPowerLine(value);
                 if (next !== value) {
                     cell.value = next;
                 }
@@ -516,28 +699,11 @@ function normalizeJobDescriptionManPowerLabel(ws: ExcelJS.Worksheet) {
                 value &&
                 typeof value === "object" &&
                 "richText" in value &&
-                Array.isArray(
-                    (value as ExcelJS.CellRichTextValue).richText
-                )
+                Array.isArray((value as ExcelJS.CellRichTextValue).richText)
             ) {
-                const rich = value as ExcelJS.CellRichTextValue;
-                let changed = false;
-                const nextRich = rich.richText.map((part, index) => {
-                    if (typeof part.text !== "string") {
-                        return part;
-                    }
-                    const nextText =
-                        index === 0
-                            ? stripLeadingSpace(part.text)
-                            : part.text.replace(/^ MAN POWER/, "MAN POWER");
-                    if (nextText !== part.text) {
-                        changed = true;
-                        return { ...part, text: nextText };
-                    }
-                    return part;
-                });
-                if (changed) {
-                    cell.value = { richText: nextRich };
+                const next = updateRichText(value as ExcelJS.CellRichTextValue);
+                if (next) {
+                    cell.value = next;
                 }
             }
         });
@@ -724,6 +890,7 @@ export function fillInvoiceSheet(
         input.dailyAllowanceLineTotal
     );
 
+    applyInvoiceSheetServiceMaterialLayout(ws);
     applyInvoiceSheetFooterSectionLayout(ws, _variant);
 }
 
@@ -911,6 +1078,76 @@ function collapseRdInvoiceTransportationAccommodationGap(
     }
 }
 
+/** Gloves → Cotton gloves (이미 Cotton gloves면 유지) */
+function replaceGlovesWithCottonGloves(text: string): string {
+    if (/Cotton\s+gloves/i.test(text)) return text;
+    return text.replace(/\bGloves\b/g, "Cotton gloves");
+}
+
+/**
+ * 2. Service material: 헤더 행의 G/H/I/J를 바로 아래 상세 행으로 내리고
+ * 상세 설명의 Gloves를 Cotton gloves로 교체
+ */
+function applyInvoiceSheetServiceMaterialLayout(ws: ExcelJS.Worksheet) {
+    const cols = INVOICE_SHEET_COLS;
+    const rows = INVOICE_SHEET_MANPOWER_ROWS;
+    const headerRow =
+        findInvoiceSheetRowByDescriptionText(
+            ws,
+            /^\s*2\.\s*Service material/i,
+            rows.fitterSpacer,
+            rows.dailyAllowanceDetail
+        ) ?? rows.serviceMaterialHeader;
+    const detailRow = headerRow + 1;
+
+    for (const col of INVOICE_SHEET_DATA_CLEAR_COLS) {
+        const headerAddress = `${col}${headerRow}`;
+        const detailAddress = `${col}${detailRow}`;
+        const headerCell = ws.getCell(headerAddress);
+        const headerValue = headerCell.value;
+        if (
+            headerValue === null ||
+            headerValue === undefined ||
+            headerValue === ""
+        ) {
+            continue;
+        }
+
+        if (
+            col === cols.total &&
+            typeof headerValue === "object" &&
+            headerValue !== null &&
+            ("formula" in headerValue || "sharedFormula" in headerValue)
+        ) {
+            const result =
+                "result" in headerValue &&
+                typeof (headerValue as ExcelJS.CellFormulaValue).result ===
+                    "number"
+                    ? (headerValue as ExcelJS.CellFormulaValue).result
+                    : 0;
+            setInvoiceSheetLineTotalFormula(
+                ws,
+                detailRow,
+                typeof result === "number" ? result : 0
+            );
+        } else {
+            ws.getCell(detailAddress).value = headerValue;
+        }
+        clearInvoiceSheetCellCompletely(ws, headerAddress);
+    }
+
+    for (const col of INVOICE_SHEET_DESCRIPTION_CLEAR_COLS) {
+        const address = `${col}${detailRow}`;
+        const cell = ws.getCell(address);
+        const text = getWorksheetCellDisplayText(cell);
+        if (!text) continue;
+        const next = replaceGlovesWithCottonGloves(text);
+        if (next !== text) {
+            setCellValue(ws, address, next);
+        }
+    }
+}
+
 /** Transportation mileage 안내 행 제거, Accommodation 단위/합계를 상세 행으로 이동 */
 function applyInvoiceSheetFooterSectionLayout(
     ws: ExcelJS.Worksheet,
@@ -989,6 +1226,120 @@ function applyInvoiceSheetFooterSectionLayout(
         collapseRdInvoiceTransportationAccommodationGap(
             ws,
             accommodationHeaderRow
+        );
+        return;
+    }
+
+    insertInvoiceSheetGrandTotalGapRow(ws, detailRow);
+}
+
+function findInvoiceSheetGrandTotalRow(
+    ws: ExcelJS.Worksheet,
+    startRow: number,
+    endRow: number
+): number | undefined {
+    for (const col of INVOICE_SHEET_CLEAR_COLS) {
+        const row = findInvoiceSheetRowByColumnText(
+            ws,
+            col,
+            /Grand\s*Total/i,
+            startRow,
+            endRow
+        );
+        if (row) return row;
+    }
+    return undefined;
+}
+
+/**
+ * Normal 양식은 표 바로 아래에 Grand Total이 붙어 있어, 그 위에 빈 행 하나를 끼워
+ * 넣는다(엑셀 "삽입"과 동일). 아래 내용이 한 칸씩 밀리므로 수식의 행 참조도 옮긴다.
+ */
+function insertInvoiceSheetGrandTotalGapRow(
+    ws: ExcelJS.Worksheet,
+    searchStart: number
+) {
+    const grandTotalRow = findInvoiceSheetGrandTotalRow(
+        ws,
+        searchStart,
+        searchStart + 20
+    );
+    if (!grandTotalRow || grandTotalRow < 2) return;
+
+    // 이미 표와 떨어져 있으면(빈 행 2개 이상) 그대로 둔다
+    if (
+        isInvoiceSheetSpacerRow(ws, grandTotalRow - 1) &&
+        isInvoiceSheetSpacerRow(ws, grandTotalRow - 2)
+    ) {
+        return;
+    }
+
+    spliceRowsWithLayoutRepair(ws, grandTotalRow, 1);
+    shiftWorksheetFormulaRowRefs(ws, grandTotalRow, 1);
+}
+
+/** 수식 문자열의 행 참조를 insertAt 이상만 count 만큼 내린다 (문자열 리터럴은 제외) */
+function shiftFormulaRowRefs(
+    formula: string,
+    insertAt: number,
+    count: number
+): string {
+    return formula.replace(
+        /"[^"]*"|(^|[^A-Za-z0-9_$.!])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])/g,
+        (
+            match: string,
+            prefix: string | undefined,
+            absCol: string,
+            col: string,
+            absRow: string,
+            rowText: string
+        ) => {
+            if (prefix === undefined) return match;
+            const row = Number.parseInt(rowText, 10);
+            if (!Number.isFinite(row) || row < insertAt) return match;
+            return `${prefix}${absCol}${col}${absRow}${row + count}`;
+        }
+    );
+}
+
+/**
+ * 행 삽입 후 시트 전체 수식의 행 참조를 보정한다.
+ * 병합 셀은 master/slave가 같은 수식을 공유하므로, 먼저 원본을 모아 두고
+ * 한 번에 쓴다(같은 수식이 두 번 밀려 자기 참조가 되는 것을 방지).
+ */
+function shiftWorksheetFormulaRowRefs(
+    ws: ExcelJS.Worksheet,
+    insertAt: number,
+    count: number
+) {
+    const updates: {
+        address: string;
+        formula: string;
+        result?: ExcelJS.CellValue;
+    }[] = [];
+
+    ws.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+            const bundle = readFormulaCellBundle(cell);
+            const formula = bundle?.formula;
+            if (!formula) return;
+
+            const shifted = shiftFormulaRowRefs(formula, insertAt, count);
+            if (shifted === formula) return;
+
+            updates.push({
+                address: cell.address,
+                formula: shifted,
+                result: bundle?.result,
+            });
+        });
+    });
+
+    for (const update of updates) {
+        setFormulaCellValue(
+            ws.getCell(update.address),
+            update.formula,
+            update.result
         );
     }
 }
@@ -1969,7 +2320,8 @@ function extractTemplateCellStyles(
     xml: string,
     sheetName: string,
     outputXml?: string,
-    outputSharedStrings: string[] = []
+    outputSharedStrings: string[] = [],
+    invoiceRowShift?: InvoiceSheetRowShift | null
 ): Map<string, string> {
     const styles = new Map<string, string>();
     const normalizedSheetName = sheetName.trim();
@@ -2043,7 +2395,361 @@ function extractTemplateCellStyles(
         normalizedSheetName
     );
 
+    // Job description: PIC 행 삽입으로 내용이 +1행 밀린 경우,
+    // 템플릿 셀 스타일 주소도 같이 밀어 'carried out…' 행에 빈 옆칸 스타일이
+    // 붙으며 텍스트 넘침이 막히는 문제를 방지한다.
+    if (normalizedSheetName === "Job description" && outputXml) {
+        remapJobDescriptionStylesAfterPicInsert(
+            styles,
+            outputXml,
+            outputSharedStrings
+        );
+    }
+
+    // Invoice: 표와 Grand Total 사이에 빈 행을 끼워 넣으면 아래 내용이 밀리므로,
+    // 템플릿 셀 스타일 주소도 같이 밀어야 서식이 어긋나지 않는다.
+    if (normalizedSheetName === "Invoice" && invoiceRowShift) {
+        shiftTemplateCellStylesFromRow(styles, invoiceRowShift);
+    }
+
     return styles;
+}
+
+/** Invoice 시트에 빈 행을 끼워 넣어 templateRow 이후가 shift 만큼 밀린 상태 */
+type InvoiceSheetRowShift = {
+    templateRow: number;
+    shift: number;
+};
+
+/**
+ * 텍스트가 들어 있는 행 번호들.
+ * 빈 행(`<row .../>`)이 뒤 행 내용을 삼키지 않도록 행/셀을 정확히 끊어 읽는다.
+ */
+function findAllRowsContainingText(
+    xml: string,
+    sharedStrings: string[],
+    text: RegExp
+): number[] {
+    const found = new Set<number>();
+
+    for (const rowMatch of xml.matchAll(
+        /<row\b([^>]*?)\/>|<row\b([^>]*?)>([\s\S]*?)<\/row>/g
+    )) {
+        const rowBody = rowMatch[3];
+        if (!rowBody) continue;
+
+        const rowNumber = Number.parseInt(
+            (rowMatch[2] ?? "").match(/\br="(\d+)"/)?.[1] ?? "",
+            10
+        );
+        if (!Number.isFinite(rowNumber)) continue;
+
+        for (const cellMatch of rowBody.matchAll(
+            /<c\b([^>]*?)\/>|<c\b([^>]*?)>([\s\S]*?)<\/c>/g
+        )) {
+            const cellBody = cellMatch[3];
+            if (!cellBody) continue;
+
+            const raw = cellBody.match(/<v>([\s\S]*?)<\/v>/)?.[1];
+            if (raw === undefined) continue;
+
+            const value = /t="s"/.test(cellMatch[2] ?? "")
+                ? sharedStrings[Number(raw)] ?? raw
+                : raw;
+            if (text.test(value)) {
+                found.add(rowNumber);
+                break;
+            }
+        }
+    }
+
+    return [...found].sort((a, b) => a - b);
+}
+
+/**
+ * 텍스트가 들어 있는 첫 행 번호.
+ */
+function firstRowContainingText(
+    xml: string,
+    sharedStrings: string[],
+    text: RegExp
+): number | undefined {
+    return findAllRowsContainingText(xml, sharedStrings, text)[0];
+}
+
+/** 출력의 Grand Total 행이 템플릿보다 아래면 그 차이를 반환 */
+function resolveInvoiceSheetRowShift(
+    templateXml: string,
+    templateSharedStrings: string[],
+    outputXml: string,
+    outputSharedStrings: string[]
+): InvoiceSheetRowShift | null {
+    const grandTotal = /Grand\s*Total/i;
+    const templateRow = firstRowContainingText(
+        templateXml,
+        templateSharedStrings,
+        grandTotal
+    );
+    const outputRow = firstRowContainingText(
+        outputXml,
+        outputSharedStrings,
+        grandTotal
+    );
+    if (!templateRow || !outputRow) return null;
+
+    const shift = outputRow - templateRow;
+    return shift > 0 ? { templateRow, shift } : null;
+}
+
+/**
+ * templateRow 이후의 셀 스타일 주소를 shift 만큼 내린다.
+ * 새로 생긴 빈 행에는 스타일이 남지 않아 테두리 없는 공백 행이 된다.
+ */
+function shiftTemplateCellStylesFromRow(
+    styles: Map<string, string>,
+    { templateRow, shift }: InvoiceSheetRowShift
+) {
+    const remapped = new Map<string, string>();
+    for (const [ref, styleId] of styles) {
+        const match = ref.match(/^([A-Z]+)(\d+)$/);
+        if (!match) {
+            remapped.set(ref, styleId);
+            continue;
+        }
+        const row = Number.parseInt(match[2], 10);
+        if (!Number.isFinite(row) || row < templateRow) {
+            remapped.set(ref, styleId);
+            continue;
+        }
+        remapped.set(`${match[1]}${row + shift}`, styleId);
+    }
+
+    styles.clear();
+    for (const [ref, styleId] of remapped) {
+        styles.set(ref, styleId);
+    }
+}
+
+function listXmlBlockItems(blockXml: string, tagName: string): string[] {
+    return [
+        ...blockXml.matchAll(
+            new RegExp(`<${tagName}\\b[^>]*/>|<${tagName}\\b[\\s\\S]*?</${tagName}>`, "g")
+        ),
+    ].map((match) => match[0]);
+}
+
+function replaceXmlBlockItems(
+    stylesXml: string,
+    blockTag: string,
+    items: string[]
+): string {
+    const blockMatch = stylesXml.match(
+        new RegExp(`(<${blockTag}\\b[^>]*>)([\\s\\S]*?)(</${blockTag}>)`)
+    );
+    if (!blockMatch) return stylesXml;
+
+    const open = blockMatch[1].replace(
+        /\bcount="\d+"/,
+        `count="${items.length}"`
+    );
+    return stylesXml.replace(
+        blockMatch[0],
+        `${open}${items.join("")}${blockMatch[3]}`
+    );
+}
+
+function getCellXfFontId(stylesXml: string, styleId: number): number | null {
+    const block = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1];
+    if (!block) return null;
+    const items = listXmlBlockItems(block, "xf");
+    const xf = items[styleId];
+    if (!xf) return null;
+    const fontId = Number.parseInt(xf.match(/\bfontId="(\d+)"/)?.[1] ?? "", 10);
+    return Number.isFinite(fontId) ? fontId : null;
+}
+
+/** sourceStyle 을 복제하고 fontId 만 바꿔 새 cellXf 를 추가한다. */
+function appendClonedCellXfWithFont(
+    stylesXml: string,
+    sourceStyleId: number,
+    fontId: number
+): { stylesXml: string; styleId: number } {
+    const block = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1];
+    if (!block) return { stylesXml, styleId: sourceStyleId };
+    const items = listXmlBlockItems(block, "xf");
+    const source = items[sourceStyleId];
+    if (!source) return { stylesXml, styleId: sourceStyleId };
+
+    const cloned = source.includes("fontId=")
+        ? source.replace(/\bfontId="\d+"/, `fontId="${fontId}"`)
+        : source.replace(/<xf\b/, `<xf fontId="${fontId}"`);
+    items.push(cloned);
+
+    return {
+        stylesXml: replaceXmlBlockItems(stylesXml, "cellXfs", items),
+        styleId: items.length - 1,
+    };
+}
+
+function appendClonedFontWithSize(
+    stylesXml: string,
+    sourceFontId: number,
+    size: number,
+    options?: { keepUnderline?: boolean }
+): { stylesXml: string; fontId: number } {
+    const block = stylesXml.match(/<fonts\b[^>]*>([\s\S]*?)<\/fonts>/)?.[1];
+    if (!block) return { stylesXml, fontId: sourceFontId };
+    const fonts = listXmlBlockItems(block, "font");
+    const source = fonts[sourceFontId];
+    if (!source) return { stylesXml, fontId: sourceFontId };
+
+    let cloned = /<sz\b/.test(source)
+        ? source.replace(/<sz\b[^>]*\/?>/, `<sz val="${size}"/>`)
+        : source.replace(/<font\b([^>]*)>/, `<font$1><sz val="${size}"/>`);
+    if (!options?.keepUnderline) {
+        cloned = cloned.replace(/<u\b[^>]*\/?>/g, "");
+    }
+    fonts.push(cloned);
+
+    return {
+        stylesXml: replaceXmlBlockItems(stylesXml, "fonts", fonts),
+        fontId: fonts.length - 1,
+    };
+}
+
+/**
+ * Normal Invoice Grand Total:
+ * - 윗줄(원화): 라벨·금액 모두 16
+ * - 아랫줄(유로): 라벨·금액 모두 18
+ * 템플릿은 라벨 16 / 금액 18 이라 행 삽입 후에도 좌우가 어긋나 있어 맞춘다.
+ */
+function alignNormalInvoiceGrandTotalFontSizes(
+    stylesXml: string,
+    styles: Map<string, string>,
+    outputXml: string,
+    outputSharedStrings: string[]
+): string {
+    const gtRows = findAllRowsContainingText(
+        outputXml,
+        outputSharedStrings,
+        /Grand\s*Total/i
+    );
+    if (gtRows.length < 2) return stylesXml;
+
+    const [krwRow, eurRow] = gtRows;
+    const krwValueStyleId = Number.parseInt(
+        styles.get(`I${krwRow}`) ?? styles.get(`J${krwRow}`) ?? "",
+        10
+    );
+    const eurLabelStyleId = Number.parseInt(
+        styles.get(`H${eurRow}`) ?? "",
+        10
+    );
+    const eurValueStyleId = Number.parseInt(
+        styles.get(`I${eurRow}`) ?? styles.get(`J${eurRow}`) ?? "",
+        10
+    );
+
+    let nextXml = stylesXml;
+
+    // 원화 금액: 폰트 복제 후 16 (EUR 금액과 font 공유여도 영향 없음), 밑줄 유지
+    if (Number.isFinite(krwValueStyleId)) {
+        const fontId = getCellXfFontId(nextXml, krwValueStyleId);
+        if (fontId !== null) {
+            const clonedFont = appendClonedFontWithSize(nextXml, fontId, 16, {
+                keepUnderline: true,
+            });
+            nextXml = clonedFont.stylesXml;
+            const clonedXf = appendClonedCellXfWithFont(
+                nextXml,
+                krwValueStyleId,
+                clonedFont.fontId
+            );
+            nextXml = clonedXf.stylesXml;
+            styles.set(`I${krwRow}`, String(clonedXf.styleId));
+            styles.set(`J${krwRow}`, String(clonedXf.styleId));
+        }
+    }
+
+    // 유로 라벨: 금액과 같은 18 크기, 밑줄 없는 폰트로 새 스타일
+    if (Number.isFinite(eurLabelStyleId) && Number.isFinite(eurValueStyleId)) {
+        const valueFontId = getCellXfFontId(nextXml, eurValueStyleId);
+        if (valueFontId !== null) {
+            const clonedFont = appendClonedFontWithSize(
+                nextXml,
+                valueFontId,
+                18,
+                { keepUnderline: false }
+            );
+            nextXml = clonedFont.stylesXml;
+            const clonedXf = appendClonedCellXfWithFont(
+                nextXml,
+                eurLabelStyleId,
+                clonedFont.fontId
+            );
+            nextXml = clonedXf.stylesXml;
+            styles.set(`H${eurRow}`, String(clonedXf.styleId));
+        }
+    }
+
+    return nextXml;
+}
+
+/**
+ * 출력에 PIC 행이 있고 MAN POWER가 그 다음이면,
+ * 템플릿 기준 insertAt 이상 행 스타일을 +1 이동하고 PIC 행에는 원래 MAN POWER 행 스타일을 쓴다.
+ */
+function remapJobDescriptionStylesAfterPicInsert(
+    styles: Map<string, string>,
+    outputXml: string,
+    outputSharedStrings: string[]
+) {
+    const picRows = findRowsContainingText(
+        outputXml,
+        outputSharedStrings,
+        /PIC\s*:/i
+    );
+    const manPowerRows = findRowsContainingText(
+        outputXml,
+        outputSharedStrings,
+        /MAN POWER/i
+    );
+    const picRow = picRows.sort((a, b) => a - b)[0];
+    const manPowerRow = manPowerRows.sort((a, b) => a - b)[0];
+    if (!picRow || !manPowerRow || manPowerRow !== picRow + 1) {
+        return;
+    }
+
+    const insertAt = picRow;
+    const remapped = new Map<string, string>();
+    for (const [ref, styleId] of styles) {
+        const match = ref.match(/^([A-Z]+)(\d+)$/);
+        if (!match) {
+            remapped.set(ref, styleId);
+            continue;
+        }
+        const col = match[1];
+        const row = Number.parseInt(match[2], 10);
+        if (!Number.isFinite(row)) {
+            remapped.set(ref, styleId);
+            continue;
+        }
+        if (row < insertAt) {
+            remapped.set(`${col}${row}`, styleId);
+            continue;
+        }
+        // 템플릿 row → 출력 row+1 (밀린 본문)
+        remapped.set(`${col}${row + 1}`, styleId);
+        // PIC 행은 템플릿 MAN POWER 행(insertAt) 스타일 재사용
+        if (row === insertAt) {
+            remapped.set(`${col}${insertAt}`, styleId);
+        }
+    }
+
+    styles.clear();
+    for (const [ref, styleId] of remapped) {
+        styles.set(ref, styleId);
+    }
 }
 
 async function buildTemplateStyleMaps(
@@ -2056,17 +2762,19 @@ async function buildTemplateStyleMaps(
     templateLogoAnchorByName: Map<string, string>;
     byOutputPath: Map<string, Map<string, string>>;
     layoutByOutputPath: Map<string, TemplateWorksheetLayout>;
+    rowShiftBySheetName: Map<string, number>;
 }> {
     if (!templateBuffer) {
         return {
             byOutputPath: new Map(),
             layoutByOutputPath: new Map(),
             templateLogoAnchorByName: new Map(),
+            rowShiftBySheetName: new Map(),
         };
     }
 
     const templateZip = await JSZip.loadAsync(templateBuffer);
-    const stylesXml = await templateZip.file("xl/styles.xml")?.async("string");
+    let stylesXml = await templateZip.file("xl/styles.xml")?.async("string");
     const signatureImage = await templateZip
         .file("xl/media/image2.png")
         ?.async("uint8array");
@@ -2074,6 +2782,9 @@ async function buildTemplateStyleMaps(
         .file("xl/media/image1.png")
         ?.async("uint8array");
     const templateSheets = await readWorkbookSheetInfos(templateZip);
+    const templateSharedStrings = extractSharedStrings(
+        await templateZip.file("xl/sharedStrings.xml")?.async("string")
+    );
     const templateLogoAnchorByName = await loadTemplateLogoAnchorBySheetNames(
         templateZip,
         templateSheets
@@ -2087,6 +2798,7 @@ async function buildTemplateStyleMaps(
     );
     const byOutputPath = new Map<string, Map<string, string>>();
     const layoutByOutputPath = new Map<string, TemplateWorksheetLayout>();
+    const rowShiftBySheetName = new Map<string, number>();
 
     for (const outputSheet of outputSheets) {
         const templateName = getTemplateSheetName(outputSheet.name);
@@ -2100,15 +2812,44 @@ async function buildTemplateStyleMaps(
         if (!outputSheetFile) continue;
 
         const templateXml = await templateSheetFile.async("string");
+        const outputXml = await outputSheetFile.async("string");
+        const invoiceRowShift =
+            templateName === "Invoice"
+                ? resolveInvoiceSheetRowShift(
+                      templateXml,
+                      templateSharedStrings,
+                      outputXml,
+                      outputSharedStrings
+                  )
+                : null;
+        if (invoiceRowShift) {
+            rowShiftBySheetName.set(
+                outputSheet.name.trim(),
+                invoiceRowShift.shift
+            );
+        }
         byOutputPath.set(
             outputSheet.path,
             extractTemplateCellStyles(
                 templateXml,
                 templateName,
-                await outputSheetFile.async("string"),
-                outputSharedStrings
+                outputXml,
+                outputSharedStrings,
+                invoiceRowShift
             )
         );
+        if (
+            templateName === "Invoice" &&
+            stylesXml &&
+            byOutputPath.has(outputSheet.path)
+        ) {
+            stylesXml = alignNormalInvoiceGrandTotalFontSizes(
+                stylesXml,
+                byOutputPath.get(outputSheet.path)!,
+                outputXml,
+                outputSharedStrings
+            );
+        }
         if (templateName === "Time Sheet") {
             layoutByOutputPath.set(
                 outputSheet.path,
@@ -2187,7 +2928,15 @@ async function buildTemplateStyleMaps(
         }
     }
 
-    return { stylesXml, signatureImage, logoImage, templateLogoAnchorByName, byOutputPath, layoutByOutputPath };
+    return {
+        stylesXml,
+        signatureImage,
+        logoImage,
+        templateLogoAnchorByName,
+        byOutputPath,
+        layoutByOutputPath,
+        rowShiftBySheetName,
+    };
 }
 
 const TEMPLATE_LOGO_SHEET_NAMES = new Set([
@@ -2432,12 +3181,51 @@ async function normalizeXlsxWorksheetDimensions(
     );
 
     await stripXlsxStylesForExcelCompatibility(zip, worksheetPaths, templateStyles);
+    await extendPrintAreasForShiftedSheets(zip, templateStyles.rowShiftBySheetName);
 
     return await zip.generateAsync({
         type: "blob",
         mimeType:
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
+}
+
+/**
+ * 행을 끼워 넣어 내용이 밀린 시트는 인쇄 영역 끝 행도 같이 늘려야
+ * 마지막 줄(회사 주소 등)이 인쇄에서 잘리지 않는다.
+ */
+async function extendPrintAreasForShiftedSheets(
+    zip: JSZip,
+    rowShiftBySheetName: Map<string, number>
+): Promise<void> {
+    if (rowShiftBySheetName.size === 0) return;
+
+    const workbookFile = zip.file("xl/workbook.xml");
+    if (!workbookFile) return;
+
+    const xml = await workbookFile.async("string");
+    const nextXml = xml.replace(
+        /(<definedName\b[^>]*name="_xlnm\.Print_Area"[^>]*>)([\s\S]*?)(<\/definedName>)/g,
+        (match, open: string, value: string, close: string) => {
+            const areaMatch = value.match(
+                /^(.*?)!(\$?[A-Z]+\$?\d+:\$?[A-Z]+\$?)(\d+)$/
+            );
+            if (!areaMatch) return match;
+
+            const sheetName = areaMatch[1]
+                .replace(/&apos;|'/g, "")
+                .trim();
+            const shift = rowShiftBySheetName.get(sheetName);
+            if (!shift) return match;
+
+            const lastRow = Number.parseInt(areaMatch[3], 10);
+            if (!Number.isFinite(lastRow)) return match;
+
+            return `${open}${areaMatch[1]}!${areaMatch[2]}${lastRow + shift}${close}`;
+        }
+    );
+
+    if (nextXml !== xml) zip.file("xl/workbook.xml", nextXml);
 }
 
 async function stripXlsxStylesForExcelCompatibility(
@@ -2450,6 +3238,7 @@ async function stripXlsxStylesForExcelCompatibility(
         templateLogoAnchorByName: Map<string, string>;
         byOutputPath: Map<string, Map<string, string>>;
         layoutByOutputPath: Map<string, TemplateWorksheetLayout>;
+        rowShiftBySheetName: Map<string, number>;
     }
 ): Promise<void> {
     for (const path of worksheetPaths) {
