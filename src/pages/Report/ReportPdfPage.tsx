@@ -510,6 +510,7 @@ export default function ReportPdfPage() {
             try {
                 const map = await buildPrintReceiptMap(
                     receiptImgs.map((r) => ({ id: r.id, url: r.url })),
+                    // 파일 다운로드: 영수증도 인쇄와 동일 압축(1200 / 0.7)
                     1200,
                     0.7
                 );
@@ -537,8 +538,9 @@ export default function ReportPdfPage() {
                 const sourceHeight = sheet.scrollHeight;
                 let canvas: HTMLCanvasElement;
                 try {
+                    // scale 2 + PNG 는 용량이 과도하게 커짐 → 1.5 + JPEG 0.7
                     canvas = await domToCanvas(sheet, {
-                        scale: 2,
+                        scale: 1.5,
                         backgroundColor: "#ffffff",
                         width: sheet.scrollWidth,
                         height: sourceHeight,
@@ -552,6 +554,8 @@ export default function ReportPdfPage() {
                 saveCanvasAsMultiPagePdf(canvas, filenameBase, {
                     breakAvoidBlocks,
                     sourceHeight,
+                    imageFormat: "JPEG",
+                    imageQuality: 0.7,
                 });
 
                 if (window.parent !== window) {

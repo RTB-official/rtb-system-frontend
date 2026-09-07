@@ -27,11 +27,13 @@ import {
 import {
     buildConsecutiveWorkClusterIndices,
     distributeWorkManualToFourBuckets,
+    getConsecutiveWorkClusterEntryIds,
     getWorkEntryAutoBillableFourBuckets,
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
     roundHours as roundBillableHours,
     sumClusterWorkBillableHours,
+    sumConsecutiveWorkClusterAutoBillableHours,
     type WorkEntryClusterable,
 } from "../../utils/workEntryBillableHours";
 import {
@@ -146,9 +148,11 @@ interface TimesheetDateGroupDetailSidePanelProps {
         dateTo: string;
         timeFrom: string;
         timeTo: string;
+        details: string;
         persons: string[];
         manualBillableHours: number | null;
         manualBillableSplitHours?: ManualBillableSplitHours | null;
+        additionalManualBillableHoursByEntryId?: Record<number, number | null>;
     }) => void;
     /** Revert a single entry to its initial snapshot. */
     onResetSingleTimesheetEntryToInitial?: (entryId: number) => void;
@@ -797,22 +801,48 @@ export default function TimesheetDateGroupDetailSidePanel({
             return satSun || (holidayDateKeys?.has(ymd) ?? false);
         };
 
-        const autoBuckets = getWorkEntryAutoBillableFourBuckets(
-            entry,
-            isWeekendOrHolidayYmd
+        // 올림 청구는 연속 작업 묶음 전체를 대체하므로 Before도 묶음 합으로 본다.
+        const clusterIds = new Set(
+            getConsecutiveWorkClusterEntryIds(
+                fullGroupEntries as WorkEntryClusterable[],
+                entry.id
+            )
         );
-        if (!autoBuckets) {
+        const beforeBuckets = {
+            weekdayN: 0,
+            weekdayA: 0,
+            weekendN: 0,
+            weekendA: 0,
+        };
+        let hasAnyBucket = false;
+        for (const clusterEntry of fullGroupEntries) {
+            if (!clusterIds.has(clusterEntry.id)) {
+                continue;
+            }
+            const autoBuckets = getWorkEntryAutoBillableFourBuckets(
+                clusterEntry,
+                isWeekendOrHolidayYmd
+            );
+            if (!autoBuckets) {
+                continue;
+            }
+            hasAnyBucket = true;
+            const curManual = manualBillableHoursByEntryId[clusterEntry.id];
+            const buckets =
+                curManual !== undefined
+                    ? distributeWorkManualToFourBuckets(
+                          roundBillableHours(curManual),
+                          autoBuckets
+                      )
+                    : autoBuckets;
+            beforeBuckets.weekdayN += buckets.weekdayN;
+            beforeBuckets.weekdayA += buckets.weekdayA;
+            beforeBuckets.weekendN += buckets.weekendN;
+            beforeBuckets.weekendA += buckets.weekendA;
+        }
+        if (!hasAnyBucket) {
             return null;
         }
-
-        const curManual = manualBillableHoursByEntryId[entry.id];
-        const beforeBuckets =
-            curManual !== undefined
-                ? distributeWorkManualToFourBuckets(
-                      roundBillableHours(curManual),
-                      autoBuckets
-                  )
-                : autoBuckets;
 
         const afterBuckets = buildAfterRoundedBillableFourBuckets(
             roundedBillableConfirm.hours
@@ -1036,9 +1066,13 @@ export default function TimesheetDateGroupDetailSidePanel({
             typeof CSS !== "undefined" && typeof CSS.escape === "function"
                 ? CSS.escape(editorKey)
                 : editorKey.replace(/"/g, '\\"');
-        const editorEl = body.querySelector<HTMLElement>(
-            `[data-editor-key="${escapedKey}"]`
-        );
+        const editorEl =
+            body.querySelector<HTMLElement>(
+                `[data-editor-key="${escapedKey}"] [data-entry-edit-editor="true"]`
+            ) ??
+            body.querySelector<HTMLElement>(
+                `[data-editor-key="${escapedKey}"]`
+            );
         if (!editorEl) return;
 
         const bodyRect = body.getBoundingClientRect();
@@ -2868,9 +2902,14 @@ export default function TimesheetDateGroupDetailSidePanel({
         return () => document.removeEventListener("mousedown", onPointerDown);
     }, [dbEntryContextMenu]);
 
+    /**
+     * 올림 청구는 연속 작업 묶음 전체에 한 번만 걸린다.
+     * 묶음의 첫 엔트리에 시간을 몰아주고 나머지는 0으로 두어 합계가 두 번 잡히지 않게 한다.
+     * `hours` 가 null 이면 묶음 전체의 수동 청구를 지운다.
+     */
     const applyWorkManualBillableHoursForEntryId = (
         entryId: number,
-        hours: number
+        hours: number | null
     ) => {
         if (!onUpdateTimesheetEntry) {
             return;
@@ -2879,15 +2918,31 @@ export default function TimesheetDateGroupDetailSidePanel({
         if (!targetEntry) {
             return;
         }
+        const clusterIds = getConsecutiveWorkClusterEntryIds(
+            fullGroupEntries as WorkEntryClusterable[],
+            entryId
+        );
+        const anchorId = clusterIds[0] ?? entryId;
+        const anchorEntry =
+            fullGroupEntries.find((e) => e.id === anchorId) ?? targetEntry;
+        const others: Record<number, number | null> = {};
+        for (const id of clusterIds) {
+            if (id !== anchorEntry.id) {
+                others[id] = hours === null ? null : 0;
+            }
+        }
+
         onUpdateTimesheetEntry({
-            entryId: targetEntry.id,
-            descType: targetEntry.descType,
-            dateFrom: targetEntry.dateFrom,
-            dateTo: targetEntry.dateTo,
-            timeFrom: targetEntry.timeFrom,
-            timeTo: targetEntry.timeTo,
-            persons: [...targetEntry.persons],
+            entryId: anchorEntry.id,
+            descType: anchorEntry.descType,
+            dateFrom: anchorEntry.dateFrom,
+            dateTo: anchorEntry.dateTo,
+            timeFrom: anchorEntry.timeFrom,
+            timeTo: anchorEntry.timeTo,
+            details: anchorEntry.details ?? "",
+            persons: [...anchorEntry.persons],
             manualBillableHours: hours,
+            additionalManualBillableHoursByEntryId: others,
         });
     };
 
@@ -2912,15 +2967,23 @@ export default function TimesheetDateGroupDetailSidePanel({
                               contextEntryIndex
                           )
                         : null;
-                const manualBillableStored = contextEntry
-                    ? manualBillableHoursByEntryId[contextEntry.id]
-                    : undefined;
-                const manualBillableRounded =
-                    manualBillableStored !== undefined
-                        ? roundHours(manualBillableStored)
-                        : undefined;
+                /** 올림 청구는 묶음의 첫 엔트리에 걸리므로 묶음 전체를 보고 판단한다. */
+                const contextClusterIds = contextEntry
+                    ? getConsecutiveWorkClusterEntryIds(
+                          fullGroupEntries as WorkEntryClusterable[],
+                          contextEntry.id
+                      )
+                    : [];
+                const clusterHasRoundedBillable = contextClusterIds.some((id) =>
+                    isManualRoundedBillableFourOrEight(
+                        manualBillableHoursByEntryId[id]
+                    )
+                );
                 const revertAutoBillableHours = contextEntry
-                    ? getWorkEntryAutoBillableTotalHours(contextEntry)
+                    ? sumConsecutiveWorkClusterAutoBillableHours(
+                          fullGroupEntries as WorkEntryClusterable[],
+                          contextEntry.id
+                      )
                     : null;
                 const revertManualBillableMenuLabel =
                     revertAutoBillableHours !== null && revertAutoBillableHours > 0
@@ -2931,7 +2994,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                 const showRevertManualBillable =
                     Boolean(onUpdateTimesheetEntry) &&
                     contextEntry?.descType === "\uC791\uC5C5" &&
-                    (manualBillableRounded === 4 || manualBillableRounded === 8);
+                    clusterHasRoundedBillable;
                 /** 4시간 미만(4▼)일 때는 4h 청구만, 5~8시간 미만(8▼)일 때만 8h 청구 표시 */
                 const showWorkCharge8h =
                     Boolean(onUpdateTimesheetEntry) &&
@@ -2957,19 +3020,10 @@ export default function TimesheetDateGroupDetailSidePanel({
                     1;
                 const MENU_H = menuRowCount * 40 + 16;
                 const applyRevertManualBillableToAuto = () => {
-                    if (!onUpdateTimesheetEntry || !contextEntry) {
+                    if (!contextEntry) {
                         return;
                     }
-                    onUpdateTimesheetEntry({
-                        entryId: contextEntry.id,
-                        descType: contextEntry.descType,
-                        dateFrom: contextEntry.dateFrom,
-                        dateTo: contextEntry.dateTo,
-                        timeFrom: contextEntry.timeFrom,
-                        timeTo: contextEntry.timeTo,
-                        persons: [...contextEntry.persons],
-                        manualBillableHours: null,
-                    });
+                    applyWorkManualBillableHoursForEntryId(contextEntry.id, null);
                     setDbEntryContextMenu(null);
                 };
                 const x = Math.max(
@@ -3351,6 +3405,11 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                             String(baselineChargeLabel)
                                                         )
                                             );
+                                            const detailsChanged = Boolean(
+                                                editBaseline &&
+                                                    (entry.details ?? "").trim() !==
+                                                        (editBaseline.details ?? "").trim()
+                                            );
                                             const manualRoundedForEntry =
                                                 manualBillableHoursByEntryId[entry.id];
                                             const chargeManualRoundedHighlight =
@@ -3634,6 +3693,11 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                 <div className="min-w-[16rem] flex-1 basis-[16rem]">
                                                                     <EntryDescriptionWithOtherLineBadges
                                                                         text={descriptionText}
+                                                                        className={
+                                                                            detailsChanged
+                                                                                ? "font-medium text-blue-700"
+                                                                                : undefined
+                                                                        }
                                                                     />
                                                                 </div>
                                                                 {descriptionBadges.length > 0 ? (
@@ -3750,8 +3814,10 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                         entryEditClosingKey ===
                                                                         entryEditKey
                                                                     }
+                                                                    maxHeightClass="max-h-[96rem]"
                                                                 >
                                                                     <TimesheetEntryEditorForm
+                                                                        key={`${entry.id}-${timesheetEntryEditorRemountTickById[entry.id] ?? 0}`}
                                                                         entry={entry}
                                                                         contextEntries={
                                                                             fullGroupEntries

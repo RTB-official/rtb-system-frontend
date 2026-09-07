@@ -3,6 +3,18 @@ import { supabase } from "./supabase";
 
 export type InvoiceDraftStatus = "draft" | "final";
 
+export type InvoiceMealCountAdjustmentEntry = {
+    delta: number;
+    lastDirection: "up" | "down";
+};
+
+export type InvoiceTimesheetCommentOverrideState = {
+    hiddenAutoComments: string[];
+    addedComments: string[];
+    trashedComments: Array<{ comment: string; isManual: boolean }>;
+    autoCommentEdits: Record<string, string>;
+};
+
 export type InvoiceDraftPayloadV1 = {
     version: 1;
     workLogDataList: WorkLogFullData[];
@@ -52,6 +64,21 @@ export type InvoiceDraftPayloadV1 = {
     invoiceEngineTypeOverride?: string | null;
     /** 인보이스 Work Period & Place. 생략·null = 타임시트 기간 + WORK PLACE 합성 */
     invoiceWorkPeriodPlaceOverride?: string | null;
+    /** 타임시트 Meals ± 조정 (섹션·날짜 키 → delta) */
+    mealCountAdjustmentsBySectionDate?: Record<
+        string,
+        InvoiceMealCountAdjustmentEntry
+    >;
+    /** 타임시트 숙박 ± 조정 (섹션·날짜 키 → delta) */
+    lodgingCountAdjustmentsBySectionDate?: Record<
+        string,
+        InvoiceMealCountAdjustmentEntry
+    >;
+    /** 타임시트 Comment 숨김·추가·수정 */
+    timesheetCommentOverridesBySectionKey?: Record<
+        string,
+        InvoiceTimesheetCommentOverrideState
+    >;
 };
 
 export type InvoiceDraftPayload = InvoiceDraftPayloadV1;

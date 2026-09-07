@@ -68,6 +68,13 @@ export type SaveCanvasAsMultiPagePdfOptions = {
     breakAvoidBlocks?: PdfBreakAvoidBlock[];
     /** breakAvoidBlocks 를 캡처한 원본 요소의 CSS px 높이 (canvas 픽셀로 환산하는 데 사용) */
     sourceHeight?: number;
+    /**
+     * 페이지 이미지 포맷. 기본 JPEG(용량↓).
+     * PNG는 용량이 커지므로 파일 다운로드에는 JPEG 권장.
+     */
+    imageFormat?: "JPEG" | "PNG";
+    /** JPEG 품질 0~1 (기본 0.7, 보고서 영수증 압축과 동일) */
+    imageQuality?: number;
 };
 
 /** html2canvas 결과를 A4 여러 페이지로 나눠 저장 (ReportPdfPage 인쇄 레이아웃과 유사한 폭 맞춤) */
@@ -77,10 +84,13 @@ export function saveCanvasAsMultiPagePdf(
     options: SaveCanvasAsMultiPagePdfOptions = {}
 ): void {
     const safe = sanitizeReportPdfFilenameBase(filenameBase);
+    const imageFormat = options.imageFormat ?? "JPEG";
+    const imageQuality = options.imageQuality ?? 0.7;
     const pdf = new jsPDF({
         orientation: "portrait",
         unit: "pt",
         format: "a4",
+        compress: true,
     });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -118,6 +128,7 @@ export function saveCanvasAsMultiPagePdf(
         if (!context) {
             throw new Error("PDF 페이지 캔버스를 생성하지 못했습니다.");
         }
+        // JPEG는 투명 배경이 검게 나오므로 항상 흰 배경을 깔아 둔다.
         context.fillStyle = "#ffffff";
         context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
         context.drawImage(
@@ -137,9 +148,15 @@ export function saveCanvasAsMultiPagePdf(
         }
         const sliceImageHeight =
             (currentSliceHeight * imgWidth) / canvas.width;
+        const mime =
+            imageFormat === "PNG" ? "image/png" : "image/jpeg";
+        const dataUrl =
+            imageFormat === "PNG"
+                ? pageCanvas.toDataURL(mime, 1.0)
+                : pageCanvas.toDataURL(mime, imageQuality);
         pdf.addImage(
-            pageCanvas.toDataURL("image/png", 1.0),
-            "PNG",
+            dataUrl,
+            imageFormat,
             horizontalMargin,
             verticalMargin,
             imgWidth,

@@ -1244,6 +1244,11 @@ export default function TimesheetRowDetailSidePanel({
                                                 )
                                             )
                                 );
+                                const detailsChanged = Boolean(
+                                    editBaseline &&
+                                        (entry.details ?? "").trim() !==
+                                            (editBaseline.details ?? "").trim()
+                                );
                                 const chargeManualRoundedHighlight =
                                     entry.descType === "작업" &&
                                     isManualRoundedBillableFourOrEight(
@@ -1441,6 +1446,11 @@ export default function TimesheetRowDetailSidePanel({
                                                     <div className="min-w-[16rem] flex-1 basis-[16rem]">
                                                         <EntryDescriptionWithOtherLineBadges
                                                             text={descriptionText}
+                                                            className={
+                                                                detailsChanged
+                                                                    ? "font-medium text-blue-700"
+                                                                    : undefined
+                                                            }
                                                         />
                                                     </div>
                                                     {descriptionBadges.length > 0 ? (

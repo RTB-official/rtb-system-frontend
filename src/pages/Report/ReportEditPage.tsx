@@ -781,51 +781,43 @@ if (newFiles.length > 0) {
         setIsDirty(current !== initial);
     }, [makeSnapshot]);
 
-    // ✅ dirty일 때만: 뒤로가기 / 새로고침(이탈) 확인 팝업
+    /** 브라우저 뒤로가기로 열린 확인인지 (취소 시 history 가드 복구용) */
+    const backConfirmFromPopStateRef = useRef(false);
+    const isDirtyRef = useRef(isDirty);
     useEffect(() => {
-        // ✅ 로딩 중(초기 마운트/리프레시)엔 history 가드 걸지 않음
+        isDirtyRef.current = isDirty;
+    }, [isDirty]);
+
+    // 뒤로가기 / 새로고침(이탈) 확인 (뒤로가기는 항상, beforeunload는 dirty일 때만)
+    useEffect(() => {
+        // 로딩 중(초기 마운트/리프레시)엔 history 가드 걸지 않음
         if (loading) return;
-        if (!isDirty) return;
 
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (!isDirtyRef.current) return;
             e.preventDefault();
             e.returnValue = "";
         };
 
-        const pushState = () => {
-            window.history.pushState({ __block_back: true }, "", window.location.href);
-        };
-
-        // ✅ TDZ 방지: cleanup을 먼저 선언
-        const cleanup = () => {
-            window.removeEventListener("beforeunload", handleBeforeUnload);
-            window.removeEventListener("popstate", handlePopState);
-        };
-
         function handlePopState() {
+            backConfirmFromPopStateRef.current = true;
             setNavigateConfirmOpen(true);
         }
 
+        window.history.pushState({ __block_back: true }, "", window.location.href);
         window.addEventListener("beforeunload", handleBeforeUnload);
-        pushState();
         window.addEventListener("popstate", handlePopState);
 
         return () => {
-            cleanup();
+            window.removeEventListener("beforeunload", handleBeforeUnload);
+            window.removeEventListener("popstate", handlePopState);
         };
-    }, [isDirty, loading, navigate]);
+    }, [loading]);
 
-
-
-
-
-    // 뒤로가기 버튼 클릭 (dirty일 때만 확인)
+    // 뒤로가기 버튼 클릭: 항상 확인
     const handleBackClick = () => {
-        if (isDirty) {
-            setNavigateConfirmOpen(true);
-            return;
-        }
-        navigate("/report");
+        backConfirmFromPopStateRef.current = false;
+        setNavigateConfirmOpen(true);
     };
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden">
@@ -977,16 +969,27 @@ if (newFiles.length > 0) {
             <ConfirmDialog
                 isOpen={navigateConfirmOpen}
                 onClose={() => {
+                    if (backConfirmFromPopStateRef.current) {
+                        window.history.pushState(
+                            { __block_back: true },
+                            "",
+                            window.location.href
+                        );
+                    }
+                    backConfirmFromPopStateRef.current = false;
                     setNavigateConfirmOpen(false);
-                    // popstate 가드인 경우 history stack을 복구해야 할 수 있음. 
-                    // 하지만 pushState로 이미 쌓여있다면 뒤로가기 시도가 막힌 상태임.
                 }}
                 onConfirm={() => {
+                    backConfirmFromPopStateRef.current = false;
                     setNavigateConfirmOpen(false);
                     navigate("/report");
                 }}
                 title="나가기"
-                message="작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?"
+                message={
+                    isDirty
+                        ? "작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?"
+                        : "정말 뒤로가시겠습니까?"
+                }
                 confirmText="나가기"
                 cancelText="취소"
                 confirmVariant="danger"

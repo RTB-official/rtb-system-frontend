@@ -178,6 +178,36 @@ export default function ReportCreatePage() {
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<"switch_tab" | "go_back" | null>(null);
     const [pendingTab, setPendingTab] = useState<"work" | "education" | null>(null);
+    /** 브라우저 뒤로가기로 열린 확인인지 (취소 시 history 가드 복구용) */
+    const backConfirmFromPopStateRef = useRef(false);
+    const isDirtyRef = useRef(isDirty);
+    useEffect(() => {
+        isDirtyRef.current = isDirty;
+    }, [isDirty]);
+
+    // 뒤로가기 / 새로고침(이탈) 확인
+    useEffect(() => {
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            if (!isDirtyRef.current) return;
+            e.preventDefault();
+            e.returnValue = "";
+        };
+
+        function handlePopState() {
+            backConfirmFromPopStateRef.current = true;
+            setPendingAction("go_back");
+            setConfirmOpen(true);
+        }
+
+        window.history.pushState({ __block_back: true }, "", window.location.href);
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        window.addEventListener("popstate", handlePopState);
+
+        return () => {
+            window.removeEventListener("beforeunload", handleBeforeUnload);
+            window.removeEventListener("popstate", handlePopState);
+        };
+    }, []);
 
     // Handle Tab Change Request
     const handleTabChange = (value: string) => {
@@ -212,6 +242,7 @@ export default function ReportCreatePage() {
             setActiveTab(pendingTab);
             setInitialAuthor();
         } else if (pendingAction === "go_back") {
+            backConfirmFromPopStateRef.current = false;
             navigate("/report");
         }
 
@@ -220,14 +251,11 @@ export default function ReportCreatePage() {
         setPendingAction(null);
     };
 
-    // Back button confirmation
+    // 뒤로가기: 항상 확인
     const handleBackClick = () => {
-        if (isDirty) {
-            setPendingAction("go_back");
-            setConfirmOpen(true);
-            return;
-        }
-        navigate("/report");
+        backConfirmFromPopStateRef.current = false;
+        setPendingAction("go_back");
+        setConfirmOpen(true);
     };
 
     // 저장 로직 (임시저장/제출)
@@ -471,6 +499,14 @@ export default function ReportCreatePage() {
             <ConfirmDialog
                 isOpen={confirmOpen}
                 onClose={() => {
+                    if (pendingAction === "go_back" && backConfirmFromPopStateRef.current) {
+                        window.history.pushState(
+                            { __block_back: true },
+                            "",
+                            window.location.href
+                        );
+                    }
+                    backConfirmFromPopStateRef.current = false;
                     setConfirmOpen(false);
                     setPendingTab(null);
                     setPendingAction(null);
@@ -479,11 +515,14 @@ export default function ReportCreatePage() {
                 title={pendingAction === "go_back" ? "나가기" : "작성 중인 내용 취소"}
                 message={
                     pendingAction === "go_back"
-                        ? "작성/수정된 내용이 있습니다. 정말 뒤로 가시겠습니까?"
+                        ? isDirty
+                            ? "작성/수정된 내용이 있습니다. 정말 뒤로가시겠습니까?"
+                            : "정말 뒤로가시겠습니까?"
                         : "보고서 종류를 변경하면 작성 중인 내용이 모두 사라집니다.\n계속하시겠습니까?"
                 }
                 confirmText={pendingAction === "go_back" ? "나가기" : "변경하기"}
                 cancelText="취소"
+                confirmVariant={pendingAction === "go_back" ? "danger" : "primary"}
             />
         </div>
     );

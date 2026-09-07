@@ -27,9 +27,15 @@ export type TimesheetEntryUpdatePayload = {
     dateTo: string;
     timeFrom: string;
     timeTo: string;
+    details: string;
     persons: string[];
     manualBillableHours: number | null;
     manualBillableSplitHours?: ManualBillableSplitHours | null;
+    /**
+     * 연속 작업 묶음처럼 다른 엔트리의 수동 청구시간도 함께 바꿔야 할 때 사용.
+     * `null` 이면 해당 엔트리의 수동 청구를 지운다.
+     */
+    additionalManualBillableHoursByEntryId?: Record<number, number | null>;
 };
 
 export type ManualBillableSplitHours = {
@@ -226,6 +232,7 @@ type EditorBaselineSnapshot = {
     dateTo: string;
     timeFromNorm: string;
     timeToNorm: string;
+    details: string;
     manualInput: string;
     persons: string[];
 };
@@ -255,6 +262,7 @@ function buildEditorBaseline(
         dateTo: entry.dateTo,
         timeFromNorm,
         timeToNorm,
+        details: entry.details ?? "",
         manualInput: manualSplit
             ? serializeBillableSplitHours(manualSplit)
             : manual !== undefined
@@ -532,6 +540,7 @@ export function TimesheetEntryEditorForm({
     const [selectedPersons, setSelectedPersons] = useState<string[]>(() =>
         entry.clientDuplicated ? [] : [...(entry.persons ?? [])]
     );
+    const [details, setDetails] = useState(entry.details ?? "");
     const [manualInput, setManualInput] = useState(
         manualBillableSplitHours
             ? serializeBillableSplitHours(manualBillableSplitHours)
@@ -557,6 +566,7 @@ export function TimesheetEntryEditorForm({
         setSelectedPersons(
             entry.clientDuplicated ? [] : [...(entry.persons ?? [])]
         );
+        setDetails(entry.details ?? "");
         setManualInput(
             manualBillableSplitHours
                 ? serializeBillableSplitHours(manualBillableSplitHours)
@@ -573,6 +583,7 @@ export function TimesheetEntryEditorForm({
         entry.timeFrom,
         entry.timeTo,
         entry.persons,
+        entry.details,
         manualBillableHours,
         manualBillableSplitHours,
     ]);
@@ -601,9 +612,10 @@ export function TimesheetEntryEditorForm({
             dateTo,
             timeFrom: normalizedTimeFrom,
             timeTo: normalizedTimeTo,
+            details,
             persons: selectedPersons,
         }),
-        [entry, descType, dateFrom, dateTo, normalizedTimeFrom, normalizedTimeTo, selectedPersons]
+        [entry, descType, dateFrom, dateTo, normalizedTimeFrom, normalizedTimeTo, details, selectedPersons]
     );
 
     const personSelectable = useCallback(
@@ -713,6 +725,7 @@ export function TimesheetEntryEditorForm({
     const descTypeChanged = descType !== baseline.descType;
     const fromTimeChanged = normalizedTimeFrom !== baseline.timeFromNorm;
     const toTimeChanged = normalizedTimeTo !== baseline.timeToNorm;
+    const detailsChanged = (details ?? "") !== baseline.details;
     const durationChanged =
         (durationLabel || "-") !== (baselineDurationLabel || "-");
     const chargeChanged =
@@ -820,6 +833,7 @@ export function TimesheetEntryEditorForm({
             dateTo,
             timeFrom: normalizedTimeFrom,
             timeTo: normalizedTimeTo,
+            details: details.trim(),
             persons: [...selectedPersons].sort((a, b) => a.localeCompare(b, "ko")),
             manualBillableHours: manualBillableHoursPayload,
             manualBillableSplitHours:
@@ -838,7 +852,7 @@ export function TimesheetEntryEditorForm({
     return (
         <div
             data-entry-edit-editor="true"
-            className="my-2 space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm ring-1 ring-gray-900/5"
+            className="my-2 space-y-4 rounded-xl border border-gray-200 bg-white p-4 pb-6 shadow-sm ring-1 ring-gray-900/5"
         >
             <BaseModal
                 isOpen={defaultConfirmOpen}
@@ -1111,6 +1125,20 @@ export function TimesheetEntryEditorForm({
                     )}
                 </div>
             </div>
+
+            <label className="block text-xs font-semibold text-gray-600">
+                상세내용
+                <textarea
+                    value={details}
+                    onChange={(e) => setDetails(e.target.value)}
+                    rows={3}
+                    placeholder="수행한 업무·이동 내용"
+                    className={[
+                        "mt-1 w-full resize-none rounded-lg border border-gray-200 px-2 py-1.5 text-sm",
+                        detailsChanged ? "text-blue-700" : "text-gray-900",
+                    ].join(" ")}
+                />
+            </label>
 
             <div>
                 <div className="mb-2 text-xs font-semibold text-gray-500">
