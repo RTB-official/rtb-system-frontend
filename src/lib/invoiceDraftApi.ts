@@ -273,10 +273,39 @@ export async function createInvoiceDraft(
     return normalizeDraftRow(data as InvoiceDraftDbRow);
 }
 
+function sameWorkLogIdSet(a: number[], b: number[]): boolean {
+    if (a.length !== b.length) {
+        return false;
+    }
+    const left = [...a].sort((x, y) => x - y);
+    const right = [...b].sort((x, y) => x - y);
+    return left.every((id, index) => id === right[index]);
+}
+
+/** 현재 로그인 사용자의 드래프트 중 동일 보고서 집합을 찾는다. */
+export async function findOwnInvoiceDraftByWorkLogIds(
+    workLogIds: number[]
+): Promise<InvoiceDraftRow | null> {
+    const userId = await getCurrentUserId();
+    const { data, error } = await supabase
+        .from("invoice_drafts")
+        .select("*")
+        .eq("created_by", userId)
+        .order("updated_at", { ascending: false });
+    if (error) {
+        throw toThrownError(error, "내 드래프트를 조회하지 못했습니다.");
+    }
+    const match = (data ?? [])
+        .map((row) => normalizeDraftRow(row as InvoiceDraftDbRow))
+        .find((row) => sameWorkLogIdSet(row.work_log_ids, workLogIds));
+    return match ?? null;
+}
+
 export async function updateInvoiceDraft(
     draftId: string,
     input: InvoiceDraftUpsertInput
 ): Promise<InvoiceDraftRow> {
+    const userId = await getCurrentUserId();
     const { data, error } = await supabase
         .from("invoice_drafts")
         .update({
@@ -287,12 +316,43 @@ export async function updateInvoiceDraft(
             updated_at: new Date().toISOString(),
         })
         .eq("id", draftId)
+        .eq("created_by", userId)
         .select("*")
-        .single();
-    if (error || !data) {
+        .maybeSingle();
+    if (error) {
         throw toThrownError(error, "드래프트를 저장하지 못했습니다.");
     }
+    if (!data) {
+        throw new Error(
+            "본인 드래프트만 수정할 수 있습니다. 저장에 실패했습니다."
+        );
+    }
     return normalizeDraftRow(data as InvoiceDraftDbRow);
+}
+
+/**
+ * 현재 사용자 기준으로 드래프트를 저장한다.
+ * - 본인 드래프트를 연 경우: 그 행을 갱신
+ * - 다른 사람 드래프트를 연 경우: 같은 보고서 집합의 본인 드래프트가 있으면 갱신, 없으면 신규 생성
+ */
+export async function saveInvoiceDraftForCurrentUser(options: {
+    currentDraftId: string | null;
+    currentDraftCreatedBy: string | null;
+    input: InvoiceDraftUpsertInput;
+}): Promise<InvoiceDraftRow> {
+    const userId = await getCurrentUserId();
+    const { currentDraftId, currentDraftCreatedBy, input } = options;
+
+    if (currentDraftId && currentDraftCreatedBy === userId) {
+        return updateInvoiceDraft(currentDraftId, input);
+    }
+
+    const ownExisting = await findOwnInvoiceDraftByWorkLogIds(input.workLogIds);
+    if (ownExisting) {
+        return updateInvoiceDraft(ownExisting.id, input);
+    }
+
+    return createInvoiceDraft(input);
 }
 
 export async function getInvoiceDraftById(
