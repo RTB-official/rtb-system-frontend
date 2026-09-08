@@ -2412,7 +2412,22 @@ function extractTemplateCellStyles(
         shiftTemplateCellStylesFromRow(styles, invoiceRowShift);
     }
 
+    if (normalizedSheetName === "Invoice") {
+        normalizeInvoicePoNumberCellStyle(styles);
+    }
+
     return styles;
+}
+
+/**
+ * P.O No 입력란(J7) 템플릿 서식이 라벨용(Roboto 9pt 파란 굵게)으로 잡혀 있어
+ * Date/Validity/Currency(J9~J11)와 맞춰 Arial 14 입력란 스타일로 통일한다.
+ */
+function normalizeInvoicePoNumberCellStyle(styles: Map<string, string>) {
+    const valueStyle =
+        styles.get("J9") ?? styles.get("J10") ?? styles.get("J11") ?? styles.get("J8");
+    if (!valueStyle) return;
+    styles.set("J7", valueStyle);
 }
 
 /** Invoice 시트에 빈 행을 끼워 넣어 templateRow 이후가 shift 만큼 밀린 상태 */

@@ -75,10 +75,9 @@ import {
     type InvoiceExcelJobDescriptionSheetInput,
 } from "../../lib/invoiceExcelExport";
 import {
-    createInvoiceDraft,
     getInvoiceDraftById,
     listInvoiceDraftsByUser,
-    updateInvoiceDraft,
+    saveInvoiceDraftForCurrentUser,
     type InvoiceDraftPayload,
     type InvoiceDraftRow,
 } from "../../lib/invoiceDraftApi";
@@ -1713,6 +1712,10 @@ export default function InvoiceCreatePage() {
     invoiceSkilledFitterOptOutByTimesheetRowKeyRef.current =
         invoiceSkilledFitterOptOutByTimesheetRowKey;
     const [invoiceDraftId, setInvoiceDraftId] = useState<string | null>(null);
+    /** 현재 열린 드래프트 작성자(auth user id). 다른 사람 드래프트 저장 시 fork 판단에 사용 */
+    const [invoiceDraftCreatedBy, setInvoiceDraftCreatedBy] = useState<
+        string | null
+    >(null);
     const [invoiceDraftTitle, setInvoiceDraftTitle] = useState("");
     const [invoiceDraftSaving, setInvoiceDraftSaving] = useState(false);
     const [invoiceDraftLoadModalOpen, setInvoiceDraftLoadModalOpen] =
@@ -2149,6 +2152,7 @@ export default function InvoiceCreatePage() {
                 };
                 loadedWorkLogIdsParamRef.current = nextParam;
                 setInvoiceDraftId(null);
+                setInvoiceDraftCreatedBy(null);
                 setWorkLogDataList(mergedWorkLogs);
                 syncWorkLogIdsInUrl(ids);
                 setInvoiceReportsModalOpen(false);
@@ -2158,6 +2162,7 @@ export default function InvoiceCreatePage() {
             loadedWorkLogIdsParamRef.current = null;
             incrementalWorkLogPatchRef.current = null;
             setInvoiceDraftId(null);
+            setInvoiceDraftCreatedBy(null);
             setSearchParams(
                 (prev) => {
                     const next = new URLSearchParams(prev);
@@ -2188,6 +2193,7 @@ export default function InvoiceCreatePage() {
                 }
                 applyInvoiceDraftPayload(draft.payload);
                 setInvoiceDraftId(draft.id);
+                setInvoiceDraftCreatedBy(draft.created_by);
                 setInvoiceDraftTitle(draft.title ?? "");
                 loadedDraftBaselinePayloadRef.current = JSON.parse(
                     JSON.stringify(draft.payload)
@@ -2233,6 +2239,7 @@ export default function InvoiceCreatePage() {
                 }
                 applyInvoiceDraftPayload(draft.payload);
                 setInvoiceDraftId(draft.id);
+                setInvoiceDraftCreatedBy(draft.created_by);
                 setInvoiceDraftTitle(draft.title ?? "");
                 loadedDraftBaselinePayloadRef.current = JSON.parse(
                     JSON.stringify(draft.payload)
@@ -2286,25 +2293,31 @@ export default function InvoiceCreatePage() {
 
         setInvoiceDraftSaving(true);
         try {
-            const saved = invoiceDraftId
-                ? await updateInvoiceDraft(invoiceDraftId, {
-                      title: draftTitle,
-                      workLogIds,
-                      payload,
-                      status: "draft",
-                  })
-                : await createInvoiceDraft({
-                      title: draftTitle,
-                      workLogIds,
-                      payload,
-                      status: "draft",
-                  });
+            const saved = await saveInvoiceDraftForCurrentUser({
+                currentDraftId: invoiceDraftId,
+                currentDraftCreatedBy: invoiceDraftCreatedBy,
+                input: {
+                    title: draftTitle,
+                    workLogIds,
+                    payload,
+                    status: "draft",
+                },
+            });
             setInvoiceDraftId(saved.id);
+            setInvoiceDraftCreatedBy(saved.created_by);
             setInvoiceDraftTitle(saved.title);
             loadedDraftBaselinePayloadRef.current = JSON.parse(
                 JSON.stringify(payload)
             ) as InvoiceDraftPayload;
-            showSuccess("인보이스 드래프트를 저장했습니다.");
+            const forkedFromOtherUser =
+                Boolean(invoiceDraftId) &&
+                Boolean(invoiceDraftCreatedBy) &&
+                saved.id !== invoiceDraftId;
+            showSuccess(
+                forkedFromOtherUser
+                    ? "내 인보이스 드래프트로 저장했습니다."
+                    : "인보이스 드래프트를 저장했습니다."
+            );
         } catch (error) {
             console.error(error);
             showError(
@@ -2322,6 +2335,7 @@ export default function InvoiceCreatePage() {
         invoiceWorkItemOverride,
         buildDraftTitleFromWorkLogs,
         invoiceDraftId,
+        invoiceDraftCreatedBy,
         showSuccess,
         showError,
     ]);
@@ -3659,6 +3673,7 @@ export default function InvoiceCreatePage() {
                 setLoading(true);
                 if (!isDraftMode) {
                     setInvoiceDraftId(null);
+                    setInvoiceDraftCreatedBy(null);
                     setInvoiceDraftTitle("");
                 }
             }
