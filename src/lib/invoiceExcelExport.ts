@@ -22,6 +22,8 @@ export type InvoiceExcelTimesheetRowInput = {
     timeTo: string;
     description: string;
     totalHours: number;
+    /** Total Meals 열. 없으면 빈 칸 */
+    totalMeals?: number;
     weekdayNormal: number;
     weekdayAfter: number;
     weekendNormal: number;
@@ -52,6 +54,7 @@ export type InvoiceExcelRdRowInput = {
     timeFrom: string;
     timeTo: string;
     totalHours: number;
+    totalMeals?: number;
     weekdayNormal: number;
     weekdayAfter: number;
     weekendNormal: number;
@@ -256,7 +259,7 @@ const NORMAL_TIMESHEET_EXCEL = {
     commentsStartRow: 38,
     /** 양식 코멘트 영역 마지막 행 (B38~B40) */
     commentsLastRow: 40,
-    travelHoursHeader: "K12",
+    travelHoursHeader: "L12",
 } as const;
 
 /** R&D 인보이스 양식(Time Sheet) 고정 셀 — Normal과 다름 */
@@ -273,7 +276,7 @@ const RD_TIMESHEET_EXCEL = {
     commentsStartRow: 42,
     /** 양식 코멘트 영역 마지막 행 (B42~B44) */
     commentsLastRow: 44,
-    travelHoursHeader: "K10",
+    travelHoursHeader: "L10",
 } as const;
 
 const TIMESHEET_TRAVEL_HOURS_HEADER = "Waiting & Travel\nHours**";
@@ -410,6 +413,7 @@ export function buildInvoiceExcelRowRecords(
         time_to: r.timeTo,
         description: r.description,
         total_hours: r.totalHours,
+        total_meals: r.totalMeals,
         weekday_normal: r.weekdayNormal,
         weekday_after: r.weekdayAfter,
         weekend_normal: r.weekendNormal,
@@ -1344,6 +1348,67 @@ function shiftWorksheetFormulaRowRefs(
     }
 }
 
+/** 수식의 열 참조를 insertAtCol 이상만 count 만큼 오른쪽으로 민다 */
+function shiftFormulaColRefs(
+    formula: string,
+    insertAtCol: number,
+    count: number
+): string {
+    return formula.replace(
+        /"[^"]*"|(^|[^A-Za-z0-9_$.!])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])/g,
+        (
+            match: string,
+            prefix: string | undefined,
+            absCol: string,
+            col: string,
+            absRow: string,
+            rowText: string
+        ) => {
+            if (prefix === undefined) return match;
+            const colNum = columnLetterToNumber(col);
+            if (!Number.isFinite(colNum) || colNum < insertAtCol) return match;
+            return `${prefix}${absCol}${columnNumberToLetter(colNum + count)}${absRow}${rowText}`;
+        }
+    );
+}
+
+function shiftWorksheetFormulaColRefs(
+    ws: ExcelJS.Worksheet,
+    insertAtCol: number,
+    count: number
+) {
+    const updates: {
+        address: string;
+        formula: string;
+        result?: ExcelJS.CellValue;
+    }[] = [];
+
+    ws.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+            const bundle = readFormulaCellBundle(cell);
+            const formula = bundle?.formula;
+            if (!formula) return;
+
+            const shifted = shiftFormulaColRefs(formula, insertAtCol, count);
+            if (shifted === formula) return;
+
+            updates.push({
+                address: cell.address,
+                formula: shifted,
+                result: bundle?.result,
+            });
+        });
+    });
+
+    for (const update of updates) {
+        setFormulaCellValue(
+            ws.getCell(update.address),
+            update.formula,
+            update.result
+        );
+    }
+}
+
 function setCellValue(ws: ExcelJS.Worksheet, address: string, value: unknown) {
     const cell = ws.getCell(address);
     if (typeof value === "number" && Number.isFinite(value)) {
@@ -1481,7 +1546,9 @@ type MergeCellRange = {
 
 type WorksheetImageAnchor = {
     nativeRow?: number;
+    nativeCol?: number;
     row?: number;
+    col?: number;
 };
 
 type WorksheetImageLike = {
@@ -1597,6 +1664,88 @@ function restoreMergesAfterRowInsert(
         }
         safeMergeCells(ws, formatMergeRef(shifted));
         restored.push(shifted);
+    }
+}
+
+function shiftMergeRangeForColumnInsert(
+    range: MergeCellRange,
+    insertAtCol: number,
+    count: number
+): MergeCellRange {
+    if (range.right < insertAtCol) {
+        return range;
+    }
+    if (range.left >= insertAtCol) {
+        return {
+            ...range,
+            left: range.left + count,
+            right: range.right + count,
+        };
+    }
+    return {
+        ...range,
+        right: range.right + count,
+    };
+}
+
+function restoreMergesAfterColumnInsert(
+    ws: ExcelJS.Worksheet,
+    mergeRefs: string[],
+    insertAtCol: number,
+    count: number
+) {
+    const restored: MergeCellRange[] = [];
+    for (const ref of mergeRefs) {
+        const range = parseMergeRef(ref);
+        if (!range) continue;
+        const shifted = shiftMergeRangeForColumnInsert(range, insertAtCol, count);
+        if (shifted.top === shifted.bottom && shifted.left === shifted.right) {
+            continue;
+        }
+        if (restored.some((existing) => mergeRangesOverlap(existing, shifted))) {
+            continue;
+        }
+        safeMergeCells(ws, formatMergeRef(shifted));
+        restored.push(shifted);
+    }
+}
+
+function spliceColumnsWithLayoutRepair(
+    ws: ExcelJS.Worksheet,
+    insertAtCol: number,
+    count: number
+) {
+    const mergeRefs = getWorksheetMergeRefs(ws);
+    clearWorksheetMerges(ws);
+    const emptyCols = Array.from({ length: count }, () => [] as unknown[]);
+    ws.spliceColumns(insertAtCol, 0, ...emptyCols);
+    restoreMergesAfterColumnInsert(ws, mergeRefs, insertAtCol, count);
+}
+
+function shiftImageAnchorAfterColumn(
+    anchor: WorksheetImageAnchor | undefined,
+    insertAtCol: number,
+    count: number
+) {
+    if (!anchor) return;
+    const zeroBasedInsertCol = insertAtCol - 1;
+    if (typeof anchor.nativeCol === "number" && anchor.nativeCol >= zeroBasedInsertCol) {
+        anchor.nativeCol += count;
+    }
+}
+
+function shiftImagesAfterColumn(
+    ws: ExcelJS.Worksheet,
+    insertAtCol: number,
+    count: number
+) {
+    const worksheetWithImages = ws as ExcelJS.Worksheet & {
+        getImages?: () => WorksheetImageLike[];
+    };
+    const images = worksheetWithImages.getImages?.() ?? [];
+    for (const image of images) {
+        shiftImageAnchorAfterColumn(image.range?.tl, insertAtCol, count);
+        shiftImageAnchorAfterColumn(image.range?.br, insertAtCol, count);
     }
 }
 
@@ -1835,6 +1984,32 @@ function injectMissingGrayBarCells(
     }
 }
 
+/** 값이 없어도 서식(테두리)이 필요한 열의 빈 셀을 넣는다. Time Sheet G열(Total Meals)용 */
+function injectMissingStyledColumnCells(
+    rows: Map<number, MinimalWorksheetCell[]>,
+    templateStyles: Map<string, string> | undefined,
+    columnLetter: string
+) {
+    if (!templateStyles) return;
+    for (const [ref, styleId] of templateStyles) {
+        const refMatch = ref.match(/^([A-Z]+)(\d+)$/);
+        if (!refMatch || refMatch[1] !== columnLetter) continue;
+
+        const row = Number.parseInt(refMatch[2], 10);
+        if (!Number.isFinite(row)) continue;
+
+        const cells = rows.get(row) ?? [];
+        if (cells.some((cell) => cell.ref === ref)) continue;
+
+        cells.push({
+            col: columnLetterToNumber(columnLetter),
+            ref,
+            xml: `<c r="${ref}" s="${styleId}"></c>`,
+        });
+        rows.set(row, cells);
+    }
+}
+
 function buildMinimalWorksheetXml(
     xml: string,
     templateStyles?: Map<string, string>,
@@ -1860,6 +2035,7 @@ function buildMinimalWorksheetXml(
     }
 
     injectMissingGrayBarCells(rows, templateStyles);
+    injectMissingStyledColumnCells(rows, templateStyles, "G");
 
     const rowXml = [...rows.entries()]
         .sort(([a], [b]) => a - b)
@@ -2177,9 +2353,13 @@ function applyNormalTimeSheetFooterStyles(
             .filter((row) => row > totalRow)
             .sort((a, b) => a - b)[0] ?? totalRow + 3;
     const commentsRow =
+        findRowsContainingText(outputXml, outputSharedStrings, /^\s*\*Comments/i)
+            .filter((row) => row > termsStartRow)
+            .sort((a, b) => a - b)[0] ??
         findRowsContainingText(outputXml, outputSharedStrings, /^Comments$/i)
             .filter((row) => row > termsStartRow)
-            .sort((a, b) => a - b)[0] ?? totalRow + 11;
+            .sort((a, b) => a - b)[0] ??
+        totalRow + 11;
     const confirmRow =
         findRowsContainingText(outputXml, outputSharedStrings, /We hereby confirm/i)
             .filter((row) => row > commentsRow)
@@ -2227,9 +2407,13 @@ function applyNormalTimeSheetFooterRowAttributes(
             .filter((row) => row > totalRow)
             .sort((a, b) => a - b)[0] ?? totalRow + 3;
     const commentsRow =
+        findRowsContainingText(outputXml, outputSharedStrings, /^\s*\*Comments/i)
+            .filter((row) => row > termsStartRow)
+            .sort((a, b) => a - b)[0] ??
         findRowsContainingText(outputXml, outputSharedStrings, /^Comments$/i)
             .filter((row) => row > termsStartRow)
-            .sort((a, b) => a - b)[0] ?? totalRow + 11;
+            .sort((a, b) => a - b)[0] ??
+        totalRow + 11;
     const confirmRow =
         findRowsContainingText(outputXml, outputSharedStrings, /We hereby confirm/i)
             .filter((row) => row > commentsRow)
@@ -2274,9 +2458,13 @@ function applyRdTimeSheetFooterStyles(
             .filter((row) => row > totalRow)
             .sort((a, b) => a - b)[0] ?? totalRow + 3;
     const commentsRow =
+        findRowsContainingText(outputXml, outputSharedStrings, /^\s*\*Comments/i)
+            .filter((row) => row > termsStartRow)
+            .sort((a, b) => a - b)[0] ??
         findRowsContainingText(outputXml, outputSharedStrings, /^Comments$/i)
             .filter((row) => row > termsStartRow)
-            .sort((a, b) => a - b)[0] ?? termsStartRow + 8;
+            .sort((a, b) => a - b)[0] ??
+        termsStartRow + 8;
     const confirmRow =
         findRowsContainingText(outputXml, outputSharedStrings, /We hereby confirm/i)
             .filter((row) => row > commentsRow)
@@ -2289,6 +2477,10 @@ function applyRdTimeSheetFooterStyles(
         findRowsContainingText(outputXml, outputSharedStrings, /E-mail:/i)
             .filter((row) => row > signatureRow)
             .sort((a, b) => a - b)[0] ?? signatureRow + 3;
+
+    // Total과 Notes 사이 여백(템플릿 31·32) — G열 굵은 하단선이 이어지도록 같은 행 F 서식을 둔다.
+    copyTemplateRowStyles(styles, templateRowStyles, 31, termsStartRow - 2);
+    copyTemplateRowStyles(styles, templateRowStyles, 32, termsStartRow - 1);
 
     for (let offset = 0; offset <= 5; offset += 1) {
         copyTemplateRowStyles(styles, templateRowStyles, 33 + offset, termsStartRow + offset);
@@ -2416,7 +2608,336 @@ function extractTemplateCellStyles(
         normalizeInvoicePoNumberCellStyle(styles);
     }
 
+    if (
+        normalizedSheetName === "Time Sheet" &&
+        outputXml &&
+        timesheetOutputHasTotalMeals(outputXml, outputSharedStrings)
+    ) {
+        remapTimeSheetStylesAfterMealsColumnInsert(styles);
+    }
+
     return styles;
+}
+
+function timesheetOutputHasTotalMeals(
+    outputXml: string,
+    outputSharedStrings: string[]
+): boolean {
+    return Boolean(
+        firstRowContainingText(outputXml, outputSharedStrings, /Total\s*Meals/i)
+    );
+}
+
+/**
+ * 템플릿 G열 이후 스타일을 +1 밀고, 새 G열(Total Meals)은 F열(Total Hours) 서식을 복제한다.
+ */
+function remapTimeSheetStylesAfterMealsColumnInsert(
+    styles: Map<string, string>
+) {
+    const insertAtCol = TIMESHEET_MEALS_COL;
+    const remapped = new Map<string, string>();
+    for (const [ref, styleId] of styles) {
+        const match = ref.match(/^([A-Z]+)(\d+)$/);
+        if (!match) {
+            remapped.set(ref, styleId);
+            continue;
+        }
+        const colNum = columnLetterToNumber(match[1]);
+        const row = match[2];
+        if (colNum >= insertAtCol) {
+            remapped.set(`${columnNumberToLetter(colNum + 1)}${row}`, styleId);
+            continue;
+        }
+        remapped.set(ref, styleId);
+    }
+
+    for (const [ref, styleId] of remapped) {
+        const match = ref.match(/^F(\d+)$/);
+        if (!match) continue;
+        remapped.set(`G${match[1]}`, styleId);
+    }
+
+    styles.clear();
+    for (const [ref, styleId] of remapped) {
+        styles.set(ref, styleId);
+    }
+}
+
+function getCellXfBorderSides(
+    stylesXml: string,
+    styleId: number
+): { top?: string; bottom?: string; left?: string; right?: string } | null {
+    const xfBlock = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1];
+    const borderBlock = stylesXml.match(/<borders\b[^>]*>([\s\S]*?)<\/borders>/)?.[1];
+    if (!xfBlock || !borderBlock) return null;
+    const xf = listXmlBlockItems(xfBlock, "xf")[styleId];
+    if (!xf) return null;
+    const borderId = Number.parseInt(xf.match(/\bborderId="(\d+)"/)?.[1] ?? "", 10);
+    if (!Number.isFinite(borderId)) return null;
+    const border = listXmlBlockItems(borderBlock, "border")[borderId];
+    if (!border) return null;
+    const side = (name: string) =>
+        border.match(new RegExp(`<${name}[^>]*style="([^"]+)"`))?.[1];
+    return {
+        top: side("top"),
+        bottom: side("bottom"),
+        left: side("left"),
+        right: side("right"),
+    };
+}
+
+function findCellXfIdByBorder(
+    stylesXml: string,
+    need: { top?: string; bottom?: string | "none" }
+): string | undefined {
+    const xfBlock = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1];
+    if (!xfBlock) return undefined;
+    const items = listXmlBlockItems(xfBlock, "xf");
+    for (let i = 0; i < items.length; i += 1) {
+        const sides = getCellXfBorderSides(stylesXml, i);
+        if (!sides) continue;
+        if (need.top && sides.top !== need.top) continue;
+        if (need.bottom === "none" && sides.bottom) continue;
+        if (need.bottom && need.bottom !== "none" && sides.bottom !== need.bottom) {
+            continue;
+        }
+        return String(i);
+    }
+    return undefined;
+}
+
+/**
+ * Total Meals(G) 열에서 표/노트/코멘트 구간의 굵은·일반 테두리를 맞춘다.
+ */
+function assignTimeSheetMealsColumnBorders(
+    styles: Map<string, string>,
+    stylesXml: string,
+    outputXml: string,
+    outputSharedStrings: string[]
+) {
+    const hoursRow = firstRowContainingText(
+        outputXml,
+        outputSharedStrings,
+        /Total\s*Hours/i
+    );
+    const totalRow = firstRowContainingText(
+        outputXml,
+        outputSharedStrings,
+        /^Total$/i
+    );
+    const note1Row = firstRowContainingText(
+        outputXml,
+        outputSharedStrings,
+        /1\.\s*Normal Working Hours/i
+    );
+    const commentsRow =
+        firstRowContainingText(
+            outputXml,
+            outputSharedStrings,
+            /^\s*\*Comments/i
+        ) ??
+        firstRowContainingText(outputXml, outputSharedStrings, /^\s*Comments$/i);
+
+    const mediumTop =
+        (hoursRow ? styles.get(`F${hoursRow - 1}`) : undefined) ??
+        styles.get("F10") ??
+        findCellXfIdByBorder(stylesXml, { top: "medium" });
+    // H11은 시간대 헤더라 굵은 선이다. 데이터 행(F14·F15)의 얇은 격자를 쓴다.
+    const thinGrid =
+        styles.get("F15") ??
+        styles.get("F14") ??
+        findCellXfIdByBorder(stylesXml, { top: "thin", bottom: "thin" }) ??
+        findCellXfIdByBorder(stylesXml, { bottom: "thin" });
+    // F27/F29는 템플릿 고정 행이다. 데이터 행이 늘어나면 그 칸이 표 격자가 되어
+    // Notes·Comments의 G열에 좌우(·아래) 테두리가 따로 생긴다. 같은 출력 행 F만 쓴다.
+    const mediumBottom = note1Row
+        ? styles.get(`F${note1Row - 1}`)
+        : undefined;
+    const commentsStyle = commentsRow
+        ? styles.get(`F${commentsRow}`)
+        : undefined;
+
+    const tableTopRow = hoursRow ? hoursRow - 1 : 10;
+    if (mediumTop) styles.set(`G${tableTopRow}`, mediumTop);
+
+    // Total 위 빈 행(G23·G24 등): F열과 같이 위·아래 얇은 선
+    if (totalRow) {
+        for (const row of [totalRow - 3, totalRow - 2, totalRow - 1]) {
+            const fromF = styles.get(`F${row}`) ?? thinGrid;
+            if (fromF) styles.set(`G${row}`, fromF);
+        }
+    }
+
+    // 1번 노트 바로 위: F열과 같은 하단 굵은 선만 이어 준다.
+    if (note1Row && mediumBottom) {
+        styles.set(`G${note1Row - 1}`, mediumBottom);
+    }
+
+    // *Comments 행: F열과 동일한 서식. 없으면 G 셀을 만들지 않아 혼자 상자가 생기지 않게 한다.
+    if (commentsRow) {
+        if (commentsStyle) {
+            styles.set(`G${commentsRow}`, commentsStyle);
+        } else {
+            styles.delete(`G${commentsRow}`);
+        }
+    }
+}
+
+/** 템플릿 cols XML에 G열(51px)을 끼우고 F열도 51px로 맞춘다. min/max >= 7 은 +1 */
+function insertMealsColumnIntoColsXml(colsXml: string): string {
+    if (!colsXml) return colsXml;
+
+    const width = String(TIMESHEET_COL_WIDTH_51PX);
+    const items = [
+        ...colsXml.matchAll(/<col\b[^>]*\/?>/g),
+    ].map((match) => match[0]);
+    if (items.length === 0) return colsXml;
+
+    const shifted: string[] = [];
+    for (const item of items) {
+        const min = Number.parseInt(item.match(/\bmin="(\d+)"/)?.[1] ?? "", 10);
+        const max = Number.parseInt(item.match(/\bmax="(\d+)"/)?.[1] ?? "", 10);
+        if (!Number.isFinite(min) || !Number.isFinite(max)) {
+            shifted.push(item);
+            continue;
+        }
+
+        if (max < TIMESHEET_MEALS_COL) {
+            if (min === 6 && max === 6) {
+                shifted.push(
+                    item.replace(/\bwidth="[^"]+"/, `width="${width}"`)
+                );
+                continue;
+            }
+            shifted.push(item);
+            continue;
+        }
+
+        if (min >= TIMESHEET_MEALS_COL) {
+            shifted.push(
+                item
+                    .replace(/\bmin="\d+"/, `min="${min + 1}"`)
+                    .replace(/\bmax="\d+"/, `max="${max + 1}"`)
+            );
+            continue;
+        }
+
+        // min < 7 <= max 인 범위는 쪼개지 않고 오른쪽만 늘림
+        shifted.push(
+            item.replace(/\bmax="\d+"/, `max="${max + 1}"`)
+        );
+    }
+
+    const mealsCol = `<col min="7" max="7" width="${width}" customWidth="1"/>`;
+    const fIndex = shifted.findIndex((item) => /\bmin="6"/.test(item));
+    if (fIndex >= 0) {
+        shifted.splice(fIndex + 1, 0, mealsCol);
+    } else {
+        shifted.push(mealsCol);
+    }
+
+    return colsXml.replace(
+        /(<cols\b[^>]*>)[\s\S]*?(<\/cols>)/,
+        `$1${shifted.join("")}$2`
+    );
+}
+
+function excelColumnWidthDeltaFromPixels(extraPixels: number): number {
+    return extraPixels / EXCEL_DEFAULT_COL_PIXELS_PER_WIDTH;
+}
+
+function roundExcelColumnWidth(width: number): number {
+    return Math.round(width * 100) / 100;
+}
+
+function withColXmlWidth(item: string, width: number): string {
+    if (/\bwidth="/.test(item)) {
+        return item.replace(/\bwidth="[^"]+"/, `width="${width}"`);
+    }
+    return item.replace(/<col\b/, `<col width="${width}" customWidth="1"`);
+}
+
+/** cols XML에서 지정 열만 너비를 extraPixels만큼 늘린다. 범위 col이면 해당 열만 분리한다. */
+function bumpColWidthInColsXml(
+    colsXml: string,
+    col: number,
+    extraPixels: number
+): string {
+    if (!colsXml || extraPixels === 0) return colsXml;
+    const delta = excelColumnWidthDeltaFromPixels(extraPixels);
+    const items = [...colsXml.matchAll(/<col\b[^>]*\/?>/g)].map(
+        (match) => match[0]
+    );
+    if (items.length === 0) return colsXml;
+
+    const bumped: string[] = [];
+    for (const item of items) {
+        const min = Number.parseInt(item.match(/\bmin="(\d+)"/)?.[1] ?? "", 10);
+        const max = Number.parseInt(item.match(/\bmax="(\d+)"/)?.[1] ?? "", 10);
+        if (!Number.isFinite(min) || !Number.isFinite(max) || col < min || col > max) {
+            bumped.push(item);
+            continue;
+        }
+
+        const currentWidth = Number.parseFloat(
+            item.match(/\bwidth="([^"]+)"/)?.[1] ?? ""
+        );
+        const nextWidth = Number.isFinite(currentWidth)
+            ? roundExcelColumnWidth(currentWidth + delta)
+            : undefined;
+        const applyWidth = (xml: string) =>
+            nextWidth === undefined ? xml : withColXmlWidth(xml, nextWidth);
+
+        if (min === max) {
+            bumped.push(applyWidth(item));
+            continue;
+        }
+
+        if (min < col) {
+            bumped.push(item.replace(/\bmax="\d+"/, `max="${col - 1}"`));
+        }
+        bumped.push(
+            applyWidth(
+                item
+                    .replace(/\bmin="\d+"/, `min="${col}"`)
+                    .replace(/\bmax="\d+"/, `max="${col}"`)
+            )
+        );
+        if (col < max) {
+            bumped.push(item.replace(/\bmin="\d+"/, `min="${col + 1}"`));
+        }
+    }
+
+    return colsXml.replace(
+        /(<cols\b[^>]*>)[\s\S]*?(<\/cols>)/,
+        `$1${bumped.join("")}$2`
+    );
+}
+
+function bumpNormalTimesheetColumnWidthsInColsXml(colsXml: string): string {
+    return bumpColWidthInColsXml(
+        bumpColWidthInColsXml(colsXml, 8, NORMAL_TIMESHEET_COL_H_EXTRA_PX),
+        13,
+        NORMAL_TIMESHEET_COL_M_EXTRA_PX
+    );
+}
+
+function bumpExcelJsColumnWidth(
+    ws: ExcelJS.Worksheet,
+    col: number,
+    extraPixels: number
+) {
+    const column = ws.getColumn(col);
+    const current = column.width;
+    if (typeof current !== "number" || !Number.isFinite(current)) return;
+    column.width = roundExcelColumnWidth(
+        current + excelColumnWidthDeltaFromPixels(extraPixels)
+    );
+}
+
+function widenNormalTimesheetColumns(ws: ExcelJS.Worksheet) {
+    bumpExcelJsColumnWidth(ws, 8, NORMAL_TIMESHEET_COL_H_EXTRA_PX);
+    bumpExcelJsColumnWidth(ws, 13, NORMAL_TIMESHEET_COL_M_EXTRA_PX);
 }
 
 /**
@@ -2490,6 +3011,15 @@ function firstRowContainingText(
     text: RegExp
 ): number | undefined {
     return findAllRowsContainingText(xml, sharedStrings, text)[0];
+}
+
+function lastRowContainingText(
+    xml: string,
+    sharedStrings: string[],
+    text: RegExp
+): number | undefined {
+    const rows = findAllRowsContainingText(xml, sharedStrings, text);
+    return rows[rows.length - 1];
 }
 
 /** 출력의 Grand Total 행이 템플릿보다 아래면 그 차이를 반환 */
@@ -2778,6 +3308,7 @@ async function buildTemplateStyleMaps(
     byOutputPath: Map<string, Map<string, string>>;
     layoutByOutputPath: Map<string, TemplateWorksheetLayout>;
     rowShiftBySheetName: Map<string, number>;
+    colShiftBySheetName: Map<string, number>;
 }> {
     if (!templateBuffer) {
         return {
@@ -2785,6 +3316,7 @@ async function buildTemplateStyleMaps(
             layoutByOutputPath: new Map(),
             templateLogoAnchorByName: new Map(),
             rowShiftBySheetName: new Map(),
+            colShiftBySheetName: new Map(),
         };
     }
 
@@ -2814,6 +3346,7 @@ async function buildTemplateStyleMaps(
     const byOutputPath = new Map<string, Map<string, string>>();
     const layoutByOutputPath = new Map<string, TemplateWorksheetLayout>();
     const rowShiftBySheetName = new Map<string, number>();
+    const colShiftBySheetName = new Map<string, number>();
 
     for (const outputSheet of outputSheets) {
         const templateName = getTemplateSheetName(outputSheet.name);
@@ -2866,17 +3399,33 @@ async function buildTemplateStyleMaps(
             );
         }
         if (templateName === "Time Sheet") {
-            layoutByOutputPath.set(
-                outputSheet.path,
-                withTemplatePrintLayout(
-                    buildTimeSheetTemplateLayout(
-                        templateXml,
-                        await outputSheetFile.async("string"),
-                        outputSharedStrings
-                    ),
-                    templateXml
-                )
+            const layout = withTemplatePrintLayout(
+                buildTimeSheetTemplateLayout(
+                    templateXml,
+                    outputXml,
+                    outputSharedStrings
+                ),
+                templateXml
             );
+            if (timesheetOutputHasTotalMeals(outputXml, outputSharedStrings)) {
+                layout.cols = insertMealsColumnIntoColsXml(layout.cols ?? "");
+                colShiftBySheetName.set(outputSheet.name.trim(), 1);
+                const mealsStyles = byOutputPath.get(outputSheet.path);
+                if (mealsStyles && stylesXml) {
+                    assignTimeSheetMealsColumnBorders(
+                        mealsStyles,
+                        stylesXml,
+                        outputXml,
+                        outputSharedStrings
+                    );
+                }
+            }
+            if (!hasTemplateCellStyle(templateXml, "A48")) {
+                layout.cols = bumpNormalTimesheetColumnWidthsInColsXml(
+                    layout.cols ?? ""
+                );
+            }
+            layoutByOutputPath.set(outputSheet.path, layout);
             continue;
         }
 
@@ -2951,6 +3500,7 @@ async function buildTemplateStyleMaps(
         byOutputPath,
         layoutByOutputPath,
         rowShiftBySheetName,
+        colShiftBySheetName,
     };
 }
 
@@ -3196,7 +3746,11 @@ async function normalizeXlsxWorksheetDimensions(
     );
 
     await stripXlsxStylesForExcelCompatibility(zip, worksheetPaths, templateStyles);
-    await extendPrintAreasForShiftedSheets(zip, templateStyles.rowShiftBySheetName);
+    await syncPrintAreasToCompanyAddressFooter(
+        zip,
+        templateStyles.rowShiftBySheetName,
+        templateStyles.colShiftBySheetName
+    );
 
     return await zip.generateAsync({
         type: "blob",
@@ -3206,39 +3760,185 @@ async function normalizeXlsxWorksheetDimensions(
 }
 
 /**
- * 행을 끼워 넣어 내용이 밀린 시트는 인쇄 영역 끝 행도 같이 늘려야
- * 마지막 줄(회사 주소 등)이 인쇄에서 잘리지 않는다.
+ * 회사 주소 행 + 여백 1행까지 인쇄 영역(페이지 나누기 미리보기 파란 테두리)을 맞춘다.
+ * 예: 주소가 51행이면 Print_Area 끝은 52행.
  */
-async function extendPrintAreasForShiftedSheets(
-    zip: JSZip,
-    rowShiftBySheetName: Map<string, number>
-): Promise<void> {
-    if (rowShiftBySheetName.size === 0) return;
+const PRINT_AREA_ROWS_BELOW_ADDRESS = 1;
+const COMPANY_ADDRESS_ROW_PATTERN = /Jedoro\s*767-16/i;
 
+function isInvoicePrintAreaSheet(sheetName: string): boolean {
+    const name = sheetName.trim();
+    return (
+        name === "Invoice" ||
+        name === "Job description" ||
+        name.startsWith("Time Sheet")
+    );
+}
+
+function excelDefinedNameSheetRef(sheetName: string): string {
+    const escaped = sheetName.replace(/'/g, "''");
+    return /[^A-Za-z0-9]/.test(sheetName) ? `'${escaped}'` : escaped;
+}
+
+function decodeXmlEntities(value: string): string {
+    return value
+        .replace(/&apos;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&");
+}
+
+function parsePrintAreaValue(value: string): {
+    sheetRef: string;
+    sheetName: string;
+    absStartCol: string;
+    startCol: string;
+    absStartRow: string;
+    startRow: string;
+    absEndCol: string;
+    endCol: string;
+    absEndRow: string;
+    endRow: string;
+} | null {
+    const areaMatch = value.trim().match(
+        /^(.*?)!(\$?)([A-Z]+)(\$?)(\d+):(\$?)([A-Z]+)(\$?)(\d+)$/
+    );
+    if (!areaMatch) return null;
+    return {
+        sheetRef: areaMatch[1],
+        sheetName: decodeXmlEntities(areaMatch[1]).replace(/'/g, "").trim(),
+        absStartCol: areaMatch[2],
+        startCol: areaMatch[3],
+        absStartRow: areaMatch[4],
+        startRow: areaMatch[5],
+        absEndCol: areaMatch[6],
+        endCol: areaMatch[7],
+        absEndRow: areaMatch[8],
+        endRow: areaMatch[9],
+    };
+}
+
+function worksheetDimensionLastCol(xml: string): string | undefined {
+    return xml.match(/<dimension\b[^>]*ref="[A-Z]+\d+:([A-Z]+)\d+"/)?.[1];
+}
+
+function buildPrintAreaValue(
+    sheetName: string,
+    startCol: string,
+    startRow: string,
+    endCol: string,
+    endRow: number
+): string {
+    return `${excelDefinedNameSheetRef(sheetName)}!$${startCol}$${startRow}:$${endCol}$${endRow}`;
+}
+
+async function syncPrintAreasToCompanyAddressFooter(
+    zip: JSZip,
+    rowShiftBySheetName: Map<string, number>,
+    colShiftBySheetName: Map<string, number> = new Map()
+): Promise<void> {
     const workbookFile = zip.file("xl/workbook.xml");
     if (!workbookFile) return;
 
+    const sheets = await readWorkbookSheetInfos(zip);
+    const sharedStrings = extractSharedStrings(
+        await zip.file("xl/sharedStrings.xml")?.async("string")
+    );
     const xml = await workbookFile.async("string");
-    const nextXml = xml.replace(
+
+    const existingBySheet = new Map<
+        string,
+        NonNullable<ReturnType<typeof parsePrintAreaValue>>
+    >();
+    for (const match of xml.matchAll(
+        /<definedName\b[^>]*name="_xlnm\.Print_Area"[^>]*>[\s\S]*?<\/definedName>/g
+    )) {
+        const value = match[0].replace(/<[^>]+>/g, "").trim();
+        const parsed = parsePrintAreaValue(value);
+        if (parsed) existingBySheet.set(parsed.sheetName, parsed);
+    }
+
+    const nextRangeBySheet = new Map<string, string>();
+    for (const sheet of sheets) {
+        const sheetName = sheet.name.trim();
+        if (!isInvoicePrintAreaSheet(sheetName)) continue;
+
+        const sheetXml = await zip.file(sheet.path)?.async("string");
+        if (!sheetXml) continue;
+
+        const addressRow = lastRowContainingText(
+            sheetXml,
+            sharedStrings,
+            COMPANY_ADDRESS_ROW_PATTERN
+        );
+        const existing = existingBySheet.get(sheetName);
+        const colShift = colShiftBySheetName.get(sheetName) ?? 0;
+        const rowShift = rowShiftBySheetName.get(sheetName) ?? 0;
+
+        let endRow: number | undefined;
+        if (addressRow) {
+            endRow = addressRow + PRINT_AREA_ROWS_BELOW_ADDRESS;
+        } else if (existing && rowShift) {
+            endRow = Number.parseInt(existing.endRow, 10) + rowShift;
+        }
+        if (!endRow || !Number.isFinite(endRow) || endRow < 1) continue;
+
+        const startCol = existing?.startCol ?? "A";
+        const startRow = existing?.startRow ?? "1";
+        const existingEndColNum = existing
+            ? columnLetterToNumber(existing.endCol) + colShift
+            : undefined;
+        const endCol =
+            existingEndColNum && Number.isFinite(existingEndColNum)
+                ? columnNumberToLetter(existingEndColNum)
+                : worksheetDimensionLastCol(sheetXml) ?? existing?.endCol ?? "N";
+
+        nextRangeBySheet.set(
+            sheetName,
+            buildPrintAreaValue(sheetName, startCol, startRow, endCol, endRow)
+        );
+    }
+
+    if (nextRangeBySheet.size === 0) return;
+
+    let nextXml = xml.replace(
         /(<definedName\b[^>]*name="_xlnm\.Print_Area"[^>]*>)([\s\S]*?)(<\/definedName>)/g,
         (match, open: string, value: string, close: string) => {
-            const areaMatch = value.match(
-                /^(.*?)!(\$?[A-Z]+\$?\d+:\$?[A-Z]+\$?)(\d+)$/
-            );
-            if (!areaMatch) return match;
-
-            const sheetName = areaMatch[1]
-                .replace(/&apos;|'/g, "")
-                .trim();
-            const shift = rowShiftBySheetName.get(sheetName);
-            if (!shift) return match;
-
-            const lastRow = Number.parseInt(areaMatch[3], 10);
-            if (!Number.isFinite(lastRow)) return match;
-
-            return `${open}${areaMatch[1]}!${areaMatch[2]}${lastRow + shift}${close}`;
+            const parsed = parsePrintAreaValue(value);
+            if (!parsed) return match;
+            const nextValue = nextRangeBySheet.get(parsed.sheetName);
+            if (!nextValue) return match;
+            nextRangeBySheet.delete(parsed.sheetName);
+            return `${open}${nextValue}${close}`;
         }
     );
+
+    const missing = [...nextRangeBySheet.entries()];
+    if (missing.length > 0) {
+        const newNames = missing
+            .map(([sheetName, value]) => {
+                const localSheetId = sheets.findIndex(
+                    (sheet) => sheet.name.trim() === sheetName
+                );
+                if (localSheetId < 0) return "";
+                return `<definedName name="_xlnm.Print_Area" localSheetId="${localSheetId}">${value}</definedName>`;
+            })
+            .filter(Boolean)
+            .join("");
+
+        if (/<definedNames\b[^>]*>/.test(nextXml)) {
+            nextXml = nextXml.replace(
+                /(<definedNames\b[^>]*>)/,
+                `$1${newNames}`
+            );
+        } else {
+            nextXml = nextXml.replace(
+                /<\/sheets>/,
+                `</sheets><definedNames>${newNames}</definedNames>`
+            );
+        }
+    }
 
     if (nextXml !== xml) zip.file("xl/workbook.xml", nextXml);
 }
@@ -3254,6 +3954,7 @@ async function stripXlsxStylesForExcelCompatibility(
         byOutputPath: Map<string, Map<string, string>>;
         layoutByOutputPath: Map<string, TemplateWorksheetLayout>;
         rowShiftBySheetName: Map<string, number>;
+        colShiftBySheetName: Map<string, number>;
     }
 ): Promise<void> {
     for (const path of worksheetPaths) {
@@ -3609,7 +4310,7 @@ function resetRdTotalFormulas(
     lastDataRow: number,
     totalRow: number
 ) {
-    for (const col of ["F", "G", "H", "I", "J", "K", "L"] as const) {
+    for (const col of ["F", "G", "H", "I", "J", "K", "L", "M"] as const) {
         const cell = ws.getCell(`${col}${totalRow}`);
         cell.value = {
             formula: `SUM(${col}${startRow}:${col}${lastDataRow})`,
@@ -3669,16 +4370,19 @@ function ensureTimesheetRowCapacity(
     startRow: number,
     lastDataRow: number,
     totalRowsNeeded: number,
-    styleSourceRows: readonly number[]
+    styleSourceRows: readonly number[],
+    blankRowBeforeTotal = false
 ): number {
     const capacity = Math.max(0, lastDataRow - startRow + 1);
     if (totalRowsNeeded <= capacity) {
         return 0;
     }
+    const extraDataRows = totalRowsNeeded - capacity;
+    const extraRowCount = extraDataRows + (blankRowBeforeTotal ? 1 : 0);
     return insertTimesheetRowsAfterTemplate(
         ws,
         lastDataRow,
-        totalRowsNeeded - capacity,
+        extraRowCount,
         styleSourceRows
     );
 }
@@ -3704,7 +4408,7 @@ function ensureCommentRowCapacity(
 
 /** Normal 인보이스 Time Sheet / Job description 정보표 2·3행 사이 구분선 */
 function applyNormalSheetInfoTableMiddleDividerBorder(ws: ExcelJS.Worksheet) {
-    for (let col = 2; col <= 13; col += 1) {
+    for (let col = 2; col <= 14; col += 1) {
         if (!isMergeMasterCell(ws, 8, col)) continue;
         applyBorderToCellSafe(ws, 8, col, (cell) => {
             applyCellBorderPatch(cell, {
@@ -3873,14 +4577,16 @@ function cloneWorksheetLike(source: ExcelJS.Worksheet, targetName: string) {
         target.addImage(nextImageId, image.range);
     }
 
-    // 일부 병합/스타일 케이스에서 H8 우측 border가 사라지는 문제를 원본 기준으로 복원한다.
-    const sourceH8 = source.getCell("H8");
-    const targetH8 = target.getCell("H8");
-    if (sourceH8.style?.border) {
-        targetH8.style = {
-            ...targetH8.style,
-            border: { ...sourceH8.style.border },
-        };
+    // 일부 병합/스타일 케이스에서 정보표 중간 구분선 border가 사라지는 문제를 원본 기준으로 복원한다.
+    for (const address of ["H8", "I8"] as const) {
+        const sourceCell = source.getCell(address);
+        const targetCell = target.getCell(address);
+        if (sourceCell.style?.border) {
+            targetCell.style = {
+                ...targetCell.style,
+                border: { ...sourceCell.style.border },
+            };
+        }
     }
         applyNormalTimesheetSheetBorderFormatting(target);
 
@@ -3952,6 +4658,125 @@ export async function fillInvoiceExcelWorkbook(
     return workbook;
 }
 
+/** 엑셀 열 너비 6.57 ≈ 51픽셀 (Calibri 기본, 픽셀 ≈ 너비×7+5) */
+const TIMESHEET_COL_WIDTH_51PX = 6.57;
+const EXCEL_DEFAULT_COL_PIXELS_PER_WIDTH = 7;
+const TIMESHEET_MEALS_COL = 7;
+/** Normal 타임시트만: 출력 H열(8)·M열(13) 픽셀 증가 */
+const NORMAL_TIMESHEET_COL_H_EXTRA_PX = 3;
+const NORMAL_TIMESHEET_COL_M_EXTRA_PX = 2;
+
+function timesheetSheetHasTotalMeals(ws: ExcelJS.Worksheet): boolean {
+    const maxRow = Math.min(ws.rowCount || 20, 20);
+    for (let row = 1; row <= maxRow; row += 1) {
+        for (let col = 6; col <= 8; col += 1) {
+            const text = getWorksheetCellDisplayText(ws.getCell(row, col));
+            if (/Total\s*Meals/i.test(text)) return true;
+        }
+    }
+    return false;
+}
+
+function findTimesheetHeaderRowByText(
+    ws: ExcelJS.Worksheet,
+    pattern: RegExp
+): { row: number; col: number } | undefined {
+    const maxRow = Math.min(ws.rowCount || 16, 16);
+    for (let row = 8; row <= maxRow; row += 1) {
+        for (let col = 2; col <= 16; col += 1) {
+            const text = getWorksheetCellDisplayText(ws.getCell(row, col));
+            if (pattern.test(text)) return { row, col };
+        }
+    }
+    return undefined;
+}
+
+function findTimesheetTotalRow(ws: ExcelJS.Worksheet): number | undefined {
+    const maxRow = Math.min(ws.rowCount || 80, 80);
+    for (let row = 14; row <= maxRow; row += 1) {
+        for (const col of [4, 5] as const) {
+            const text = getWorksheetCellDisplayText(ws.getCell(row, col));
+            if (text.trim().toLowerCase() === "total") return row;
+        }
+    }
+    return undefined;
+}
+
+function copyTimesheetCellStyle(
+    ws: ExcelJS.Worksheet,
+    fromAddress: string,
+    toAddress: string
+) {
+    const source = ws.getCell(fromAddress);
+    const target = ws.getCell(toAddress);
+    target.style = { ...source.style };
+    if (source.font) target.font = { ...source.font };
+    if (source.alignment) target.alignment = { ...source.alignment };
+    if (source.border) target.border = { ...source.border };
+    if (source.fill) target.fill = { ...source.fill };
+    if (source.numFmt) target.numFmt = source.numFmt;
+}
+
+/**
+ * Time Sheet F열(Total Hours)과 G열 사이에 Total Meals 열을 삽입한다.
+ * 엑셀에서 G열 선택 후 '삽입'한 것과 같다. 이미 있으면 건너뛴다.
+ */
+function ensureTimesheetTotalMealsColumn(ws: ExcelJS.Worksheet) {
+    if (timesheetSheetHasTotalMeals(ws)) return;
+
+    const hoursHeader =
+        findTimesheetHeaderRowByText(ws, /Total\s*Hours/i) ?? {
+            row: 11,
+            col: 6,
+        };
+    const hoursMerge = findMergeContainingCell(
+        ws,
+        hoursHeader.row,
+        hoursHeader.col
+    ) ?? {
+        top: 11,
+        bottom: 13,
+        left: 6,
+        right: 6,
+    };
+
+    spliceColumnsWithLayoutRepair(ws, TIMESHEET_MEALS_COL, 1);
+    shiftWorksheetFormulaColRefs(ws, TIMESHEET_MEALS_COL, 1);
+    shiftImagesAfterColumn(ws, TIMESHEET_MEALS_COL, 1);
+
+    const headerTop = hoursMerge.top;
+    const headerBottom = hoursMerge.bottom;
+    safeMergeCells(ws, `G${headerTop}:G${headerBottom}`);
+    copyTimesheetCellStyle(ws, `F${headerTop}`, `G${headerTop}`);
+
+    const headerCell = ws.getCell(`G${headerTop}`);
+    headerCell.value = "Total\nMeals";
+    headerCell.alignment = {
+        ...(headerCell.alignment ?? {}),
+        wrapText: true,
+        horizontal: "center",
+        vertical: "center",
+    };
+    headerCell.font = {
+        ...(headerCell.font ?? {}),
+        bold: true,
+    };
+
+    ws.getColumn(6).width = TIMESHEET_COL_WIDTH_51PX;
+    ws.getColumn(7).width = TIMESHEET_COL_WIDTH_51PX;
+
+    const totalRow = findTimesheetTotalRow(ws);
+    if (!totalRow) return;
+
+    const dataStart = headerBottom + 1;
+    const dataEnd = totalRow - 1;
+    copyTimesheetCellStyle(ws, `F${totalRow}`, `G${totalRow}`);
+    setFormulaCellValue(
+        ws.getCell(`G${totalRow}`),
+        `SUM(G${dataStart}:G${dataEnd})`
+    );
+}
+
 export async function fillNormalTimesheetInvoiceExcelWorkbook(
     templateBuffer: ArrayBuffer,
     mappings: InvoiceExcelFieldMappings | null | undefined,
@@ -3968,6 +4793,8 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
 
     const baseSheet = resolveTimeSheetBaseWorksheet(workbook, mappings);
     if (!baseSheet) return workbook;
+    ensureTimesheetTotalMealsColumn(baseSheet);
+    widenNormalTimesheetColumns(baseSheet);
 
     const sheetNames =
         sections.length <= 1
@@ -4004,12 +4831,13 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
             D: "time_from",
             E: "time_to",
             F: "total_hours",
-            G: "weekday_normal",
-            H: "weekday_after",
-            I: "weekend_normal",
-            J: "weekend_after",
-            K: "travel_weekday",
-            L: "travel_weekend",
+            G: "total_meals",
+            H: "weekday_normal",
+            I: "weekday_after",
+            J: "weekend_normal",
+            K: "weekend_after",
+            L: "travel_weekday",
+            M: "travel_weekend",
         };
 
         setCellValue(
@@ -4021,8 +4849,8 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
         setCellValue(ws, "B9", withLeadingSpace(section.workPlace));
         setCellValue(ws, "E7", withLeadingSpace(section.engineerNameAndTitle));
         setCellValue(ws, "E9", withLeadingSpace(section.mechanicNamesAndNumbers));
-        setCellValue(ws, "J7", withLeadingSpace(section.departureDisplay));
-        setCellValue(ws, "J9", withLeadingSpace(section.returnDisplay));
+        setCellValue(ws, "K7", withLeadingSpace(section.departureDisplay));
+        setCellValue(ws, "K9", withLeadingSpace(section.returnDisplay));
         setCellValue(ws, "C12", resolveSectionYear(section.rows));
         applyNormalTimesheetSheetBorderFormatting(ws);
 
@@ -4031,7 +4859,8 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
             startRow,
             NORMAL_TIMESHEET_EXCEL.lastDataRow,
             rowRecords.length,
-            [NORMAL_TIMESHEET_EXCEL.lastDataRow]
+            [NORMAL_TIMESHEET_EXCEL.lastDataRow],
+            true
         );
         const commentsStartRow =
             NORMAL_TIMESHEET_EXCEL.commentsStartRow + insertedRows;
@@ -4057,6 +4886,13 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
                 const raw = rec[fieldKey];
                 const displayValue = raw === 0 ? "" : raw;
                 setCellValue(ws, `${shifted}${lineNo}`, displayValue);
+            }
+            if (!Object.values(cols).includes("total_meals")) {
+                setCellValue(
+                    ws,
+                    `G${lineNo}`,
+                    excelNumericCell(Number(rec.total_meals ?? 0))
+                );
             }
         });
 
@@ -4111,6 +4947,7 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
 
     const ws = resolveTimeSheetBaseWorksheet(workbook, mappings);
     if (!ws) return workbook;
+    ensureTimesheetTotalMealsColumn(ws);
 
     ws.name = "Time Sheet";
 
@@ -4189,28 +5026,29 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
         setCellValue(ws, `D${dataRow}`, row.timeFrom);
         setCellValue(ws, `E${dataRow}`, row.timeTo);
         setCellValue(ws, `F${dataRow}`, excelNumericCell(row.totalHours));
-        setCellValue(ws, `G${dataRow}`, excelNumericCell(row.weekdayNormal));
-        setCellValue(ws, `H${dataRow}`, excelNumericCell(row.weekdayAfter));
-        setCellValue(ws, `I${dataRow}`, excelNumericCell(row.weekendNormal));
-        setCellValue(ws, `J${dataRow}`, excelNumericCell(row.weekendAfter));
-        setCellValue(ws, `K${dataRow}`, excelNumericCell(row.travelWeekday));
-        setCellValue(ws, `L${dataRow}`, excelNumericCell(row.travelWeekend));
+        setCellValue(ws, `G${dataRow}`, excelNumericCell(row.totalMeals ?? 0));
+        setCellValue(ws, `H${dataRow}`, excelNumericCell(row.weekdayNormal));
+        setCellValue(ws, `I${dataRow}`, excelNumericCell(row.weekdayAfter));
+        setCellValue(ws, `J${dataRow}`, excelNumericCell(row.weekendNormal));
+        setCellValue(ws, `K${dataRow}`, excelNumericCell(row.weekendAfter));
+        setCellValue(ws, `L${dataRow}`, excelNumericCell(row.travelWeekday));
+        setCellValue(ws, `M${dataRow}`, excelNumericCell(row.travelWeekend));
 
-        for (const col of ["B", "C", "D", "E", "F"] as const) {
+        for (const col of ["B", "C", "D", "E", "F", "G"] as const) {
             safeMergeCells(ws, `${col}${dataRow}:${col}${descRow}`);
         }
 
-        safeMergeCells(ws, `G${descRow}:M${descRow}`);
+        safeMergeCells(ws, `H${descRow}:N${descRow}`);
         forceRdSummaryRowRightBorder(ws, descRow);
         const summary = row.summaryLine.trim();
-        setCellValue(ws, `G${descRow}`, summary.length > 0 ? ` ${summary}` : "");
+        setCellValue(ws, `H${descRow}`, summary.length > 0 ? ` ${summary}` : "");
 
         currentRow += 2;
     }
 
     if (
         currentRow < commentsStartRow &&
-        isRowEmptyBetweenColumns(ws, currentRow, 2, 12)
+        isRowEmptyBetweenColumns(ws, currentRow, 2, 14)
     ) {
         ws.getRow(currentRow).hidden = true;
         ws.getRow(currentRow).height = 0;

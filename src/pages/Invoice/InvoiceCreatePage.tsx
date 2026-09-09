@@ -12556,7 +12556,27 @@ export default function InvoiceCreatePage() {
                             "departure"
                         ),
                         returnDisplay: getBoundaryDisplay(section.rows, "return"),
-                        rows: section.rows,
+                        rows: section.rows.map((row) => {
+                            const isMealGroupLead =
+                                getMealGroupRows(
+                                    section.title,
+                                    section.key,
+                                    section.rows,
+                                    row
+                                )[0]?.rowId === row.rowId;
+                            return {
+                                ...row,
+                                description: row.description ?? "",
+                                totalMeals: isMealGroupLead
+                                    ? getSectionMealGroupData(
+                                          section.title,
+                                          section.key,
+                                          section.rows,
+                                          row
+                                      ).totalMeals
+                                    : 0,
+                            };
+                        }),
                         comments: resolveTimesheetSectionComments(
                             section,
                             getNormalTimesheetComments(section)
@@ -12579,6 +12599,12 @@ export default function InvoiceCreatePage() {
                         timeFrom: row.timeFrom,
                         timeTo: row.timeTo,
                         totalHours: getTimesheetRowTotalHoursForGrid(row),
+                        totalMeals: getSectionMealGroupData(
+                            "R&D TIMESHEET",
+                            undefined,
+                            timesheetRows,
+                            row
+                        ).totalMeals,
                         weekdayNormal: wn,
                         weekdayAfter: wa,
                         weekendNormal: wkn,
@@ -12748,6 +12774,8 @@ export default function InvoiceCreatePage() {
         getPersonnelDisplayData,
         getTimesheetRowTotalHoursForGrid,
         formatRdTimesheetRowSummaryLine,
+        getMealGroupRows,
+        getSectionMealGroupData,
         rndTimesheetComments,
         timesheetCommentOverridesBySectionKey,
         showError,
