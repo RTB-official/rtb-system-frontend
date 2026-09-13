@@ -10,6 +10,8 @@ import React, {
 import { useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
+import Button from "../../components/common/Button";
+import Select from "../../components/common/Select";
 import {
     IconArrowBack,
     IconClose,
@@ -47,6 +49,7 @@ import {
     enumerateDateRange,
     fetchHolidayDateSet,
     isWeekend,
+    isWeekendOrHoliday,
 } from "../../utils/holidayDates";
 import {
     aggregateWorkLogEntryDateRange,
@@ -1625,6 +1628,11 @@ export default function InvoiceCreatePage() {
         useState("");
     const [timesheetCommentAddModalSectionKey, setTimesheetCommentAddModalSectionKey] =
         useState<string | null>(null);
+    const [snackReplacePanelOpen, setSnackReplacePanelOpen] = useState(false);
+    const [snackReplaceMeal, setSnackReplaceMeal] = useState<"Lunch" | "Dinner">(
+        "Lunch"
+    );
+    const [snackReplaceDate, setSnackReplaceDate] = useState("");
     const [timesheetCommentTrashModalOpen, setTimesheetCommentTrashModalOpen] =
         useState(false);
     const [timesheetCommentTrashModalSectionKey, setTimesheetCommentTrashModalSectionKey] =
@@ -9272,11 +9280,142 @@ export default function InvoiceCreatePage() {
         return lines;
     };
 
+    /**
+     * 타임시트 청구·사이드패널 빨간날과 동일 판정
+     * (`isWeekend(date) || holidayDateSet.has(date)`)
+     */
+    const isInvoiceWeekendOrHolidayDate = (ymd: string): boolean =>
+        isWeekendOrHoliday(ymd, holidayDateSet);
+
+    /** 토·일 제외, 기존 공휴일 판정으로 평일 공휴일 코멘트 생성 */
+    const getNationalHolidayInvoiceComments = (
+        section: NormalTimesheetSection
+    ): string[] => {
+        const activityDates = new Set<string>();
+        for (const row of section.rows) {
+            if (row.date) {
+                activityDates.add(row.date);
+            }
+            for (const entry of row.sourceEntries ?? []) {
+                const from = entry.dateFrom?.trim() ?? "";
+                const to = (entry.dateTo ?? entry.dateFrom)?.trim() ?? "";
+                if (!from) continue;
+                enumerateDateRange(from, to || from).forEach((d) =>
+                    activityDates.add(d)
+                );
+            }
+        }
+
+        const sortedActivity = Array.from(activityDates)
+            .filter(Boolean)
+            .sort();
+        if (sortedActivity.length === 0) {
+            return [];
+        }
+
+        // 섹션 활동 기간 전체 + 타임시트에 주말/공휴일 청구된 평일
+        const candidateDates = new Set(
+            enumerateDateRange(
+                sortedActivity[0],
+                sortedActivity[sortedActivity.length - 1]
+            )
+        );
+        for (const row of section.rows) {
+            if (!row.date || isWeekend(row.date)) continue;
+            const tc = row.timesheetChargeDisplay;
+            const weekendNormal = tc?.weekendNormal ?? row.weekendNormal ?? 0;
+            const weekendAfter = tc?.weekendAfter ?? row.weekendAfter ?? 0;
+            const travelWeekend = row.travelWeekend ?? 0;
+            if (weekendNormal > 0 || weekendAfter > 0 || travelWeekend > 0) {
+                candidateDates.add(row.date);
+            }
+        }
+
+        return Array.from(candidateDates)
+            .sort()
+            .filter((date) => {
+                if (isWeekend(date)) return false;
+                // 사이드패널 빨간날(평일 공휴일)과 동일
+                if (isInvoiceWeekendOrHolidayDate(date)) return true;
+                // 타임시트 생성 시 holidaySet 기준으로 주말 청구된 평일
+                return section.rows.some((row) => {
+                    if (row.date !== date) return false;
+                    const tc = row.timesheetChargeDisplay;
+                    const weekendNormal =
+                        tc?.weekendNormal ?? row.weekendNormal ?? 0;
+                    const weekendAfter =
+                        tc?.weekendAfter ?? row.weekendAfter ?? 0;
+                    const travelWeekend = row.travelWeekend ?? 0;
+                    return (
+                        weekendNormal > 0 ||
+                        weekendAfter > 0 ||
+                        travelWeekend > 0
+                    );
+                });
+            })
+            .map(
+                (date) =>
+                    `${formatDate(date)} is National Holiday in Korea.`
+            );
+    };
+
+    /**
+     * Travel Hours 표시 `이동+대기`(예: 5+4)에서 대기 시간을 읽어 코멘트 생성.
+     * 예: `4hours waiting hours occurred on 14.Aug.`
+     */
+    const getWaitingHoursInvoiceComments = (
+        section: NormalTimesheetSection
+    ): string[] => {
+        const parseWaitingFromTravelDisplay = (
+            display?: string
+        ): number => {
+            if (!display) return 0;
+            const match = /^(\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)$/.exec(
+                display.trim()
+            );
+            if (!match) return 0;
+            const waiting = Number(match[2]);
+            return Number.isFinite(waiting) && waiting > 0 ? waiting : 0;
+        };
+
+        const formatWaitingHoursValue = (value: number): string => {
+            const rounded = Math.round(value * 10) / 10;
+            return Number.isInteger(rounded)
+                ? String(rounded)
+                : String(rounded);
+        };
+
+        const waitingByDate = new Map<string, number>();
+        for (const row of section.rows) {
+            if (!row.date) continue;
+            const waiting =
+                parseWaitingFromTravelDisplay(row.travelWeekdayDisplay) +
+                parseWaitingFromTravelDisplay(row.travelWeekendDisplay);
+            if (waiting <= 0) continue;
+            waitingByDate.set(
+                row.date,
+                Math.round(
+                    ((waitingByDate.get(row.date) ?? 0) + waiting) * 10
+                ) / 10
+            );
+        }
+
+        return Array.from(waitingByDate.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(
+                ([date, hours]) =>
+                    `${formatWaitingHoursValue(hours)} hours waiting hours occurred on ${formatDate(date)}.`
+            );
+    };
+
     const getNormalTimesheetComments = (
         section: NormalTimesheetSection
     ): string[] => {
         const oneTimeJobComments = getManualRoundedOneTimeJobInvoiceComments(section);
         const noLunchBreakComments = getNoLunchBreakInvoiceComments(section);
+        const nationalHolidayComments =
+            getNationalHolidayInvoiceComments(section);
+        const waitingHoursComments = getWaitingHoursInvoiceComments(section);
         const orderCommentsByDate = (items: string[]): string[] => {
             const dateLabels = Array.from(
                 new Set(section.rows.map((row) => row.date).filter(Boolean))
@@ -9311,6 +9450,8 @@ export default function InvoiceCreatePage() {
 
         if (!currentVessel || !tripCity) {
             return orderCommentsByDate([
+                ...nationalHolidayComments,
+                ...waitingHoursComments,
                 ...noLunchBreakComments,
                 ...oneTimeJobComments,
             ]);
@@ -9581,6 +9722,8 @@ export default function InvoiceCreatePage() {
 
         return orderCommentsByDate([
             ...comments,
+            ...nationalHolidayComments,
+            ...waitingHoursComments,
             ...noLunchBreakComments,
             ...oneTimeJobComments,
         ]);
@@ -9682,7 +9825,35 @@ export default function InvoiceCreatePage() {
                 isManual: true,
                 sourceKey: comment,
             }));
-        return [...autoItems, ...manualItems];
+
+        const dateLabels = Array.from(
+            new Set(section.rows.map((row) => row.date).filter(Boolean))
+        )
+            .sort()
+            .map(formatDate);
+        const commentDateLabelRe =
+            /\b(\d{2}\.(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))\b/g;
+        const getDateOrder = (text: string) => {
+            let best = Number.MAX_SAFE_INTEGER;
+            for (const match of text.matchAll(commentDateLabelRe)) {
+                const index = dateLabels.indexOf(match[1] ?? "");
+                if (index >= 0 && index < best) {
+                    best = index;
+                }
+            }
+            return best;
+        };
+
+        return [...autoItems, ...manualItems]
+            .map((item, index) => ({
+                item,
+                index,
+                dateOrder: getDateOrder(item.text),
+            }))
+            .sort(
+                (a, b) => a.dateOrder - b.dateOrder || a.index - b.index
+            )
+            .map(({ item }) => item);
     };
 
     const resolveTimesheetSectionComments = (
@@ -10129,6 +10300,9 @@ export default function InvoiceCreatePage() {
                             () => {
                                 setTimesheetCommentAddModalSectionKey(sectionKey);
                                 setTimesheetCommentAddModalDraft("");
+                                setSnackReplacePanelOpen(false);
+                                setSnackReplaceMeal("Lunch");
+                                setSnackReplaceDate("");
                                 setTimesheetCommentAddModalOpen(true);
                             },
                             <IconPlus className="h-4 w-4" />
@@ -12731,7 +12905,10 @@ export default function InvoiceCreatePage() {
             const blob = await invoiceExcelWorkbookToBlob(workbook);
             triggerExcelDownload(
                 blob,
-                buildInvoiceExcelDownloadFilename(workLogDataList)
+                buildInvoiceExcelDownloadFilename(
+                    workLogDataList,
+                    workItemDisplay
+                )
             );
             showSuccess("엑셀 파일을 저장했습니다.");
         } catch (e) {
@@ -15022,6 +15199,9 @@ export default function InvoiceCreatePage() {
                         setTimesheetCommentAddModalOpen(false);
                         setTimesheetCommentAddModalSectionKey(null);
                         setTimesheetCommentAddModalDraft("");
+                        setSnackReplacePanelOpen(false);
+                        setSnackReplaceMeal("Lunch");
+                        setSnackReplaceDate("");
                     }}
                     title="코멘트 추가"
                     maxWidth="max-w-2xl"
@@ -15034,6 +15214,9 @@ export default function InvoiceCreatePage() {
                                     setTimesheetCommentAddModalOpen(false);
                                     setTimesheetCommentAddModalSectionKey(null);
                                     setTimesheetCommentAddModalDraft("");
+                                    setSnackReplacePanelOpen(false);
+                                    setSnackReplaceMeal("Lunch");
+                                    setSnackReplaceDate("");
                                 }}
                             >
                                 취소
@@ -15053,6 +15236,9 @@ export default function InvoiceCreatePage() {
                                     setTimesheetCommentAddModalOpen(false);
                                     setTimesheetCommentAddModalSectionKey(null);
                                     setTimesheetCommentAddModalDraft("");
+                                    setSnackReplacePanelOpen(false);
+                                    setSnackReplaceMeal("Lunch");
+                                    setSnackReplaceDate("");
                                 }}
                             >
                                 추가
@@ -15068,14 +15254,93 @@ export default function InvoiceCreatePage() {
                     </label>
                     <textarea
                         id="timesheet-comment-add-input"
-                        className="min-h-[8rem] w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        rows={5}
+                        className="min-h-[3.5rem] w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        rows={2}
                         value={timesheetCommentAddModalDraft}
                         onChange={(event) =>
                             setTimesheetCommentAddModalDraft(event.target.value)
                         }
                         placeholder="추가할 코멘트를 입력하세요."
                     />
+                    <div className="mt-3">
+                        <Button
+                            type="button"
+                            variant={snackReplacePanelOpen ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                                const dates = Array.from(
+                                    new Set(
+                                        timesheetRows
+                                            .map((row) => row.date)
+                                            .filter(Boolean)
+                                    )
+                                ).sort();
+                                const nextDate =
+                                    snackReplaceDate && dates.includes(snackReplaceDate)
+                                        ? snackReplaceDate
+                                        : (dates[0] ?? "");
+                                const nextMeal = snackReplaceMeal;
+                                setSnackReplaceDate(nextDate);
+                                setSnackReplacePanelOpen(true);
+                                if (nextDate) {
+                                    setTimesheetCommentAddModalDraft(
+                                        `${nextMeal} were replaced with snacks without taking meal breaks in order to continue the work on ${formatDate(nextDate)}.`
+                                    );
+                                }
+                            }}
+                        >
+                            간식으로 대체
+                        </Button>
+                    </div>
+                    {snackReplacePanelOpen ? (
+                        <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:grid-cols-2">
+                            <Select
+                                label="식사"
+                                size="sm"
+                                fullWidth
+                                value={snackReplaceMeal}
+                                options={[
+                                    { value: "Lunch", label: "Lunch" },
+                                    { value: "Dinner", label: "Dinner" },
+                                ]}
+                                onChange={(value) => {
+                                    const meal =
+                                        value === "Dinner" ? "Dinner" : "Lunch";
+                                    setSnackReplaceMeal(meal);
+                                    if (!snackReplaceDate) return;
+                                    setTimesheetCommentAddModalDraft(
+                                        `${meal} were replaced with snacks without taking meal breaks in order to continue the work on ${formatDate(snackReplaceDate)}.`
+                                    );
+                                }}
+                            />
+                            <Select
+                                label="날짜"
+                                size="sm"
+                                fullWidth
+                                value={snackReplaceDate}
+                                placeholder="날짜 선택"
+                                options={Array.from(
+                                    new Set(
+                                        timesheetRows
+                                            .map((row) => row.date)
+                                            .filter(Boolean)
+                                    )
+                                )
+                                    .sort()
+                                    .map((date) => ({
+                                        value: date,
+                                        label: formatDate(date),
+                                    }))}
+                                onChange={(value) => {
+                                    setSnackReplaceDate(value);
+                                    if (!value) return;
+                                    setTimesheetCommentAddModalDraft(
+                                        `${snackReplaceMeal} were replaced with snacks without taking meal breaks in order to continue the work on ${formatDate(value)}.`
+                                    );
+                                }}
+                            />
+                        </div>
+                    ) : null}
                 </BaseModal>
 
                 <InvoiceReportsPickerModal

@@ -226,6 +226,9 @@ const INVOICE_SHEET_COLS = {
     total: "J",
 } as const;
 
+/** Invoice 탭 페이지 나누기 미리보기 오른쪽 끝 */
+const INVOICE_PRINT_AREA_END_COL = "K";
+
 const INVOICE_SHEET_CLEAR_COLS = [
     "A",
     "B",
@@ -302,11 +305,13 @@ function uniqJoin(values: (string | null | undefined)[], sep: string): string {
 
 /**
  * 인보이스 엑셀 다운로드 파일명
- * `{업체명}_{호선}_{출장목적}_{기간}_{R}.xlsx`
- * 예: Everllence_ELU_YZJ2023-1552_SOU-booster retrofit_22.Jul~24.Aug.2026_R.xlsx
+ * `{업체명}_{호선}_{Work Item}_{기간}_{R}.xlsx`
+ * 예: Everllence_ELU_YZJ2023-1552_R&D Test_22.Jul~24.Aug.2026_R.xlsx
+ * Work Item은 인보이스 섹션 표시값(override 또는 기본값)을 그대로 사용한다.
  */
 export function buildInvoiceExcelDownloadFilename(
-    workLogDataList: WorkLogFullData[]
+    workLogDataList: WorkLogFullData[],
+    workItem?: string
 ): string {
     if (workLogDataList.length === 0) {
         return "invoice_R.xlsx";
@@ -320,10 +325,7 @@ export function buildInvoiceExcelDownloadFilename(
         workLogDataList.map((w) => w.workLog.vessel),
         "-"
     );
-    const subject = uniqJoin(
-        workLogDataList.map((w) => w.workLog.subject),
-        "-"
-    );
+    const subject = (workItem ?? "").trim();
     const flatEntries = workLogDataList.flatMap((w) => w.entries);
     const { start, end } = aggregateWorkLogEntryDateRange(flatEntries);
     const period = formatInvoiceExcelFilenamePeriod(start, end);
@@ -896,6 +898,15 @@ export function fillInvoiceSheet(
 
     applyInvoiceSheetServiceMaterialLayout(ws);
     applyInvoiceSheetFooterSectionLayout(ws, _variant);
+    const addressRow = findInvoiceSheetRowByDescriptionText(
+        ws,
+        /Jedoro\s*767-16/i,
+        1,
+        Math.max(ws.rowCount || 80, 80)
+    );
+    const printLastRow =
+        (addressRow ?? Math.max(ws.rowCount || 1, 1)) + 1;
+    ws.pageSetup.printArea = `A1:${INVOICE_PRINT_AREA_END_COL}${printLastRow}`;
 }
 
 export function buildInvoiceExcelManpowerGroupInput(
@@ -1432,6 +1443,32 @@ function setBoldRichText(
             {
                 font: {
                     bold: true,
+                    size: fontSize,
+                    ...(fontName ? { name: fontName } : {}),
+                },
+                text: sanitizeExcelCellString(value),
+            },
+        ],
+    };
+}
+
+/** 올림청구(4h/8h) 자동 코멘트 — 엑셀에서만 볼드 */
+function isRoundedBillableInvoiceComment(comment: string): boolean {
+    return /will be invoiced instead of/i.test(comment);
+}
+
+function setTimesheetCommentCell(
+    ws: ExcelJS.Worksheet,
+    address: string,
+    value: string,
+    fontSize: number,
+    fontName?: string
+) {
+    ws.getCell(address).value = {
+        richText: [
+            {
+                font: {
+                    bold: isRoundedBillableInvoiceComment(value),
                     size: fontSize,
                     ...(fontName ? { name: fontName } : {}),
                 },
@@ -2021,10 +2058,12 @@ function buildMinimalWorksheetXml(
         rowAttrs.set(row, attrs);
     }
     const cellMatches = xml.match(/<c\b[\s\S]*?(?:<\/c>|\/>)/g) ?? [];
+    const maxCol = templateLayout?.maxCol;
 
     for (const cellXml of cellMatches) {
         const normalized = normalizeWorksheetCellXml(cellXml, templateStyles);
         if (!normalized) continue;
+        if (maxCol && normalized.col > maxCol) continue;
 
         const row = Number.parseInt(normalized.ref.replace(/^[A-Z]+/, ""), 10);
         if (!Number.isFinite(row) || row < 1) continue;
@@ -2036,6 +2075,13 @@ function buildMinimalWorksheetXml(
 
     injectMissingGrayBarCells(rows, templateStyles);
     injectMissingStyledColumnCells(rows, templateStyles, "G");
+    if (maxCol) {
+        for (const [row, cells] of rows) {
+            const clipped = cells.filter((cell) => cell.col <= maxCol);
+            if (clipped.length > 0) rows.set(row, clipped);
+            else rows.delete(row);
+        }
+    }
 
     const rowXml = [...rows.entries()]
         .sort(([a], [b]) => a - b)
@@ -2053,7 +2099,10 @@ function buildMinimalWorksheetXml(
     const dimensionRef = calculateWorksheetDimensionRef(sheetDataXml) ?? "A1";
     const sheetFormatPr = extractXmlFragment(xml, "sheetFormatPr");
     const cols = templateLayout?.cols || extractXmlFragment(xml, "cols");
-    const mergeCells = extractXmlFragment(xml, "mergeCells");
+    let mergeCells = extractXmlFragment(xml, "mergeCells");
+    if (maxCol) {
+        mergeCells = capMergeCellsXmlToMaxCol(mergeCells, maxCol);
+    }
     const printOptions =
         templateLayout?.printOptions || extractXmlFragment(xml, "printOptions");
     const pageMargins =
@@ -2100,6 +2149,7 @@ type TemplateWorksheetLayout = {
     printOptions?: string;
     pageMargins?: string;
     pageSetup?: string;
+    maxCol?: number;
 };
 
 function extractTemplatePrintLayout(templateXml: string) {
@@ -2524,6 +2574,12 @@ function extractTemplateCellStyles(
     for (const match of xml.matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"[^>]*\bs="(\d+)"/g)) {
         const row = Number.parseInt(match[1].replace(/^[A-Z]+/, ""), 10);
         const col = match[1].replace(/\d+$/, "");
+        if (
+            normalizedSheetName === "Invoice" &&
+            columnLetterToNumber(col) > columnLetterToNumber(INVOICE_PRINT_AREA_END_COL)
+        ) {
+            continue;
+        }
         if (normalizedSheetName === "Time Sheet" && row >= 14) {
             if (timeSheetPatternRows.includes(row)) {
                 timeSheetPatterns.set(`${row}:${col}`, match[2]);
@@ -2920,6 +2976,47 @@ function bumpNormalTimesheetColumnWidthsInColsXml(colsXml: string): string {
         13,
         NORMAL_TIMESHEET_COL_M_EXTRA_PX
     );
+}
+
+function capColsXmlToMaxCol(colsXml: string, maxCol: number): string {
+    if (!colsXml || maxCol < 1) return colsXml;
+    const items = [...colsXml.matchAll(/<col\b[^>]*\/?>/g)].map(
+        (match) => match[0]
+    );
+    if (items.length === 0) return colsXml;
+
+    const kept: string[] = [];
+    for (const item of items) {
+        const min = Number.parseInt(item.match(/\bmin="(\d+)"/)?.[1] ?? "", 10);
+        const max = Number.parseInt(item.match(/\bmax="(\d+)"/)?.[1] ?? "", 10);
+        if (!Number.isFinite(min) || min > maxCol) continue;
+        if (!Number.isFinite(max) || max <= maxCol) {
+            kept.push(item);
+            continue;
+        }
+        kept.push(item.replace(/\bmax="\d+"/, `max="${maxCol}"`));
+    }
+
+    return colsXml.replace(
+        /(<cols\b[^>]*>)[\s\S]*?(<\/cols>)/,
+        `$1${kept.join("")}$2`
+    );
+}
+
+function capMergeCellsXmlToMaxCol(mergeXml: string, maxCol: number): string {
+    if (!mergeXml || maxCol < 1) return mergeXml;
+    const refs = [...mergeXml.matchAll(/<mergeCell\b[^>]*ref="([^"]+)"[^>]*\/?>/g)]
+        .map((match) => {
+            const range = parseMergeRef(match[1]);
+            if (!range || range.left > maxCol) return null;
+            if (range.right <= maxCol) return match[1];
+            return formatMergeRef({ ...range, right: maxCol });
+        })
+        .filter((ref): ref is string => Boolean(ref));
+    if (refs.length === 0) return "";
+    return `<mergeCells count="${refs.length}">${refs
+        .map((ref) => `<mergeCell ref="${ref}"/>`)
+        .join("")}</mergeCells>`;
 }
 
 function bumpExcelJsColumnWidth(
@@ -3448,19 +3545,23 @@ async function buildTemplateStyleMaps(
         }
 
         if (templateName === "Invoice") {
-            layoutByOutputPath.set(
-                outputSheet.path,
-                withTemplatePrintLayout(
-                    {
-                        topRowAttrs: extractTopRowAttributes(templateXml, 12),
-                        sheetViews: extractXmlFragment(templateXml, "sheetViews"),
-                        sheetPr: normalizeSheetPrFragment(
-                            extractXmlFragment(templateXml, "sheetPr")
-                        ),
-                    },
-                    templateXml
-                )
+            const layout = withTemplatePrintLayout(
+                {
+                    topRowAttrs: extractTopRowAttributes(templateXml, 12),
+                    sheetViews: extractXmlFragment(templateXml, "sheetViews"),
+                    sheetPr: normalizeSheetPrFragment(
+                        extractXmlFragment(templateXml, "sheetPr")
+                    ),
+                    maxCol: columnLetterToNumber(INVOICE_PRINT_AREA_END_COL),
+                },
+                templateXml
             );
+            layout.maxCol = columnLetterToNumber(INVOICE_PRINT_AREA_END_COL);
+            layout.cols = capColsXmlToMaxCol(
+                layout.cols ?? "",
+                layout.maxCol
+            );
+            layoutByOutputPath.set(outputSheet.path, layout);
         }
     }
 
@@ -3802,12 +3903,14 @@ function parsePrintAreaValue(value: string): {
     endRow: string;
 } | null {
     const areaMatch = value.trim().match(
-        /^(.*?)!(\$?)([A-Z]+)(\$?)(\d+):(\$?)([A-Z]+)(\$?)(\d+)$/
+        /^(?:(.*?)!)?(\$?)([A-Z]+)(\$?)(\d+):(\$?)([A-Z]+)(\$?)(\d+)$/
     );
     if (!areaMatch) return null;
     return {
-        sheetRef: areaMatch[1],
-        sheetName: decodeXmlEntities(areaMatch[1]).replace(/'/g, "").trim(),
+        sheetRef: areaMatch[1] ?? "",
+        sheetName: decodeXmlEntities(areaMatch[1] ?? "")
+            .replace(/'/g, "")
+            .trim(),
         absStartCol: areaMatch[2],
         startCol: areaMatch[3],
         absStartRow: areaMatch[4],
@@ -3852,11 +3955,22 @@ async function syncPrintAreasToCompanyAddressFooter(
         NonNullable<ReturnType<typeof parsePrintAreaValue>>
     >();
     for (const match of xml.matchAll(
-        /<definedName\b[^>]*name="_xlnm\.Print_Area"[^>]*>[\s\S]*?<\/definedName>/g
+        /<definedName\b([^>]*name="(?:_xlnm\.)?Print_Area"[^>]*)>([\s\S]*?)<\/definedName>/g
     )) {
-        const value = match[0].replace(/<[^>]+>/g, "").trim();
-        const parsed = parsePrintAreaValue(value);
-        if (parsed) existingBySheet.set(parsed.sheetName, parsed);
+        const localSheetId = Number.parseInt(
+            match[1].match(/localSheetId="(\d+)"/)?.[1] ?? "",
+            10
+        );
+        const parsed = parsePrintAreaValue(match[2]);
+        const sheetNameFromId = Number.isFinite(localSheetId)
+            ? sheets[localSheetId]?.name.trim()
+            : undefined;
+        const sheetName = parsed?.sheetName || sheetNameFromId;
+        if (!parsed || !sheetName) continue;
+        existingBySheet.set(sheetName, {
+            ...parsed,
+            sheetName,
+        });
     }
 
     const nextRangeBySheet = new Map<string, string>();
@@ -3889,10 +4003,13 @@ async function syncPrintAreasToCompanyAddressFooter(
         const existingEndColNum = existing
             ? columnLetterToNumber(existing.endCol) + colShift
             : undefined;
-        const endCol =
+        let endCol =
             existingEndColNum && Number.isFinite(existingEndColNum)
                 ? columnNumberToLetter(existingEndColNum)
                 : worksheetDimensionLastCol(sheetXml) ?? existing?.endCol ?? "N";
+        if (sheetName === "Invoice") {
+            endCol = INVOICE_PRINT_AREA_END_COL;
+        }
 
         nextRangeBySheet.set(
             sheetName,
@@ -3903,13 +4020,21 @@ async function syncPrintAreasToCompanyAddressFooter(
     if (nextRangeBySheet.size === 0) return;
 
     let nextXml = xml.replace(
-        /(<definedName\b[^>]*name="_xlnm\.Print_Area"[^>]*>)([\s\S]*?)(<\/definedName>)/g,
-        (match, open: string, value: string, close: string) => {
+        /(<definedName\b([^>]*name="(?:_xlnm\.)?Print_Area"[^>]*)>)([\s\S]*?)(<\/definedName>)/g,
+        (match, open: string, attrs: string, value: string, close: string) => {
+            const localSheetId = Number.parseInt(
+                attrs.match(/localSheetId="(\d+)"/)?.[1] ?? "",
+                10
+            );
             const parsed = parsePrintAreaValue(value);
-            if (!parsed) return match;
-            const nextValue = nextRangeBySheet.get(parsed.sheetName);
+            const sheetNameFromId = Number.isFinite(localSheetId)
+                ? sheets[localSheetId]?.name.trim()
+                : undefined;
+            const sheetName = parsed?.sheetName || sheetNameFromId;
+            if (!sheetName) return match;
+            const nextValue = nextRangeBySheet.get(sheetName);
             if (!nextValue) return match;
-            nextRangeBySheet.delete(parsed.sheetName);
+            nextRangeBySheet.delete(sheetName);
             return `${open}${nextValue}${close}`;
         }
     );
@@ -4904,7 +5029,7 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
             comments.length + 1
         );
         comments.forEach((comment, idx) => {
-            setBoldRichText(
+            setTimesheetCommentCell(
                 ws,
                 `B${commentsStartRow + idx}`,
                 ` ${comment}`,
@@ -5065,7 +5190,7 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
         data.comments.length
     );
     data.comments.forEach((comment, idx) => {
-        setBoldRichText(
+        setTimesheetCommentCell(
             ws,
             `B${commentsStartRow + idx}`,
             ` ${comment}`,
