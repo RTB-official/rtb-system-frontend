@@ -127,54 +127,70 @@ function splitEntryByDate(entry: WorkloadEntry): Array<{
     return segments;
 }
 
+type TimedSegment = {
+    timeFrom: string;
+    timeTo: string;
+    workLogId?: number;
+};
+
 function assignSegmentToWorkIndex(
-    workSegments: Array<{ timeFrom: string; timeTo: string }>,
-    seg: { timeFrom: string; timeTo: string }
+    workSegments: TimedSegment[],
+    seg: TimedSegment
 ): number | null {
     if (workSegments.length === 0) return null;
 
+    const sameLogIndices =
+        seg.workLogId != null
+            ? workSegments
+                  .map((w, i) => ({ w, i }))
+                  .filter(({ w }) => w.workLogId === seg.workLogId)
+                  .map(({ i }) => i)
+            : [];
+    const candidateIndices =
+        sameLogIndices.length > 0
+            ? sameLogIndices
+            : workSegments.map((_, i) => i);
+
     const segStart = timeToMinutes(seg.timeFrom);
     const segEnd = timeToMinutes(seg.timeTo);
-    const workRanges = workSegments.map((w) => ({
-        start: timeToMinutes(w.timeFrom),
-        end: timeToMinutes(w.timeTo),
+    const workRanges = candidateIndices.map((i) => ({
+        index: i,
+        start: timeToMinutes(workSegments[i].timeFrom),
+        end: timeToMinutes(workSegments[i].timeTo),
     }));
 
     // exact boundary match: pre-work travel -> attach to upcoming work
-    for (let i = 0; i < workRanges.length; i++) {
-        const w = workRanges[i];
-        if (segEnd === w.start) return i;
+    for (const w of workRanges) {
+        if (segEnd === w.start) return w.index;
     }
 
     // exact boundary match: post-work travel -> attach to finished work
-    for (let i = 0; i < workRanges.length; i++) {
-        const w = workRanges[i];
-        if (segStart === w.end) return i;
+    for (const w of workRanges) {
+        if (segStart === w.end) return w.index;
     }
 
     // overlap with a work segment
-    for (let i = 0; i < workRanges.length; i++) {
-        const w = workRanges[i];
-        if (segStart < w.end && segEnd > w.start) return i;
+    for (const w of workRanges) {
+        if (segStart < w.end && segEnd > w.start) return w.index;
     }
 
     // before first work
-    if (segEnd <= workRanges[0].start) return 0;
+    if (segEnd <= workRanges[0].start) return workRanges[0].index;
 
     // after last work
-    const lastIdx = workRanges.length - 1;
-    if (segStart >= workRanges[lastIdx].end) return lastIdx;
+    const last = workRanges[workRanges.length - 1];
+    if (segStart >= last.end) return last.index;
 
     // between works -> attach to previous work segment
     for (let i = 0; i < workRanges.length - 1; i++) {
         const current = workRanges[i];
         const next = workRanges[i + 1];
         if (segStart >= current.end && segEnd <= next.start) {
-            return i;
+            return current.index;
         }
     }
 
-    return lastIdx;
+    return last.index;
 }
 
 /**
@@ -321,88 +337,63 @@ export async function getWorkerWorkloadDetail(
         (entry) => entry.person_name === personName
     );
 
-    // 날짜별로 그룹화 및 집계
-    const dateMap = new Map<string, {
+    type DaySegmentMeta = {
+        timeFrom: string;
+        timeTo: string;
+        hours: number;
         vesselName: string | null;
-        travelTime: number;
-        waitTime: number;
-        workSegments: Array<{
-            timeFrom: string;
-            timeTo: string;
-            hours: number;
-        }>;
-        travelSegments: Array<{
-            timeFrom: string;
-            timeTo: string;
-            hours: number;
-        }>;
-        waitSegments: Array<{
-            timeFrom: string;
-            timeTo: string;
-            hours: number;
-        }>;
         workLogId: number;
         isDraft: boolean;
-    }>();
+    };
+
+    // 날짜별로 그룹화 및 집계 (세그먼트마다 보고서/호선 메타 유지)
+    const dateMap = new Map<
+        string,
+        {
+            workSegments: DaySegmentMeta[];
+            travelSegments: DaySegmentMeta[];
+            waitSegments: DaySegmentMeta[];
+        }
+    >();
+
+    const ensureDay = (dateKey: string) => {
+        if (!dateMap.has(dateKey)) {
+            dateMap.set(dateKey, {
+                workSegments: [],
+                travelSegments: [],
+                waitSegments: [],
+            });
+        }
+        return dateMap.get(dateKey)!;
+    };
 
     for (const entry of workerEntries) {
         if (!entry.date_from) continue;
 
-        const dateKey = entry.date_from;
-        
-        if (!dateMap.has(dateKey)) {
-            dateMap.set(dateKey, {
-                vesselName: entry.vessel,
-                travelTime: 0,
-                waitTime: 0,
-                workSegments: [],
-                travelSegments: [],
-                waitSegments: [],
-                workLogId: entry.work_log_id,
-                isDraft: !!entry.is_draft,
-            });
-        }
-
-        const dayData = dateMap.get(dateKey)!;
-
         const segments = splitEntryByDate(entry);
         if (segments.length === 0) continue;
 
-        for (const seg of segments) {
-            const segDate = seg.date;
-            if (!dateMap.has(segDate)) {
-                dateMap.set(segDate, {
-                    vesselName: entry.vessel,
-                    travelTime: 0,
-                    waitTime: 0,
-                    workSegments: [],
-                    travelSegments: [],
-                    waitSegments: [],
-                    workLogId: entry.work_log_id,
-                    isDraft: !!entry.is_draft,
-                });
-            }
+        const meta = {
+            vesselName: entry.vessel,
+            workLogId: entry.work_log_id,
+            isDraft: !!entry.is_draft,
+        };
 
-            const segData = dateMap.get(segDate)!;
+        for (const seg of segments) {
+            const segData = ensureDay(seg.date);
+            const timed = {
+                timeFrom: seg.timeFrom,
+                timeTo: seg.timeTo,
+                hours: seg.hours,
+                ...meta,
+            };
 
             if (entry.desc_type === "작업") {
-                segData.workSegments.push({
-                    timeFrom: seg.timeFrom,
-                    timeTo: seg.timeTo,
-                    hours: seg.hours,
-                });
+                segData.workSegments.push(timed);
             } else if (entry.desc_type === "이동") {
-                segData.travelSegments.push({
-                    timeFrom: seg.timeFrom,
-                    timeTo: seg.timeTo,
-                    hours: seg.hours,
-                });
+                segData.travelSegments.push(timed);
             } else if (entry.desc_type === "대기") {
-                segData.waitSegments.push({
-                    timeFrom: seg.timeFrom,
-                    timeTo: seg.timeTo,
-                    hours: seg.hours,
-                });
+                segData.waitSegments.push(timed);
             }
         }
     }
@@ -415,28 +406,52 @@ export async function getWorkerWorkloadDetail(
             );
 
             if (workSegments.length === 0) {
-                const travelTotal = data.travelSegments.reduce(
-                    (sum, s) => sum + s.hours,
-                    0
-                );
-                const waitTotal = data.waitSegments.reduce(
-                    (sum, s) => sum + s.hours,
-                    0
-                );
-                return [
+                // 작업 없이 이동/대기만 있는 날: 보고서별로 행 분리
+                const byLog = new Map<
+                    number,
                     {
-                        id: `${personName}-${date}-0`,
+                        vesselName: string | null;
+                        isDraft: boolean;
+                        travelTime: number;
+                        waitTime: number;
+                    }
+                >();
+
+                for (const t of data.travelSegments) {
+                    const cur = byLog.get(t.workLogId) ?? {
+                        vesselName: t.vesselName,
+                        isDraft: t.isDraft,
+                        travelTime: 0,
+                        waitTime: 0,
+                    };
+                    cur.travelTime += t.hours;
+                    byLog.set(t.workLogId, cur);
+                }
+                for (const w of data.waitSegments) {
+                    const cur = byLog.get(w.workLogId) ?? {
+                        vesselName: w.vesselName,
+                        isDraft: w.isDraft,
+                        travelTime: 0,
+                        waitTime: 0,
+                    };
+                    cur.waitTime += w.hours;
+                    byLog.set(w.workLogId, cur);
+                }
+
+                return Array.from(byLog.entries()).map(
+                    ([workLogId, row], index) => ({
+                        id: `${personName}-${date}-${workLogId}-${index}`,
                         date,
-                        vesselName: data.vesselName,
+                        vesselName: row.vesselName,
                         workTime: 0,
                         timeFrom: null,
                         timeTo: null,
-                        travelTime: travelTotal,
-                        waitTime: waitTotal,
-                        workLogId: data.workLogId,
-                        isDraft: data.isDraft,
-                    },
-                ];
+                        travelTime: row.travelTime,
+                        waitTime: row.waitTime,
+                        workLogId,
+                        isDraft: row.isDraft,
+                    })
+                );
             }
 
             const travelByIndex = new Array(workSegments.length).fill(0);
@@ -452,16 +467,16 @@ export async function getWorkerWorkloadDetail(
             }
 
             return workSegments.map((seg, index) => ({
-                id: `${personName}-${date}-${index}`,
+                id: `${personName}-${date}-${seg.workLogId}-${index}`,
                 date,
-                vesselName: data.vesselName,
+                vesselName: seg.vesselName,
                 workTime: seg.hours,
                 timeFrom: seg.timeFrom,
                 timeTo: seg.timeTo,
                 travelTime: travelByIndex[index] || 0,
                 waitTime: waitByIndex[index] || 0,
-                workLogId: data.workLogId,
-                isDraft: data.isDraft,
+                workLogId: seg.workLogId,
+                isDraft: seg.isDraft,
             }));
         })
         .sort((a, b) => {

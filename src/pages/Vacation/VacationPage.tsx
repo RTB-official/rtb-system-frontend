@@ -846,7 +846,7 @@ export default function VacationPage() {
             {/* Main */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
-                    title="휴가 관리"
+                    title="휴가"
                     onMenuClick={() => setSidebarOpen(true)}
                     rightContent={
                         <Button

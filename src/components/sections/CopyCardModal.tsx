@@ -399,6 +399,12 @@ function splitEntryByDayForDisplay<T extends {
         const segTimeFrom = isFirst ? timeFrom : "00:00";
         const segTimeTo = isLast ? timeTo : "24:00";
 
+        // 24:00~24:00 / 00:00~00:00 등 0시간 조각은 표시하지 않음
+        if (segTimeFrom === segTimeTo) {
+            cur.setDate(cur.getDate() + 1);
+            continue;
+        }
+
         results.push({
             ...entry,
             dateFrom: d,
@@ -410,6 +416,14 @@ function splitEntryByDayForDisplay<T extends {
         });
 
         cur.setDate(cur.getDate() + 1);
+    }
+
+    if (results.length === 0) {
+        return [{
+            ...entry,
+            __segId: String(entry.id),
+            __originId: entry.id,
+        }];
     }
 
     return results;

@@ -86,7 +86,7 @@ export default function MembersPage() {
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
             <div className="flex-1 flex flex-col h-screen overflow-hidden">
-                <Header title="구성원 관리" onMenuClick={() => setSidebarOpen(true)} />
+                <Header title="구성원" onMenuClick={() => setSidebarOpen(true)} />
                 <div className="flex-1 overflow-y-auto" style={{ scrollbarGutter: "stable" }}>
                     <PageContainer className="py-4 md:py-9">
                         {loadError && (

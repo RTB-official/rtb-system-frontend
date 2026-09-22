@@ -21,6 +21,7 @@ import {
     IconMembers,
     IconCar,
     IconNotifications,
+    IconCalendar,
     IconClose,
     IconSettings,
     IconBoard,
@@ -36,6 +37,7 @@ import { useSidebarRouteSync } from "../hooks/useSidebarRouteSync";
 import { PATHS } from "../utils/paths";
 import MenuButton from "./sidebar/MenuButton";
 import SubMenu from "./sidebar/SubMenu";
+import { markSubMenuSkipEnter } from "./sidebar/subMenuEnterAnimation";
 import { useMenuNotifications } from "../hooks/useMenuNotifications";
 
 interface SidebarProps {
@@ -44,7 +46,7 @@ interface SidebarProps {
     showCloseOnDesktop?: boolean;
 }
 
-type MenuFocus = "REPORT" | "TBM" | "EXPENSE" | "INVOICE" | null;
+type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "INVOICE" | null;
 
 
 
@@ -136,6 +138,8 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
     } = useNotifications(currentUserId);
 
     const [menuFocus, setMenuFocus] = useState<MenuFocus>(null);
+    /** 브랜치→무브랜치 이동 시, 라우트 변경 전에 목적지 선택 효과를 켜기 위한 경로 */
+    const [pendingActivePath, setPendingActivePath] = useState<string | null>(null);
 
 
     const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -146,6 +150,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
     const menuNotis = useMenuNotifications();
 
     const {
+        isScheduleRoute,
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,
@@ -154,12 +159,15 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         location: routeLocation,
     } = useSidebarRoutes();
 
+    const prevScheduleRouteRef = useRef<boolean>(isScheduleRoute);
     const prevReportRouteRef = useRef<boolean>(isReportRoute);
     const prevTbmRouteRef = useRef<boolean>(isTbmRoute);
     const prevExpenseRouteRef = useRef<boolean>(isExpenseRoute);
     const prevInvoiceRouteRef = useRef<boolean>(isInvoiceRoute);
 
     const {
+        setScheduleOpen,
+        scheduleOpenRef,
         setReportOpen,
         reportOpenRef,
         setTbmOpen,
@@ -168,33 +176,65 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         expenseOpenRef,
         setInvoiceOpen,
         invoiceOpenRef,
+        stableScheduleOpen,
         stableReportOpen,
         stableTbmOpen,
         stableExpenseOpen,
         stableInvoiceOpen,
     } = useSidebarSubMenuState(
+        isScheduleRoute,
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,
         isInvoiceRoute,
+        prevScheduleRouteRef,
         prevReportRouteRef,
         prevTbmRouteRef,
         prevExpenseRouteRef,
         prevInvoiceRouteRef
     );
 
-    const reportActive = isReportRoute || menuFocus === "REPORT";
-    const tbmActive = isTbmRoute || menuFocus === "TBM";
-    const invoiceActive = isInvoiceRoute || menuFocus === "INVOICE";
+    // 다른 메뉴에 포커스가 있으면 현재 라우트여도 선택 효과를 주지 않음
+    // pendingActivePath가 있으면(닫힘 애니 중) 목적지 탭만 선택
+    const isPathActive = (match: (path: string) => boolean) => {
+        if (pendingActivePath) return match(pendingActivePath);
+        return !menuFocus && match(routeLocation.pathname);
+    };
+
+    const scheduleActive = menuFocus === "SCHEDULE" || (!menuFocus && !pendingActivePath && isScheduleRoute);
+    const reportActive = menuFocus === "REPORT" || (!menuFocus && !pendingActivePath && isReportRoute);
+    const tbmActive = menuFocus === "TBM" || (!menuFocus && !pendingActivePath && isTbmRoute);
+    const invoiceActive = menuFocus === "INVOICE" || (!menuFocus && !pendingActivePath && isInvoiceRoute);
     const canShowHome = stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin;
-    const expenseActive = isExpenseRoute || menuFocus === "EXPENSE";
-    const settingsActive = routeLocation.pathname.startsWith("/settings");
+    const canShowSchedule = ["mw.park", "brian.ko"].includes(
+        (sidebarLoginId || currentUser?.email?.split("@")[0] || "").toLowerCase()
+    );
+    const expenseActive = menuFocus === "EXPENSE" || (!menuFocus && !pendingActivePath && isExpenseRoute);
+    const settingsActive = isPathActive((p) => p.startsWith("/settings"));
+    const boardActive = isPathActive((p) => p.startsWith("/board"));
+    const homeActive = isPathActive((p) => p === PATHS.dashboard);
+    const workloadActive = isPathActive((p) => p.startsWith(PATHS.workload));
+    const vehiclesActive = isPathActive((p) => p.startsWith(PATHS.vehicles));
+    const vacationActive = isPathActive((p) => p.startsWith(PATHS.vacation));
+    const membersActive = isPathActive((p) => p.startsWith(PATHS.members));
 
-    const { reportSubMenuItems, tbmSubMenuItems, expenseSubMenuItems, invoiceSubMenuItems } =
-        useSidebarMenuItems(stablePermissions, isReportEditRoute, routeLocation);
+    const {
+        scheduleSubMenuItems,
+        reportSubMenuItems,
+        tbmSubMenuItems,
+        expenseSubMenuItems,
+        invoiceSubMenuItems,
+    } = useSidebarMenuItems(stablePermissions, isReportEditRoute, routeLocation);
 
+    const [scheduleItemsForSubMenu, setScheduleItemsForSubMenu] = useState(scheduleSubMenuItems);
     const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);
     const [tbmItemsForSubMenu, setTbmItemsForSubMenu] = useState(tbmSubMenuItems);
+
+    useEffect(() => {
+        if (scheduleSubMenuItems.length > 0) {
+            setScheduleItemsForSubMenu(scheduleSubMenuItems);
+        }
+    }, [scheduleSubMenuItems]);
 
     useEffect(() => {
         if (reportSubMenuItems.length > 0) {
@@ -210,19 +250,23 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
 
     useSidebarRouteSync({
         pathname: routeLocation.pathname,
+        isScheduleRoute,
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,
         isInvoiceRoute,
         expenseSubMenuItems,
+        prevScheduleRouteRef,
         prevReportRouteRef,
         prevTbmRouteRef,
         prevExpenseRouteRef,
         prevInvoiceRouteRef,
+        scheduleOpenRef,
         reportOpenRef,
         tbmOpenRef,
         expenseOpenRef,
         invoiceOpenRef,
+        setScheduleOpen,
         setReportOpen,
         setTbmOpen,
         setExpenseOpen,
@@ -230,11 +274,33 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         setMenuFocus,
         setShowNotifications,
     });
+    const submenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const SUBMENU_CLOSE_MS = 280;
+
+    useEffect(() => {
+        return () => {
+            if (submenuCloseTimerRef.current) {
+                clearTimeout(submenuCloseTimerRef.current);
+            }
+        };
+    }, []);
+
+    const openFocusOnly = (focus: MenuFocus) => {
+        if (focus === "SCHEDULE") setScheduleOpen(true);
+        if (focus === "REPORT") setReportOpen(true);
+        if (focus === "TBM") setTbmOpen(true);
+        if (focus === "INVOICE") setInvoiceOpen(true);
+        if (focus === "EXPENSE" && expenseSubMenuItems.length > 1) setExpenseOpen(true);
+    };
+
     const handleMenuClick = (focus: MenuFocus | null) => {
         if (focus) {
+            // 같은 탭 브랜치 이동 시 페이지 재마운트 전 open 상태를 유지
             setMenuFocus(focus);
+            openFocusOnly(focus);
         } else {
             setMenuFocus(null);
+            setScheduleOpen(false);
             setReportOpen(false);
             setTbmOpen(false);
             setExpenseOpen(false);
@@ -243,14 +309,84 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         setShowNotifications(false);
     };
 
+    const closeAllExcept = (focus: MenuFocus | null) => {
+        if (focus !== "SCHEDULE") setScheduleOpen(false);
+        if (focus !== "REPORT") setReportOpen(false);
+        if (focus !== "TBM") setTbmOpen(false);
+        if (focus !== "EXPENSE") setExpenseOpen(false);
+        if (focus !== "INVOICE") setInvoiceOpen(false);
+    };
+
+    const isFocusAlreadyOpen = (focus: MenuFocus) => {
+        if (focus === "SCHEDULE") return !!scheduleOpenRef.current;
+        if (focus === "REPORT") return !!reportOpenRef.current;
+        if (focus === "TBM") return !!tbmOpenRef.current;
+        if (focus === "EXPENSE") return !!expenseOpenRef.current;
+        if (focus === "INVOICE") return !!invoiceOpenRef.current;
+        return false;
+    };
+
     const go = (to: string, focus: MenuFocus | null) => {
-        handleMenuClick(focus);
-        if (routeLocation.pathname !== to) {
-            startTransition(() => {
-                navigate(to);
-            });
+        const willNavigate = routeLocation.pathname !== to;
+        const closingSomething =
+            (!!scheduleOpenRef.current && focus !== "SCHEDULE") ||
+            (!!reportOpenRef.current && focus !== "REPORT") ||
+            (!!tbmOpenRef.current && focus !== "TBM") ||
+            (!!expenseOpenRef.current && focus !== "EXPENSE") ||
+            (!!invoiceOpenRef.current && focus !== "INVOICE");
+
+        if (submenuCloseTimerRef.current) {
+            clearTimeout(submenuCloseTimerRef.current);
+            submenuCloseTimerRef.current = null;
         }
-        onClose?.();
+
+        const navigateNow = () => {
+            submenuCloseTimerRef.current = null;
+            if (willNavigate) {
+                startTransition(() => {
+                    navigate(to);
+                });
+            }
+            onClose?.();
+        };
+
+        // from 브랜치 닫힘 + to 브랜치 열림을 동시에 시작 (닫힘 애니 후 이동)
+        if (closingSomething && willNavigate) {
+            closeAllExcept(focus);
+            setShowNotifications(false);
+
+            if (focus) {
+                setPendingActivePath(null);
+                openFocusOnly(focus);
+                setMenuFocus(focus);
+                // 재마운트 시 to 브랜치 열림 애니 재실행 방지
+                markSubMenuSkipEnter(focus);
+            } else {
+                // 목적지 선택 효과를 닫힘 애니와 동시에 켜기
+                setMenuFocus(null);
+                setPendingActivePath(to);
+            }
+
+            submenuCloseTimerRef.current = setTimeout(navigateNow, SUBMENU_CLOSE_MS);
+            return;
+        }
+
+        if (focus) {
+            // 이미 열린 같은 탭 내 이동만 재마운트 열림 애니메이션 생략
+            if (isFocusAlreadyOpen(focus)) {
+                markSubMenuSkipEnter(focus);
+            }
+            setPendingActivePath(null);
+            closeAllExcept(focus);
+            openFocusOnly(focus);
+            setMenuFocus(focus);
+        } else {
+            setMenuFocus(null);
+            setPendingActivePath(null);
+            closeAllExcept(null);
+        }
+        setShowNotifications(false);
+        navigateNow();
     };
 
 
@@ -263,12 +399,20 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
 
     return (
         <aside className="w-[220px] md:w-[240px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-full bg-gray-50 border-r border-gray-200 flex flex-col shadow-xl lg:shadow-none">
-            <div className="flex flex-col gap-4 md:gap-6 px-3 md:px-4 py-3 md:py-5 flex-1 min-h-0">
+            <div className="flex flex-col gap-2 md:gap-3 px-3 md:px-4 py-3 md:py-5 flex-1 min-h-0">
                 {/* Logo & Close Button */}
                 <div className="flex gap-1.5 md:gap-2 items-center justify-between p-1.5 md:p-2">
                     <button
                         type="button"
-                        onClick={() => navigate("/")}
+                        onClick={() => {
+                            setUserMenuOpen(false);
+                            // RoleLanding과 동일: admin/CEO → 홈, 그 외 → 보고서
+                            if (canShowHome) {
+                                go(PATHS.dashboard, null);
+                            } else {
+                                go(PATHS.report, "REPORT");
+                            }
+                        }}
                         className="flex gap-2 md:gap-2.5 items-center text-left hover:opacity-80 transition-opacity"
                     >
                         <img
@@ -292,20 +436,77 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
 
                 {/* User Section */}
                 <div className="flex flex-col gap-2 md:gap-3 flex-1 min-h-0">
-                    <div
-                        ref={usernameRef}
-                        className="flex gap-2 md:gap-3 items-center p-1.5 md:p-2 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors"
-                        onClick={() => {
-                            setUserMenuOpen(!userMenuOpen);
-                            setShowNotifications(false);
-                        }}
-                    >
-                        <div className="w-6 h-6 md:w-7 md:h-7 shrink-0">
-                            <Avatar email={currentUser?.email} size={24} position={currentUser?.position} />
+                    <div className="flex gap-1 items-center p-1.5 md:p-2">
+                        <div
+                            ref={usernameRef}
+                            className="flex gap-2 md:gap-3 items-center flex-1 min-w-0 cursor-pointer hover:bg-gray-200 rounded-xl transition-colors py-0.5 px-1 -ml-1"
+                            onClick={() => {
+                                setUserMenuOpen(!userMenuOpen);
+                                setShowNotifications(false);
+                            }}
+                        >
+                            <div className="w-6 h-6 md:w-7 md:h-7 shrink-0">
+                                <Avatar email={currentUser?.email} size={24} position={currentUser?.position} />
+                            </div>
+                            <p className="font-semibold text-[13px] md:text-[16px] text-gray-900 truncate">
+                                {sidebarLoginId || currentUser?.email?.split("@")[0] || ""}
+                            </p>
                         </div>
-                        <p className="font-semibold text-[13px] md:text-[16px] text-gray-900">
-                            {sidebarLoginId || currentUser?.email?.split("@")[0] || ""}
-                        </p>
+
+                        {/* 알림 종 아이콘 (유저명 우측) */}
+                        <div className="relative shrink-0" ref={notificationRef}>
+                            <button
+                                type="button"
+                                aria-label="알림"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowNotifications((v) => !v);
+                                    setUserMenuOpen(false);
+                                }}
+                                className={`relative p-1.5 rounded-lg transition-colors text-gray-900 ${
+                                    showNotifications ? "bg-gray-100" : "hover:bg-gray-200"
+                                }`}
+                            >
+                                <IconNotifications className="w-5 h-5 md:w-6 md:h-6" />
+                                {unreadCount > 0 && (
+                                    <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center bg-red-500 text-white text-[9px] md:text-[10px] min-w-[16px] h-4 md:min-w-[18px] md:h-[18px] px-0.5 rounded-full font-bold leading-none">
+                                        {unreadCount > 99 ? "99+" : unreadCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            {showNotifications && (
+                                <NotificationPopup
+                                    onClose={() => setShowNotifications(false)}
+                                    anchorEl={notificationRef.current}
+                                    items={notifications.map((n) => ({
+                                        id: n.id,
+                                        title: n.title,
+                                        message: n.message,
+                                        type: n.type,
+                                        created_at: n.created_at,
+                                        read_at: n.read_at,
+                                        meta: n.meta ?? undefined,
+                                    }))}
+                                    onNotificationRead={async () => {
+                                        await refreshNotifications();
+                                    }}
+                                    onMarkAllAsRead={async () => {
+                                        if (currentUserId) {
+                                            try {
+                                                await markAllNotificationsAsRead(currentUserId);
+                                                await refreshNotifications();
+                                            } catch (error) {
+                                                console.error("모두 읽음 처리 실패:", error);
+                                            }
+                                        }
+                                    }}
+                                    triggerMenuToast={menuNotis.triggerToast}
+                                />
+                            )}
+                        </div>
                     </div>
 
                     {/* 사용자 액션 메뉴 */}
@@ -387,70 +588,31 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         </Suspense>
                     )}
 
-                    {/* Notifications */}
-                    <div className="relative" ref={notificationRef}>
-                        <button
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onPointerDown={(e) => e.stopPropagation()}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setShowNotifications((v) => !v);
-                                setUserMenuOpen(false);
-                            }}
-
-                            className={`flex gap-4 md:gap-6 items-center p-2 md:p-3 rounded-xl transition-colors w-full text-left ${showNotifications ? "bg-gray-100" : "text-gray-900 hover:bg-gray-200"
-                                }`}
-                        >
-
-                            <div className="flex gap-2 md:gap-3 items-center flex-1 min-w-0">
-                                <IconNotifications className="w-5 h-5 md:w-6 md:h-6 shrink-0" />
-                                <p className="font-medium text-[13px] md:text-[16px]">알림</p>
-                            </div>
-                            {unreadCount > 0 && (
-                                <div className="ml-auto shrink-0">
-                                    <span className="inline-flex items-center justify-center bg-red-500 text-white text-[10px] md:text-[12px] w-5 h-5 md:w-6 md:h-6 rounded-full font-bold">
-                                        {unreadCount > 99 ? "99+" : unreadCount}
-                                    </span>
-                                </div>
-                            )}
-                        </button>
-
-                        {showNotifications && (
-                            <NotificationPopup
-                                onClose={() => setShowNotifications(false)}
-                                anchorEl={notificationRef.current}
-                                items={notifications.map((n) => ({
-                                    id: n.id,
-                                    title: n.title,
-                                    message: n.message,
-                                    type: n.type,
-                                    created_at: n.created_at,
-                                    read_at: n.read_at,
-                                    meta: n.meta ?? undefined,
-                                }))}
-                                onNotificationRead={async () => {
-                                    await refreshNotifications();
+                    {canShowSchedule && (
+                        <div className="-pb-1">
+                            <MenuButton
+                                icon={<IconCalendar className="w-5 h-5 md:w-6 md:h-6" />}
+                                label="일정"
+                                isActive={scheduleActive}
+                                onClick={() => {
+                                    setUserMenuOpen(false);
+                                    go(PATHS.scheduleList, "SCHEDULE");
                                 }}
-                                onMarkAllAsRead={async () => {
-                                    if (currentUserId) {
-                                        try {
-                                            await markAllNotificationsAsRead(currentUserId);
-                                            await refreshNotifications();
-                                        } catch (error) {
-                                            console.error("모두 읽음 처리 실패:", error);
-                                        }
-                                    }
-                                }}
-                                triggerMenuToast={menuNotis.triggerToast}
                             />
-                        )}
-
-                    </div>
+                            <SubMenu
+                                isOpen={stableScheduleOpen}
+                                items={scheduleItemsForSubMenu}
+                                focus="SCHEDULE"
+                                onClose={onClose}
+                                onMenuClick={handleMenuClick}
+                            />
+                        </div>
+                    )}
 
                     <MenuButton
                         icon={<IconBoard className="w-5 h-5 md:w-6 md:h-6" />}
                         label="게시판"
-                        isActive={routeLocation.pathname.startsWith("/board") && !menuFocus}
+                        isActive={boardActive}
                         onClick={() => go(PATHS.board, null)}
                     />
 
@@ -464,7 +626,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                             <MenuButton
                                 icon={<IconHome className="w-5 h-5 md:w-6 md:h-6" />}
                                 label="홈"
-                                isActive={routeLocation.pathname === PATHS.dashboard && !menuFocus}
+                                isActive={homeActive}
                                 onClick={() => go(PATHS.dashboard, null)}
                             />
                         )}
@@ -478,12 +640,6 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                 label="보고서"
                                 isActive={reportActive}
                                 onClick={() => {
-                                    setTbmOpen(false);
-                                    setExpenseOpen(false);
-                                    setInvoiceOpen(false);
-                                    if (!reportOpenRef.current) {
-                                        setReportOpen(true);
-                                    }
                                     go(PATHS.reportList, "REPORT");
                                 }}
                             />
@@ -505,12 +661,6 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                     label="인보이스"
                                     isActive={invoiceActive}
                                     onClick={() => {
-                                        setReportOpen(false);
-                                        setTbmOpen(false);
-                                        setExpenseOpen(false);
-                                        if (!invoiceOpenRef.current) {
-                                            setInvoiceOpen(true);
-                                        }
                                         go(PATHS.invoice, "INVOICE");
                                     }}
                                 />
@@ -540,12 +690,6 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                 label="TBM"
                                 isActive={tbmActive}
                                 onClick={() => {
-                                    setReportOpen(false);
-                                    setExpenseOpen(false);
-                                    setInvoiceOpen(false);
-                                    if (!tbmOpenRef.current) {
-                                        setTbmOpen(true);
-                                    }
                                     go(PATHS.tbmList, "TBM");
                                 }}
                             />
@@ -562,7 +706,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         <MenuButton
                             icon={<IconWorkload className="w-5 h-5 md:w-6 md:h-6" />}
                             label="워크로드"
-                            isActive={routeLocation.pathname.startsWith(PATHS.workload) && !menuFocus}
+                            isActive={workloadActive}
                             onClick={() =>
                                 go(
                                     stablePermissions.isStaff && profileName
@@ -577,20 +721,12 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
 
                             <MenuButton
                                 icon={<IconCard className="w-5 h-5 md:w-6 md:h-6" />}
-                                label="지출 관리"
+                                label="지출"
                                 isActive={expenseActive}
                                 onClick={() => {
-                                    setReportOpen(false);
-                                    setTbmOpen(false);
-                                    setInvoiceOpen(false);
-
                                     if (expenseSubMenuItems.length === 1) {
-                                        setExpenseOpen(false);
                                         go(expenseSubMenuItems[0].to, "EXPENSE");
                                     } else if (expenseSubMenuItems.length > 1) {
-                                        if (!expenseOpenRef.current) {
-                                            setExpenseOpen(true);
-                                        }
                                         go(PATHS.expensePersonal, "EXPENSE");
                                     }
                                 }}
@@ -606,8 +742,8 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         {canShowVehicles && (
                             <MenuButton
                                 icon={<IconCar className="w-5 h-5 md:w-6 md:h-6" />}
-                                label="차량 관리"
-                                isActive={routeLocation.pathname.startsWith(PATHS.vehicles) && !menuFocus}
+                                label="차량"
+                                isActive={vehiclesActive}
                                 onClick={() => {
                                     if (menuNotis.vehicles) menuNotis.triggerToast("vehicles");
                                     go(PATHS.vehicles, null);
@@ -618,8 +754,8 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         {canShowVacation && (
                             <MenuButton
                                 icon={<IconVacation className="w-5 h-5 md:w-6 md:h-6" />}
-                                label="휴가 관리"
-                                isActive={routeLocation.pathname.startsWith(PATHS.vacation) && !menuFocus}
+                                label="휴가"
+                                isActive={vacationActive}
                                 onClick={() => {
                                     if (menuNotis.vacation) menuNotis.triggerToast("vacation");
                                     go(PATHS.vacation, null);
@@ -629,8 +765,8 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                         )}
                         <MenuButton
                             icon={<IconMembers className="w-5 h-5 md:w-6 md:h-6" />}
-                            label="구성원 관리"
-                            isActive={routeLocation.pathname.startsWith(PATHS.members) && !menuFocus}
+                            label="구성원"
+                            isActive={membersActive}
                             onClick={() => {
                                 if (menuNotis.members) menuNotis.triggerToast("members");
                                 go(PATHS.members, null);

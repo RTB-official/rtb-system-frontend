@@ -316,13 +316,13 @@ export default function NotificationPopup({
         );
     }
 
-    // 데스크톱: 기존 위치(사이드바 오른쪽) 팝업
+    // 데스크톱: 종 아이콘 바로 오른쪽, 상단을 종에 맞춤
     return (
         <div
             ref={popupRef}
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
-            className="absolute left-[239px] top-0 -translate-y-4 -translate-x-[16px] w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-x-hidden overflow-y-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
+            className="absolute left-full top-0 ml-2 w-[360px] bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-x-hidden overflow-y-hidden z-50 animate-in fade-in slide-in-from-left-4 duration-200 pb-4"
         >
             {content}
         </div>

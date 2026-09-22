@@ -24,6 +24,9 @@ import {
     getDatesMissingSkilledFitterRemark,
     SKILLED_FITTER_NAME_SET,
 } from "../../constants/skilledFitter";
+import { useStaffSortMeta } from "../../hooks/useStaffSortMeta";
+import { sortPeopleByRoleAndJoinDate } from "../../utils/sortPeopleByRoleAndJoinDate";
+import type { PersonSortMeta } from "../../utils/sortPeopleByRoleAndJoinDate";
 import {
     buildConsecutiveWorkClusterIndices,
     distributeWorkManualToFourBuckets,
@@ -43,6 +46,7 @@ import {
     getManpowerTierCountsForEntry,
     sumManpowerSkilledFitterFromRows,
 } from "../../utils/invoiceManpowerEntryMoney";
+import { parseTravelRoutePlaces } from "../../utils/travelRouteParse";
 
 interface TimesheetSourceEntryData {
     id: number;
@@ -60,6 +64,8 @@ interface TimesheetSourceEntryData {
     location?: string | null;
     lunchWorked?: boolean;
     clientDuplicated?: boolean;
+    /** 자택 고정시간이 자정을 넘길 때 생긴 다음날 조각의 원본 엔트리 id */
+    clientHomeTravelSpilloverOf?: number | null;
 }
 
 interface TimesheetDateGroupDetailSidePanelProps {
@@ -254,9 +260,6 @@ const entryTouchesCalendarDay = (
     return calendarYmd >= entry.dateFrom && calendarYmd <= entry.dateTo;
 };
 
-const sortPeopleByKoreanOrder = (people: string[]) =>
-    [...people].sort((a, b) => a.localeCompare(b, "ko"));
-
 const toDateSafe = (date: string, time: string): Date => {
     const [hhStr, mmStr] = time.split(":");
     const hh = Number(hhStr);
@@ -353,12 +356,14 @@ const getRemarkReplaceCandidates = ({
     selectedRemarkPerson,
     originalEntryPersons,
     blockedPersons,
+    staffSortMeta,
 }: {
     invoiceTimesheetPeople: string[];
     entryPersons: string[];
     selectedRemarkPerson: string;
     originalEntryPersons: string[];
     blockedPersons?: ReadonlySet<string>;
+    staffSortMeta: Map<string, PersonSortMeta>;
 }) => {
     const selectedIndex = entryPersons.findIndex(
         (person) => person === selectedRemarkPerson
@@ -368,13 +373,14 @@ const getRemarkReplaceCandidates = ({
     const occupied = new Set(
         entryPersons.filter((person) => person !== selectedRemarkPerson)
     );
-    const candidates = sortPeopleByKoreanOrder(
+    const candidates = sortPeopleByRoleAndJoinDate(
         invoiceTimesheetPeople.filter(
             (person) =>
                 person !== selectedRemarkPerson &&
                 !occupied.has(person) &&
                 !blockedPersons?.has(person)
-        )
+        ),
+        staffSortMeta
     );
 
     if (
@@ -411,15 +417,14 @@ const getFinalDestination = (entry: TimesheetSourceEntryData): string => {
         return moveTo;
     }
 
-    const details = (entry.details ?? "")
-        .replace(/\s*\uC774\uB3D9\.?\s*$/, "")
-        .trim();
-    const arrow = "\u2192";
-    if (!details.includes(arrow)) {
-        return details;
+    const parsed = parseTravelRoutePlaces(entry.details ?? "");
+    if (parsed) {
+        return parsed.destination;
     }
 
-    return details.split(arrow).pop()?.trim() ?? "";
+    return (entry.details ?? "")
+        .replace(/\s*\uC774\uB3D9\.?\s*$/, "")
+        .trim();
 };
 
 const getTravelEntryOrigin = (entry: TimesheetSourceEntryData): string => {
@@ -428,15 +433,14 @@ const getTravelEntryOrigin = (entry: TimesheetSourceEntryData): string => {
         return moveFrom;
     }
 
-    const details = (entry.details ?? "")
-        .replace(/\s*\uC774\uB3D9\.?\s*$/, "")
-        .trim();
-    const arrow = "\u2192";
-    if (!details.includes(arrow)) {
-        return details;
+    const parsed = parseTravelRoutePlaces(entry.details ?? "");
+    if (parsed) {
+        return parsed.origin;
     }
 
-    return details.split(arrow)[0]?.trim() ?? "";
+    return (entry.details ?? "")
+        .replace(/\s*\uC774\uB3D9\.?\s*$/, "")
+        .trim();
 };
 
 const sortEntriesByStart = (entries: TimesheetSourceEntryData[]) =>
@@ -708,6 +712,7 @@ export default function TimesheetDateGroupDetailSidePanel({
     getEntryInvoiceSkilledFitterDesignation,
     onSetEntryInvoiceSkilledFitter,
 }: TimesheetDateGroupDetailSidePanelProps) {
+    const staffSortMeta = useStaffSortMeta();
     const panelRef = useRef<HTMLElement | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
     const [expandedEditorKey, setExpandedEditorKey] = useState<string | null>(null);
@@ -765,13 +770,16 @@ export default function TimesheetDateGroupDetailSidePanel({
                 }
             }
         }
-        return order;
-    }, [fullGroupEntries, dateYmdForPersonnelModal]);
+        return sortPeopleByRoleAndJoinDate(order, staffSortMeta);
+    }, [fullGroupEntries, dateYmdForPersonnelModal, staffSortMeta]);
 
     const replacementPersonNames = useMemo(() => {
         const onDate = new Set(existingPersonNamesOnDate);
-        return invoiceTimesheetPeople.filter((p) => p && !onDate.has(p));
-    }, [invoiceTimesheetPeople, existingPersonNamesOnDate]);
+        return sortPeopleByRoleAndJoinDate(
+            invoiceTimesheetPeople.filter((p) => p && !onDate.has(p)),
+            staffSortMeta
+        );
+    }, [invoiceTimesheetPeople, existingPersonNamesOnDate, staffSortMeta]);
 
     useEffect(() => {
         if (!datePersonnelEditModal) {
@@ -1775,9 +1783,9 @@ export default function TimesheetDateGroupDetailSidePanel({
              * 자택에서 출발하는 구간은 도착 시각 기준으로 역산되므로 뒤 조각부터,
              * 자택으로 돌아오는 구간은 출발 시각 기준이라 앞 조각부터 채운다.
              */
-            const departsFromHome = normalizeLocationName(
-                getTravelEntryOrigin(journey[0])
-            ).includes("\uC790\uD0DD");
+            const departsFromHome =
+                normalizeLocationName(getTravelEntryOrigin(journey[0])) ===
+                "\uC790\uD0DD";
             const fillOrder = departsFromHome ? [...journey].reverse() : journey;
 
             let remaining = roundHours(fixedHours);
@@ -2059,6 +2067,12 @@ export default function TimesheetDateGroupDetailSidePanel({
         }
 
         if (override?.target === "home" && fixedHours > 0) {
+            if (entry.clientHomeTravelSpilloverOf != null) {
+                return {
+                    hours: roundHours(calculateRawTravelHours(entry)),
+                    kind: "home",
+                };
+            }
             return { hours: fixedHours, kind: "home" };
         }
 
@@ -2703,13 +2717,16 @@ export default function TimesheetDateGroupDetailSidePanel({
     };
 
     const renderInteractiveRemarkPersons = (entry: TimesheetSourceEntryData) => {
-        const persons = entry.persons ?? [];
+        const persons = sortPeopleByRoleAndJoinDate(
+            entry.persons ?? [],
+            staffSortMeta
+        );
         if (entry.clientDuplicated) {
             const baseline =
                 getOriginalTimesheetEntryPersons?.(entry.id) ?? [];
             const unchangedFromDuplicateBaseline =
                 baseline.length === persons.length &&
-                baseline.every((p, i) => p === persons[i]);
+                baseline.every((p) => persons.includes(p));
             if (persons.length === 0 || unchangedFromDuplicateBaseline) {
                 return null;
             }
@@ -3975,6 +3992,7 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                                                                         fullGroupEntries,
                                                                                                                         entry
                                                                                                                     ),
+                                                                                                                staffSortMeta,
                                                                                                             }
                                                                                                         );
                                                                                                     return replaceCandidates.length >
@@ -4220,7 +4238,10 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                         </div>
                                                     </div>
                                                     <div className="mt-1 text-xs text-gray-700">
-                                                        {(e.persons ?? []).join(", ") ||
+                                                        {sortPeopleByRoleAndJoinDate(
+                                                            e.persons ?? [],
+                                                            staffSortMeta
+                                                        ).join(", ") ||
                                                             "\uC778\uC6D0 \uC5C6\uC74C"}
                                                     </div>
                                                     {e.details ? (

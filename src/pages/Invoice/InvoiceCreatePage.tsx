@@ -42,6 +42,7 @@ import {
     getRoundedBillableApplyYmd,
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
+    isPureRoundedBillableSplit,
     sumConsecutiveWorkClusterAutoBillableHours,
     type WorkEntryClusterable,
 } from "../../utils/workEntryBillableHours";
@@ -49,12 +50,12 @@ import {
     enumerateDateRange,
     fetchHolidayDateSet,
     isWeekend,
-    isWeekendOrHoliday,
 } from "../../utils/holidayDates";
 import {
     aggregateWorkLogEntryDateRange,
     formatInvoiceReportTableTitle,
 } from "../../utils/invoiceReportDisplayTitle";
+import { parseTravelRoutePlaces } from "../../utils/travelRouteParse";
 import {
     resolveInvoiceRecipientInfo,
     resolveInvoiceWorkOrderFromDisplay,
@@ -154,6 +155,8 @@ interface TimesheetSourceEntryData {
     lunchWorked?: boolean;
     /** 사이드패널에서 복사로 만든 행(빨간 테두리 등) */
     clientDuplicated?: boolean;
+    /** 자택 고정시간이 자정을 넘길 때 생긴 다음날 조각의 원본 엔트리 id */
+    clientHomeTravelSpilloverOf?: number | null;
     /** 자정 분할 세그먼트 연동(work_log.split_group_id) */
     splitGroupId?: string | null;
 }
@@ -219,6 +222,7 @@ function timesheetSourceToWorkLogEntry(
         moveTo: src.moveTo,
         lunch_worked: src.lunchWorked,
         clientDuplicated: src.clientDuplicated === true,
+        clientHomeTravelSpilloverOf: src.clientHomeTravelSpilloverOf ?? null,
         splitGroupId: src.splitGroupId,
     };
 }
@@ -269,6 +273,8 @@ function isTimesheetSourceEntryPanelSyncEqual(
         (a.location ?? null) === (b.location ?? null) &&
         Boolean(a.lunchWorked) === Boolean(b.lunchWorked) &&
         Boolean(a.clientDuplicated) === Boolean(b.clientDuplicated) &&
+        (a.clientHomeTravelSpilloverOf ?? null) ===
+            (b.clientHomeTravelSpilloverOf ?? null) &&
         (a.persons ?? []).join("|") === (b.persons ?? []).join("|")
     );
 }
@@ -2611,17 +2617,19 @@ export default function InvoiceCreatePage() {
         target: TravelChargeOverrideTarget
     ) => {
         pushInvoiceUndoSnapshotRef.current();
-        setTravelChargeOverrides((previous) => {
-            const updatedAt = Date.now();
-            const next = applyTravelChargeOverrideForPersonToMap(
+        const previous =
+            latestInvoiceStateRef.current?.travelChargeOverrides ?? {};
+        const nextOverrides = pruneRedundantTravelChargeOverrides(
+            applyTravelChargeOverrideForPersonToMap(
                 previous,
                 entryId,
                 person,
                 target,
-                updatedAt
-            );
-            return pruneRedundantTravelChargeOverrides(next);
-        });
+                Date.now()
+            )
+        );
+        setTravelChargeOverrides(nextOverrides);
+        syncHomeTravelMidnightSpilloverEntries(nextOverrides);
     };
 
     const batchTravelChargeOverrideTargets = (
@@ -2634,19 +2642,227 @@ export default function InvoiceCreatePage() {
             return;
         }
         pushInvoiceUndoSnapshotRef.current();
-        setTravelChargeOverrides((previous) => {
-            const updatedAt = Date.now();
-            let next = previous;
-            for (const person of unique) {
-                next = applyTravelChargeOverrideForPersonToMap(
-                    next,
-                    entryId,
-                    person,
-                    target,
-                    updatedAt
+        const previous =
+            latestInvoiceStateRef.current?.travelChargeOverrides ?? {};
+        let next = previous;
+        const updatedAt = Date.now();
+        for (const person of unique) {
+            next = applyTravelChargeOverrideForPersonToMap(
+                next,
+                entryId,
+                person,
+                target,
+                updatedAt
+            );
+        }
+        const nextOverrides = pruneRedundantTravelChargeOverrides(next);
+        setTravelChargeOverrides(nextOverrides);
+        syncHomeTravelMidnightSpilloverEntries(nextOverrides);
+    };
+
+    /**
+     * 자택 배지 고정시간이 자정을 넘기면 다음날 00:00~ 조각을 만든다.
+     * 예: 28일 23:00 출발 + HHI 2시간 → 29일 00:00~01:00 엔트리.
+     */
+    const syncHomeTravelMidnightSpilloverEntries = (
+        overrides: TravelChargeOverrideMap
+    ) => {
+        const shiftDateYmd = (ymd: string, days: number): string => {
+            const d = new Date(`${ymd}T12:00:00`);
+            d.setDate(d.getDate() + days);
+            return formatDateKey(d);
+        };
+        const rewriteDetailsToHome = (
+            details: string,
+            moveFrom?: string | null
+        ) => {
+            const replaced = (details ?? "").split("숙소").join("자택").trim();
+            if (replaced.includes("자택")) {
+                return replaced.endsWith(".") ? replaced : `${replaced}.`;
+            }
+            const origin = (moveFrom ?? "").trim() || "출장지";
+            return `${origin} -> 자택 이동.`;
+        };
+
+        const prevList =
+            latestInvoiceStateRef.current?.workLogDataList ?? workLogDataList;
+        let anyChanged = false;
+        const nextList = prevList.map((wl) => {
+            let localChanged = false;
+            const withoutStaleSpillovers = wl.entries.filter((entry) => {
+                const parentId = entry.clientHomeTravelSpilloverOf;
+                if (parentId == null) {
+                    return true;
+                }
+                const parent = wl.entries.find((e) => e.id === parentId);
+                const homePeople = (parent?.persons ?? []).filter(
+                    (person) =>
+                        overrides[`${parentId}:${person}`]?.target === "home"
+                );
+                if (!parent || homePeople.length === 0) {
+                    localChanged = true;
+                    return false;
+                }
+                return true;
+            });
+
+            const nextEntries = [...withoutStaleSpillovers];
+            for (const entry of withoutStaleSpillovers) {
+                if (
+                    entry.descType !== "이동" ||
+                    entry.clientHomeTravelSpilloverOf != null ||
+                    !entry.dateFrom ||
+                    !entry.timeFrom
+                ) {
+                    continue;
+                }
+                const homePeople = (entry.persons ?? []).filter(
+                    (person) =>
+                        overrides[`${entry.id}:${person}`]?.target === "home"
+                );
+                if (homePeople.length === 0) {
+                    continue;
+                }
+                const fixedHours = getHomeTravelHours(
+                    wl.workLog.location ?? null
+                );
+                if (!fixedHours || fixedHours <= 0) {
+                    continue;
+                }
+                const start = toDateSafe(entry.dateFrom, entry.timeFrom);
+                if (Number.isNaN(start.getTime())) {
+                    continue;
+                }
+                const adjustedEnd = new Date(
+                    start.getTime() + fixedHours * 60 * 60 * 1000
+                );
+                const startDay = formatDateKey(start);
+                const endDay = formatDateKey(adjustedEnd);
+                if (endDay <= startDay) {
+                    continue;
+                }
+                const spilloverTimeTo = formatTimeHHMM(adjustedEnd);
+                if (spilloverTimeTo === "00:00") {
+                    continue;
+                }
+                const nextDay = shiftDateYmd(startDay, 1);
+                const spilloverBody = {
+                    dateFrom: nextDay,
+                    dateTo: nextDay,
+                    timeFrom: "00:00",
+                    timeTo: spilloverTimeTo,
+                    descType: "이동" as const,
+                    details: rewriteDetailsToHome(
+                        entry.details ?? "",
+                        entry.moveFrom
+                    ),
+                    persons: [...homePeople].sort((a, b) =>
+                        a.localeCompare(b, "ko")
+                    ),
+                    note: "",
+                    moveFrom: entry.moveFrom,
+                    moveTo: "자택",
+                    lunch_worked: entry.lunch_worked,
+                    clientDuplicated: true,
+                    clientHomeTravelSpilloverOf: entry.id,
+                    splitGroupId: entry.splitGroupId ?? null,
+                };
+                const existingIdx = nextEntries.findIndex(
+                    (candidate) =>
+                        candidate.clientHomeTravelSpilloverOf === entry.id
+                );
+                if (existingIdx >= 0) {
+                    const existing = nextEntries[existingIdx];
+                    const samePersons =
+                        existing.persons.length ===
+                            spilloverBody.persons.length &&
+                        existing.persons.every(
+                            (p, i) => p === spilloverBody.persons[i]
+                        );
+                    if (
+                        existing.dateFrom === spilloverBody.dateFrom &&
+                        existing.timeTo === spilloverBody.timeTo &&
+                        samePersons &&
+                        existing.moveTo === "자택"
+                    ) {
+                        continue;
+                    }
+                    localChanged = true;
+                    nextEntries[existingIdx] = {
+                        ...existing,
+                        ...spilloverBody,
+                    };
+                    continue;
+                }
+                localChanged = true;
+                nextEntries.push({
+                    ...spilloverBody,
+                    id: duplicateTimesheetEntryIdRef.current--,
+                });
+            }
+
+            if (!localChanged) {
+                return wl;
+            }
+            anyChanged = true;
+            nextEntries.sort((a, b) => {
+                const aStart = new Date(
+                    `${a.dateFrom}T${a.timeFrom || "00:00"}`
+                ).getTime();
+                const bStart = new Date(
+                    `${b.dateFrom}T${b.timeFrom || "00:00"}`
+                ).getTime();
+                if (aStart !== bStart) {
+                    return aStart - bStart;
+                }
+                return a.id - b.id;
+            });
+            return { ...wl, entries: nextEntries };
+        });
+
+        if (!anyChanged) {
+            return;
+        }
+
+        setWorkLogDataList(nextList);
+
+        const spilloverMapped = new Map<number, TimesheetSourceEntryData>();
+        for (const wl of nextList) {
+            for (const entry of wl.entries) {
+                if (entry.clientHomeTravelSpilloverOf == null) {
+                    continue;
+                }
+                spilloverMapped.set(
+                    entry.id,
+                    mapWorkLogEntryToTimesheetSource(
+                        entry,
+                        wl.workLog.id,
+                        wl.workLog.location ?? null
+                    )
                 );
             }
-            return pruneRedundantTravelChargeOverrides(next);
+        }
+
+        setSelectedTimesheetDateGroupPanel((prev) => {
+            if (!prev) {
+                return prev;
+            }
+            const withoutOldSpillovers = prev.fullGroupEntries.filter(
+                (e) => e.clientHomeTravelSpilloverOf == null
+            );
+            const existingIds = new Set(withoutOldSpillovers.map((e) => e.id));
+            const refreshed = withoutOldSpillovers.map(
+                (e) => spilloverMapped.get(e.id) ?? e
+            );
+            const toAdd = [...spilloverMapped.values()].filter(
+                (e) => !existingIds.has(e.id)
+            );
+            return {
+                ...prev,
+                fullGroupEntries: [...refreshed, ...toAdd].sort(
+                    compareTimesheetSourceEntriesByTimeThenId
+                ),
+            };
         });
     };
 
@@ -2655,13 +2871,14 @@ export default function InvoiceCreatePage() {
             .flatMap((row) => row.sourceEntries)
             .find((entry) => entry.id === entryId);
         if (!baseEntry) {
-            setTravelChargeOverrides((previous) =>
-                Object.fromEntries(
-                    Object.entries(previous).filter(
-                        ([key]) => !key.startsWith(`${entryId}:`)
-                    )
-                )
+            const pruned = Object.fromEntries(
+                Object.entries(
+                    latestInvoiceStateRef.current?.travelChargeOverrides ??
+                        travelChargeOverrides
+                ).filter(([key]) => !key.startsWith(`${entryId}:`))
             );
+            setTravelChargeOverrides(pruned);
+            syncHomeTravelMidnightSpilloverEntries(pruned);
             return;
         }
 
@@ -2676,13 +2893,14 @@ export default function InvoiceCreatePage() {
             );
         }
 
-        setTravelChargeOverrides((previous) =>
-            Object.fromEntries(
-                Object.entries(previous).filter(
-                    ([key]) => !keysToDelete.has(key)
-                )
-            )
+        const pruned = Object.fromEntries(
+            Object.entries(
+                latestInvoiceStateRef.current?.travelChargeOverrides ??
+                    travelChargeOverrides
+            ).filter(([key]) => !keysToDelete.has(key))
         );
+        setTravelChargeOverrides(pruned);
+        syncHomeTravelMidnightSpilloverEntries(pruned);
     };
 
     const pushInvoiceUndoSnapshot = useCallback(() => {
@@ -3025,7 +3243,16 @@ export default function InvoiceCreatePage() {
      * 출장지별 고정 이동시간이 걸리는 구간인지 판단한다.
      * 자택과 출장지를 직접 잇는 이동(자택→HD중공업(해양), HD중공업(해양)→…→자택)만 해당한다.
      * 자택→태성재처럼 출장지가 아닌 곳으로 가는 이동은 실제 이동시간을 그대로 청구한다.
+     * 배지로 자택을 지정한 경우도 출장지↔자택 구간으로 본다.
      */
+    const entryHasHomeTravelOverride = (
+        entry: Pick<InvoiceTimesheetEntry, "id" | "persons">
+    ): boolean =>
+        (entry.persons ?? []).some(
+            (person) =>
+                getTravelChargeOverride(entry.id, person)?.target === "home"
+        );
+
     const isHomeWorkSiteCommute = (entry: InvoiceTimesheetEntry): boolean => {
         const workPlace = normalizeLocationName(
             getPrimaryLocation(entry.location)
@@ -3038,10 +3265,13 @@ export default function InvoiceCreatePage() {
         const destination = normalizeLocationName(getFinalDestination(entry));
         // "자택및숙소"처럼 붙어 적히는 경우가 있어 포함 여부로 본다.
         const isHome = (place: string) => place.includes("자택");
+        const overrideHome = entryHasHomeTravelOverride(entry);
 
         return (
             (isHome(origin) && destination === workPlace) ||
-            (origin === workPlace && isHome(destination))
+            (origin === workPlace && isHome(destination)) ||
+            (overrideHome &&
+                (origin === workPlace || destination === workPlace || !destination))
         );
     };
 
@@ -3082,8 +3312,9 @@ export default function InvoiceCreatePage() {
         }
 
         const details = entry.details ?? "";
+        const overrideHome = entryHasHomeTravelOverride(entry);
 
-        if (!isHomeWorkSiteCommute(entry)) {
+        if (!isHomeWorkSiteCommute(entry) && !overrideHome) {
             return {
                 dateFrom: entry.dateFrom,
                 dateTo: entry.dateTo,
@@ -3111,11 +3342,18 @@ export default function InvoiceCreatePage() {
         }
 
         const fromHome =
-            entry.moveFrom === "자택" || details.trim().startsWith("자택→");
+            entry.moveFrom === "자택" ||
+            details.trim().startsWith("자택→") ||
+            details.trim().startsWith("자택 ->") ||
+            details.trim().startsWith("자택->") ||
+            (overrideHome &&
+                normalizeLocationName(getTravelEntryOrigin(entry)).includes(
+                    "자택"
+                ));
         const toHome =
             entry.moveTo === "자택" ||
-            details.includes("→자택 이동.") ||
-            details.endsWith("→자택");
+            /(?:→|->)\s*자택/.test(details) ||
+            (overrideHome && !fromHome);
 
         if (fromHome) {
             const adjustedStart = new Date(
@@ -3133,11 +3371,48 @@ export default function InvoiceCreatePage() {
         const adjustedEnd = new Date(
             originalStart.getTime() + fixedHours * 60 * 60 * 1000
         );
+        const startDay = formatDateKey(originalStart);
+        const originalEndDay = formatDateKey(originalEnd);
+        const adjustedEndDay = formatDateKey(adjustedEnd);
+
+        /**
+         * 이미 자정에서 잘린 조각(23:00~24:00 / 00:00~…)·spillover는
+         * 고정시간으로 다시 늘리지 않는다. 배분은 여정 단위 summarize가 담당.
+         */
+        const isMidnightBoundaryPiece =
+            entry.clientHomeTravelSpilloverOf != null ||
+            (startDay === originalEndDay &&
+                (originalTimeTo === "24:00" || originalTimeFrom === "00:00"));
+
+        if (isMidnightBoundaryPiece) {
+            return {
+                dateFrom: entry.dateFrom,
+                dateTo: entry.dateTo,
+                timeFrom: entry.timeFrom,
+                timeTo: entry.timeTo,
+                fixedHomeTravelWindowApplied: true,
+            };
+        }
 
         if (toHome) {
+            /**
+             * 자택 배지 spillover가 나머지를 만드는 경우에만 당일 24:00으로 자른다.
+             * DB에서 이미 자정 분할된 조각을 병합한 여정은 고정 창(예: 23:00~01:00)을
+             * 유지해야 날짜 분할로 9/1=1, 9/2=1이 나온다. 여기서 잘라 버리면
+             * 다음날 조각이 사라지고 당일에 고정 2h가 통째로 붙는다.
+             */
+            if (adjustedEndDay > startDay && overrideHome) {
+                return {
+                    dateFrom: startDay,
+                    dateTo: startDay,
+                    timeFrom: formatTimeHHMM(originalStart),
+                    timeTo: "24:00",
+                    fixedHomeTravelWindowApplied: true,
+                };
+            }
             return {
-                dateFrom: formatDateKey(originalStart),
-                dateTo: formatDateKey(adjustedEnd),
+                dateFrom: startDay,
+                dateTo: adjustedEndDay,
                 timeFrom: formatTimeHHMM(originalStart),
                 timeTo: formatTimeHHMM(adjustedEnd),
                 fixedHomeTravelWindowApplied: true,
@@ -3164,10 +3439,12 @@ export default function InvoiceCreatePage() {
 
     /** 출발지·도착지가 같으면 같은 이동으로 본다(자정에서 잘린 구간 판별용). */
     const getTravelJourneyKey = (entry: InvoiceTimesheetEntry): string => {
-        return [
-            normalizeLocationName(getTravelEntryOrigin(entry)),
-            normalizeLocationName(getFinalDestination(entry)),
-        ].join("→");
+        const origin = normalizeLocationName(getTravelEntryOrigin(entry));
+        let destination = normalizeLocationName(getFinalDestination(entry));
+        if (entryHasHomeTravelOverride(entry) && !destination.includes("자택")) {
+            destination = "자택";
+        }
+        return [origin, destination].join("→");
     };
 
     const mergeContinuousTravelEntries = (
@@ -3301,12 +3578,12 @@ export default function InvoiceCreatePage() {
             return moveTo;
         }
 
-        const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
-        if (!details.includes("→")) {
-            return details;
+        const parsed = parseTravelRoutePlaces(entry.details ?? "");
+        if (parsed) {
+            return parsed.destination;
         }
 
-        return details.split("→").pop()?.trim() ?? "";
+        return (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
     };
 
     const getTravelEntryOrigin = (entry: InvoiceTimesheetEntry): string => {
@@ -3315,12 +3592,12 @@ export default function InvoiceCreatePage() {
             return moveFrom;
         }
 
-        const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
-        if (!details.includes("→")) {
-            return details;
+        const parsed = parseTravelRoutePlaces(entry.details ?? "");
+        if (parsed) {
+            return parsed.origin;
         }
 
-        return details.split("→")[0]?.trim() ?? "";
+        return (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
     };
 
     const normalizeLocationName = (value: string | null | undefined): string => {
@@ -3403,7 +3680,8 @@ export default function InvoiceCreatePage() {
         if (
             fixedHours &&
             hasHomeInTravel(entry) &&
-            !entry.fixedHomeTravelWindowApplied
+            !entry.fixedHomeTravelWindowApplied &&
+            entry.clientHomeTravelSpilloverOf == null
         ) {
             return fixedHours;
         }
@@ -4201,6 +4479,136 @@ export default function InvoiceCreatePage() {
                     return "";
                 };
 
+                /**
+                 * 자정으로 잘린 자택↔출장지 이동에 고정시간을 여정 단위로 나눠 담는다.
+                 * 날짜별 조각만 보면 고정시간(2h)이 통째로 다시 붙어 Travel=3 같은 오류가 난다.
+                 */
+                const allocateFixedHomeTravelHoursByEntryId = (
+                    travelEntries: InvoiceTimesheetEntry[]
+                ): Map<number, number> => {
+                    const allocationByEntryId = new Map<number, number>();
+                    const sorted = [...travelEntries].sort((a, b) => {
+                        const aStart =
+                            getEntryStartTime(a) ?? Number.MAX_SAFE_INTEGER;
+                        const bStart =
+                            getEntryStartTime(b) ?? Number.MAX_SAFE_INTEGER;
+                        if (aStart !== bStart) {
+                            return aStart - bStart;
+                        }
+                        return a.id - b.id;
+                    });
+
+                    const journeys: InvoiceTimesheetEntry[][] = [];
+                    sorted.forEach((entry) => {
+                        const current = journeys[journeys.length - 1];
+                        const previous = current?.[current.length - 1];
+                        const previousEnd = previous
+                            ? getEntryEndTime(previous)
+                            : null;
+                        const currentStart = getEntryStartTime(entry);
+                        const spilloverContinuation =
+                            previous != null &&
+                            entry.clientHomeTravelSpilloverOf != null &&
+                            (entry.clientHomeTravelSpilloverOf === previous.id ||
+                                previous.sourceEntryIds.includes(
+                                    entry.clientHomeTravelSpilloverOf
+                                ));
+                        const sameJourney =
+                            previous != null &&
+                            getTravelJourneyKey(previous) ===
+                                getTravelJourneyKey(entry);
+
+                        if (
+                            current &&
+                            previous &&
+                            previousEnd !== null &&
+                            currentStart !== null &&
+                            previousEnd === currentStart &&
+                            (sameJourney || spilloverContinuation)
+                        ) {
+                            current.push(entry);
+                            return;
+                        }
+                        journeys.push([entry]);
+                    });
+
+                    journeys.forEach((journey) => {
+                        const fixedHours =
+                            getHomeTravelHours(journey[0].location) ?? 0;
+                        const isCommute =
+                            fixedHours > 0 &&
+                            (isHomeWorkSiteCommute(journey[0]) ||
+                                journey.some(
+                                    (item) =>
+                                        entryHasHomeTravelOverride(item) ||
+                                        item.clientHomeTravelSpilloverOf != null
+                                ));
+
+                        if (!isCommute) {
+                            journey.forEach((item) => {
+                                allocationByEntryId.set(
+                                    item.id,
+                                    roundHours(calculateRawTravelHours(item))
+                                );
+                            });
+                            return;
+                        }
+
+                        const departsFromHome =
+                            normalizeLocationName(
+                                getTravelEntryOrigin(journey[0])
+                            ) === "자택";
+                        const fillOrder = departsFromHome
+                            ? [...journey].reverse()
+                            : journey;
+                        let remaining = roundHours(fixedHours);
+                        fillOrder.forEach((item, index) => {
+                            const rawHours = roundHours(
+                                calculateRawTravelHours(item)
+                            );
+                            const isLast = index === fillOrder.length - 1;
+                            const allocated = isLast
+                                ? remaining
+                                : Math.min(Math.max(rawHours, 0), remaining);
+                            allocationByEntryId.set(
+                                item.id,
+                                roundHours(Math.max(0, allocated))
+                            );
+                            remaining = roundHours(
+                                Math.max(0, remaining - allocated)
+                            );
+                        });
+                    });
+
+                    return allocationByEntryId;
+                };
+
+                const homeTravelHoursAllocationByEntryId =
+                    allocateFixedHomeTravelHoursByEntryId(
+                        chronologicalEntries.filter(
+                            (entry) => entry.descType === "이동"
+                        )
+                    );
+
+                const sumAllocatedTravelHoursForEntries = (
+                    entries: InvoiceTimesheetEntry[]
+                ): number =>
+                    roundHours(
+                        entries.reduce((sum, entry) => {
+                            const allocated =
+                                homeTravelHoursAllocationByEntryId.get(entry.id);
+                            if (allocated !== undefined) {
+                                return sum + allocated;
+                            }
+                            /**
+                             * sourceEntryIds 전체를 합치면 자정 병합 엔트리가
+                             * 전날+다음날 청구를 하루 행에 몰아 넣는다.
+                             * 당일 구간 길이만 쓴다.
+                             */
+                            return sum + calculateRawTravelHours(entry);
+                        }, 0)
+                    );
+
                 sortedDates.forEach((date) => {
                     const dayEntries = entriesByDate.get(date)!;
                     if (dayEntries.length === 0) return;
@@ -4370,14 +4778,36 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
-                        if (
-                            override?.target === "home" &&
-                            fixedHours > 0
-                        ) {
+                        const usesHomeFixedCharge =
+                            (override?.target === "home" && fixedHours > 0) ||
+                            (fixedHours > 0 &&
+                                entries.some(
+                                    (entry) =>
+                                        isHomeWorkSiteCommute(entry) ||
+                                        hasHomeInTravel(entry) ||
+                                        entryHasHomeTravelOverride(entry) ||
+                                        entry.clientHomeTravelSpilloverOf != null
+                                ));
+
+                        if (usesHomeFixedCharge) {
+                            const hours = sumAllocatedTravelHoursForEntries(entries);
+                            const destination = getFinalDestination(lastEntry);
+                            const returnsHome =
+                                normalizeLocationName(destination) === "자택" ||
+                                entries.some(
+                                    (entry) =>
+                                        entryHasHomeTravelOverride(entry) ||
+                                        hasHomeInTravel(entry)
+                                );
+                            const windowStart = earliest ?? rawEarliest;
+                            const windowEnd =
+                                returnsHome && windowStart
+                                    ? shiftTimeByHours(date, windowStart, hours)
+                                    : latestValue ?? rawLatest;
                             return {
-                                hours: fixedHours,
-                                start: earliest,
-                                end: latestValue,
+                                hours,
+                                start: windowStart,
+                                end: windowEnd,
                             };
                         }
 
@@ -4454,6 +4884,8 @@ export default function InvoiceCreatePage() {
                                 location: entry.location,
                                 lunchWorked: entry.lunch_worked,
                                 clientDuplicated: entry.clientDuplicated === true,
+                                clientHomeTravelSpilloverOf:
+                                    entry.clientHomeTravelSpilloverOf ?? null,
                             }));
 
                         return {
@@ -4603,7 +5035,13 @@ export default function InvoiceCreatePage() {
 
                             const splitManual =
                                 entryManualBillableSplitHours[entry.id];
-                            if (splitManual) {
+                            const manual = entryManualBillableHours[entry.id];
+                            const splitIsPureRounded =
+                                Boolean(splitManual) &&
+                                isManualRoundedBillableFourOrEight(manual) &&
+                                isPureRoundedBillableSplit(splitManual!, manual);
+
+                            if (splitManual && !splitIsPureRounded) {
                                 normal +=
                                     splitManual.weekdayNormal +
                                     splitManual.weekendNormal;
@@ -4613,7 +5051,6 @@ export default function InvoiceCreatePage() {
                                 return;
                             }
 
-                            const manual = entryManualBillableHours[entry.id];
                             if (manual !== undefined) {
                                 if (isManualRoundedBillableFourOrEight(manual)) {
                                     const raw = rawEntryById.get(entry.id) ?? entry;
@@ -4655,6 +5092,14 @@ export default function InvoiceCreatePage() {
                             }
                             const manual = entryManualBillableHours[entry.id];
                             if (!isManualRoundedBillableFourOrEight(manual)) {
+                                continue;
+                            }
+                            const split = entryManualBillableSplitHours[entry.id];
+                            // 의도적인 N/A 분할(예: N=6 A=2)이 있으면 올림청구 창을 쓰지 않는다.
+                            if (
+                                split &&
+                                !isPureRoundedBillableSplit(split, manual)
+                            ) {
                                 continue;
                             }
                             const raw = rawEntryById.get(entry.id) ?? entry;
@@ -4699,6 +5144,15 @@ export default function InvoiceCreatePage() {
                             }
                             const split = entryManualBillableSplitHours[entry.id];
                             if (!split) {
+                                return;
+                            }
+                            const manual = entryManualBillableHours[entry.id];
+                            // 올림청구(4/8)가 N=4/N=8 분할로도 들어간 경우 분할은 무시하고
+                            // 올림청구 경로만 쓴다(8+8 이중 합산 방지).
+                            if (
+                                isManualRoundedBillableFourOrEight(manual) &&
+                                isPureRoundedBillableSplit(split, manual)
+                            ) {
                                 return;
                             }
                             found = true;
@@ -4942,17 +5396,48 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
-                        if (
-                            override?.target === "home" &&
-                            fixedHours > 0 &&
-                            !hasAdjustedFixedHomeWindow
-                        ) {
+                        const destination = getFinalDestination(lastEntry);
+                        const usesHomeFixedCharge =
+                            (override?.target === "home" && fixedHours > 0) ||
+                            (useFixedHomeHours &&
+                                fixedHours > 0 &&
+                                entries.some(
+                                    (entry) =>
+                                        isHomeWorkSiteCommute(entry) ||
+                                        hasHomeInTravel(entry) ||
+                                        entryHasHomeTravelOverride(entry) ||
+                                        entry.fixedHomeTravelWindowApplied ||
+                                        entry.clientHomeTravelSpilloverOf != null
+                                ));
+
+                        if (usesHomeFixedCharge) {
+                            const hours = sumAllocatedTravelHoursForEntries(entries);
+                            const returnsHome =
+                                normalizeLocationName(destination) === "자택" ||
+                                entries.some(
+                                    (entry) =>
+                                        entryHasHomeTravelOverride(entry) ||
+                                        hasHomeInTravel(entry)
+                                );
+                            const windowStart = useAdjustedTravelWindow
+                                ? earliest
+                                : rawEarliest;
+                            const windowEnd =
+                                returnsHome && windowStart
+                                    ? shiftTimeByHours(date, windowStart, hours)
+                                    : useAdjustedTravelWindow
+                                      ? latestValue
+                                      : rawLatest;
                             return {
-                                kind: `${fallbackLabel}-home`,
-                                hours: fixedHours,
-                                start: earliest,
-                                end: latestValue,
-                                label: fallbackLabel,
+                                kind:
+                                    override?.target === "home" ||
+                                    entries.some((entry) => hasHomeInTravel(entry))
+                                        ? `${fallbackLabel}-home`
+                                        : fallbackLabel,
+                                hours,
+                                start: windowStart,
+                                end: windowEnd,
+                                label: destination || fallbackLabel,
                             };
                         }
 
@@ -4973,7 +5458,6 @@ export default function InvoiceCreatePage() {
                                       ).hours),
                             0
                         );
-                        const destination = getFinalDestination(lastEntry);
 
                         return {
                             kind: fallbackLabel,
@@ -5177,22 +5661,6 @@ export default function InvoiceCreatePage() {
                         );
                         const overrideFixedHours =
                             getHomeTravelHours(beforeTravelEntries[0].location) ?? 0;
-                        /**
-                         * 이미 고정 청구시간으로 좁혀진 체인은 자정 분할된 조각만 남을 수
-                         * 있으므로 고정시간을 다시 적용하지 않고 보정된 구간만큼만 청구한다.
-                         */
-                        const resolveFixedHomeHours = (fixedHours: number) =>
-                            beforeTravelEntries.some(
-                                (entry) => entry.fixedHomeTravelWindowApplied
-                            )
-                                ? roundHours(
-                                      beforeTravelEntries.reduce(
-                                          (sum, entry) =>
-                                              sum + calculateRawTravelHours(entry),
-                                          0
-                                      )
-                                  )
-                                : fixedHours;
 
                         if (override?.target === "lodging") {
                             const { anchorDate, anchorTime } =
@@ -5212,8 +5680,9 @@ export default function InvoiceCreatePage() {
                         }
 
                         if (override?.target === "home" && overrideFixedHours > 0) {
-                            const chargeHours =
-                                resolveFixedHomeHours(overrideFixedHours);
+                            const chargeHours = sumAllocatedTravelHoursForEntries(
+                                beforeTravelEntries
+                            );
                             const { anchorDate, anchorTime } =
                                 blockIndex === 0
                                     ? getInitialBeforeTravelChargeEndAnchor(
@@ -5357,23 +5826,6 @@ export default function InvoiceCreatePage() {
                         );
                         const overrideFixedHours =
                             getHomeTravelHours(afterTravelEntries[0].location) ?? 0;
-                        /**
-                         * 이미 고정 청구시간으로 좁혀진 체인은 자정 분할된 조각만 남을 수
-                         * 있으므로 고정시간을 다시 적용하지 않고 보정된 구간만큼만 청구한다.
-                         */
-                        const hasAdjustedFixedHomeWindow = afterTravelEntries.some(
-                            (entry) => entry.fixedHomeTravelWindowApplied
-                        );
-                        const resolveFixedHomeHours = (fixedHours: number) =>
-                            hasAdjustedFixedHomeWindow
-                                ? roundHours(
-                                      afterTravelEntries.reduce(
-                                          (sum, entry) =>
-                                              sum + calculateRawTravelHours(entry),
-                                          0
-                                      )
-                                  )
-                                : fixedHours;
 
                         if (override?.target === "lodging") {
                             return {
@@ -5386,36 +5838,117 @@ export default function InvoiceCreatePage() {
                         }
 
                         if (override?.target === "home" && overrideFixedHours > 0) {
-                            const chargeHours =
-                                resolveFixedHomeHours(overrideFixedHours);
+                            const chargeHours = sumAllocatedTravelHoursForEntries(
+                                afterTravelEntries
+                            );
                             const { anchorDate, anchorTime } =
                                 getAfterTravelChainStartAnchor(
                                     afterTravelEntries,
                                     date,
                                     blockEndTime
                                 );
+                            const rawEnd = shiftTimeByHours(
+                                anchorDate,
+                                anchorTime,
+                                chargeHours
+                            );
+                            /**
+                             * 자정을 넘는 고정시간(예: 23:00+2h → 01:00)은 당일 행에
+                             * end=01:00을 넣으면 문자열 정렬로 Time To가 23으로 깨진다.
+                             * 당일은 24:00까지, 나머지 시간은 다음날 조각(spillover)이 담당.
+                             */
+                            const crossesMidnight =
+                                anchorDate === date &&
+                                rawEnd !== "24:00" &&
+                                rawEnd < anchorTime;
+                            const hoursUntilMidnight = (() => {
+                                const startMs = toDateSafe(
+                                    anchorDate,
+                                    anchorTime
+                                ).getTime();
+                                const midnightMs =
+                                    toDateSafe(date, "24:00").getTime();
+                                if (
+                                    Number.isNaN(startMs) ||
+                                    Number.isNaN(midnightMs) ||
+                                    midnightMs <= startMs
+                                ) {
+                                    return chargeHours;
+                                }
+                                return roundHours(
+                                    (midnightMs - startMs) / (60 * 60 * 1000)
+                                );
+                            })();
                             return {
                                 kind:
                                     blockIndex < totalBlocks - 1
                                         ? "이동-home"
                                         : "최종 철수-home",
-                                hours: chargeHours,
+                                hours: crossesMidnight
+                                    ? hoursUntilMidnight
+                                    : Math.min(chargeHours, hoursUntilMidnight),
                                 start: anchorTime,
-                                end: shiftTimeByHours(
-                                    anchorDate,
-                                    anchorTime,
-                                    chargeHours
-                                ),
-                                label: blockIndex < totalBlocks - 1 ? "이동" : "최종 철수",
+                                end:
+                                    crossesMidnight ||
+                                    chargeHours > hoursUntilMidnight
+                                        ? "24:00"
+                                        : rawEnd,
+                                label:
+                                    blockIndex < totalBlocks - 1
+                                        ? "이동"
+                                        : "최종 철수",
                             };
                         }
 
+                        const clipAfterTravelToSameDay = <
+                            T extends {
+                                hours: number;
+                                start: string | null;
+                                end: string | null;
+                            },
+                        >(
+                            summary: T
+                        ): T => {
+                            if (
+                                !summary.start ||
+                                summary.hours <= 0 ||
+                                summary.start === "00:00"
+                            ) {
+                                return summary;
+                            }
+                            const startMs = toDateSafe(
+                                date,
+                                summary.start
+                            ).getTime();
+                            const midnightMs = toDateSafe(date, "24:00").getTime();
+                            if (
+                                Number.isNaN(startMs) ||
+                                Number.isNaN(midnightMs) ||
+                                midnightMs <= startMs
+                            ) {
+                                return summary;
+                            }
+                            const hoursUntilMidnight = roundHours(
+                                (midnightMs - startMs) / (60 * 60 * 1000)
+                            );
+                            if (summary.hours <= hoursUntilMidnight) {
+                                return summary;
+                            }
+                            return {
+                                ...summary,
+                                hours: hoursUntilMidnight,
+                                end: "24:00",
+                            };
+                        };
+
                         if (blockIndex < totalBlocks - 1) {
-                            return summarizeTravelEntries(
-                                afterTravelEntries,
-                                "이동",
-                                true,
-                                person
+                            return clipAfterTravelToSameDay(
+                                summarizeTravelEntries(
+                                    afterTravelEntries,
+                                    "이동",
+                                    true,
+                                    person
+                                )
                             );
                         }
 
@@ -5438,11 +5971,13 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
-                        return summarizeTravelEntries(
-                            afterTravelEntries,
-                            "최종 철수",
-                            true,
-                            person
+                        return clipAfterTravelToSameDay(
+                            summarizeTravelEntries(
+                                afterTravelEntries,
+                                "최종 철수",
+                                true,
+                                person
+                            )
                         );
                     };
 
@@ -6070,6 +6605,8 @@ export default function InvoiceCreatePage() {
                                     lunchWorked: entry.lunch_worked,
                                     clientDuplicated:
                                         entry.clientDuplicated === true,
+                                    clientHomeTravelSpilloverOf:
+                                        entry.clientHomeTravelSpilloverOf ?? null,
                                 })),
                             chargeWindowStart: group.row.chargeWindowStart,
                             chargeWindowEnd: group.row.chargeWindowEnd,
@@ -6309,12 +6846,12 @@ export default function InvoiceCreatePage() {
             return moveFrom;
         }
 
-        const details = (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
-        if (!details.includes("→")) {
-            return details;
+        const parsed = parseTravelRoutePlaces(entry.details ?? "");
+        if (parsed) {
+            return parsed.origin;
         }
 
-        return details.split("→")[0]?.trim() ?? "";
+        return (entry.details ?? "").replace(/\s*이동\.?\s*$/, "").trim();
     };
     const resolvePlaceToCity = (place: string, workLocation?: string | null) => {
         const normalizedPlace = normalizeLocationName(place);
@@ -8791,6 +9328,15 @@ export default function InvoiceCreatePage() {
             return { hours: 1, kind: "continued" };
         }
         if (override?.target === "home" && fixedHours > 0) {
+            if (entry.clientHomeTravelSpilloverOf != null) {
+                return {
+                    hours: calculateRawTravelHours({
+                        ...entry,
+                        sourceEntryIds: [entry.id],
+                    } as InvoiceTimesheetEntry),
+                    kind: "home",
+                };
+            }
             return { hours: fixedHours, kind: "home" };
         }
 
@@ -9280,64 +9826,26 @@ export default function InvoiceCreatePage() {
         return lines;
     };
 
-    /**
-     * 타임시트 청구·사이드패널 빨간날과 동일 판정
-     * (`isWeekend(date) || holidayDateSet.has(date)`)
-     */
-    const isInvoiceWeekendOrHolidayDate = (ymd: string): boolean =>
-        isWeekendOrHoliday(ymd, holidayDateSet);
-
-    /** 토·일 제외, 기존 공휴일 판정으로 평일 공휴일 코멘트 생성 */
+    /** 토·일 제외, 실제 작업·이동이 있는 평일 공휴일만 코멘트 생성 */
     const getNationalHolidayInvoiceComments = (
         section: NormalTimesheetSection
     ): string[] => {
-        const activityDates = new Set<string>();
-        for (const row of section.rows) {
-            if (row.date) {
-                activityDates.add(row.date);
-            }
-            for (const entry of row.sourceEntries ?? []) {
-                const from = entry.dateFrom?.trim() ?? "";
-                const to = (entry.dateTo ?? entry.dateFrom)?.trim() ?? "";
-                if (!from) continue;
-                enumerateDateRange(from, to || from).forEach((d) =>
-                    activityDates.add(d)
-                );
-            }
-        }
-
-        const sortedActivity = Array.from(activityDates)
-            .filter(Boolean)
-            .sort();
-        if (sortedActivity.length === 0) {
+        // 활동 첫날~마지막날을 통째로 펼치지 않는다.
+        // 타임시트에 행이 있는 날짜만 대상으로 한다(작업·이동 없는 공휴일 제외).
+        const datesWithActivity = new Set(
+            section.rows.map((row) => row.date).filter(Boolean)
+        );
+        if (datesWithActivity.size === 0) {
             return [];
         }
 
-        // 섹션 활동 기간 전체 + 타임시트에 주말/공휴일 청구된 평일
-        const candidateDates = new Set(
-            enumerateDateRange(
-                sortedActivity[0],
-                sortedActivity[sortedActivity.length - 1]
-            )
-        );
-        for (const row of section.rows) {
-            if (!row.date || isWeekend(row.date)) continue;
-            const tc = row.timesheetChargeDisplay;
-            const weekendNormal = tc?.weekendNormal ?? row.weekendNormal ?? 0;
-            const weekendAfter = tc?.weekendAfter ?? row.weekendAfter ?? 0;
-            const travelWeekend = row.travelWeekend ?? 0;
-            if (weekendNormal > 0 || weekendAfter > 0 || travelWeekend > 0) {
-                candidateDates.add(row.date);
-            }
-        }
-
-        return Array.from(candidateDates)
+        return Array.from(datesWithActivity)
             .sort()
             .filter((date) => {
                 if (isWeekend(date)) return false;
                 // 사이드패널 빨간날(평일 공휴일)과 동일
-                if (isInvoiceWeekendOrHolidayDate(date)) return true;
-                // 타임시트 생성 시 holidaySet 기준으로 주말 청구된 평일
+                if (holidayDateSet.has(date)) return true;
+                // 평일인데 주말 요금으로 청구된 날(공휴일 취급)
                 return section.rows.some((row) => {
                     if (row.date !== date) return false;
                     const tc = row.timesheetChargeDisplay;
@@ -10503,21 +11011,42 @@ export default function InvoiceCreatePage() {
         }
 
         const loadPersonVesselHistory = async () => {
-            const { data: entryPersonRows, error: entryPersonError } = await supabase
-                .from("work_log_entry_persons")
-                .select("entry_id, person_name")
-                .in("person_name", allInvoicePeople);
+            const PAGE_SIZE = 1000;
+            const entryPersonRows: Array<{
+                entry_id: number | string;
+                person_name: string | null;
+            }> = [];
 
-            if (cancelled) {
-                return;
+            // person_name IN 은 URL 길이 제한을 피하기 위해 청크 + range로 전체 수집
+            for (const peopleChunk of chunk(allInvoicePeople, 150)) {
+                let from = 0;
+                while (true) {
+                    const { data, error } = await supabase
+                        .from("work_log_entry_persons")
+                        .select("entry_id, person_name")
+                        .in("person_name", peopleChunk)
+                        .range(from, from + PAGE_SIZE - 1);
+
+                    if (cancelled) {
+                        return;
+                    }
+
+                    if (error) {
+                        console.error(
+                            "인원별 호선 이력 참여자 조회 실패:",
+                            error
+                        );
+                        return;
+                    }
+
+                    const page = data ?? [];
+                    entryPersonRows.push(...page);
+                    if (page.length < PAGE_SIZE) break;
+                    from += PAGE_SIZE;
+                }
             }
 
-            if (entryPersonError) {
-                console.error("인원별 호선 이력 참여자 조회 실패:", entryPersonError);
-                return;
-            }
-
-            const normalizedPairs = (entryPersonRows ?? [])
+            const normalizedPairs = entryPersonRows
                 .map((row) => ({
                     entryId:
                         typeof row.entry_id === "number" ? row.entry_id : Number(row.entry_id),
@@ -10564,12 +11093,13 @@ export default function InvoiceCreatePage() {
                 id: number;
                 work_log_id: number;
                 date_from: string | null;
+                date_to: string | null;
                 time_from: string | null;
             }> = [];
             for (const ids of chunk(entryIds, 500)) {
                 const { data, error } = await supabase
                     .from("work_log_entries")
-                    .select("id, work_log_id, date_from, time_from")
+                    .select("id, work_log_id, date_from, date_to, time_from")
                     .in("id", ids);
 
                 if (cancelled) {
@@ -10620,6 +11150,7 @@ export default function InvoiceCreatePage() {
                 {
                     workLogId: number;
                     dateFrom: string | null;
+                    dateTo: string | null;
                     timeFrom: string | null;
                 }
             >(
@@ -10628,6 +11159,7 @@ export default function InvoiceCreatePage() {
                     {
                         workLogId: row.work_log_id,
                         dateFrom: row.date_from,
+                        dateTo: row.date_to,
                         timeFrom: row.time_from,
                     },
                 ])
@@ -10637,13 +11169,15 @@ export default function InvoiceCreatePage() {
                     entryMetaById.set(entry.id, {
                         workLogId: data.workLog.id,
                         dateFrom: entry.dateFrom,
+                        dateTo: entry.dateTo ?? entry.dateFrom,
                         timeFrom: entry.timeFrom ?? null,
                     });
                 });
             });
+            // 워크로드와 동일하게 초안 보고서 호선도 포함 (같은 날 다른 호선 누락 방지)
             const vesselByWorkLogId = new Map<number, string>(
                 workLogRows
-                    .filter((row) => !row.is_draft && row.vessel?.trim())
+                    .filter((row) => row.vessel?.trim())
                     .map((row) => [row.id, row.vessel!.trim()])
             );
             workLogDataList.forEach((data) => {
@@ -10652,6 +11186,31 @@ export default function InvoiceCreatePage() {
                     vesselByWorkLogId.set(data.workLog.id, vessel);
                 }
             });
+
+            const addDaysYmd = (dateStr: string, days: number): string => {
+                const d = new Date(`${dateStr}T00:00:00`);
+                d.setDate(d.getDate() + days);
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, "0");
+                const day = String(d.getDate()).padStart(2, "0");
+                return `${y}-${m}-${day}`;
+            };
+
+            const datesCoveredByEntry = (
+                dateFrom: string,
+                dateTo: string | null
+            ): string[] => {
+                const end = dateTo && dateTo >= dateFrom ? dateTo : dateFrom;
+                const dates: string[] = [];
+                let cursor = dateFrom;
+                // 비정상적으로 긴 구간 방어
+                for (let i = 0; i < 60; i++) {
+                    dates.push(cursor);
+                    if (cursor >= end) break;
+                    cursor = addDaysYmd(cursor, 1);
+                }
+                return dates;
+            };
 
             const sortedPairs = [...allPairs].sort((a, b) => {
                 const metaA = entryMetaById.get(a.entryId);
@@ -10691,16 +11250,21 @@ export default function InvoiceCreatePage() {
                     );
                 }
                 const byDate = next.get(person)!;
-                if (!byDate.has(meta.dateFrom)) {
-                    byDate.set(meta.dateFrom, {
-                        vessels: [],
-                        vesselSet: new Set<string>(),
-                    });
-                }
-                const bucket = byDate.get(meta.dateFrom)!;
-                if (!bucket.vesselSet.has(vessel)) {
-                    bucket.vesselSet.add(vessel);
-                    bucket.vessels.push(vessel);
+                for (const dateKey of datesCoveredByEntry(
+                    meta.dateFrom,
+                    meta.dateTo
+                )) {
+                    if (!byDate.has(dateKey)) {
+                        byDate.set(dateKey, {
+                            vessels: [],
+                            vesselSet: new Set<string>(),
+                        });
+                    }
+                    const bucket = byDate.get(dateKey)!;
+                    if (!bucket.vesselSet.has(vessel)) {
+                        bucket.vesselSet.add(vessel);
+                        bucket.vessels.push(vessel);
+                    }
                 }
             });
 
@@ -10728,7 +11292,7 @@ export default function InvoiceCreatePage() {
         return () => {
             cancelled = true;
         };
-    }, [allInvoicePeopleKey]);
+    }, [allInvoicePeopleKey, workLogDataList]);
 
     useEffect(() => {
         setSelectedSkilledFitters((previous) => {
@@ -11567,6 +12131,8 @@ export default function InvoiceCreatePage() {
             location,
             lunchWorked: entry.lunch_worked,
             clientDuplicated: entry.clientDuplicated === true,
+            clientHomeTravelSpilloverOf:
+                entry.clientHomeTravelSpilloverOf ?? null,
             splitGroupId: entry.splitGroupId,
         }),
         []

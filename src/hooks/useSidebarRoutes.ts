@@ -19,6 +19,8 @@ export function useSidebarRoutes() {
         !!matchPath({ path: "/report/:id/edit", end: false }, location.pathname);
     const isReportEditRoute = isReportEditByQuery || isReportEditByPath;
 
+    const isScheduleRoute =
+        isMatch(PATHS.scheduleList) || isMatch(PATHS.scheduleCreate);
     const isReportRoute =
         isMatch(PATHS.reportList) || isMatch(PATHS.reportCreate) || isReportEditRoute;
     const isTbmRoute =
@@ -30,6 +32,7 @@ export function useSidebarRoutes() {
     const isInvoiceRoute = isMatch(PATHS.invoice);
 
     return {
+        isScheduleRoute,
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,

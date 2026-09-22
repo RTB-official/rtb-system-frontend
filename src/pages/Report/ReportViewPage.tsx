@@ -259,6 +259,12 @@ function splitEntryByDayForDisplay(entry: any, fallbackKey: string) {
         const segTimeFrom = isFirst ? timeFrom : "00:00";
         const segTimeTo = isLast ? timeTo : "24:00"; // ✅ 중간 날짜는 24:00까지
 
+        // 24:00~24:00 / 00:00~00:00 등 0시간 조각은 표시하지 않음
+        if (segTimeFrom === segTimeTo) {
+            cur.setDate(cur.getDate() + 1);
+            continue;
+        }
+
         results.push({
             ...entry,
             dateFrom: d,
@@ -269,6 +275,15 @@ function splitEntryByDayForDisplay(entry: any, fallbackKey: string) {
         });
 
         cur.setDate(cur.getDate() + 1);
+    }
+
+    if (results.length === 0) {
+        return [
+            {
+                ...entry,
+                __segKey: String(entry.id ?? fallbackKey),
+            },
+        ];
     }
 
     return results;
