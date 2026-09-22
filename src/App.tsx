@@ -41,6 +41,8 @@ const BoardEditPage = lazy(() => import("./pages/Board/BoardEditPage"));
 const InvoicePage = lazy(() => import("./pages/Invoice/InvoicePage"));
 const InvoiceDraftListPage = lazy(() => import("./pages/Invoice/InvoiceDraftListPage"));
 const InvoiceCreatePage = lazy(() => import("./pages/Invoice/InvoiceCreatePage"));
+const ScheduleListPage = lazy(() => import("./pages/Schedule/ScheduleListPage"));
+const ScheduleCreatePage = lazy(() => import("./pages/Schedule/ScheduleCreatePage"));
 
 
 function RoleLanding() {
@@ -91,6 +93,9 @@ function App() {
                 <Route path="/board/create" element={<BoardCreatePage />} />
                 <Route path="/board/:id/edit" element={<BoardEditPage />} />
                 <Route path="/board/:id" element={<Navigate to="/board" replace />} />
+
+                <Route path="/schedule" element={<ScheduleListPage />} />
+                <Route path="/schedule/create" element={<ScheduleCreatePage />} />
 
                 <Route path="/members" element={<MembersPage />} />
                 <Route path="/vehicles" element={<VehiclesPage />} />

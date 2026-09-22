@@ -146,7 +146,13 @@ export default function WorkloadDailyDetailAnalysis({
                             label: "호선명",
                             render: (value: string | null, row: WorkloadDetailEntry, index: number) => {
                                 const prev = currentTableData[index - 1];
-                                if (prev?.date === row.date) return <span className="text-transparent">-</span>;
+                                // 같은 날짜·같은 보고서의 연속 행만 호선명 숨김 (다른 호선이면 표시)
+                                if (
+                                    prev?.date === row.date &&
+                                    prev.workLogId === row.workLogId
+                                ) {
+                                    return <span className="text-transparent">-</span>;
+                                }
                                 return value || "";
                             },
                         },

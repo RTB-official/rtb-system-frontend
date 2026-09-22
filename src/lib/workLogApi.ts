@@ -254,6 +254,11 @@ export interface WorkLogFullData {
         lunch_worked?: boolean;
         /** 인보이스 생성 화면에서 복사로 만든 항목(저장 payload에는 미사용) */
         clientDuplicated?: boolean;
+        /**
+         * 자택 배지(고정시간)가 자정을 넘길 때 다음날 00:00~ 구간으로 만든
+         * 클라이언트 전용 조각. 값은 원본 이동 엔트리 id.
+         */
+        clientHomeTravelSpilloverOf?: number | null;
         /** 자정 분할 세그먼트 연동용 (같은 값이면 상세·인원·유형 동기화) */
         splitGroupId?: string | null;
     }>;
@@ -290,10 +295,20 @@ function newWorkLogSplitGroupId(): string {
     return `split_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 }
 
+/** 같은 날 세그먼트에서 시작=종료(0시간)인지 — 예: 24:00~24:00, 00:00~00:00 */
+function isZeroDurationSameDaySegment(timeFrom?: string, timeTo?: string): boolean {
+    const from = timeFrom || "00:00";
+    const to = timeTo || "00:00";
+    return from === to;
+}
+
 /**
  * 날짜가 넘어가는 entry를 분할 (24시(00시) 기준으로 나눔)
  * 예: 2월 28일 18시 ~ 3월 1일 06시
  * → [2월 28일 18시 ~ 2월 28일 24:00, 3월 1일 00:00 ~ 3월 1일 06시]
+ *
+ * 시작이 24:00(또는 종료가 00:00)이면 0시간 조각은 만들지 않음.
+ * 예: 9/1 24:00 ~ 9/2 03:00 → [9/2 00:00 ~ 9/2 03:00] 만
  */
 function splitEntryByDate(entry: {
     id?: number;
@@ -332,7 +347,7 @@ function splitEntryByDate(entry: {
         return { segments: [entry] };
     }
 
-    const segments: Array<{
+    type Segment = {
         id?: number;
         dateFrom: string;
         timeFrom?: string;
@@ -346,18 +361,21 @@ function splitEntryByDate(entry: {
         moveTo?: string;
         lunch_worked?: boolean;
         splitGroupId?: string | null;
-    }> = [];
-    const originalId = entry.id;
+    };
+
+    const segments: Segment[] = [];
     const splitGroupId = newWorkLogSplitGroupId();
 
-    // 첫 번째 세그먼트: dateFrom ~ dateFrom의 24:00
-    segments.push({
-        ...entry,
-        id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
-        dateTo: entry.dateFrom,
-        timeTo: "24:00",
-        splitGroupId,
-    });
+    // 첫 번째 세그먼트: dateFrom ~ dateFrom의 24:00 (이미 24:00 시작이면 0시간 → 생략)
+    if (!isZeroDurationSameDaySegment(entry.timeFrom, "24:00")) {
+        segments.push({
+            ...entry,
+            id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
+            dateTo: entry.dateFrom,
+            timeTo: "24:00",
+            splitGroupId,
+        });
+    }
 
     // 중간 날짜들 (있는 경우): 각 날짜의 00:00 ~ 24:00
     const startDate = new Date(`${entry.dateFrom}T00:00:00`);
@@ -379,16 +397,36 @@ function splitEntryByDate(entry: {
         currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // 마지막 세그먼트: dateTo의 00:00 ~ dateTo의 timeTo
-    segments.push({
-        ...entry,
-        id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
-        dateFrom: entry.dateTo,
-        timeFrom: "00:00",
-        splitGroupId,
-    });
+    // 마지막 세그먼트: dateTo의 00:00 ~ dateTo의 timeTo (종료가 00:00이면 0시간 → 생략)
+    if (!isZeroDurationSameDaySegment("00:00", entry.timeTo)) {
+        segments.push({
+            ...entry,
+            id: undefined, // ✅ 분할된 entry는 id 제거 (새로 INSERT)
+            dateFrom: entry.dateTo,
+            timeFrom: "00:00",
+            splitGroupId,
+        });
+    }
 
-    return { segments, originalId };
+    // 유효 세그먼트가 없으면 저장할 내용 없음 (예: 9/1 24:00 ~ 9/2 00:00)
+    if (segments.length === 0) {
+        return { segments: [], originalId: entry.id };
+    }
+
+    // 0시간 조각을 걸러 세그먼트가 1개만 남으면 분할이 아님 → 원본 id로 갱신
+    if (segments.length === 1) {
+        return {
+            segments: [
+                {
+                    ...segments[0],
+                    id: entry.id,
+                    splitGroupId: entry.splitGroupId ?? null,
+                },
+            ],
+        };
+    }
+
+    return { segments, originalId: entry.id };
 }
 
 // ==================== CRUD 함수 ====================
@@ -457,6 +495,14 @@ export async function createWorkLog(
                 const { segments } = splitEntryByDate(entry);
 
                 for (const segment of segments) {
+                    // 24:00~24:00 등 0시간 세그먼트는 저장하지 않음
+                    if (
+                        segment.dateFrom === segment.dateTo &&
+                        isZeroDurationSameDaySegment(segment.timeFrom, segment.timeTo)
+                    ) {
+                        continue;
+                    }
+
                     let entryData: { id: number };
                     try {
                         entryData = await insertWorkLogEntryRow({
@@ -1145,15 +1191,32 @@ for (const r of curRows ?? []) {
     const expandedEntries: Array<typeof incoming[0]> = [];
     
     for (const e of incoming) {
+      // 이미 저장된 24:00~24:00 등 0시간 엔트리는 삭제 대상으로 두고 저장하지 않음
+      if (
+        e.dateFrom === e.dateTo &&
+        isZeroDurationSameDaySegment(e.timeFrom, e.timeTo)
+      ) {
+        if (e.id) idsToDeleteFromSplit.add(e.id);
+        continue;
+      }
+
       const { segments, originalId } = splitEntryByDate(e);
       
-      // 분할된 경우 원본 id를 삭제 대상에 추가
-      if (originalId && segments.length > 1) {
+      // 실제로 2개 이상으로 분할된 경우만 원본 id 삭제 (0시간 조각만 걸러진 경우는 원본 갱신)
+      if (originalId) {
         idsToDeleteFromSplit.add(originalId);
       }
       
-      // 분할된 segments를 expandedEntries에 추가
-      expandedEntries.push(...segments);
+      // 분할된 segments를 expandedEntries에 추가 (0시간 조각 제외)
+      for (const segment of segments) {
+        if (
+          segment.dateFrom === segment.dateTo &&
+          isZeroDurationSameDaySegment(segment.timeFrom, segment.timeTo)
+        ) {
+          continue;
+        }
+        expandedEntries.push(segment);
+      }
     }
     
     // ✅ 분할로 인해 삭제해야 할 entry들 삭제

@@ -16,6 +16,14 @@ export function useSidebarMenuItems(
     isReportEditRoute: boolean,
     location: ReturnType<typeof useLocation>
 ) {
+    const scheduleSubMenuItems = useMemo<MenuItem[]>(
+        () => [
+            { label: "일정 목록", to: PATHS.scheduleList },
+            { label: "일정 등록", to: PATHS.scheduleCreate },
+        ],
+        []
+    );
+
     const reportSubMenuItems = useMemo<MenuItem[]>(
         () => [
             { label: "보고서 목록", to: PATHS.reportList },
@@ -58,6 +66,7 @@ export function useSidebarMenuItems(
     );
 
     return {
+        scheduleSubMenuItems,
         reportSubMenuItems,
         tbmSubMenuItems,
         expenseSubMenuItems,

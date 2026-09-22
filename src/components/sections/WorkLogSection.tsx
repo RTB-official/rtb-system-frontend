@@ -186,6 +186,12 @@ function splitEntryByDayForDisplay<T extends {
         const segTimeFrom = isFirst ? timeFrom : "00:00";
         const segTimeTo = isLast ? timeTo : "24:00"; // ✅ 중간 날짜는 24:00까지
 
+        // 24:00~24:00 / 00:00~00:00 등 0시간 조각은 표시하지 않음
+        if (segTimeFrom === segTimeTo) {
+            cur.setDate(cur.getDate() + 1);
+            continue;
+        }
+
         results.push({
             ...entry,
             dateFrom: d,
@@ -197,6 +203,15 @@ function splitEntryByDayForDisplay<T extends {
         });
 
         cur.setDate(cur.getDate() + 1);
+    }
+
+    // 모두 0시간으로 걸러지면 원본 1개로 표시
+    if (results.length === 0) {
+        return [{
+            ...entry,
+            __segId: String(entry.id),
+            __originId: entry.id,
+        }];
     }
 
     return results;
@@ -527,9 +542,16 @@ export default function WorkLogSection() {
         });
     }, [workLogEntries]);
 
-        // ✅ 표시용: 날짜별로 분할한 카드 리스트
+        // ✅ 표시용: 날짜별로 분할한 카드 리스트 (0시간 카드 제외)
         const displayEntries = useMemo(() => {
-            const split = sortedEntries.flatMap((e) => splitEntryByDayForDisplay(e));
+            const split = sortedEntries
+                .flatMap((e) => splitEntryByDayForDisplay(e))
+                .filter((e) => {
+                    const from = e.timeFrom || "00:00";
+                    const to = e.timeTo || "00:00";
+                    // 같은 날 시작=종료(24:00~24:00 등) 0시간 카드 숨김
+                    return !(e.dateFrom === e.dateTo && from === to);
+                });
             return split.sort((a, b) => {
                 const aKey = `${a.dateFrom}T${a.timeFrom || "00:00"}`;
                 const bKey = `${b.dateFrom}T${b.timeFrom || "00:00"}`;

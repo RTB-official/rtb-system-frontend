@@ -13,6 +13,32 @@ export function isManualRoundedBillableFourOrEight(
     return r === 4 || r === 8;
 }
 
+/**
+ * N/A 분할이 사실상 올림청구(4h 또는 8h) 한 칸만 채운 형태인지.
+ * 이 경우 split을 쓰면 타임시트에서 올림청구와 이중 합산된다.
+ */
+export function isPureRoundedBillableSplit(
+    split: {
+        weekdayNormal: number;
+        weekdayAfter: number;
+        weekendNormal: number;
+        weekendAfter: number;
+    },
+    totalHours: number
+): boolean {
+    if (!isManualRoundedBillableFourOrEight(totalHours)) {
+        return false;
+    }
+    const buckets = [
+        split.weekdayNormal,
+        split.weekdayAfter,
+        split.weekendNormal,
+        split.weekendAfter,
+    ].map((h) => roundHours(h));
+    const nonZero = buckets.filter((h) => h > 0);
+    return nonZero.length === 1 && nonZero[0] === roundHours(totalHours);
+}
+
 function getOverlapMinutes(
     rangeStart: Date,
     rangeEnd: Date,

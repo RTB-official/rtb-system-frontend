@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import BaseModal from "../ui/BaseModal";
+import { useStaffSortMeta } from "../../hooks/useStaffSortMeta";
+import { sortPeopleByRoleAndJoinDate } from "../../utils/sortPeopleByRoleAndJoinDate";
+import {
+    isPureRoundedBillableSplit,
+} from "../../utils/workEntryBillableHours";
 
 export type TimesheetEntryEditorEntry = {
     id: number;
@@ -505,6 +510,7 @@ export function TimesheetEntryEditorForm({
     remountTick = 0,
     formTitle = "엔트리 수정",
 }: TimesheetEntryEditorFormProps) {
+    const staffSortMeta = useStaffSortMeta();
     const baselineEntryIdRef = useRef<number | null>(null);
     const baselineRemountRef = useRef(0);
     const baselineRef = useRef<EditorBaselineSnapshot | null>(null);
@@ -838,6 +844,19 @@ export function TimesheetEntryEditorForm({
             return;
         }
         const manualBillableHoursPayload: number | null = parsedBillable;
+        // 올림청구(4/8)를 N=4/N=8 분할로 같이 저장하면 타임시트에서 이중 합산된다.
+        const splitPayload =
+            parsedSplitBillable &&
+            typeof parsedSplitBillable === "object" &&
+            !(
+                manualBillableHoursPayload !== null &&
+                isPureRoundedBillableSplit(
+                    parsedSplitBillable,
+                    manualBillableHoursPayload
+                )
+            )
+                ? parsedSplitBillable
+                : null;
         onSave({
             entryId: entry.id,
             descType,
@@ -846,19 +865,20 @@ export function TimesheetEntryEditorForm({
             timeFrom: normalizedTimeFrom,
             timeTo: normalizedTimeTo,
             details: details.trim(),
-            persons: [...selectedPersons].sort((a, b) => a.localeCompare(b, "ko")),
+            persons: sortPeopleByRoleAndJoinDate(
+                [...selectedPersons],
+                staffSortMeta
+            ),
             manualBillableHours: manualBillableHoursPayload,
-            manualBillableSplitHours:
-                parsedSplitBillable && typeof parsedSplitBillable === "object"
-                    ? parsedSplitBillable
-                    : null,
+            manualBillableSplitHours: splitPayload,
         });
         onCancel();
     };
 
     const descOptions = ["이동", "작업", "대기"] as const;
-    const sortedPeople = [...invoiceTimesheetPeople].sort((a, b) =>
-        a.localeCompare(b, "ko")
+    const sortedPeople = sortPeopleByRoleAndJoinDate(
+        invoiceTimesheetPeople,
+        staffSortMeta
     );
 
     return (

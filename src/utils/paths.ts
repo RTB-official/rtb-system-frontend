@@ -4,6 +4,8 @@ export const PATHS = {
     boardCreate: "/board/create",
     boardView: (id: string) => `/board/${id}`,
     boardEdit: (id: string) => `/board/${id}/edit`,
+    scheduleList: "/schedule",
+    scheduleCreate: "/schedule/create",
     reportList: "/report",
     reportCreate: "/reportcreate",
     invoice: "/invoice",
