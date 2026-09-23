@@ -57,7 +57,7 @@ export default function CopyPreviousWorkInfoSection({
         setVessel,
         setEngine,
         setOrderGroup,
-        setOrderPerson,
+        setOrderPersons,
         setLocations,
         setLocationCustom,
         setVehicles,
@@ -291,7 +291,10 @@ export default function CopyPreviousWorkInfoSection({
         if (workLog.vessel) setVessel(workLog.vessel);
         if (workLog.engine) setEngine(workLog.engine);
         if (workLog.order_group) setOrderGroup(workLog.order_group);
-        if (workLog.order_person) setOrderPerson(workLog.order_person);
+        if (workLog.order_person) {
+            const persons = workLog.order_person.split(",").map((p) => p.trim()).filter(Boolean);
+            setOrderPersons(persons);
+        }
         if (workLog.subject) setSubject(workLog.subject);
 
         // 출장지 복사

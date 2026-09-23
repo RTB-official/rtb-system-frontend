@@ -10,6 +10,7 @@ import Button from "../../components/common/Button";
 import Avatar from "../../components/common/Avatar";
 import ReportMultiLineTitle from "../../components/common/ReportMultiLineTitle";
 import { IconInvoice } from "../../components/icons/Icons";
+import InvoiceReportListSkeleton from "../../components/common/skeletons/InvoiceReportListSkeleton";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
     fetchReportList,
@@ -313,11 +314,9 @@ export default function InvoicePage() {
                             </div>
                         </div>
 
-                        <div className="bg-white border border-gray-200 rounded-2xl p-0 md:p-0 shadow-sm mt-4">
+                        <div className="bg-white border border-gray-200 rounded-2xl p-0 md:p-0 shadow-sm mt-4 overflow-hidden">
                             {loading ? (
-                                <div className="py-10 text-center text-gray-500 text-sm">
-                                    로딩 중...
-                                </div>
+                                <InvoiceReportListSkeleton rows={10} />
                             ) : (
                                 <Table
                                     className="text-[14px] table-fixed"

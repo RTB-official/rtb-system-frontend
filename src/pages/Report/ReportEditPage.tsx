@@ -92,7 +92,7 @@ export default function ReportEditPage() {
         engine,
         subject,
         orderGroup,
-        orderPerson,
+        orderPersons,
         locations,
         locationCustom,
         vehicles,
@@ -109,7 +109,7 @@ export default function ReportEditPage() {
         setEngine,
         setSubject,
         setOrderGroup,
-        setOrderPerson,
+        setOrderPersons,
         setLocations,
         setVehicles,
         setWorkers,
@@ -138,7 +138,7 @@ export default function ReportEditPage() {
             engine,
             subject,
             orderGroup,
-            orderPerson,
+            orderPersons,
             locations,
             locationCustom,
             vehicles,
@@ -157,7 +157,7 @@ export default function ReportEditPage() {
         engine,
         subject,
         orderGroup,
-        orderPerson,
+        orderPersons,
         locations,
         locationCustom,
         vehicles,
@@ -283,8 +283,13 @@ export default function ReportEditPage() {
                 if (data.workLog.subject) setSubject(data.workLog.subject);
                 if (data.workLog.order_group)
                     setOrderGroup(data.workLog.order_group);
-                if (data.workLog.order_person)
-                    setOrderPerson(data.workLog.order_person);
+                if (data.workLog.order_person) {
+                    const persons = String(data.workLog.order_person)
+                        .split(",")
+                        .map((p) => p.trim())
+                        .filter(Boolean);
+                    setOrderPersons(persons);
+                }
                 if (data.workLog.location) {
                     const parsedLocations = String(data.workLog.location)
                         .split(",")
@@ -404,7 +409,9 @@ export default function ReportEditPage() {
                 vessel: reportType === "work" ? vessel : undefined,
                 engine: reportType === "work" ? engine : undefined,
                 order_group: reportType === "work" ? orderGroup : undefined,
-                order_person: reportType === "education" ? useWorkReportStore.getState().instructor : orderPerson,
+                order_person: reportType === "education"
+                    ? useWorkReportStore.getState().instructor
+                    : (orderPersons.length > 0 ? orderPersons.join(", ") : undefined),
                 location: resolvedLocation,
                 vehicle: reportType === "work" ? (resolvedVehicle || undefined) : undefined,
                 subject,
@@ -601,7 +608,7 @@ const newFiles = uploadedFiles.filter((f: any) => f?.file instanceof File);
                     vessel: vessel || undefined,
                     engine: engine || undefined,
                     order_group: orderGroup || undefined,
-                    order_person: orderPerson || undefined,
+                    order_person: orderPersons.length > 0 ? orderPersons.join(", ") : undefined,
                     location: resolvedLocation,
                     vehicle: resolvedVehicle || undefined,
                     subject: subject || undefined,
@@ -745,7 +752,7 @@ if (newFiles.length > 0) {
             engine,
             subject,
             orderGroup,
-            orderPerson,
+            orderPersons,
             locations,
             locationCustom,
             vehicles,

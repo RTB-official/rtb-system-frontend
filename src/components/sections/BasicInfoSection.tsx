@@ -4,7 +4,7 @@ import TextInput from "../ui/TextInput";
 import Select from "../common/Select";
 import Button from "../common/Button";
 import RequiredIndicator from "../ui/RequiredIndicator";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconClose } from "../icons/Icons";
 import {
     useWorkReportStore,
@@ -28,8 +28,11 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
         setEngine,
         orderGroup,
         setOrderGroup,
-        orderPerson,
-        setOrderPerson,
+        orderPersons,
+        addOrderPerson,
+        removeOrderPerson,
+        orderPersonCustom,
+        setOrderPersonCustom,
         locations,
         addLocation,
         removeLocation,
@@ -49,9 +52,9 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
         { value: "OTHER", label: "기타 (직접입력)" },
     ];
 
-    const [customOrderPerson, setCustomOrderPerson] = useState("");
     const [selectedOrderPerson, setSelectedOrderPerson] = useState("");
-    const customValue = "__CUSTOM__";
+    const [isAddingOrderPerson, setIsAddingOrderPerson] = useState(false);
+    const isAddingOrderPersonRef = useRef(false);
     const [isAddingLocation, setIsAddingLocation] = useState(false);
     const isAddingLocationRef = useRef(false);
     const purposeInputRef = useRef<HTMLInputElement>(null);
@@ -64,29 +67,42 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
         }));
         return [
             ...baseOptions,
-            { value: customValue, label: "직접입력" },
+            { value: "OTHER", label: "기타(직접입력)" },
         ];
     }, [orderGroup]);
 
-    const isCustomSelected =
-        !!orderGroup &&
-        orderGroup !== "OTHER" &&
-        orderGroup !== "MITSUI" &&
-        orderPerson &&
-        !orderPersonOptions.some((opt) => opt.value === orderPerson);
+    const showOrderPersonCustomInput =
+        orderGroup === "OTHER" ||
+        orderGroup === "MITSUI" ||
+        selectedOrderPerson === "OTHER";
 
-    const selectOrderPersonValue = selectedOrderPerson || (isCustomSelected ? customValue : orderPerson);
-
-    useEffect(() => {
-        if (!orderGroup || orderGroup === "OTHER" || orderGroup === "MITSUI") return;
-        if (isCustomSelected) {
-            setSelectedOrderPerson(customValue);
-            setCustomOrderPerson(orderPerson);
-        } else if (orderPerson) {
-            setSelectedOrderPerson(orderPerson);
-            setCustomOrderPerson("");
+    const handleSelectOrderPerson = (value: string) => {
+        setSelectedOrderPerson(value);
+        if (value !== "OTHER") {
+            addOrderPerson(value);
+            setSelectedOrderPerson("");
         }
-    }, [orderGroup, isCustomSelected, orderPerson]);
+    };
+
+    const handleAddCustomOrderPerson = () => {
+        if (isAddingOrderPersonRef.current) return;
+        const next = orderPersonCustom.trim();
+        if (!next) return;
+        isAddingOrderPersonRef.current = true;
+        setIsAddingOrderPerson(true);
+        addOrderPerson(next);
+        setOrderPersonCustom("");
+        setSelectedOrderPerson("");
+        isAddingOrderPersonRef.current = false;
+        setIsAddingOrderPerson(false);
+    };
+
+    const handleOrderPersonCustomKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handleAddCustomOrderPerson();
+        }
+    };
 
     // 출장지 옵션
     const locationOptions = [
@@ -176,46 +192,60 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
                             required
                             options={orderGroupOptions}
                             value={orderGroup}
-                            onChange={setOrderGroup}
+                            onChange={(value) => {
+                                setOrderGroup(value);
+                                setSelectedOrderPerson("");
+                                setOrderPersonCustom("");
+                            }}
                         />
-                        {orderGroup === "OTHER" || orderGroup === "MITSUI" ? (
-                            <TextInput
-                                placeholder="직급 없이 이름만 기입해 주세요"
-                                value={orderPerson}
-                                onChange={setOrderPerson}
-                                required
-                            />
-                        ) : orderGroup ? (
+                        {orderGroup === "OTHER" || orderGroup === "MITSUI" ? null : orderGroup ? (
                             <Select
                                 placeholder="감독 선택"
                                 fullWidth
-                                required
+                                required={orderPersons.length === 0}
                                 options={orderPersonOptions}
-                                value={selectOrderPersonValue}
-                                onChange={(value) => {
-                                    setSelectedOrderPerson(value);
-                                    if (value === customValue) {
-                                        setCustomOrderPerson(orderPerson);
-                                        setOrderPerson(customOrderPerson || "");
-                                        return;
-                                    }
-                                    setOrderPerson(value);
-                                    setCustomOrderPerson("");
-                                }}
+                                value={selectedOrderPerson}
+                                onChange={handleSelectOrderPerson}
                             />
                         ) : null}
-                        {(orderGroup && orderGroup !== "OTHER" && orderGroup !== "MITSUI") &&
-                            (selectOrderPersonValue === customValue || isCustomSelected) && (
+                        {showOrderPersonCustomInput && (
+                            <div className="flex items-center gap-2 w-full">
                                 <TextInput
                                     placeholder="직급 없이 이름만 기입해 주세요"
-                                    value={customOrderPerson || orderPerson}
-                                    onChange={(val) => {
-                                        setCustomOrderPerson(val);
-                                        setOrderPerson(val);
-                                    }}
-                                    required
+                                    value={orderPersonCustom}
+                                    onChange={setOrderPersonCustom}
+                                    onKeyDown={handleOrderPersonCustomKeyDown}
+                                    required={orderPersons.length === 0}
+                                    className="flex-1 min-w-0"
                                 />
-                            )}
+                                <Button
+                                    type="button"
+                                    variant="primary"
+                                    size="lg"
+                                    onClick={handleAddCustomOrderPerson}
+                                    loading={isAddingOrderPerson}
+                                    className="shrink-0"
+                                >
+                                    추가
+                                </Button>
+                            </div>
+                        )}
+                        {orderPersons.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                                {orderPersons.map((person) => (
+                                    <Button
+                                        key={person}
+                                        type="button"
+                                        variant="secondary"
+                                        size="md"
+                                        onClick={() => removeOrderPerson(person)}
+                                    >
+                                        {person}
+                                        <IconClose className="ml-1 w-4 h-4" />
+                                    </Button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
