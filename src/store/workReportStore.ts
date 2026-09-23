@@ -128,7 +128,8 @@ interface WorkReportState {
   vessel: string;
   engine: string;
   orderGroup: string;
-  orderPerson: string;
+  orderPersons: string[];
+  orderPersonCustom: string;
   locations: string[];
   locationCustom: string;
   vehicles: string[];
@@ -168,7 +169,10 @@ interface WorkReportState {
   setVessel: (vessel: string) => void;
   setEngine: (engine: string) => void;
   setOrderGroup: (group: string) => void;
-  setOrderPerson: (person: string) => void;
+  addOrderPerson: (person: string) => void;
+  removeOrderPerson: (person: string) => void;
+  setOrderPersons: (persons: string[]) => void;
+  setOrderPersonCustom: (custom: string) => void;
   addLocation: (location: string) => void;
   removeLocation: (location: string) => void;
   setLocations: (locations: string[]) => void;
@@ -259,7 +263,8 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   vessel: '',
   engine: '',
   orderGroup: '',
-  orderPerson: '',
+  orderPersons: [],
+  orderPersonCustom: '',
   locations: [],
   locationCustom: '',
   vehicles: [],
@@ -299,8 +304,29 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   setAuthor: (author) => set({ author }),
   setVessel: (vessel) => set({ vessel }),
   setEngine: (engine) => set({ engine: engine.toUpperCase() }),
-  setOrderGroup: (orderGroup) => set({ orderGroup, orderPerson: '' }),
-  setOrderPerson: (orderPerson) => set({ orderPerson }),
+  setOrderGroup: (orderGroup) => set({ orderGroup }),
+  addOrderPerson: (person) =>
+    set((state) => {
+      const normalized = String(person || '').trim();
+      if (!normalized) return state;
+      if (state.orderPersons.includes(normalized)) return state;
+      return { orderPersons: [...state.orderPersons, normalized] };
+    }),
+  removeOrderPerson: (person) =>
+    set((state) => ({
+      orderPersons: state.orderPersons.filter((item) => item !== person),
+    })),
+  setOrderPersons: (persons) =>
+    set({
+      orderPersons: Array.from(
+        new Set(
+          (persons || [])
+            .map((person) => String(person || '').trim())
+            .filter(Boolean)
+        )
+      ),
+    }),
+  setOrderPersonCustom: (orderPersonCustom) => set({ orderPersonCustom }),
   addLocation: (location) =>
     set((state) => {
       const normalized = String(location || '').trim();
@@ -562,7 +588,8 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     vessel: '',
     engine: '',
     orderGroup: '',
-    orderPerson: '',
+    orderPersons: [],
+    orderPersonCustom: '',
     locations: [],
     locationCustom: '',
     vehicles: [],

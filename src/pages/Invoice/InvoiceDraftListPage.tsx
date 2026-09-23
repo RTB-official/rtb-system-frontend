@@ -9,6 +9,7 @@ import { useToast } from "../../components/ui/ToastProvider";
 import BaseModal from "../../components/ui/BaseModal";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { IconTrash } from "../../components/icons/Icons";
+import InvoiceDraftListSkeleton from "../../components/common/skeletons/InvoiceDraftListSkeleton";
 import {
     deleteInvoiceDraft,
     type InvoiceDraftRow,
@@ -329,54 +330,54 @@ export default function InvoiceDraftListPage() {
                         />
                     </div>
 
-                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="mt-3">
                         {loading ? (
-                            <div className="col-span-full bg-white border border-gray-200 rounded-2xl py-10 text-center text-gray-500 text-sm shadow-sm">
-                                로딩 중...
-                            </div>
+                            <InvoiceDraftListSkeleton count={8} />
                         ) : vesselGroups.length === 0 ? (
-                            <div className="col-span-full bg-white border border-gray-200 rounded-2xl py-10 text-center text-gray-500 text-sm shadow-sm">
+                            <div className="bg-white border border-gray-200 rounded-2xl py-10 text-center text-gray-500 text-sm shadow-sm">
                                 저장된 인보이스 드래프트가 없습니다.
                             </div>
                         ) : (
-                            vesselGroups.map((group) => {
-                                const latestLabel = group.latestUpdatedAt
-                                    ? new Date(
-                                          group.latestUpdatedAt
-                                      ).toLocaleString("ko-KR")
-                                    : "";
-                                const isSearchMatch =
-                                    isSearchActive &&
-                                    vesselGroupMatchesSearch(
-                                        group.vessel,
-                                        searchQuery
-                                    );
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                {vesselGroups.map((group) => {
+                                    const latestLabel = group.latestUpdatedAt
+                                        ? new Date(
+                                              group.latestUpdatedAt
+                                          ).toLocaleString("ko-KR")
+                                        : "";
+                                    const isSearchMatch =
+                                        isSearchActive &&
+                                        vesselGroupMatchesSearch(
+                                            group.vessel,
+                                            searchQuery
+                                        );
 
-                                return (
-                                    <button
-                                        key={group.vessel}
-                                        type="button"
-                                        onClick={() =>
-                                            setSelectedVessel(group.vessel)
-                                        }
-                                        className={`flex min-w-0 flex-col rounded-2xl border px-4 py-4 text-left shadow-sm transition-colors ${
-                                            isSearchMatch
-                                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200 hover:border-blue-500 hover:bg-blue-100/80"
-                                                : isSearchActive
-                                                  ? "border-gray-200 bg-white opacity-45 hover:opacity-70"
-                                                  : "border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40"
-                                        }`}
-                                    >
-                                        <p className="text-[15px] font-semibold text-gray-900 truncate lg:text-[16px]">
-                                            {group.vessel}
-                                        </p>
-                                        <p className="mt-1 text-[12px] text-gray-500 line-clamp-2">
-                                            {group.draftCount}건
-                                            {latestLabel ? ` · ${latestLabel}` : ""}
-                                        </p>
-                                    </button>
-                                );
-                            })
+                                    return (
+                                        <button
+                                            key={group.vessel}
+                                            type="button"
+                                            onClick={() =>
+                                                setSelectedVessel(group.vessel)
+                                            }
+                                            className={`flex min-w-0 flex-col rounded-2xl border px-4 py-4 text-left shadow-sm transition-colors ${
+                                                isSearchMatch
+                                                    ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200 hover:border-blue-500 hover:bg-blue-100/80"
+                                                    : isSearchActive
+                                                      ? "border-gray-200 bg-white opacity-45 hover:opacity-70"
+                                                      : "border-gray-200 bg-white hover:border-blue-200 hover:bg-blue-50/40"
+                                            }`}
+                                        >
+                                            <p className="text-[15px] font-semibold text-gray-900 truncate lg:text-[16px]">
+                                                {group.vessel}
+                                            </p>
+                                            <p className="mt-1 text-[12px] text-gray-500 line-clamp-2">
+                                                {group.draftCount}건
+                                                {latestLabel ? ` · ${latestLabel}` : ""}
+                                            </p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         )}
                     </div>
                 </PageContainer>

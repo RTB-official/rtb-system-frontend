@@ -81,7 +81,7 @@ export default function ReportCreatePage() {
         vessel,
         engine,
         orderGroup,
-        orderPerson,
+        orderPersons,
         locations,
         locationCustom,
         vehicles,
@@ -103,7 +103,7 @@ export default function ReportCreatePage() {
             vessel,
             engine,
             orderGroup,
-            orderPerson,
+            orderPersons,
             locations,
             locationCustom,
             vehicles,
@@ -119,7 +119,7 @@ export default function ReportCreatePage() {
             })),
         });
     }, [
-        reportType, author, instructor, vessel, engine, orderGroup, orderPerson,
+        reportType, author, instructor, vessel, engine, orderGroup, orderPersons,
         locations, locationCustom, vehicles, subject, workers,
         workLogEntries, expenses, materials, uploadedFiles
     ]);
@@ -282,7 +282,9 @@ export default function ReportCreatePage() {
                 ? (subject.includes("교육") ? subject : `[교육] ${subject}`)
                 : subject;
 
-            const finalOrderPerson = reportType === "education" ? instructor : orderPerson;
+            const finalOrderPerson = reportType === "education"
+                ? instructor
+                : (orderPersons.length > 0 ? orderPersons.join(", ") : undefined);
             const finalLocation = locations.length > 0 ? locations.join(", ") : undefined;
 
             // 1. Log 생성

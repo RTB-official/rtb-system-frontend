@@ -1,5 +1,6 @@
 // src/pages/Schedule/ScheduleCreatePage.tsx
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import PageContainer from "../../components/common/PageContainer";
@@ -13,6 +14,7 @@ import {
     type ScheduleFieldKey,
     type ScheduleSheetRow,
 } from "../../components/schedule/scheduleTableShared";
+import ScheduleSheetSkeleton from "../../components/schedule/ScheduleSheetSkeleton";
 import { fetchNextScheduleVersion, saveScheduleVersion } from "../../lib/scheduleApi";
 import { parseScheduleExcelFile } from "../../utils/parseScheduleExcel";
 
@@ -200,7 +202,7 @@ export default function ScheduleCreatePage() {
     const { showSuccess, showError } = useToast();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [rows, setRows] = useState<ScheduleRow[]>(() =>
-        Array.from({ length: 3 }, () => createEmptyRow())
+        Array.from({ length: 5 }, () => createEmptyRow())
     );
     const [excelImporting, setExcelImporting] = useState(false);
     const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
@@ -364,16 +366,31 @@ export default function ScheduleCreatePage() {
         e.target.value = "";
         if (!file) return;
 
-        setExcelImporting(true);
+        const startedAt = performance.now();
+        // Force paint of skeleton before heavy Excel parse starts
+        flushSync(() => {
+            setExcelImporting(true);
+            setSelectedRowId(null);
+        });
+        await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+
         try {
             const parsed = await parseScheduleExcelFile(file);
             setRows(parsed);
-            setSelectedRowId(null);
             showSuccess(COPY.excelLoaded(parsed.length));
         } catch (err) {
             console.error(err);
             showError(err instanceof Error ? err.message : COPY.excelLoadFailed);
         } finally {
+            const elapsed = performance.now() - startedAt;
+            const minVisibleMs = 450;
+            if (elapsed < minVisibleMs) {
+                await new Promise((resolve) =>
+                    setTimeout(resolve, minVisibleMs - elapsed)
+                );
+            }
             setExcelImporting(false);
         }
     };
@@ -443,6 +460,12 @@ export default function ScheduleCreatePage() {
                             {versionKey ?? "…"}
                         </div>
                         <div ref={tableAreaRef} className="relative w-full">
+                            {excelImporting ? (
+                                <ScheduleSheetSkeleton
+                                    rowCount={Math.max(rows.length, 5)}
+                                />
+                            ) : (
+                                <>
                             {selectedRowId && trashOffsetTop != null && (
                                 <button
                                     type="button"
@@ -645,13 +668,16 @@ export default function ScheduleCreatePage() {
                                 </tbody>
                             </table>
                             </div>
+                                </>
+                            )}
                         </div>
 
                         <div className="flex justify-center pt-1">
                             <button
                                 type="button"
                                 onClick={addRow}
-                                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100"
+                                disabled={excelImporting}
+                                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-50"
                                 aria-label={COPY.addRow}
                                 title={COPY.addRow}
                             >

@@ -89,7 +89,7 @@ export default function CreationPage() {
         engine,
         subject,
         orderGroup,
-        orderPerson,
+        orderPersons,
         locations,
         locationCustom,
         vehicles,
@@ -103,7 +103,7 @@ export default function CreationPage() {
         setEngine,
         setSubject,
         setOrderGroup,
-        setOrderPerson,
+        setOrderPersons,
         setLocations,
         setLocationCustom,
         toggleVehicle,
@@ -125,7 +125,7 @@ export default function CreationPage() {
             engine,
             subject,
             orderGroup,
-            orderPerson,
+            orderPersons,
             locations,
             locationCustom,
             vehicles,
@@ -144,7 +144,7 @@ export default function CreationPage() {
         engine,
         subject,
         orderGroup,
-        orderPerson,
+        orderPersons,
         locations,
         locationCustom,
         vehicles,
@@ -214,8 +214,13 @@ export default function CreationPage() {
                 if (data.workLog.subject) setSubject(data.workLog.subject);
                 if (data.workLog.order_group)
                     setOrderGroup(data.workLog.order_group);
-                if (data.workLog.order_person)
-                    setOrderPerson(data.workLog.order_person);
+                if (data.workLog.order_person) {
+                    const persons = String(data.workLog.order_person)
+                        .split(",")
+                        .map((p) => p.trim())
+                        .filter(Boolean);
+                    setOrderPersons(persons);
+                }
                 if (data.workLog.location) {
                     const parsedLocations = String(data.workLog.location)
                         .split(",")
@@ -326,7 +331,7 @@ export default function CreationPage() {
                 vessel,
                 engine,
                 order_group: orderGroup || undefined,
-                order_person: orderPerson || undefined,
+                order_person: orderPersons.length > 0 ? orderPersons.join(", ") : undefined,
                 location: resolvedLocation,
                 vehicle: resolvedVehicle || undefined,
                 subject,
@@ -524,7 +529,7 @@ export default function CreationPage() {
                     vessel: vessel || undefined,
                     engine: engine || undefined,
                     order_group: orderGroup || undefined,
-                    order_person: orderPerson || undefined,
+                    order_person: orderPersons.length > 0 ? orderPersons.join(", ") : undefined,
                     location: resolvedLocation,
                     vehicle: resolvedVehicle || undefined,
                     subject: subject || undefined,
@@ -594,7 +599,7 @@ export default function CreationPage() {
             engine,
             subject,
             orderGroup,
-            orderPerson,
+            orderPersons,
             locations,
             locationCustom,
             vehicles,
