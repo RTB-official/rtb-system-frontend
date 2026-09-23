@@ -216,42 +216,112 @@ function mapDbRow(row: DbScheduleRow): ScheduleRowInput & { id: string } {
     };
 }
 
-/**
- * All saved sheets, oldest → newest (chat order: past on top, latest at bottom).
- * Ordered by schedule_date, version_label, created_at.
- */
-export async function fetchScheduleVersionSheets(): Promise<ScheduleVersionSheet[]> {
+type DbScheduleVersion = {
+    id: string;
+    schedule_date: string;
+    version_label: string;
+    created_at: string;
+    schedule_version_rows?: Array<{
+        position: number;
+        schedule_rows: DbScheduleRow | DbScheduleRow[] | null;
+    }> | null;
+};
+
+function mapVersionSheet(version: DbScheduleVersion): ScheduleVersionSheet {
+    const scheduleDate = String(version.schedule_date);
+    const versionLabel = String(version.version_label);
+    const memberships = (version.schedule_version_rows ?? [])
+        .slice()
+        .sort((a, b) => a.position - b.position);
+
+    const rows = memberships
+        .map((m) => {
+            const raw = m.schedule_rows;
+            const row = Array.isArray(raw) ? raw[0] : raw;
+            if (!row) return null;
+            return mapDbRow(row);
+        })
+        .filter((row): row is ScheduleRowInput & { id: string } => row != null);
+
+    return {
+        id: version.id,
+        scheduleDate,
+        versionLabel,
+        versionKey: `${scheduleDate}${versionLabel}`,
+        createdAt: String(version.created_at),
+        rows,
+    };
+}
+
+const VERSION_SELECT = `
+    id,
+    schedule_date,
+    version_label,
+    created_at,
+    schedule_version_rows (
+        position,
+        schedule_rows (
+            id,
+            customer_company,
+            customer_contact,
+            ship_name,
+            engine_type,
+            work_location,
+            period,
+            work_item,
+            manpower,
+            team_member,
+            car,
+            yard_pic,
+            remark
+        )
+    )
+`;
+
+/** Distinct schedule_date values, newest first. Optional inclusive date range filter. */
+export async function fetchScheduleDistinctDates(options?: {
+    dateFrom?: string;
+    dateTo?: string;
+}): Promise<string[]> {
+    let query = supabase
+        .from("schedule_versions")
+        .select("schedule_date")
+        .order("schedule_date", { ascending: false });
+
+    if (options?.dateFrom) {
+        query = query.gte("schedule_date", options.dateFrom);
+    }
+    if (options?.dateTo) {
+        query = query.lte("schedule_date", options.dateTo);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const seen = new Set<string>();
+    const dates: string[] = [];
+    for (const row of data ?? []) {
+        const d = String(row.schedule_date);
+        if (seen.has(d)) continue;
+        seen.add(d);
+        dates.push(d);
+    }
+    return dates;
+}
+
+/** Sheets for the given schedule_date list (newest → oldest within those dates). */
+export async function fetchScheduleVersionSheetsByDates(
+    dates: string[]
+): Promise<ScheduleVersionSheet[]> {
+    if (dates.length === 0) return [];
+
     const { data, error } = await supabase
         .from("schedule_versions")
-        .select(
-            `
-            id,
-            schedule_date,
-            version_label,
-            created_at,
-            schedule_version_rows (
-                position,
-                schedule_rows (
-                    id,
-                    customer_company,
-                    customer_contact,
-                    ship_name,
-                    engine_type,
-                    work_location,
-                    period,
-                    work_item,
-                    manpower,
-                    team_member,
-                    car,
-                    yard_pic,
-                    remark
-                )
-            )
-        `
-        )
-        .order("schedule_date", { ascending: true })
-        .order("version_label", { ascending: true })
-        .order("created_at", { ascending: true })
+        .select(VERSION_SELECT)
+        .in("schedule_date", dates)
+        .order("schedule_date", { ascending: false })
+        .order("version_label", { ascending: false })
+        .order("created_at", { ascending: false })
         .order("position", {
             referencedTable: "schedule_version_rows",
             ascending: true,
@@ -259,35 +329,15 @@ export async function fetchScheduleVersionSheets(): Promise<ScheduleVersionSheet
 
     if (error) throw error;
 
-    return (data ?? []).map((version) => {
-        const scheduleDate = String(version.schedule_date);
-        const versionLabel = String(version.version_label);
-        const memberships = (
-            (version.schedule_version_rows ?? []) as Array<{
-                position: number;
-                schedule_rows: DbScheduleRow | DbScheduleRow[] | null;
-            }>
-        )
-            .slice()
-            .sort((a, b) => a.position - b.position);
+    return ((data ?? []) as DbScheduleVersion[]).map(mapVersionSheet);
+}
 
-        const rows = memberships
-            .map((m) => {
-                const raw = m.schedule_rows;
-                const row = Array.isArray(raw) ? raw[0] : raw;
-                if (!row) return null;
-                return mapDbRow(row);
-            })
-            .filter((row): row is ScheduleRowInput & { id: string } => row != null);
-
-        return {
-            id: version.id as string,
-            scheduleDate,
-            versionLabel,
-            versionKey: `${scheduleDate}${versionLabel}`,
-            createdAt: String(version.created_at),
-            rows,
-        };
-    });
+/**
+ * All saved sheets, newest → oldest (latest on top).
+ * Prefer date-paginated helpers for the list page.
+ */
+export async function fetchScheduleVersionSheets(): Promise<ScheduleVersionSheet[]> {
+    const dates = await fetchScheduleDistinctDates();
+    return fetchScheduleVersionSheetsByDates(dates);
 }
 

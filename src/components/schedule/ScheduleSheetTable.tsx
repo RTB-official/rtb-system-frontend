@@ -7,12 +7,41 @@ import {
     type ScheduleSheetRow,
 } from "./scheduleTableShared";
 
+/** Split text and wrap case-insensitive matches in a yellow mark. */
+export function highlightSearchMatches(
+    text: string,
+    query: string
+): ReactNode {
+    const q = query.trim();
+    if (!q || !text) return text;
+
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(${escaped})`, "gi");
+    const parts = text.split(re);
+    if (parts.length === 1) return text;
+
+    return parts.map((part, i) =>
+        i % 2 === 1 ? (
+            <mark
+                key={i}
+                className="rounded-sm bg-yellow-300 px-0.5 text-inherit"
+            >
+                {part}
+            </mark>
+        ) : (
+            <span key={i}>{part}</span>
+        )
+    );
+}
+
 function CellText({
     value,
     multiline,
+    highlightQuery,
 }: {
     value: string;
     multiline?: boolean;
+    highlightQuery?: string;
 }) {
     return (
         <div className="flex min-h-[72px] w-full items-center justify-center px-1 py-1">
@@ -23,7 +52,9 @@ function CellText({
                         : "overflow-hidden"
                 }`}
             >
-                {value}
+                {highlightQuery
+                    ? highlightSearchMatches(value, highlightQuery)
+                    : value}
             </div>
         </div>
     );
@@ -31,6 +62,8 @@ function CellText({
 
 type ScheduleSheetTableProps = {
     rows: ScheduleSheetRow[];
+    /** Highlight matching substrings in cell text (yellow mark). */
+    highlightQuery?: string;
     /** When set, No. column can be interactive (create page). */
     renderNoCell?: (row: ScheduleSheetRow, index: number) => ReactNode;
     renderCell?: (
@@ -61,6 +94,7 @@ const MULTILINE_FIELDS = new Set([
  */
 export default function ScheduleSheetTable({
     rows,
+    highlightQuery,
     renderNoCell,
     renderCell,
     getRowClassName,
@@ -73,6 +107,7 @@ export default function ScheduleSheetTable({
         <CellText
             value={row[field]}
             multiline={MULTILINE_FIELDS.has(field)}
+            highlightQuery={highlightQuery}
         />
     );
 

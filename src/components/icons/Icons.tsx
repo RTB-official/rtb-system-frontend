@@ -256,6 +256,25 @@ export const IconSave = (props: { className?: string }) => (
     </svg>
 );
 
+/** 검색 (IconSave·헤더 원형 버튼과 동일 stroke 스타일) */
+export const IconSearch = (props: { className?: string }) => (
+    <svg
+        viewBox="0 0 24 24"
+        width="24"
+        height="24"
+        className={props.className || "block shrink-0"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+    </svg>
+);
+
 /** 문서보내기·보내기 (IconSave·헤더 패널 버튼과 동일 stroke 스타일) */
 export const IconExportDocuments = (props: { className?: string }) => (
     <svg

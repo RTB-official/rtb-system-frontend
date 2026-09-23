@@ -12,6 +12,9 @@ interface DatePickerProps {
     onChange: (value: string) => void;
     placeholder?: string;
     className?: string;
+    inputClassName?: string;
+    /** korean: "2026년 9월 22일" (default). iso: "2026-09-22" for narrow fields. */
+    displayFormat?: "korean" | "iso";
     label?: string;
     icon?: React.ReactNode;
     iconPosition?: "left" | "right";
@@ -32,6 +35,8 @@ export default function DatePicker({
     onChange,
     placeholder = "날짜 선택",
     className = "",
+    inputClassName = "",
+    displayFormat = "korean",
     label,
     icon,
     iconPosition = "right",
@@ -208,10 +213,11 @@ export default function DatePicker({
 
     const formatDisplayValue = () => {
         if (!value) return "";
-        const date = new Date(value);
-        return `${date.getFullYear()}년 ${
-            date.getMonth() + 1
-        }월 ${date.getDate()}일`;
+        if (displayFormat === "iso") return value;
+        // Parse YYYY-MM-DD as local date (avoid UTC shift)
+        const [y, m, d] = value.split("-").map(Number);
+        if (!y || !m || !d) return value;
+        return `${y}년 ${m}월 ${d}일`;
     };
 
     const isToday = (day: number) => {
@@ -280,6 +286,7 @@ export default function DatePicker({
                 }
                 iconPosition={iconPosition}
                 readOnly
+                inputClassName={inputClassName}
                 className="w-full"
             />
 
@@ -287,6 +294,7 @@ export default function DatePicker({
             {isOpen && (
                 <div
                     ref={popupRef}
+                    data-datepicker-popup=""
                     className="fixed z-[9999] bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 min-w-[300px]"
                     style={{
                         top: popupPosition.top,
