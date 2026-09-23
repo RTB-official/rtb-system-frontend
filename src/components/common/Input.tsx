@@ -12,6 +12,8 @@ interface InputProps
   onClick?: () => void;
   uppercase?: boolean;
   labelClassName?: string;
+  /** Applied to the inner <input> (wrapper uses className). */
+  inputClassName?: string;
 
   // ✅ 추가
   iconClickable?: boolean;
@@ -30,6 +32,7 @@ export default function Input({
   uppercase = false,
   labelClassName = "",
   className = "",
+  inputClassName = "",
   iconClickable = false,
   onIconClick,
   iconAriaLabel,
@@ -67,7 +70,7 @@ export default function Input({
         <input
           className={`${baseStyles} ${iconPadding} ${
             error ? "border-red-300 focus:border-red-500 focus:ring-red-500/20" : ""
-          } h-full`}
+          } h-full ${inputClassName}`}
           onChange={handleChange}
           onClick={onClick}
           {...props}

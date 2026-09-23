@@ -681,6 +681,7 @@ type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
 
 type InvoiceInlineEditFieldKey =
     | "workPlace"
+    | "shipName"
     | "hullNo"
     | "engineType"
     | "workPeriodPlace";
@@ -6744,7 +6745,9 @@ export default function InvoiceCreatePage() {
         return firstLocation;
     };
 
-    const shipNameDisplay = workLogDataList[0]?.workLog.vessel || "";
+    const vesselBase = workLogDataList[0]?.workLog.vessel || "";
+    const shipNameDisplay =
+        invoiceHullNoOverride !== null ? invoiceHullNoOverride : vesselBase;
     const workPlaceBase = mapWorkPlace(
         workLogDataList[0]?.workLog.location || null
     );
@@ -6772,8 +6775,8 @@ export default function InvoiceCreatePage() {
         invoiceEngineTypeOverride !== null
             ? invoiceEngineTypeOverride
             : engineTypeBase;
-    const hullNoDisplay =
-        invoiceHullNoOverride !== null ? invoiceHullNoOverride : shipNameDisplay;
+    /** Hull no. ↔ 잡디/타임시트 SHIP NAME 동일 값 */
+    const hullNoDisplay = shipNameDisplay;
     const workItemDisplay = useMemo(
         () =>
             resolveInvoiceWorkItemDisplay(
@@ -8816,13 +8819,44 @@ export default function InvoiceCreatePage() {
         const currentOverride =
             field === "workPlace"
                 ? invoiceWorkPlaceOverride
-                : field === "hullNo"
+                : field === "shipName" || field === "hullNo"
                   ? invoiceHullNoOverride
                   : field === "engineType"
                     ? invoiceEngineTypeOverride
                     : invoiceWorkPeriodPlaceOverride;
         // blur 중복 호출 방지(Enter → unmount → blur)
         invoiceInlineEditSkipCommitRef.current = true;
+        if (field === "shipName" || field === "hullNo") {
+            const nextShipName =
+                nextOverride === null ? invoiceInlineEditDefault : nextOverride;
+            const vesselNeedsWrite = vesselBase !== nextShipName;
+            const overrideNeedsClear = invoiceHullNoOverride !== null;
+            if (!vesselNeedsWrite && !overrideNeedsClear) {
+                setInvoiceInlineEditField(null);
+                setInvoiceInlineEditDraft("");
+                setInvoiceInlineEditDefault("");
+                return;
+            }
+            pushInvoiceUndoSnapshot();
+            if (overrideNeedsClear) {
+                setInvoiceHullNoOverride(null);
+            }
+            if (vesselNeedsWrite) {
+                setWorkLogDataList((prev) =>
+                    prev.map((data) => ({
+                        ...data,
+                        workLog: {
+                            ...data.workLog,
+                            vessel: nextShipName,
+                        },
+                    }))
+                );
+            }
+            setInvoiceInlineEditField(null);
+            setInvoiceInlineEditDraft("");
+            setInvoiceInlineEditDefault("");
+            return;
+        }
         if (currentOverride === nextOverride) {
             setInvoiceInlineEditField(null);
             setInvoiceInlineEditDraft("");
@@ -8832,8 +8866,6 @@ export default function InvoiceCreatePage() {
         pushInvoiceUndoSnapshot();
         if (field === "workPlace") {
             setInvoiceWorkPlaceOverride(nextOverride);
-        } else if (field === "hullNo") {
-            setInvoiceHullNoOverride(nextOverride);
         } else if (field === "engineType") {
             setInvoiceEngineTypeOverride(nextOverride);
         } else {
@@ -13989,7 +14021,7 @@ export default function InvoiceCreatePage() {
                                                 <tbody>
                                                     <tr>
                                                         <td className="px-4 py-2 text-gray-900 border-b border-gray-300">
-                                                            {workLogDataList[0]?.workLog.vessel || ""}
+                                                            {shipNameDisplay}
                                                         </td>
                                                         <td className="px-4 py-2 text-gray-900 border-b border-l border-gray-300">
                                                             {workPlaceDisplay}
@@ -14794,9 +14826,45 @@ export default function InvoiceCreatePage() {
                                     <h2 className="text-3xl font-bold text-black mb-2">JOB DESCRIPTION</h2>
                                     <div className="grid grid-cols-4 gap-4">
                                         {/* Row 1 - Card 1: SHIP NAME */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                            <div className="text-xs font-semibold text-gray-700 mb-2">SHIP NAME</div>
-                                            <div className="text-sm text-gray-900">{shipNameDisplay}</div>
+                                        <div
+                                            className={`group relative rounded-lg border border-gray-200 bg-white p-4 transition-shadow ${
+                                                invoiceInlineEditField ===
+                                                "shipName"
+                                                    ? "shadow-sm ring-1 ring-blue-200"
+                                                    : "hover:shadow-sm hover:ring-1 hover:ring-blue-200"
+                                            }`}
+                                        >
+                                            {invoiceInlineEditField ===
+                                            "shipName" ? null : (
+                                                <button
+                                                    type="button"
+                                                    className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group-hover:opacity-100"
+                                                    onClick={() =>
+                                                        startInvoiceInlineEdit(
+                                                            "shipName",
+                                                            shipNameDisplay,
+                                                            vesselBase
+                                                        )
+                                                    }
+                                                    aria-label="SHIP NAME 수정"
+                                                >
+                                                    <IconEdit className="h-4 w-4" />
+                                                </button>
+                                            )}
+                                            <div className="mb-2 pr-10 text-xs font-semibold text-gray-700">
+                                                SHIP NAME
+                                            </div>
+                                            {invoiceInlineEditField ===
+                                            "shipName" ? (
+                                                renderInvoiceInlineEditInput({
+                                                    className:
+                                                        "w-full rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm text-gray-900 shadow-sm outline-none ring-2 ring-blue-500/20",
+                                                })
+                                            ) : (
+                                                <div className="text-sm text-gray-900">
+                                                    {shipNameDisplay || "—"}
+                                                </div>
+                                            )}
                                         </div>
                                         {/* Row 1 - Card 2: Engineer Name and Title */}
                                         {renderEditablePersonnelCard(
@@ -14909,7 +14977,7 @@ export default function InvoiceCreatePage() {
                                                 "hullNo",
                                                 "Hull no.",
                                                 hullNoDisplay,
-                                                shipNameDisplay
+                                                vesselBase
                                             )}
                                             {renderEditableInvoiceJobInfoRow(
                                                 "engineType",

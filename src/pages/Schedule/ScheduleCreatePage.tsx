@@ -128,6 +128,7 @@ function CellInput({
     const applyChange = (raw: string) => {
         onChange(uppercaseLettersOnly ? normalizeUppercaseField(raw) : raw);
     };
+    const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fieldClass =
         "w-full bg-transparent text-[11px] md:text-[12px] text-gray-900 text-center outline-none resize-none leading-snug";
@@ -153,8 +154,21 @@ function CellInput({
         onArrowNavigate(e, e.key);
     };
 
+    const focusField = () => {
+        (multiline ? textareaRef.current : inputRef.current)?.focus();
+    };
+
     return (
-        <div className="flex min-h-[72px] w-full items-center justify-center px-1 py-1">
+        <div
+            className="flex min-h-[72px] h-full w-full cursor-text items-center justify-center px-1 py-1"
+            onMouseDown={(e) => {
+                // Clicking empty top/bottom of the cell still focuses the field
+                if (e.target === e.currentTarget) {
+                    e.preventDefault();
+                    focusField();
+                }
+            }}
+        >
             {multiline ? (
                 <textarea
                     ref={textareaRef}
@@ -168,6 +182,7 @@ function CellInput({
                 />
             ) : (
                 <input
+                    ref={inputRef}
                     type="text"
                     data-schedule-focus={focusKey}
                     value={value}
