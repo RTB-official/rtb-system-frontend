@@ -1,4 +1,5 @@
 // src/pages/Board/BoardEditPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -162,7 +163,7 @@ const COMMENT_MODE_OPTIONS: { value: string; label: string }[] = [
 
 export default function BoardEditPage() {
     const { id } = useParams<{ id: string }>();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [type, setType] = useState<BoardPostType>("post");
     const [visibility, setVisibility] = useState<BoardVisibility>("all");
     const [commentMode, setCommentMode] = useState<"anonymous" | "real" | "secret">("anonymous");

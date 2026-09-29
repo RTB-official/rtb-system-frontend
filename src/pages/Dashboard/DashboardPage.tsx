@@ -1,4 +1,5 @@
 // DashboardPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ScheduleModal from "../../components/common/ScheduleModal";
@@ -127,7 +128,7 @@ export default function DashboardPage() {
     const weeks = useMemo(() => splitIntoWeeks(grid), [grid]);
 
     // 사이드바 상태
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const isMobile = useIsMobile();
 
     // 메뉴 상태

@@ -1,3 +1,4 @@
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageContainer from "../../components/common/PageContainer";
@@ -29,7 +30,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export default function InvoicePage() {
     const navigate = useNavigate();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [year, setYear] = useState<string>(DEFAULT_YEAR);

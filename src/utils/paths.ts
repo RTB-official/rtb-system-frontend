@@ -16,6 +16,8 @@ export const PATHS = {
     workload: "/workload",
     expenseTeam: "/expense/member",
     expensePersonal: "/expense",
+    materialsList: "/materials",
+    materialsCreate: "/materials/create",
     vacation: "/vacation",
     members: "/members",
     vehicles: "/vehicles",

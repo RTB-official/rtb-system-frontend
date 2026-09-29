@@ -1,4 +1,5 @@
 // PersonalExpensePage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useState, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -57,7 +58,7 @@ export default function PersonalExpensePage() {
     const params = new URLSearchParams(location.search);
     const preselectedDate = params.get("date") || null;
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const currentDate = new Date();
     const [year, setYear] = useState(`${currentDate.getFullYear()}년`);
     const [month, setMonth] = useState(`${currentDate.getMonth() + 1}월`);

@@ -1,4 +1,5 @@
 // src/pages/Board/BoardViewPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -38,7 +39,7 @@ export default function BoardViewPage() {
     const navigate = useNavigate();
     const { currentUserId } = useUser();
     const { showSuccess, showError } = useToast();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [post, setPost] = useState<BoardPost | null>(null);
     const [loading, setLoading] = useState(true);
     const [myVotes, setMyVotes] = useState<number[]>([]);

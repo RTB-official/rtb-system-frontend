@@ -1,4 +1,5 @@
 // MemberExpensePage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -38,7 +39,7 @@ export default function MemberExpensePage() {
     const navigate = useNavigate();
     const { showError } = useToast();
     const isMobile = useIsMobile();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const currentDate = new Date();
     const [year, setYear] = useState(`${currentDate.getFullYear()}년`);
     const [month, setMonth] = useState(`${currentDate.getMonth() + 1}월`);

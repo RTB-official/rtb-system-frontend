@@ -29,6 +29,8 @@ const AdminVacationPage = lazy(() => import("./pages/Vacation/AdminVacationPage"
 
 const PersonalExpensePage = lazy(() => import("./pages/Expense/PersonalExpensePage"));
 const MemberExpensePage = lazy(() => import("./pages/Expense/MemberExpensePage"));
+const MaterialsPage = lazy(() => import("./pages/Materials/MaterialsPage"));
+const MaterialPurchasePage = lazy(() => import("./pages/Materials/MaterialPurchasePage"));
 
 const MembersPage = lazy(() => import("./pages/Members/MembersPage"));
 const VehiclesPage = lazy(() => import("./pages/Vehicles/VehiclesPage"));
@@ -88,6 +90,8 @@ function App() {
 
                 <Route path="/expense" element={<PersonalExpensePage />} />
                 <Route path="/expense/member" element={<MemberExpensePage />} />
+                <Route path="/materials/create" element={<MaterialPurchasePage />} />
+                <Route path="/materials" element={<MaterialsPage title="목록" />} />
 
                 <Route path="/board" element={<BoardListPage />} />
                 <Route path="/board/create" element={<BoardCreatePage />} />

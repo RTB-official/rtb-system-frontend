@@ -1,4 +1,5 @@
 //workloadDetailPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -73,7 +74,7 @@ export default function WorkloadDetailPage() {
     const [selectedYear, setSelectedYear] = useState(`${currentYear}년`);
     const [selectedMonth, setSelectedMonth] = useState(`${currentMonth}월`);
     const [currentPage, setCurrentPage] = useState(1);
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [loading, setLoading] = useState(true);
 
     // ✅ useUser 훅으로 권한 정보 가져오기

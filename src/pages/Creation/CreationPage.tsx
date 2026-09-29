@@ -1,4 +1,5 @@
 // src/pages/Creation/CreationPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -64,7 +65,7 @@ export default function CreationPage() {
     const isEditMode = !!workLogId;
     const [loading, setLoading] = useState(isEditMode);
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [submitting, setSubmitting] = useState(false);
     const [savingDraft, setSavingDraft] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);

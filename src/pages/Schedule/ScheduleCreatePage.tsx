@@ -1,10 +1,13 @@
 // src/pages/Schedule/ScheduleCreatePage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import PageContainer from "../../components/common/PageContainer";
-import { IconPlus, IconSave, IconTrash } from "../../components/icons/Icons";
+import { IconArrowBack, IconPlus, IconSave, IconTrash } from "../../components/icons/Icons";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
     SCHEDULE_CELL_BORDER,
@@ -15,7 +18,9 @@ import {
     type ScheduleSheetRow,
 } from "../../components/schedule/scheduleTableShared";
 import ScheduleSheetSkeleton from "../../components/schedule/ScheduleSheetSkeleton";
+import { setNavigationGuard } from "../../lib/navigationGuard";
 import { fetchNextScheduleVersion, saveScheduleVersion } from "../../lib/scheduleApi";
+import { PATHS } from "../../utils/paths";
 import { parseScheduleExcelFile } from "../../utils/parseScheduleExcel";
 
 const COPY = {
@@ -72,6 +77,14 @@ function createEmptyRow(): ScheduleRow {
         yardPic: "",
         remark: "",
     };
+}
+
+function rowHasInput(row: ScheduleRow): boolean {
+    return EDITABLE_FIELDS.some((key) => row[key].trim() !== "");
+}
+
+function hasAnyTableInput(rows: ScheduleRow[]): boolean {
+    return rows.some(rowHasInput);
 }
 
 const TITLE_BG = SCHEDULE_TITLE_BG;
@@ -199,8 +212,9 @@ function CellInput({
 }
 
 export default function ScheduleCreatePage() {
+    const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [rows, setRows] = useState<ScheduleRow[]>(() =>
         Array.from({ length: 5 }, () => createEmptyRow())
     );
@@ -209,8 +223,84 @@ export default function ScheduleCreatePage() {
     const [trashOffsetTop, setTrashOffsetTop] = useState<number | null>(null);
     const [versionKey, setVersionKey] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+    const [pendingPath, setPendingPath] = useState<string | null>(null);
     const excelFileInputRef = useRef<HTMLInputElement>(null);
     const tableAreaRef = useRef<HTMLDivElement>(null);
+    const backConfirmFromPopStateRef = useRef(false);
+    const isDirty = hasAnyTableInput(rows);
+    const isDirtyRef = useRef(isDirty);
+
+    useEffect(() => {
+        isDirtyRef.current = isDirty;
+    }, [isDirty]);
+
+    // dirty일 때만: 브라우저 뒤로가기 / 새로고침 이탈 확인
+    useEffect(() => {
+        if (!isDirty) return;
+
+        const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = "";
+        };
+
+        function handlePopState() {
+            backConfirmFromPopStateRef.current = true;
+            setLeaveConfirmOpen(true);
+        }
+
+        window.history.pushState({ __block_back: true }, "", window.location.href);
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        window.addEventListener("popstate", handlePopState);
+
+        return () => {
+            window.removeEventListener("beforeunload", handleBeforeUnload);
+            window.removeEventListener("popstate", handlePopState);
+        };
+    }, [isDirty]);
+
+    useEffect(() => {
+        setNavigationGuard((to) => {
+            if (!isDirtyRef.current) return false;
+            if (to === window.location.pathname) return false;
+            backConfirmFromPopStateRef.current = false;
+            setPendingPath(to);
+            setLeaveConfirmOpen(true);
+            return true;
+        });
+        return () => setNavigationGuard(null);
+    }, []);
+
+    const leaveToList = () => {
+        const next = pendingPath ?? PATHS.scheduleList;
+        backConfirmFromPopStateRef.current = false;
+        setLeaveConfirmOpen(false);
+        setPendingPath(null);
+        navigate(next);
+    };
+
+    const handleBackClick = () => {
+        if (!isDirtyRef.current) {
+            navigate(PATHS.scheduleList);
+            return;
+        }
+        backConfirmFromPopStateRef.current = false;
+        setPendingPath(PATHS.scheduleList);
+        setLeaveConfirmOpen(true);
+    };
+
+    const handleLeaveConfirmClose = () => {
+        if (backConfirmFromPopStateRef.current) {
+            window.history.pushState(
+                { __block_back: true },
+                "",
+                window.location.href
+            );
+        }
+        backConfirmFromPopStateRef.current = false;
+        setPendingPath(null);
+        setLeaveConfirmOpen(false);
+    };
 
     const refreshVersionKey = async () => {
         const next = await fetchNextScheduleVersion();
@@ -415,6 +505,17 @@ export default function ScheduleCreatePage() {
                 <Header
                     title={COPY.pageTitle}
                     onMenuClick={() => setSidebarOpen(true)}
+                    leftContent={
+                        <button
+                            type="button"
+                            onClick={handleBackClick}
+                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                            title="목록으로 돌아가기"
+                            aria-label="목록으로 돌아가기"
+                        >
+                            <IconArrowBack />
+                        </button>
+                    }
                     rightContent={
                         <div className="flex items-center gap-1.5 md:gap-2">
                             <button
@@ -687,6 +788,17 @@ export default function ScheduleCreatePage() {
                     </PageContainer>
                 </div>
             </div>
+
+            <ConfirmDialog
+                isOpen={leaveConfirmOpen}
+                onClose={handleLeaveConfirmClose}
+                onConfirm={leaveToList}
+                title="나가기"
+                message="정말 뒤로가시겠습니까?"
+                confirmText="나가기"
+                cancelText="취소"
+                confirmVariant="danger"
+            />
         </div>
     );
 }

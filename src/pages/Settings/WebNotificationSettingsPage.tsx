@@ -1,4 +1,5 @@
 // src/pages/Settings/WebNotificationSettingsPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -51,7 +52,7 @@ export default function WebNotificationSettingsPage() {
   const { showSuccess, showError } = useToast();
   const nav = useNavigate();
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

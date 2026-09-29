@@ -7,25 +7,29 @@ interface UseSidebarRouteSyncParams {
     isReportRoute: boolean;
     isTbmRoute: boolean;
     isExpenseRoute: boolean;
+    isMaterialsRoute: boolean;
     isInvoiceRoute: boolean;
     expenseSubMenuItems: Array<{ label: string; to: string }>;
     prevScheduleRouteRef: React.MutableRefObject<boolean>;
     prevReportRouteRef: React.MutableRefObject<boolean>;
     prevTbmRouteRef: React.MutableRefObject<boolean>;
     prevExpenseRouteRef: React.MutableRefObject<boolean>;
+    prevMaterialsRouteRef: React.MutableRefObject<boolean>;
     prevInvoiceRouteRef: React.MutableRefObject<boolean>;
     scheduleOpenRef: React.RefObject<boolean>;
     reportOpenRef: React.RefObject<boolean>;
     tbmOpenRef: React.RefObject<boolean>;
     expenseOpenRef: React.RefObject<boolean>;
+    materialsOpenRef: React.RefObject<boolean>;
     invoiceOpenRef: React.RefObject<boolean>;
     setScheduleOpen: (value: boolean) => void;
     setReportOpen: (value: boolean) => void;
     setTbmOpen: (value: boolean) => void;
     setExpenseOpen: (value: boolean) => void;
+    setMaterialsOpen: (value: boolean) => void;
     setInvoiceOpen: (value: boolean) => void;
     setMenuFocus: (
-        focus: "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "INVOICE" | null
+        focus: "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE" | null
     ) => void;
     setShowNotifications: (value: boolean) => void;
 }
@@ -40,22 +44,26 @@ export function useSidebarRouteSync({
     isReportRoute,
     isTbmRoute,
     isExpenseRoute,
+    isMaterialsRoute,
     isInvoiceRoute,
     expenseSubMenuItems,
     prevScheduleRouteRef,
     prevReportRouteRef,
     prevTbmRouteRef,
     prevExpenseRouteRef,
+    prevMaterialsRouteRef,
     prevInvoiceRouteRef,
     scheduleOpenRef,
     reportOpenRef,
     tbmOpenRef,
     expenseOpenRef,
+    materialsOpenRef,
     invoiceOpenRef,
     setScheduleOpen,
     setReportOpen,
     setTbmOpen,
     setExpenseOpen,
+    setMaterialsOpen,
     setInvoiceOpen,
     setMenuFocus,
     setShowNotifications,
@@ -66,11 +74,13 @@ export function useSidebarRouteSync({
         const prevIsReportRoute = prevReportRouteRef.current;
         const prevIsTbmRoute = prevTbmRouteRef.current;
         const prevIsExpenseRoute = prevExpenseRouteRef.current;
+        const prevIsMaterialsRoute = prevMaterialsRouteRef.current;
         const prevIsInvoiceRoute = prevInvoiceRouteRef.current;
         const currentScheduleOpen = scheduleOpenRef.current;
         const currentReportOpen = reportOpenRef.current;
         const currentTbmOpen = tbmOpenRef.current;
         const currentExpenseOpen = expenseOpenRef.current;
+        const currentMaterialsOpen = materialsOpenRef.current;
         const currentInvoiceOpen = invoiceOpenRef.current;
 
         // 일정 라우트 처리
@@ -163,6 +173,26 @@ export function useSidebarRouteSync({
             prevExpenseRouteRef.current = false;
         }
 
+        if (isMaterialsRoute) {
+            const isSameSubmenuNavigation = prevIsMaterialsRoute && currentMaterialsOpen;
+            if (isSameSubmenuNavigation) {
+                prevMaterialsRouteRef.current = true;
+            } else if (currentScheduleOpen) {
+                prevMaterialsRouteRef.current = true;
+            } else {
+                setMenuFocus("MATERIALS");
+                if (!currentMaterialsOpen) {
+                    setMaterialsOpen(true);
+                }
+                prevMaterialsRouteRef.current = true;
+            }
+        } else {
+            if (currentMaterialsOpen) {
+                setMaterialsOpen(false);
+            }
+            prevMaterialsRouteRef.current = false;
+        }
+
         if (isInvoiceRoute) {
             const isSameSubmenuNavigation = prevIsInvoiceRoute && currentInvoiceOpen;
             if (isSameSubmenuNavigation) {
@@ -194,6 +224,7 @@ export function useSidebarRouteSync({
         isReportRoute,
         isTbmRoute,
         isExpenseRoute,
+        isMaterialsRoute,
         isInvoiceRoute,
         expenseSubMenuItems.length,
         setShowNotifications,
@@ -201,16 +232,19 @@ export function useSidebarRouteSync({
         prevReportRouteRef,
         prevTbmRouteRef,
         prevExpenseRouteRef,
+        prevMaterialsRouteRef,
         prevInvoiceRouteRef,
         scheduleOpenRef,
         reportOpenRef,
         tbmOpenRef,
         expenseOpenRef,
+        materialsOpenRef,
         invoiceOpenRef,
         setScheduleOpen,
         setReportOpen,
         setTbmOpen,
         setExpenseOpen,
+        setMaterialsOpen,
         setInvoiceOpen,
         setMenuFocus,
     ]);

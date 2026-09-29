@@ -1,4 +1,5 @@
 //SafePhrase.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -9,7 +10,7 @@ import { useToast } from "../../components/ui/ToastProvider";
 
 export default function SafePhrasePage() {
   const { showError, showSuccess } = useToast();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
   const nav = useNavigate();
 
   const [userId, setUserId] = useState<string | null>(null);

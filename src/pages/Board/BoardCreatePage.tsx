@@ -1,4 +1,5 @@
 // src/pages/Board/BoardCreatePage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -158,7 +159,7 @@ function ImageThumbnailWithRemove({
 }
 
 export default function BoardCreatePage() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [type, setType] = useState<BoardPostType>("post");
     const [visibility, setVisibility] = useState<BoardVisibility>("all");
     const [commentMode, setCommentMode] = useState<"anonymous" | "real" | "secret">("anonymous");

@@ -1,4 +1,5 @@
 // src/pages/Members/MembersPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import { supabase } from "../../lib/supabase";
@@ -37,7 +38,7 @@ export default function MembersPage() {
 
     const [activeTab, setActiveTab] = useState<MembersTab>("ALL");
     const [page, setPage] = useState(1);
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
     const [actionOpen, setActionOpen] = useState(false);

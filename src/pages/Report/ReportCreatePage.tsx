@@ -1,3 +1,4 @@
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -57,7 +58,7 @@ function mapReceiptCategory(input: string): ReceiptCategoryEnum {
 
 
 export default function ReportCreatePage() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const navigate = useNavigate();
     const isMobile = useIsMobile();
     const { user } = useAuth();

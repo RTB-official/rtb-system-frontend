@@ -1,4 +1,5 @@
 // VacationPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -515,7 +516,7 @@ export default function VacationPage() {
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
     const isMobile = useIsMobile();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [searchParams, setSearchParams] = useSearchParams();
     const [userJoinDate, setUserJoinDate] = useState<string | null>(null);
 

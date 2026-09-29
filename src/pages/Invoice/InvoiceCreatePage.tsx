@@ -1,4 +1,5 @@
 // src/pages/Invoice/InvoiceCreatePage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import React, {
     useCallback,
     useEffect,
@@ -1517,7 +1518,7 @@ export default function InvoiceCreatePage() {
     const invoiceDraftIdParam = searchParams.get("draftId");
     const workLogIdsParam =
         searchParams.get("workLogIds") ?? searchParams.get("workLogId");
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [workLogDataList, setWorkLogDataList] = useState<WorkLogFullData[]>([]);
     const [timesheetRows, setTimesheetRows] = useState<TimesheetRow[]>([]);
     const [profileUsernameMap, setProfileUsernameMap] = useState<

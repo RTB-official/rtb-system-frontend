@@ -1,4 +1,5 @@
 // AdminVacationPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -344,7 +345,7 @@ export default function AdminVacationPage() {
     const { showSuccess, showError } = useToast();
     const isMobile = useIsMobile();
     const employeeIdFromParams = searchParams.get("employee");
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [year, setYear] = useState(() => String(new Date().getFullYear()));
     const [loading, setLoading] = useState(false);
     const [calculateConfirmOpen, setCalculateConfirmOpen] = useState(false);
