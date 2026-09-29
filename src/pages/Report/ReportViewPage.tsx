@@ -1,4 +1,5 @@
 // src/pages/Report/ReportViewPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useState, useMemo } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -348,7 +349,7 @@ export default function ReportViewPage() {
             ? !!locationState.isDraft
             : readDraftHint(id);
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ViewData | null>(null);
     const [reportType, setReportType] = useState<"work" | "education">("work");

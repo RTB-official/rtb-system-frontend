@@ -1,4 +1,4 @@
-type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "INVOICE";
+type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE";
 
 /** 같은 탭 브랜치 이동 시 재마운트 열림 애니메이션을 건너뛰기 위한 플래그 */
 let skipEnterFor: MenuFocus | null = null;

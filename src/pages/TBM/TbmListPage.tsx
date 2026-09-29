@@ -1,4 +1,5 @@
 // src/pages/TBM/TbmListPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -46,7 +47,7 @@ export default function TbmListPage() {
     const navigate = useNavigate();
     const location = useLocation();
     const [searchParams, setSearchParams] = useSearchParams();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
     const [year, setYear] = useState(() => searchParams.get("year") || DEFAULT_YEAR);
     const [month, setMonth] = useState(() => searchParams.get("month") || DEFAULT_MONTH);

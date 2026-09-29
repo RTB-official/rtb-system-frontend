@@ -1,4 +1,5 @@
 // src/pages/Settings/EmailNotificationSettingsPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -68,7 +69,7 @@ const POSITION_ORDER: Record<string, number> = {
 export default function EmailNotificationPage() {
   const { showSuccess, showError } = useToast();
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
 
 
   const [loading, setLoading] = useState(true);

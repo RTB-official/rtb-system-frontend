@@ -1,4 +1,5 @@
 // src/pages/TBM/TbmCreatePage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -31,7 +32,7 @@ const STAFF_ROLE_ORDER: Record<string, number> = {
 };
 
 export default function TbmCreatePage() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const { showError, showSuccess } = useToast();

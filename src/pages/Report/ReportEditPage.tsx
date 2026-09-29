@@ -1,4 +1,5 @@
 // src/pages/Report/ReportEditPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -67,7 +68,7 @@ export default function ReportEditPage() {
     const workLogId = id ? Number(id) : null;
     const [loading, setLoading] = useState(true);
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [submitting, setSubmitting] = useState(false);
     const [savingDraft, setSavingDraft] = useState(false);
     const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);

@@ -1,13 +1,13 @@
 //settings/index.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import React from "react";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import { IconChevronRight } from "../../components/icons/Icons";
 
 export default function SettingsPage() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
   const nav = useNavigate();
 
   const SettingRow = ({

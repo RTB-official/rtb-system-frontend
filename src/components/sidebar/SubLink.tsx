@@ -1,13 +1,12 @@
 import { NavLink } from "react-router-dom";
 import { markSubMenuSkipEnter } from "./subMenuEnterAnimation";
 
-type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "INVOICE" | null;
+type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE" | null;
 
 interface SubLinkProps {
   to: string;
   label: string;
   focus: Exclude<MenuFocus, null>;
-  onClose?: () => void;
   onMenuClick?: (focus: MenuFocus) => void;
 }
 
@@ -15,7 +14,6 @@ export default function SubLink({
   to,
   label,
   focus,
-  onClose,
   onMenuClick,
 }: SubLinkProps) {
   return (
@@ -26,7 +24,6 @@ export default function SubLink({
         // 같은 탭 브랜치 이동 → 재마운트 시 열림 애니메이션 생략
         markSubMenuSkipEnter(focus);
         onMenuClick?.(focus);
-        onClose?.();
       }}
       className={({ isActive }) =>
         `flex items-center py-1.5 md:py-2 transition-all duration-300 ${

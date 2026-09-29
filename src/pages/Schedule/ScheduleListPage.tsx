@@ -1,4 +1,5 @@
 // src/pages/Schedule/ScheduleListPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -53,7 +54,7 @@ function sheetMatchesSearch(
 }
 
 export default function ScheduleListPage() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [allDates, setAllDates] = useState<string[]>([]);
     const [dayLimit, setDayLimit] = useState(INITIAL_DAY_LIMIT);
     const [sheets, setSheets] = useState<ScheduleVersionSheet[]>([]);

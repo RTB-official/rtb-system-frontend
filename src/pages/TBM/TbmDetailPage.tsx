@@ -1,4 +1,5 @@
 // TbmDetailPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -21,7 +22,7 @@ type TbmListLocationState = {
 };
 
 export default function TbmDetailPage() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const navigate = useNavigate();
     const location = useLocation();
     const locationState = location.state as TbmListLocationState | null;

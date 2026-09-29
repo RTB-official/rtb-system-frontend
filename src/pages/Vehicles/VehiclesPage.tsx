@@ -1,3 +1,4 @@
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -100,7 +101,7 @@ export default function VehiclesPage() {
         userPermissions.isStaff ||
         userPermissions.isCEO;
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [page, setPage] = useState(1);
     const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
     const [loading, setLoading] = useState(false);

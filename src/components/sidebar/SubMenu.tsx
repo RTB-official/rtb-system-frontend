@@ -3,13 +3,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import SubLink from "./SubLink";
 import { shouldSkipSubMenuEnter } from "./subMenuEnterAnimation";
 
-type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "INVOICE" | null;
+type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE" | null;
 
 interface SubMenuProps {
   isOpen: boolean;
   items: Array<{ label: string; to: string }>;
   focus: Exclude<MenuFocus, null>;
-  onClose?: () => void;
   onMenuClick?: (focus: MenuFocus) => void;
 }
 
@@ -17,7 +16,6 @@ export default function SubMenu({
   isOpen,
   items,
   focus,
-  onClose,
   onMenuClick,
 }: SubMenuProps) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -107,7 +105,6 @@ export default function SubMenu({
             to={item.to}
             label={item.label}
             focus={focus}
-            onClose={onClose}
             onMenuClick={onMenuClick}
           />
         ))}

@@ -1,3 +1,4 @@
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageContainer from "../../components/common/PageContainer";
@@ -63,7 +64,7 @@ export default function InvoiceDraftListPage() {
     const navigate = useNavigate();
     const { showError, showSuccess } = useToast();
     const { userPermissions } = useUser();
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [vesselGroups, setVesselGroups] = useState<InvoiceDraftVesselGroupItem[]>(
         []
     );

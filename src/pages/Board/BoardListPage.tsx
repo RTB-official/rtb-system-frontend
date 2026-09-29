@@ -1,4 +1,5 @@
 // src/pages/Board/BoardListPage.tsx
+import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
@@ -40,7 +41,7 @@ function formatBoardDateTimeKo(iso: string) {
 }
 
 export default function BoardListPage() {
-    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [posts, setPosts] = useState<BoardPostRow[]>([]);
     const [attachmentsByPostId, setAttachmentsByPostId] = useState<Record<string, BoardAttachment[]>>({});
     const [myVotes, setMyVotes] = useState<Record<string, number[]>>({});
