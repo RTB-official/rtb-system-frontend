@@ -15,6 +15,7 @@ interface TextInputProps {
   type?: 'text' | 'date' | 'number' | 'time';
   inputMode?: 'text' | 'numeric' | 'decimal' | 'tel' | 'search' | 'email' | 'url';
   disabled?: boolean;
+  readOnly?: boolean;
   uppercase?: boolean;
   inputRef?: React.Ref<HTMLInputElement>;
   error?: string;
@@ -36,6 +37,7 @@ export default function TextInput({
   type = 'text',
   inputMode,
   disabled = false,
+  readOnly = false,
   uppercase = false,
   inputRef,
   error,
@@ -59,7 +61,7 @@ export default function TextInput({
         </div>
       )}
       <div className={`bg-white border ${error ? 'border-red-300' : 'border-[#e5e7eb]'} rounded-xl h-12 flex items-center overflow-hidden p-3 ${disabled ? 'bg-gray-50' : ''}`}>
-        <div className="flex-1 flex items-center justify-between min-h-[24px] px-1">
+        <div className="flex-1 flex items-center justify-between min-h-[24px] min-w-0 px-1">
           <input
             ref={inputRef}
             type={type}
@@ -71,9 +73,10 @@ export default function TextInput({
             onBlur={onBlur}
             onFocus={onFocus}
             disabled={disabled}
+            readOnly={readOnly}
             list={list}
             autoComplete={autoComplete}
-            className="flex-1 font-normal text-[16px] text-[#101828] leading-[1.5] placeholder:text-[#99a1af] outline-none disabled:bg-transparent disabled:text-gray-400"
+            className="min-w-0 flex-1 font-normal text-[16px] text-[#101828] leading-[1.5] placeholder:text-[#99a1af] outline-none disabled:bg-transparent disabled:text-gray-400"
           />
           {icon}
         </div>

@@ -4902,6 +4902,33 @@ function ensureTimesheetTotalMealsColumn(ws: ExcelJS.Worksheet) {
     );
 }
 
+/** Time Sheet 상단 "Work order from" 바로 아래 칸. 양식 기본값(Everllence ELU KOREA)을 웹 표시로 덮어쓴다. */
+function setTimesheetWorkOrderFromDisplay(
+    ws: ExcelJS.Worksheet,
+    workOrderFrom: string | undefined
+) {
+    const maxRow = Math.min(Math.max(ws.rowCount || 0, 12), 16);
+    for (let row = 1; row <= maxRow; row += 1) {
+        for (let col = 1; col <= 16; col += 1) {
+            const label = getWorksheetCellDisplayText(ws.getCell(row, col))
+                .replace(/\s+/g, " ")
+                .trim();
+            if (!/^work order from$/i.test(label)) continue;
+            const valueRow = row + 1;
+            const merge = findMergeContainingCell(ws, valueRow, col);
+            const mergeStartsAtValue = merge != null && merge.top !== row;
+            const targetRow = mergeStartsAtValue ? merge.top : valueRow;
+            const targetCol = mergeStartsAtValue ? merge.left : col;
+            setCellValue(
+                ws,
+                ws.getCell(targetRow, targetCol).address,
+                withLeadingSpace(workOrderFrom)
+            );
+            return;
+        }
+    }
+}
+
 export async function fillNormalTimesheetInvoiceExcelWorkbook(
     templateBuffer: ArrayBuffer,
     mappings: InvoiceExcelFieldMappings | null | undefined,
@@ -4976,6 +5003,7 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
         setCellValue(ws, "E9", withLeadingSpace(section.mechanicNamesAndNumbers));
         setCellValue(ws, "K7", withLeadingSpace(section.departureDisplay));
         setCellValue(ws, "K9", withLeadingSpace(section.returnDisplay));
+        setTimesheetWorkOrderFromDisplay(ws, jobDescription?.workOrderFrom);
         setCellValue(ws, "C12", resolveSectionYear(section.rows));
         applyNormalTimesheetSheetBorderFormatting(ws);
 
@@ -5119,6 +5147,7 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
         RD_TIMESHEET_EXCEL.workPlace,
         withLeadingSpace(data.workPlace)
     );
+    setTimesheetWorkOrderFromDisplay(ws, jobDescription?.workOrderFrom);
     setCellValue(
         ws,
         RD_TIMESHEET_EXCEL.year,
