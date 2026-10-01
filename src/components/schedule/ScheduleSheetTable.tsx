@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import type { HTMLAttributes, ReactNode, Ref } from "react";
 import {
     SCHEDULE_CELL_BORDER,
     SCHEDULE_COLUMNS,
@@ -64,6 +64,8 @@ type ScheduleSheetTableProps = {
     rows: ScheduleSheetRow[];
     /** Highlight matching substrings in cell text (yellow mark). */
     highlightQuery?: string;
+    /** Scroll wrapper around the table (used to capture the full sheet). */
+    rootRef?: Ref<HTMLDivElement>;
     /** When set, No. column can be interactive (create page). */
     renderNoCell?: (row: ScheduleSheetRow, index: number) => ReactNode;
     renderCell?: (
@@ -95,6 +97,7 @@ const MULTILINE_FIELDS = new Set([
 export default function ScheduleSheetTable({
     rows,
     highlightQuery,
+    rootRef,
     renderNoCell,
     renderCell,
     getRowClassName,
@@ -112,7 +115,10 @@ export default function ScheduleSheetTable({
     );
 
     return (
-        <div className="w-full overflow-x-auto rounded-sm bg-white shadow-sm">
+        <div
+            ref={rootRef}
+            className="w-full overflow-x-auto rounded-sm bg-white shadow-sm"
+        >
             <table className="w-full border-collapse min-w-[1280px] table-fixed">
                 <colgroup>
                     {SCHEDULE_COLUMNS.map((col) => (

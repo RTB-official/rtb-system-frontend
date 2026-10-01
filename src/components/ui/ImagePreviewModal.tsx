@@ -17,6 +17,8 @@ interface ImagePreviewModalProps {
     currentIndex?: number;
     onPrev?: () => void;
     onNext?: () => void;
+    /** 다른 모달 위에서 열 때 쌓임 순서 */
+    zIndex?: number;
 }
 
 export default function ImagePreviewModal({
@@ -30,15 +32,14 @@ export default function ImagePreviewModal({
     currentIndex = 0,
     onPrev,
     onNext,
+    zIndex,
 }: ImagePreviewModalProps) {
     useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = "hidden";
-        } else {
-            document.body.style.overflow = "";
-        }
+        if (!isOpen) return;
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
         return () => {
-            document.body.style.overflow = "";
+            document.body.style.overflow = prev;
         };
     }, [isOpen]);
 
@@ -72,6 +73,7 @@ export default function ImagePreviewModal({
     return (
         <div
             className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-4"
+            style={zIndex != null ? { zIndex } : undefined}
             onClick={onClose}
         >
             {/* 닫기 버튼 */}
@@ -95,10 +97,7 @@ export default function ImagePreviewModal({
             </button>
 
             {/* 컨텐츠: 갤러리일 때 [이전] [이미지] [다음], 아니면 이미지만 */}
-            <div
-                className="w-full max-w-[95vw] max-h-[90vh] flex flex-col items-center justify-center relative min-h-0"
-                onClick={(e) => e.stopPropagation()}
-            >
+            <div className="w-full max-w-[95vw] max-h-[90vh] flex flex-col items-center justify-center relative min-h-0 pointer-events-none">
                 <div className="flex items-center justify-center gap-2 sm:gap-3 w-full min-w-0 flex-1">
                     {isGallery && onPrev && (
                         <button
@@ -107,7 +106,7 @@ export default function ImagePreviewModal({
                                 e.stopPropagation();
                                 onPrev();
                             }}
-                            className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+                            className="pointer-events-auto shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
                             aria-label="이전 이미지"
                         >
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -119,7 +118,8 @@ export default function ImagePreviewModal({
                         <iframe
                             src={currentSrc}
                             title={currentFileName || imageAlt}
-                            className="w-[85vw] h-[85vh] bg-white rounded-xl shadow-2xl max-w-[80vw] min-h-0"
+                            className="pointer-events-auto w-[85vw] h-[85vh] bg-white rounded-xl shadow-2xl max-w-[80vw] min-h-0"
+                            onClick={(e) => e.stopPropagation()}
                         />
                     ) : (
                         <div className="flex-1 min-w-0 min-h-0 flex items-center justify-center">
@@ -127,7 +127,8 @@ export default function ImagePreviewModal({
                                 key={currentSrc}
                                 src={currentSrc}
                                 alt={imageAlt}
-                                className="max-w-full max-h-[75vh] sm:max-h-[85vh] w-auto h-auto rounded-xl shadow-2xl bg-black/20 object-contain"
+                                className="pointer-events-auto max-w-full max-h-[75vh] sm:max-h-[85vh] w-auto h-auto rounded-xl shadow-2xl bg-black/20 object-contain"
+                                onClick={(e) => e.stopPropagation()}
                             />
                         </div>
                     )}
@@ -138,7 +139,7 @@ export default function ImagePreviewModal({
                                 e.stopPropagation();
                                 onNext();
                             }}
-                            className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
+                            className="pointer-events-auto shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-colors"
                             aria-label="다음 이미지"
                         >
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -149,7 +150,7 @@ export default function ImagePreviewModal({
                 </div>
 
                 {(currentFileName || (isGallery && images && images.length > 0)) && (
-                    <p className="text-white text-center mt-3 text-[14px] truncate max-w-full">
+                    <p className="pointer-events-none text-white text-center mt-3 text-[14px] truncate max-w-full">
                         {currentFileName && <span>{currentFileName}</span>}
                         {isGallery && images && images.length > 0 && (
                             <span className={currentFileName ? "ml-1.5 text-white/70" : "text-white/70"}>

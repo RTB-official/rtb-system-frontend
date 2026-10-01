@@ -13,8 +13,8 @@ const EVERLLENCE_DENMARK_LINES = [
 
 /** Work order from / Work Order From */
 const WORK_ORDER_FROM_BY_GROUP: Record<string, string> = {
-    ELU: "Everllence ELU KOREA",
-    PRIME: "Everllence Prime KOREA",
+    ELU: "Everllence ELU Korea",
+    PRIME: "Everllence PrimeServ Korea",
     MITSUI: "Mitsui",
     OTHER: "",
 };

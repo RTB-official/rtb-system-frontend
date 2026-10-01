@@ -4,13 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import PageContainer from "../../components/common/PageContainer";
+import Button from "../../components/common/Button";
 import Input from "../../components/common/Input";
 import DatePicker from "../../components/ui/DatePicker";
 import ScheduleSheetTable, {
     highlightSearchMatches,
 } from "../../components/schedule/ScheduleSheetTable";
-import { IconClose, IconSearch } from "../../components/icons/Icons";
+import { IconClose, IconCopy, IconSearch } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
+import { domToBlob } from "modern-screenshot";
 import {
     fetchScheduleDistinctDates,
     fetchScheduleVersionSheetsByDates,
@@ -19,6 +21,41 @@ import {
 
 const INITIAL_DAY_LIMIT = 10;
 const LOAD_MORE_DAYS = 20;
+
+function scheduleImageFileName(versionKey: string): string {
+    const safe = versionKey.replace(/[\\/:*?"<>|]/g, "_").trim();
+    return `${safe || "schedule"}.png`;
+}
+
+async function downloadScheduleTableImage(
+    root: HTMLElement,
+    versionKey: string
+): Promise<void> {
+    const table = root.querySelector("table");
+    if (!(table instanceof HTMLElement)) {
+        throw new Error("표를 찾지 못했습니다.");
+    }
+
+    const width = Math.ceil(table.scrollWidth);
+    const height = Math.ceil(table.scrollHeight);
+    const blob = await domToBlob(table, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        width,
+        height,
+        type: "image/png",
+    });
+    if (!blob) throw new Error("이미지 생성에 실패했습니다.");
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = scheduleImageFileName(versionKey);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
 
 function sheetMatchesSearch(
     sheet: ScheduleVersionSheet,
@@ -65,7 +102,9 @@ export default function ScheduleListPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
-    const { showError } = useToast();
+    const { showError, showSuccess } = useToast();
+    const [savingSheetId, setSavingSheetId] = useState<string | null>(null);
+    const tableRootRefs = useRef(new Map<string, HTMLDivElement>());
     const searchButtonRef = useRef<HTMLButtonElement>(null);
     const searchPopoverRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -201,6 +240,24 @@ export default function ScheduleListPage() {
 
     const hasActiveFilter =
         searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "";
+
+    const saveSheetImage = async (sheet: ScheduleVersionSheet) => {
+        const root = tableRootRefs.current.get(sheet.id);
+        if (!root || savingSheetId) return;
+
+        setSavingSheetId(sheet.id);
+        try {
+            await downloadScheduleTableImage(root, sheet.versionKey);
+            showSuccess("일정 표를 이미지로 저장했습니다.");
+        } catch (err) {
+            console.error(err);
+            showError(
+                err instanceof Error ? err.message : "이미지 저장에 실패했습니다."
+            );
+        } finally {
+            setSavingSheetId(null);
+        }
+    };
 
     const handleScroll = () => {
         const el = scrollRef.current;
@@ -347,13 +404,38 @@ export default function ScheduleListPage() {
                                             className="flex flex-col gap-2"
                                             aria-label={sheet.versionKey}
                                         >
-                                            <h2 className="text-sm md:text-base font-semibold tracking-tight text-gray-900">
-                                                {highlightSearchMatches(
-                                                    sheet.versionKey,
-                                                    searchQuery
-                                                )}
-                                            </h2>
+                                            <div className="flex items-center justify-between gap-3">
+                                                <h2 className="min-w-0 text-sm md:text-base font-semibold tracking-tight text-gray-900">
+                                                    {highlightSearchMatches(
+                                                        sheet.versionKey,
+                                                        searchQuery
+                                                    )}
+                                                </h2>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="shrink-0"
+                                                    icon={
+                                                        <IconCopy className="h-4 w-4" />
+                                                    }
+                                                    loading={savingSheetId === sheet.id}
+                                                    disabled={savingSheetId != null}
+                                                    onClick={() => void saveSheetImage(sheet)}
+                                                    title="표를 이미지로 저장"
+                                                    aria-label={`${sheet.versionKey} 표를 이미지로 저장`}
+                                                >
+                                                    복사
+                                                </Button>
+                                            </div>
                                             <ScheduleSheetTable
+                                                rootRef={(node) => {
+                                                    if (node) {
+                                                        tableRootRefs.current.set(sheet.id, node);
+                                                    } else {
+                                                        tableRootRefs.current.delete(sheet.id);
+                                                    }
+                                                }}
                                                 rows={sheet.rows}
                                                 highlightQuery={searchQuery}
                                             />

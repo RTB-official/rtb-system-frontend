@@ -341,3 +341,11 @@ export async function fetchScheduleVersionSheets(): Promise<ScheduleVersionSheet
     return fetchScheduleVersionSheetsByDates(dates);
 }
 
+/** Newest schedule date, and within that date the latest version label. */
+export async function fetchLatestScheduleSheet(): Promise<ScheduleVersionSheet | null> {
+    const dates = await fetchScheduleDistinctDates();
+    if (dates.length === 0) return null;
+    const sheets = await fetchScheduleVersionSheetsByDates([dates[0]]);
+    return sheets[0] ?? null;
+}
+

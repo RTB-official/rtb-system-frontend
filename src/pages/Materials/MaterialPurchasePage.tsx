@@ -9,6 +9,8 @@ import TextInput from "../../components/ui/TextInput";
 import Button from "../../components/common/Button";
 import { IconClose, IconPlus, IconUpload } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
+import { createMaterialPurchase } from "../../lib/materialPurchaseApi";
+import SchedulePickModal, { type SchedulePickItem } from "./SchedulePickModal";
 import { EXPENSE_CURRENCY_OPTIONS, ORDER_PERSONS, formatCurrency, parseCurrency, sanitizeDecimalAmountInput } from "../../store/workReportStore";
 import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocompleteOptions";
 
@@ -17,6 +19,7 @@ type LineReceipt = {
     name: string;
     previewUrl: string;
     type: string;
+    file: File;
 };
 
 type PurchaseLine = {
@@ -25,7 +28,10 @@ type PurchaseLine = {
     vendor: string;
     cost: string;
     currency: string;
+    spec: string;
+    grade: string;
     note: string;
+    urgent: boolean;
     receipts: LineReceipt[];
 };
 
@@ -43,7 +49,10 @@ function createLine(): PurchaseLine {
         vendor: "",
         cost: "",
         currency: "원",
+        spec: "",
+        grade: "",
         note: "",
+        urgent: false,
         receipts: [],
     };
 }
@@ -58,10 +67,49 @@ function revokeReceipts(receipts: LineReceipt[]) {
     });
 }
 
+function orderGroupFromCustomer(company: string): string {
+    const normalized = company.replace(/\s+/g, "").toLowerCase();
+    if (!normalized) return "";
+    if (normalized.includes("prime")) return "PRIME";
+    if (normalized.includes("mitsui")) return "MITSUI";
+    if (normalized.includes("elu") || normalized.includes("leo")) return "ELU";
+    return "";
+}
+
+function supervisorNamesFromContact(contact: string): string[] {
+    return [
+        ...new Set(
+            contact
+                .split(/[,、·/\n]+/)
+                .map((name) => name.replace(/감독/g, "").trim())
+                .filter(Boolean)
+        ),
+    ];
+}
+
+function supervisorsFromCustomer(company: string, contact: string): { group: string; persons: string[] } {
+    const persons = supervisorNamesFromContact(contact);
+    const companyGroup = orderGroupFromCustomer(company);
+    if (companyGroup) return { group: companyGroup, persons };
+    const matchedGroup = (["ELU", "PRIME"] as const).find((group) =>
+        persons.length > 0 && persons.every((name) => (ORDER_PERSONS[group] ?? []).includes(name))
+    );
+    if (matchedGroup) return { group: matchedGroup, persons };
+    if (persons.length === 0 && !company.trim()) return { group: "", persons: [] };
+    return { group: "OTHER", persons };
+}
+
+const CURRENCY_MARK: Record<string, string> = {
+    원: "₩",
+    엔: "¥",
+    달러: "$",
+    유로: "€",
+    위안: "元",
+};
+
 export default function MaterialPurchasePage() {
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
-    const { showError, showInfo } = useToast();
-    const [purchaseStatus, setPurchaseStatus] = useState<"planned" | "confirmed">("planned");
+    const { showError, showSuccess, showInfo } = useToast();
     const [purchaseKind, setPurchaseKind] = useState<"work" | "personal">("work");
     const [workFieldsRendered, setWorkFieldsRendered] = useState(true);
     const [workFieldsOpen, setWorkFieldsOpen] = useState(true);
@@ -77,13 +125,27 @@ export default function MaterialPurchasePage() {
     const purposeInputRef = useRef<HTMLInputElement>(null);
     const [lines, setLines] = useState<PurchaseLine[]>(() => [createLine()]);
     const [focusedCostId, setFocusedCostId] = useState<string | null>(null);
+    const [currencyMenuLineId, setCurrencyMenuLineId] = useState<string | null>(null);
     const [errors, setErrors] = useState<{ orderPersons?: string; lines?: string }>({});
+    const [saving, setSaving] = useState(false);
+    const [scheduleOpen, setScheduleOpen] = useState(false);
     const [previewFile, setPreviewFile] = useState<{
         url: string;
         name: string;
         type: string;
     } | null>(null);
     const skipWorkFieldsIntro = useRef(true);
+
+    useEffect(() => {
+        if (!currencyMenuLineId) return;
+        const close = (event: MouseEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest("[data-currency-menu]")) return;
+            setCurrencyMenuLineId(null);
+        };
+        document.addEventListener("mousedown", close);
+        return () => document.removeEventListener("mousedown", close);
+    }, [currencyMenuLineId]);
 
     useLayoutEffect(() => {
         if (skipWorkFieldsIntro.current) {
@@ -195,6 +257,7 @@ export default function MaterialPurchasePage() {
             name: file.name,
             previewUrl: URL.createObjectURL(file),
             type: file.type || "application/octet-stream",
+            file,
         }));
         setLines((prev) =>
             prev.map((line) => (line.id === lineId ? { ...line, receipts: [...line.receipts, ...next] } : line))
@@ -215,13 +278,37 @@ export default function MaterialPurchasePage() {
         );
     };
 
-    const handleSubmit = () => {
+    const applySchedule = (item: SchedulePickItem) => {
+        const supervisors = supervisorsFromCustomer(item.customerCompany, item.customerContact);
+        setPurchaseKind("work");
+        setVessel(item.shipName.trim().toUpperCase());
+        setOrderGroup(supervisors.group);
+        setOrderPersons(supervisors.persons);
+        setSelectedOrderPerson("");
+        setOrderPersonCustom("");
+        setTripPurpose(item.workItem.replace(/\s+/g, " ").trim());
+        setErrors((prev) => ({ ...prev, orderPersons: undefined }));
+        setScheduleOpen(false);
+    };
+
+    const handleSubmit = async () => {
+        if (saving) return;
         const nextErrors: { orderPersons?: string; lines?: string } = {};
         if (purchaseKind === "work" && orderPersons.length === 0) {
             nextErrors.orderPersons = "참관감독을 선택해 주세요.";
         }
 
-        const namedLines = lines.filter((line) => lineName(line) || line.vendor.trim() || line.note.trim());
+        const namedLines = lines.filter(
+            (line) =>
+                lineName(line) ||
+                line.vendor.trim() ||
+                line.spec.trim() ||
+                line.grade.trim() ||
+                line.note.trim() ||
+                line.cost.trim() ||
+                line.urgent ||
+                line.receipts.length > 0
+        );
         if (namedLines.length === 0) {
             nextErrors.lines = "신청할 자재를 한 개 이상 입력해 주세요.";
         } else if (namedLines.some((line) => !lineName(line))) {
@@ -234,11 +321,38 @@ export default function MaterialPurchasePage() {
             return;
         }
 
-        showInfo("초안 화면입니다. 신청 내용은 아직 저장되지 않습니다.");
+        const isWork = purchaseKind === "work";
+        setSaving(true);
+        try {
+            await createMaterialPurchase({
+                status: "confirmed",
+                kind: purchaseKind,
+                vesselName: isWork ? vessel : "",
+                orderGroup: isWork ? orderGroup : "",
+                orderPersons: isWork ? orderPersons : [],
+                tripPurpose: isWork ? tripPurpose : "",
+                lines: namedLines.map((line) => ({
+                    materialName: lineName(line),
+                    vendor: line.vendor,
+                    amount: line.cost.trim() ? parseCurrency(line.cost) : null,
+                    currency: line.currency || "원",
+                    spec: line.spec,
+                    grade: line.grade,
+                    urgent: line.urgent,
+                    note: line.note,
+                    receipts: line.receipts.map((receipt) => receipt.file),
+                })),
+            });
+            showSuccess("등록되었습니다.");
+        } catch (error) {
+            showError(error instanceof Error ? error.message : "등록에 실패했습니다.");
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (
-        <div className="flex h-screen bg-white overflow-hidden">
+        <div className="flex min-h-dvh bg-white lg:h-dvh lg:max-h-dvh lg:overflow-hidden">
             {sidebarOpen && (
                 <div
                     className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -249,7 +363,7 @@ export default function MaterialPurchasePage() {
             <div
                 className={`
             fixed lg:static inset-y-0 left-0 z-30
-            w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0
+            w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-dvh shrink-0
             transform transition-transform duration-300 ease-in-out
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
           `}
@@ -257,55 +371,23 @@ export default function MaterialPurchasePage() {
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
 
-            <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
+            <div className="flex w-full min-w-0 flex-1 flex-col lg:min-h-0 lg:overflow-hidden">
                 <Header
                     title="등록"
                     onMenuClick={() => setSidebarOpen(true)}
                     rightContent={
                         <div className="flex items-center gap-2 md:gap-3">
-                            <Button type="button" variant="outline" size="lg">
+                            <Button type="button" variant="outline" size="lg" onClick={() => setScheduleOpen(true)}>
                                 일정
                             </Button>
-                            <Button type="button" variant="primary" size="lg" onClick={handleSubmit}>
+                            <Button type="button" variant="primary" size="lg" onClick={handleSubmit} loading={saving}>
                                 등록
                             </Button>
                         </div>
                     }
                 />
-                <div className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-12 lg:px-24 xl:px-48 py-6 md:py-9">
+                <div className="px-4 sm:px-6 md:px-12 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain lg:px-24 xl:px-48 py-6 md:py-9">
                     <div className="max-w-[960px] mx-auto flex flex-col gap-4 md:gap-6">
-                        <div className="grid grid-cols-2 gap-3">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="lg"
-                                fullWidth
-                                aria-pressed={purchaseStatus === "planned"}
-                                className={
-                                    purchaseStatus === "planned"
-                                        ? "border-2! border-gray-900! text-gray-900"
-                                        : "border-2! border-gray-200!"
-                                }
-                                onClick={() => setPurchaseStatus("planned")}
-                            >
-                                예정
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="lg"
-                                fullWidth
-                                aria-pressed={purchaseStatus === "confirmed"}
-                                className={
-                                    purchaseStatus === "confirmed"
-                                        ? "border-2! border-gray-900! text-gray-900"
-                                        : "border-2! border-gray-200!"
-                                }
-                                onClick={() => setPurchaseStatus("confirmed")}
-                            >
-                                완료
-                            </Button>
-                        </div>
                         <SectionCard
                             title="구매·가공"
                             headerContent={
@@ -317,12 +399,12 @@ export default function MaterialPurchasePage() {
                                         aria-pressed={purchaseKind === "work"}
                                         className={
                                             purchaseKind === "work"
-                                                ? "border-2! border-gray-900! bg-gray-100! text-gray-900"
-                                                : "border-2! border-transparent! bg-gray-100! text-gray-700"
+                                                ? "border-2! border-green-600! bg-green-500! text-white! hover:bg-green-600!"
+                                                : "border-2! border-transparent! bg-green-100! text-green-800! hover:bg-green-200!"
                                         }
                                         onClick={() => setPurchaseKind("work")}
                                     >
-                                        작업
+                                        작업 자재
                                     </Button>
                                     <Button
                                         type="button"
@@ -336,7 +418,7 @@ export default function MaterialPurchasePage() {
                                         }
                                         onClick={() => setPurchaseKind("personal")}
                                     >
-                                        개인
+                                        기타
                                     </Button>
                                 </div>
                             }
@@ -356,6 +438,7 @@ export default function MaterialPurchasePage() {
                                     label="호선명"
                                     value={vessel}
                                     placeholder="호선명"
+                                    uppercase
                                     onChange={setVessel}
                                 />
                                 <div className="flex flex-col gap-2">
@@ -465,7 +548,9 @@ export default function MaterialPurchasePage() {
                                 {lines.map((row) => (
                                     <div
                                         key={row.id}
-                                        className="rounded-2xl bg-gray-100 p-3 md:p-4 flex flex-col gap-3"
+                                        className={`rounded-2xl p-3 md:p-4 flex flex-col gap-3 ${
+                                            row.urgent ? "bg-red-50" : "bg-gray-100"
+                                        }`}
                                     >
                                         <div className="flex items-center gap-2">
                                             <Input
@@ -475,6 +560,24 @@ export default function MaterialPurchasePage() {
                                                 className="flex-1 min-w-0"
                                                 inputClassName="border-transparent! bg-white focus:border-blue-500!"
                                             />
+                                            <button
+                                                type="button"
+                                                aria-pressed={row.urgent}
+                                                onClick={() => {
+                                                    const nextUrgent = !row.urgent;
+                                                    updateLine(row.id, { urgent: nextUrgent });
+                                                    if (nextUrgent) {
+                                                        showInfo("30만 원 미만이면 승인 없이 구매를 진행할 수 있습니다.");
+                                                    }
+                                                }}
+                                                className={`h-12 shrink-0 whitespace-nowrap rounded-xl border px-3 text-sm font-medium ${
+                                                    row.urgent
+                                                        ? "border-red-500 bg-red-500 text-white"
+                                                        : "border-gray-200 bg-white text-gray-500"
+                                                }`}
+                                            >
+                                                긴급
+                                            </button>
                                             <button
                                                 type="button"
                                                 aria-label="품목 삭제"
@@ -494,65 +597,111 @@ export default function MaterialPurchasePage() {
                                             />
                                             <div className="flex flex-col gap-2">
                                                 <label className="block text-sm font-medium text-gray-700">
-                                                    {purchaseStatus === "planned" ? "예상 비용" : "비용"}
+                                                    비용
                                                 </label>
-                                                <div className="flex gap-2">
-                                                    <div className="min-w-0 flex-1">
-                                                        <TextInput
-                                                            placeholder="0"
-                                                            inputMode="decimal"
-                                                            className="[&>div]:border-transparent! [&>div]:bg-white [&>div]:focus-within:border-blue-500! [&>div]:focus-within:ring-2 [&>div]:focus-within:ring-blue-500/20"
-                                                            value={
-                                                                focusedCostId === row.id
-                                                                    ? row.cost
-                                                                    : row.cost
-                                                                      ? formatCurrency(parseCurrency(row.cost))
-                                                                      : ""
-                                                            }
-                                                            onChange={(value) =>
-                                                                updateLine(row.id, {
-                                                                    cost: sanitizeDecimalAmountInput(value),
-                                                                })
-                                                            }
-                                                            onFocus={(event) => {
-                                                                setFocusedCostId(row.id);
-                                                                const num = parseCurrency(event.target.value);
-                                                                if (num > 0) {
-                                                                    updateLine(row.id, { cost: String(num) });
+                                                <div className="relative min-w-0">
+                                                    <TextInput
+                                                        placeholder="0"
+                                                        inputMode="decimal"
+                                                        className="[&>div]:border-transparent! [&>div]:bg-white [&>div]:p-2! [&>div]:focus-within:border-blue-500! [&>div]:focus-within:ring-2 [&>div]:focus-within:ring-blue-500/20"
+                                                        icon={
+                                                            <button
+                                                                type="button"
+                                                                data-currency-menu="true"
+                                                                className="ml-2 inline-flex h-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-200 px-2 text-sm font-medium text-gray-900"
+                                                                onMouseDown={(event) => event.preventDefault()}
+                                                                onClick={() =>
+                                                                    setCurrencyMenuLineId((current) =>
+                                                                        current === row.id ? null : row.id
+                                                                    )
                                                                 }
-                                                            }}
-                                                            onBlur={(event) => {
-                                                                setFocusedCostId((current) =>
-                                                                    current === row.id ? null : current
-                                                                );
-                                                                const num = parseCurrency(event.target.value);
-                                                                updateLine(row.id, {
-                                                                    cost: num > 0 ? formatCurrency(num) : "",
-                                                                });
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <div className="w-20 shrink-0 md:w-32 [&_select]:border-transparent! [&_select]:bg-white [&_select]:px-2 [&_select]:pr-7 [&_select]:bg-[length:14px] [&_select]:bg-[right_0.35rem_center] [&_select]:focus:border-blue-500! md:[&_select]:px-4 md:[&_select]:pr-11 md:[&_select]:bg-[length:18px] md:[&_select]:bg-[right_1rem_center]">
-                                                        <Select
-                                                            fullWidth
-                                                            options={[...EXPENSE_CURRENCY_OPTIONS]}
-                                                            value={row.currency}
-                                                            onChange={(value) => updateLine(row.id, { currency: value })}
-                                                            size="md"
-                                                        />
-                                                    </div>
+                                                            >
+                                                                {CURRENCY_MARK[row.currency] ?? row.currency}
+                                                            </button>
+                                                        }
+                                                        value={
+                                                            focusedCostId === row.id
+                                                                ? row.cost
+                                                                : row.cost
+                                                                  ? formatCurrency(parseCurrency(row.cost))
+                                                                  : ""
+                                                        }
+                                                        onChange={(value) =>
+                                                            updateLine(row.id, {
+                                                                cost: sanitizeDecimalAmountInput(value),
+                                                            })
+                                                        }
+                                                        onFocus={(event) => {
+                                                            setFocusedCostId(row.id);
+                                                            const num = parseCurrency(event.target.value);
+                                                            if (num > 0) {
+                                                                updateLine(row.id, { cost: String(num) });
+                                                            }
+                                                        }}
+                                                        onBlur={(event) => {
+                                                            setFocusedCostId((current) =>
+                                                                current === row.id ? null : current
+                                                            );
+                                                            const num = parseCurrency(event.target.value);
+                                                            updateLine(row.id, {
+                                                                cost: num > 0 ? formatCurrency(num) : "",
+                                                            });
+                                                        }}
+                                                    />
+                                                    {currencyMenuLineId === row.id && (
+                                                        <div
+                                                            data-currency-menu="true"
+                                                            className="absolute right-0 top-full z-30 mt-1 min-w-[7.5rem] overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+                                                        >
+                                                            {EXPENSE_CURRENCY_OPTIONS.map(
+                                                                (option) => (
+                                                                    <button
+                                                                        key={option.value}
+                                                                        type="button"
+                                                                        className={`block w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                                                                            row.currency === option.value
+                                                                                ? "font-semibold text-gray-900"
+                                                                                : "text-gray-700"
+                                                                        }`}
+                                                                        onMouseDown={(event) => event.preventDefault()}
+                                                                        onClick={() => {
+                                                                            updateLine(row.id, { currency: option.value });
+                                                                            setCurrencyMenuLineId(null);
+                                                                        }}
+                                                                    >
+                                                                        {`${CURRENCY_MARK[option.value] ?? ""} ${option.label}`}
+                                                                    </button>
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <Input
+                                                label="규격"
+                                                value={row.spec}
+                                                placeholder="규격"
+                                                onChange={(value) => updateLine(row.id, { spec: value })}
+                                                inputClassName="border-transparent! bg-white focus:border-blue-500!"
+                                            />
+                                            <Input
+                                                label="재질/Grade"
+                                                value={row.grade}
+                                                placeholder="재질/Grade"
+                                                onChange={(value) => updateLine(row.id, { grade: value })}
+                                                inputClassName="border-transparent! bg-white focus:border-blue-500!"
+                                            />
                                         </div>
                                         <Input
                                             label="비고"
                                             value={row.note}
-                                            placeholder="규격, 용도 등"
+                                            placeholder="용도, 특이사항 등"
                                             onChange={(value) => updateLine(row.id, { note: value })}
                                             inputClassName="border-transparent! bg-white focus:border-blue-500!"
                                         />
-                                        {purchaseStatus === "confirmed" && (
-                                            <div className="flex flex-col gap-2">
+                                        <div className="flex flex-col gap-2">
                                                 <span className="block text-sm font-medium text-gray-700">영수증</span>
                                                 <label className="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm text-gray-500">
                                                     <IconUpload />
@@ -626,7 +775,6 @@ export default function MaterialPurchasePage() {
                                                     </div>
                                                 )}
                                             </div>
-                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -649,6 +797,11 @@ export default function MaterialPurchasePage() {
                     </div>
                 </div>
             </div>
+            <SchedulePickModal
+                isOpen={scheduleOpen}
+                onClose={() => setScheduleOpen(false)}
+                onSelect={applySchedule}
+            />
             {previewFile && (
                 <div
                     onClick={() => setPreviewFile(null)}

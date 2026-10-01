@@ -692,7 +692,7 @@ function canvasToBlob(
     });
 }
 
-async function compressReceiptImage(file: File): Promise<File> {
+export async function compressReceiptImage(file: File): Promise<File> {
     if (
         typeof window === "undefined" ||
         !file.type.startsWith("image/") ||
