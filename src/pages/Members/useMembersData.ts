@@ -158,6 +158,7 @@ export function useMembersData() {
     const [roleReady, setRoleReady] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const [isStaff, setIsStaff] = useState(false);
+    const [isStaffRole, setIsStaffRole] = useState(false);
     const [myUserId, setMyUserId] = useState<string | null>(null);
     const passportNotifyRanRef = useRef(false);
 
@@ -304,6 +305,7 @@ export function useMembersData() {
 
         setIsAdmin(adminVal);
         setIsStaff(isStaffVal);
+        setIsStaffRole(myProfile?.role === "staff");
 
         const mapped = mapProfileRowsToMembers(rows, user.id, isStaffVal);
 
@@ -369,6 +371,7 @@ export function useMembersData() {
         roleReady,
         isAdmin,
         isStaff,
+        isStaffRole,
         myUserId,
         fetchMembers,
         downloadStorageFile,

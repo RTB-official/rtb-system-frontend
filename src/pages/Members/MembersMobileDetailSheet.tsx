@@ -15,6 +15,7 @@ interface MembersMobileDetailSheetProps {
     isAdmin: boolean;
     myUserId: string | null;
     isStaff: boolean;
+    isStaffRole: boolean;
     downloadStorageFile: (bucket: string, path: string, fileName: string) => Promise<void>;
     showError: (msg: string) => void;
 }
@@ -28,6 +29,7 @@ export default function MembersMobileDetailSheet({
     isAdmin,
     myUserId,
     isStaff,
+    isStaffRole,
     downloadStorageFile,
     showError,
 }: MembersMobileDetailSheetProps) {
@@ -175,17 +177,17 @@ export default function MembersMobileDetailSheet({
                     )}
                 </div>
                 <div className="mt-6 pt-4 border-t border-gray-100 flex flex-col gap-2">
-                    {(isAdmin || row.id === myUserId) && (
+                    {((isAdmin && !isStaffRole) || row.id === myUserId) && (
                         <button type="button" className="w-full py-3 rounded-xl bg-gray-100 text-gray-900 font-medium text-[15px]" onClick={onEdit}>
                             수정
                         </button>
                     )}
-                    {(isAdmin || row.id === myUserId) && (
+                    {((isAdmin && !isStaffRole) || row.id === myUserId) && (
                         <button type="button" className="w-full py-3 rounded-xl bg-gray-100 text-gray-900 font-medium text-[15px]" onClick={onResetPassword}>
                             비밀번호 재설정
                         </button>
                     )}
-                    {isAdmin && (
+                    {isAdmin && !isStaffRole && (
                         <button type="button" className="w-full py-3 rounded-xl bg-red-50 text-red-600 font-medium text-[15px]" onClick={onDelete}>
                             삭제
                         </button>

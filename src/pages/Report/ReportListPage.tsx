@@ -14,6 +14,7 @@ import Chip from "../../components/ui/Chip";
 import ReportListSkeleton from "../../components/common/skeletons/ReportListSkeleton";
 import { IconMore, IconMoreVertical, IconPlus, IconReport } from "../../components/icons/Icons";
 import { deleteWorkLog } from "../../lib/workLogApi";
+import { fetchAllMyEditableWorkLogIds, fetchWorkLogEditorCounts } from "../../lib/workLogEditorsApi";
 import {
     fetchReportList,
     parseReportListMonth,
@@ -57,6 +58,10 @@ export default function ReportListPage() {
     const [totalCount, setTotalCount] = useState(0);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [isStaffRole, setIsStaffRole] = useState(false);
+    const [grantedEditIds, setGrantedEditIds] = useState<Set<number>>(new Set());
+    const [editorCountByReportId, setEditorCountByReportId] = useState<Map<number, number>>(
+        () => new Map()
+    );
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
     const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -79,6 +84,7 @@ export default function ReportListPage() {
         navigate(`/report/${row.id}`, {
             state: {
                 isDraft: row.status === "pending",
+                canEdit: canEditRow(row),
                 from: {
                     pathname: location.pathname,
                     search: location.search,
@@ -160,6 +166,10 @@ export default function ReportListPage() {
         return false;
     };
 
+    const canEditRow = (row: ReportItem) =>
+        !isStaffRole || isRowOwner(row) || grantedEditIds.has(row.id);
+    const canDeleteRow = (row: ReportItem) => !isStaffRole || isRowOwner(row);
+
 
 
 
@@ -213,6 +223,10 @@ export default function ReportListPage() {
             setLoading(true);
         }
         try {
+            const editableIdsPromise = fetchAllMyEditableWorkLogIds().catch((error) => {
+                console.error(error);
+                return new Set<number>();
+            });
             const result = await fetchReportList({
                 page: currentPage,
                 pageSize: itemsPerPage,
@@ -221,8 +235,17 @@ export default function ReportListPage() {
                 month: parseReportListMonth(month),
                 tab: activeTab,
             });
+            const [editableIds, editorCounts] = await Promise.all([
+                editableIdsPromise,
+                fetchWorkLogEditorCounts(result.items.map((item) => item.id)).catch((error) => {
+                    console.error(error);
+                    return new Map<number, number>();
+                }),
+            ]);
             setReports(result.items);
             setTotalCount(result.totalCount);
+            setGrantedEditIds(editableIds);
+            setEditorCountByReportId(editorCounts);
         } catch (error) {
             console.error("Error loading reports:", error);
             showError("보고서 목록을 불러오는 중 오류가 발생했습니다.");
@@ -426,8 +449,7 @@ export default function ReportListPage() {
                                             not_submitted: { color: "gray-400", label: "미제출" },
                                         };
                                         const { color, label } = statusConfig[row.status];
-                                        const isOwner = isRowOwner(row);
-                                        const canManageRow = !(isStaffRole && !isOwner);
+                                        const canManageRow = canEditRow(row);
                                         return (
                                             <li key={row.id}>
                                                 <div
@@ -463,10 +485,20 @@ export default function ReportListPage() {
                                                                 position={row.ownerPosition ?? null}
                                                                 size={20}
                                                             />
-                                                            <span className="text-[13px] text-gray-600">{row.owner}</span>
+                                                            <span className="text-[13px] text-gray-600">
+                                                                {row.owner}
+                                                                {(editorCountByReportId.get(row.id) ?? 0) > 0
+                                                                    ? ` 외${editorCountByReportId.get(row.id)}명`
+                                                                    : ""}
+                                                            </span>
                                                             <Chip color={color} variant="solid" size="sm">
                                                                 {label}
                                                             </Chip>
+                                                            {grantedEditIds.has(row.id) ? (
+                                                                <Chip color="green-500" variant="solid" size="sm">
+                                                                    수정 가능
+                                                                </Chip>
+                                                            ) : null}
                                                         </div>
                                                     </div>
                                                     {canManageRow && (
@@ -496,6 +528,7 @@ export default function ReportListPage() {
                                                         setMenuAnchor(null);
                                                     }}
                                                     onEdit={() => navigate(`/report/${row.id}/edit`)}
+                                                    showDelete={canDeleteRow(row)}
                                                     onDelete={() => {
                                                         setDeleteTargetId(row.id);
                                                         setDeleteConfirmOpen(true);
@@ -615,9 +648,10 @@ export default function ReportListPage() {
                                     {
                                         key: "owner",
                                         label: "작성자",
-                                        width: "12%",
+                                        width: "16%",
                                         cellClassName: "overflow-hidden",
                                         render: (_, row: ReportItem) => {
+                                            const editorCount = editorCountByReportId.get(row.id) ?? 0;
                                             return (
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <Avatar
@@ -631,8 +665,13 @@ export default function ReportListPage() {
                                                             null
                                                         }
                                                     />
-                                                    <span className="text-gray-900 truncate">
-                                                        {row.owner}
+                                                    <span className="flex items-center gap-1 min-w-0 text-gray-900">
+                                                        <span className="truncate">{row.owner}</span>
+                                                        {editorCount > 0 ? (
+                                                            <span className="shrink-0 text-[12px] text-gray-500">
+                                                                외{editorCount}명
+                                                            </span>
+                                                        ) : null}
                                                     </span>
                                                 </div>
                                             );
@@ -641,7 +680,7 @@ export default function ReportListPage() {
                                     {
                                         key: "title",
                                         label: "제목",
-                                        width: "34%",
+                                        width: "23%",
                                         cellClassName: "max-w-0 overflow-hidden",
                                         render: (_: unknown, row: ReportItem) => (
                                             <ReportMultiLineTitle
@@ -704,7 +743,7 @@ export default function ReportListPage() {
                                     {
                                         key: "status",
                                         label: "상태",
-                                        width: "11%",
+                                        width: "18%",
                                         cellClassName: "overflow-hidden",
                                         render: (_, row: ReportItem) => {
                                             const statusConfig: Record<
@@ -729,13 +768,24 @@ export default function ReportListPage() {
                                                 statusConfig[row.status];
 
                                             return (
-                                                <Chip
-                                                    color={color}
-                                                    variant="solid"
-                                                    size="md"
-                                                >
-                                                    {label}
-                                                </Chip>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <Chip
+                                                        color={color}
+                                                        variant="solid"
+                                                        size="md"
+                                                    >
+                                                        {label}
+                                                    </Chip>
+                                                    {grantedEditIds.has(row.id) ? (
+                                                        <Chip
+                                                            color="green-500"
+                                                            variant="solid"
+                                                            size="md"
+                                                        >
+                                                            수정 가능
+                                                        </Chip>
+                                                    ) : null}
+                                                </div>
                                             );
                                         },
                                     },
@@ -746,8 +796,7 @@ export default function ReportListPage() {
                                         align: "right",
                                         showEmptyIndicator: false,
                                         render: (_, row: ReportItem) => {
-                                        const isOwner = isRowOwner(row);
-                                        const canManageRow = !(isStaffRole && !isOwner);
+                                        const canManageRow = canEditRow(row);
                                         if (!canManageRow) {
                                             return null;
                                         }
@@ -780,6 +829,7 @@ export default function ReportListPage() {
                                                         onEdit={() => {
                                                             navigate(`/report/${row.id}/edit`);
                                                         }}
+                                                        showDelete={canDeleteRow(row)}
                                                         onDelete={() => {
                                                             setDeleteTargetId(row.id);
                                                             setDeleteConfirmOpen(true);

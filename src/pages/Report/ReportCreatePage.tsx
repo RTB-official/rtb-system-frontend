@@ -9,6 +9,7 @@ import { useWorkReportStore } from "../../store/workReportStore";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import { createWorkLog, uploadReceiptFile } from "../../lib/workLogApi";
+import { saveWorkLogEditors } from "../../lib/workLogEditorsApi";
 import { supabase, formatSupabaseErrorMessage, withSupabaseRetry } from "../../lib/supabase";
 import { useAuth } from "../../store/auth";
 import { IconArrowBack } from "../../components/icons/Icons";
@@ -319,6 +320,20 @@ export default function ReportCreatePage() {
                 is_draft: isDraft,
                 created_by: user.id
             }));
+
+            const editorIds = useWorkReportStore.getState().editPermissionUserIds;
+            if (editorIds.length > 0) {
+                try {
+                    await saveWorkLogEditors(newLog.id, editorIds);
+                } catch (editorError) {
+                    console.error(editorError);
+                    showError(
+                        editorError instanceof Error
+                            ? editorError.message
+                            : "보고서는 저장됐지만 수정 권한 저장에 실패했습니다."
+                    );
+                }
+            }
 
             // 2. 파일 업로드
             const newFiles = uploadedFiles.filter(f => !f.isExisting && f.file);

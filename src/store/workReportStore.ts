@@ -137,6 +137,8 @@ interface WorkReportState {
   
   // 전체 인원원 (전체)
   workers: string[];
+  /** 이 보고서를 수정할 수 있는 계정 id */
+  editPermissionUserIds: string[];
   
   // 상세정보 (출장 업무 일지)
   workLogEntries: WorkLogEntry[];
@@ -188,6 +190,7 @@ interface WorkReportState {
   // Actions - 작업자
   addWorker: (name: string) => void;
   setWorkers: (workers: string[]) => void;
+  setEditPermissionUserIds: (userIds: string[]) => void;
   removeWorker: (name: string) => void;
   addWorkersByRegion: (region: string) => void;
   
@@ -270,6 +273,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
   vehicles: [],
   subject: '',
   workers: [],
+  editPermissionUserIds: [],
   workLogEntries: [],
   editingEntryId: null,
   currentEntry: { ...initialCurrentEntry },
@@ -369,6 +373,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     return { workers: [...state.workers, trimmed] };
   }),
   setWorkers: (workers) => set({ workers }),
+  setEditPermissionUserIds: (editPermissionUserIds) => set({ editPermissionUserIds }),
   removeWorker: (name) => set((state) => ({
     workers: state.workers.filter((w) => w !== name),
   })),
@@ -595,6 +600,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
     vehicles: [],
     subject: '',
     workers: [],
+    editPermissionUserIds: [],
     workLogEntries: [],
     editingEntryId: null,
     currentEntry: { ...initialCurrentEntry },
