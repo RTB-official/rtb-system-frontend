@@ -12,6 +12,8 @@ export interface MembersTableColumnOpts {
     isAdmin: boolean;
     myUserId: string | null;
     isStaff: boolean;
+    /** profiles.role 이 staff 이면 다른 계정 메뉴를 열 수 없다. */
+    isStaffRole: boolean;
     downloadStorageFile: (bucket: string, path: string, fileName: string) => Promise<void>;
     showError: (msg: string) => void;
     setSelectedMemberId: (id: string | null) => void;
@@ -24,6 +26,7 @@ export function getMembersTableColumns(opts: MembersTableColumnOpts): TableColum
         isAdmin,
         myUserId,
         isStaff,
+        isStaffRole,
         downloadStorageFile,
         showError,
         setSelectedMemberId,
@@ -146,7 +149,7 @@ export function getMembersTableColumns(opts: MembersTableColumnOpts): TableColum
                             <div className="flex-1 min-w-0">
                                 <EmptyValueIndicator />
                             </div>
-                            {(isAdmin || row.id === myUserId) && (
+                            {((isAdmin && !isStaffRole) || row.id === myUserId) && (
                                 <button
                                     className="flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
                                     onClick={(e) => {
@@ -202,7 +205,7 @@ export function getMembersTableColumns(opts: MembersTableColumnOpts): TableColum
                                 className="relative -left-1"
                             />
                         )}
-                        {(isAdmin || row.id === myUserId) && (
+                        {((isAdmin && !isStaffRole) || row.id === myUserId) && (
                             <button
                                 className="ml-3 flex-none w-8 h-8 rounded-lg hover:bg-gray-100 transition flex items-center justify-center text-gray-400"
                                 onClick={(e) => {

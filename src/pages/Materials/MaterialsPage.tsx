@@ -607,6 +607,10 @@ export default function MaterialsPage({ title }: { title: string }) {
                 onTogglePurchased={async () => {
                     if (!detailTarget || !detail || completing || approving) return;
                     const nextPurchased = !detail.purchased;
+                    if (nextPurchased && (detail.lines[0]?.receipts.length ?? 0) === 0) {
+                        showError("구매 완료 처리를 위해 영수증을 먼저 등록해주세요.");
+                        return;
+                    }
                     setCompleting(true);
                     try {
                         await setMaterialPurchasePurchased(detailTarget.purchaseId, nextPurchased);

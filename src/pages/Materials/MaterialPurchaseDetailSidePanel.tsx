@@ -5,13 +5,17 @@ import Input from "../../components/common/Input";
 import Select from "../../components/common/Select";
 import { IconClose, IconEdit, IconUpload } from "../../components/icons/Icons";
 import Chip from "../../components/ui/Chip";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
 import TextInput from "../../components/ui/TextInput";
 import { useToast } from "../../components/ui/ToastProvider";
 import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocompleteOptions";
 import {
     addMaterialPurchaseReceipts,
+    deleteMaterialPurchaseReceipt,
+    isUrgentAmountOverLimit,
     updateMaterialPurchase,
+    URGENT_AMOUNT_LIMIT_MESSAGE,
     type MaterialPurchaseDetail,
     type MaterialPurchaseKind,
     type MaterialPurchaseReceiptDetail,
@@ -40,6 +44,11 @@ const CURRENCY_MARK: Record<string, string> = {
 };
 
 const fieldInputClass = "border-transparent! bg-white focus:border-blue-500!";
+
+type ReceiptDeleteTarget =
+    | { mode: "view"; receipt: MaterialPurchaseReceiptDetail }
+    | { mode: "kept"; id: string }
+    | { mode: "new"; id: string; previewUrl: string };
 
 type NewReceipt = {
     id: string;
@@ -127,11 +136,30 @@ function draftFromDetail(detail: MaterialPurchaseDetail): PurchaseEditDraft {
 
 function ReadValue({ label, value }: { label: string; value: string }) {
     return (
-        <div>
-            <p className="text-sm font-medium text-gray-700">{label}</p>
-            <p className="mt-2 text-base text-gray-900 whitespace-pre-wrap break-words">{value || "—"}</p>
+        <div className="min-w-0">
+            <p className="text-xs text-gray-500">{label}</p>
+            <p className="mt-1 text-sm font-medium text-gray-900 break-words [overflow-wrap:anywhere] whitespace-pre-wrap">
+                {value || "—"}
+            </p>
         </div>
     );
+}
+
+function approvalStatusView(urgent: boolean, amountText: string, currency: string, approved: boolean) {
+    if (urgent) return { label: "긴급 구매", color: "red-500" };
+    const amount = (currency || "원") === "원" && amountText.trim() ? parseCurrency(amountText) : null;
+    if (amount != null && amount <= 100_000) return { label: "자동 승인", color: "blue-500" };
+    if (amount != null && amount <= 300_000) {
+        return approved
+            ? { label: "공무팀장 승인 완료", color: "green-500" }
+            : { label: "공무팀장 승인 대기", color: "orange-500" };
+    }
+    if (amount != null && amount > 300_000) {
+        return approved
+            ? { label: "대표 승인 완료", color: "green-500" }
+            : { label: "대표 승인 대기", color: "orange-500" };
+    }
+    return approved ? { label: "승인 완료", color: "green-500" } : { label: "승인 대기", color: "orange-500" };
 }
 
 export default function MaterialPurchaseDetailSidePanel({
@@ -151,12 +179,14 @@ export default function MaterialPurchaseDetailSidePanel({
     const panelRef = useRef<HTMLElement>(null);
     const previewRef = useRef<MaterialPurchaseReceiptDetail | null>(null);
     const editingRef = useRef(false);
+    const receiptDeleteRef = useRef(false);
     const savingRef = useRef(false);
     const [preview, setPreview] = useState<MaterialPurchaseReceiptDetail | null>(null);
     const [shown, setShown] = useState<MaterialPurchaseDetail | null>(detail);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [uploadingReceipts, setUploadingReceipts] = useState(false);
+    const [receiptDeleteTarget, setReceiptDeleteTarget] = useState<ReceiptDeleteTarget | null>(null);
     const [draft, setDraft] = useState<PurchaseEditDraft | null>(null);
     const [currencyOpen, setCurrencyOpen] = useState(false);
     const [costFocused, setCostFocused] = useState(false);
@@ -165,6 +195,7 @@ export default function MaterialPurchaseDetailSidePanel({
 
     previewRef.current = preview;
     editingRef.current = editing;
+    receiptDeleteRef.current = receiptDeleteTarget != null;
     savingRef.current = saving;
 
     useEffect(() => {
@@ -198,6 +229,7 @@ export default function MaterialPurchaseDetailSidePanel({
         if (!isOpen) return;
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key !== "Escape") return;
+            if (receiptDeleteRef.current) return;
             if (previewRef.current) return;
             if (savingRef.current) return;
             if (editingRef.current) {
@@ -222,6 +254,7 @@ export default function MaterialPurchaseDetailSidePanel({
             const target = event.target as HTMLElement | null;
             if (!target) return;
             if (previewRef.current) return;
+            if (receiptDeleteRef.current) return;
             if (editingRef.current) return;
             if (panelRef.current?.contains(target)) return;
             if (target.closest("[data-materials-list='true']")) return;
@@ -299,6 +332,16 @@ export default function MaterialPurchaseDetailSidePanel({
             showError("자재명을 입력해 주세요.");
             return;
         }
+        if (
+            isUrgentAmountOverLimit(
+                draft.urgent,
+                draft.cost.trim() ? parseCurrency(draft.cost) : null,
+                draft.currency || "원"
+            )
+        ) {
+            showError(URGENT_AMOUNT_LIMIT_MESSAGE);
+            return;
+        }
 
         setSaving(true);
         try {
@@ -355,6 +398,27 @@ export default function MaterialPurchaseDetailSidePanel({
         }
     };
 
+    const deleteViewReceipt = async (receipt: MaterialPurchaseReceiptDetail) => {
+        if (uploadingReceipts) return;
+        setUploadingReceipts(true);
+        try {
+            await deleteMaterialPurchaseReceipt({ id: receipt.id, storagePath: receipt.storagePath });
+            await onSaved();
+            showSuccess("영수증이 삭제되었습니다.");
+        } catch (error) {
+            showError(error instanceof Error ? error.message : "영수증 삭제에 실패했습니다.");
+        } finally {
+            setUploadingReceipts(false);
+        }
+    };
+
+    const receiptRegistrationOpen = !!line && (line.urgent || view?.approvalStatus === "approved");
+    const blockPurchaseComplete = !!view && !view.purchased && !receiptRegistrationOpen;
+    const approvalView =
+        view && line
+            ? approvalStatusView(line.urgent, line.amountText, line.currency, view.approvalStatus === "approved")
+            : null;
+
     return createPortal(
         <>
             {isOpen && (
@@ -371,13 +435,13 @@ export default function MaterialPurchaseDetailSidePanel({
             )}
             <aside
                 ref={panelRef}
-                className={`fixed inset-y-0 right-0 z-[10000] h-screen w-[calc(100%-3.5rem)] sm:w-[560px] lg:w-[min(calc(50vw+24px),960px)] border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out ${
+                className={`fixed inset-y-0 right-0 z-[10000] h-screen w-[calc(100%-3.5rem)] md:w-[820px] md:max-w-[calc(100%-1.5rem)] border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 ease-in-out ${
                     isOpen ? "translate-x-0" : "translate-x-full"
                 }`}
             >
                 <div className="flex h-full flex-col">
-                    <div className="flex items-center justify-between border-b border-gray-200 px-6 py-3.5">
-                        <h2 className="text-xl font-bold text-gray-900">구매·가공 상세</h2>
+                    <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6">
+                        <h2 className="text-lg font-bold tracking-tight text-gray-900 sm:text-xl">구매·가공 상세</h2>
                         <div className="flex items-center gap-2">
                             <button
                                 type="button"
@@ -402,7 +466,7 @@ export default function MaterialPurchaseDetailSidePanel({
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto px-6 py-6">
+                    <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-5 pb-8 sm:px-6 sm:py-6">
                         {loading && !view ? (
                             <div className="py-10 text-center text-sm text-gray-500">불러오는 중...</div>
                         ) : !view || !line ? (
@@ -753,11 +817,7 @@ export default function MaterialPurchaseDetailSidePanel({
                                                             type="button"
                                                             aria-label="영수증 삭제"
                                                             onClick={() =>
-                                                                patchDraft({
-                                                                    keptReceiptIds: draft.keptReceiptIds.filter(
-                                                                        (id) => id !== receipt.id
-                                                                    ),
-                                                                })
+                                                                setReceiptDeleteTarget({ mode: "kept", id: receipt.id })
                                                             }
                                                             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
                                                         >
@@ -790,14 +850,13 @@ export default function MaterialPurchaseDetailSidePanel({
                                                         <button
                                                             type="button"
                                                             aria-label="영수증 삭제"
-                                                            onClick={() => {
-                                                                URL.revokeObjectURL(receipt.previewUrl);
-                                                                patchDraft({
-                                                                    newReceipts: draft.newReceipts.filter(
-                                                                        (item) => item.id !== receipt.id
-                                                                    ),
-                                                                });
-                                                            }}
+                                                            onClick={() =>
+                                                                setReceiptDeleteTarget({
+                                                                    mode: "new",
+                                                                    id: receipt.id,
+                                                                    previewUrl: receipt.previewUrl,
+                                                                })
+                                                            }
                                                             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
                                                         >
                                                             <IconClose className="h-4 w-4" />
@@ -810,70 +869,94 @@ export default function MaterialPurchaseDetailSidePanel({
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col gap-6">
+                            <div className="flex flex-col gap-5">
                                 {view.kind === "work" && (
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                         <ReadValue label="호선명" value={view.vessel} />
-                                        <div>
-                                            <p className="text-sm font-medium text-gray-700">참관감독</p>
-                                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                                                <span className="text-base text-gray-900">{view.orderGroupLabel || "—"}</span>
+                                        <div className="min-w-0">
+                                            <p className="text-xs text-gray-500">참관감독</p>
+                                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                                                <span className="text-sm font-medium text-gray-900 break-words">
+                                                    {view.orderGroupLabel || "—"}
+                                                </span>
                                                 {view.orderPersons.map((person) => (
                                                     <span
                                                         key={person}
-                                                        className="inline-flex h-9 items-center rounded-[10px] bg-[#eef7ff] px-3 text-sm font-medium text-[#3b82f6]"
+                                                        className="inline-flex h-7 items-center rounded-lg bg-[#eef7ff] px-2.5 text-xs font-medium text-[#3b82f6]"
                                                     >
                                                         {person}
                                                     </span>
                                                 ))}
                                             </div>
                                         </div>
-                                        <div className="lg:col-span-2">
+                                        <div className="md:col-span-2">
                                             <ReadValue label="출장 목적" value={view.tripPurpose} />
                                         </div>
                                     </div>
                                 )}
 
+                                {approvalView && (
+                                    <div className="min-w-0">
+                                        <p className="text-xs text-gray-500">승인 상태</p>
+                                        <div className="mt-1.5">
+                                            <Chip color={approvalView.color} variant="solid" size="md">
+                                                {approvalView.label}
+                                            </Chip>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div
-                                    className={`rounded-2xl p-3 md:p-4 flex flex-col gap-4 ${
-                                        line.urgent ? "bg-red-50" : "bg-gray-100"
+                                    className={`flex flex-col gap-4 rounded-2xl p-4 ${
+                                        line.urgent ? "bg-red-50" : "bg-[#F8F9FB]"
                                     }`}
                                 >
-                                    <div className="flex items-center gap-2">
-                                        <p className="min-w-0 flex-1 text-base text-gray-900 break-words">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <p className="min-w-0 text-base font-semibold text-gray-900 break-words [overflow-wrap:anywhere]">
                                             {line.materialName || "—"}
                                         </p>
-                                        <Chip
-                                            color={view.kind === "personal" ? "purple-500" : "green-500"}
-                                            variant="solid"
-                                            size="md"
-                                        >
-                                            {view.kind === "personal" ? "기타" : "작업 자재"}
-                                        </Chip>
-                                        {line.urgent && (
-                                            <span className="shrink-0 border border-red-500 px-1.5 py-0.5 text-xs font-medium leading-none text-red-500">
-                                                긴급
-                                            </span>
-                                        )}
+                                        <div className="flex shrink-0 items-center gap-1.5">
+                                            {line.urgent && (
+                                                <span className="border border-red-500 px-1.5 py-0.5 text-xs font-medium leading-none text-red-500">
+                                                    긴급
+                                                </span>
+                                            )}
+                                            <Chip
+                                                color={view.kind === "personal" ? "purple-500" : "green-500"}
+                                                variant="solid"
+                                                size="md"
+                                            >
+                                                {view.kind === "personal" ? "기타" : "작업 자재"}
+                                            </Chip>
+                                        </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
                                         <ReadValue label="구매처" value={line.vendor} />
                                         <ReadValue
                                             label="비용"
                                             value={
                                                 line.amountText
-                                                    ? `${line.amountText} ${CURRENCY_MARK[line.currency] ?? line.currency}`
+                                                    ? `${line.amountText}${line.currency || "원"}`
                                                     : ""
                                             }
                                         />
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <ReadValue label="규격" value={line.spec} />
                                         <ReadValue label="재질/Grade" value={line.grade} />
                                     </div>
-                                    <ReadValue label="비고" value={line.note} />
-                                    <div className="flex flex-col gap-2">
-                                        <span className="block text-sm font-medium text-gray-700">영수증</span>
+                                    <div className="border-t border-gray-200/80 pt-4">
+                                        <ReadValue label="비고" value={line.note} />
+                                    </div>
+                                    <div className="flex flex-col gap-2 border-t border-gray-200/80 pt-4">
+                                        <p className="text-xs text-gray-500">영수증</p>
+                                        {!receiptRegistrationOpen && line.receipts.length === 0 ? (
+                                            <p className="text-sm text-gray-500">구매 완료 후 영수증을 등록할 수 있습니다.</p>
+                                        ) : (
+                                            <p className="text-sm text-gray-500">
+                                                {line.receipts.length > 0
+                                                    ? "등록된 영수증"
+                                                    : "구매 후 영수증 등록이 필수입니다."}
+                                            </p>
+                                        )}
                                         {line.receipts.map((receipt) => (
                                             <div
                                                 key={receipt.id}
@@ -888,27 +971,44 @@ export default function MaterialPurchaseDetailSidePanel({
                                                 <span className="min-w-0 flex-1 truncate text-sm text-gray-700">
                                                     {receipt.fileName}
                                                 </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setPreview(receipt)}
+                                                    className="shrink-0 text-sm font-medium text-gray-700"
+                                                >
+                                                    보기
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={uploadingReceipts}
+                                                    onClick={() => setReceiptDeleteTarget({ mode: "view", receipt })}
+                                                    className="shrink-0 text-sm font-medium text-red-500 disabled:opacity-50"
+                                                >
+                                                    삭제
+                                                </button>
                                             </div>
                                         ))}
-                                        <label
-                                            className={`flex h-12 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm text-gray-500 ${
-                                                uploadingReceipts ? "pointer-events-none opacity-60" : "cursor-pointer"
-                                            }`}
-                                        >
-                                            <IconUpload />
-                                            {uploadingReceipts ? "업로드 중..." : "영수증 첨부"}
-                                            <input
-                                                type="file"
-                                                accept="image/*,.pdf"
-                                                multiple
-                                                className="sr-only"
-                                                disabled={uploadingReceipts}
-                                                onChange={(event) => {
-                                                    void addViewReceipts(event.target.files);
-                                                    event.currentTarget.value = "";
-                                                }}
-                                            />
-                                        </label>
+                                        {receiptRegistrationOpen && (
+                                            <label
+                                                className={`flex h-14 items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white px-4 text-sm text-gray-600 ${
+                                                    uploadingReceipts ? "pointer-events-none opacity-60" : "cursor-pointer"
+                                                }`}
+                                            >
+                                                <IconUpload />
+                                                {uploadingReceipts ? "업로드 중..." : "영수증 첨부"}
+                                                <input
+                                                    type="file"
+                                                    accept="image/*,.pdf"
+                                                    multiple
+                                                    className="sr-only"
+                                                    disabled={uploadingReceipts}
+                                                    onChange={(event) => {
+                                                        void addViewReceipts(event.target.files);
+                                                        event.currentTarget.value = "";
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -916,7 +1016,7 @@ export default function MaterialPurchaseDetailSidePanel({
                     </div>
 
                     {editing ? (
-                        <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4">
+                        <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 bg-white px-4 py-4 sm:px-6">
                             <Button type="button" variant="outline" size="lg" disabled={saving} onClick={cancelEdit}>
                                 취소
                             </Button>
@@ -926,13 +1026,13 @@ export default function MaterialPurchaseDetailSidePanel({
                         </div>
                     ) : (
                         (showApprove || showRevoke) && (
-                            <div className="flex justify-end gap-2 border-t border-gray-200 px-6 py-4">
+                            <div className="flex shrink-0 gap-2 border-t border-gray-200 bg-white px-4 py-4 sm:justify-end sm:px-6">
                                 {showApprove ? (
-                                    <Button variant="primary" size="lg" loading={approving} disabled={completing} onClick={onApprove}>
+                                    <Button variant="outline" size="lg" loading={approving} disabled={completing} onClick={onApprove} className="flex-1 sm:flex-none">
                                         승인
                                     </Button>
                                 ) : (
-                                    <Button variant="outline" size="lg" loading={approving} disabled={completing} onClick={onRevoke}>
+                                    <Button variant="outline" size="lg" loading={approving} disabled={completing} onClick={onRevoke} className="flex-1 sm:flex-none">
                                         승인 해제
                                     </Button>
                                 )}
@@ -940,8 +1040,9 @@ export default function MaterialPurchaseDetailSidePanel({
                                     variant={view?.purchased ? "outline" : "primary"}
                                     size="lg"
                                     loading={completing}
-                                    disabled={approving}
+                                    disabled={approving || blockPurchaseComplete}
                                     onClick={onTogglePurchased}
+                                    className="flex-1 sm:flex-none"
                                 >
                                     {view?.purchased ? "구매 완료 해제" : "구매 완료"}
                                 </Button>
@@ -950,6 +1051,38 @@ export default function MaterialPurchaseDetailSidePanel({
                     )}
                 </div>
             </aside>
+            <ConfirmDialog
+                isOpen={receiptDeleteTarget != null}
+                onClose={() => {
+                    if (uploadingReceipts) return;
+                    setReceiptDeleteTarget(null);
+                }}
+                onConfirm={() => {
+                    const target = receiptDeleteTarget;
+                    if (!target) return;
+                    if (target.mode === "view") {
+                        void deleteViewReceipt(target.receipt).then(() => setReceiptDeleteTarget(null));
+                        return;
+                    }
+                    if (target.mode === "kept") {
+                        patchDraft({
+                            keptReceiptIds: (draft?.keptReceiptIds ?? []).filter((id) => id !== target.id),
+                        });
+                    } else {
+                        URL.revokeObjectURL(target.previewUrl);
+                        patchDraft({
+                            newReceipts: (draft?.newReceipts ?? []).filter((item) => item.id !== target.id),
+                        });
+                    }
+                    setReceiptDeleteTarget(null);
+                }}
+                title="삭제 확인"
+                message="영수증을 삭제하시겠습니까?"
+                confirmText="삭제"
+                cancelText="취소"
+                confirmVariant="danger"
+                isLoading={uploadingReceipts}
+            />
             <ImagePreviewModal
                 isOpen={preview != null}
                 onClose={() => setPreview(null)}

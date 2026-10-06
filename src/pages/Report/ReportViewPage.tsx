@@ -10,6 +10,8 @@ import Button from "../../components/common/Button";
 import Table from "../../components/common/Table";
 import { IconArrowBack, IconDownload, IconEdit, IconSend } from "../../components/icons/Icons";
 import { getWorkLogById, getWorkLogReceipts, updateWorkLog } from "../../lib/workLogApi";
+import { supabase } from "../../lib/supabase";
+import { fetchWorkLogEditorNames } from "../../lib/workLogEditorsApi";
 import { useToast } from "../../components/ui/ToastProvider";
 import { useUser } from "../../hooks/useUser";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
@@ -36,11 +38,38 @@ type ReceiptItem = {
 
 type ReportListLocationState = {
     isDraft?: boolean;
+    canEdit?: boolean;
     from?: {
         pathname?: string;
         search?: string;
     };
 };
+
+const EDIT_GRANT_HINT_KEY = "rtb:work-log-edit-grant";
+
+function readEditGrantHint(reportId?: string): boolean {
+    if (!reportId) return false;
+    try {
+        const raw = sessionStorage.getItem(EDIT_GRANT_HINT_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw) as Record<string, boolean>;
+        return parsed?.[reportId] === true;
+    } catch {
+        return false;
+    }
+}
+
+function writeEditGrantHint(reportId: string, granted: boolean) {
+    try {
+        const raw = sessionStorage.getItem(EDIT_GRANT_HINT_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+        if (granted) parsed[reportId] = true;
+        else delete parsed[reportId];
+        sessionStorage.setItem(EDIT_GRANT_HINT_KEY, JSON.stringify(parsed));
+    } catch {
+        /* 저장 실패는 버튼 표시를 막지 않는다 */
+    }
+}
 
 const REPORT_DRAFT_HINT_STORAGE_KEY = "rtb:reportViewDraftHint";
 
@@ -365,6 +394,10 @@ export default function ReportViewPage() {
     } | null>(null);
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [hasEditGrant, setHasEditGrant] = useState(
+        () => locationState?.canEdit === true || readEditGrantHint(id)
+    );
+    const [editorNames, setEditorNames] = useState<string[]>([]);
 
     const openPreview = (url: string, name: string, type: string) => {
         setPreviewFile({ url, name, type });
@@ -495,10 +528,79 @@ export default function ReportViewPage() {
     const isEducationReport = reportType === "education";
     const isDraftReport = workLog ? !!workLog.is_draft : !!draftStatusHint;
 
-    // 스태프는 본인이 작성한 보고서만 수정 가능 (타인/작성자 없음은 숨김)
+    useEffect(() => {
+        if (!id) return;
+
+        let cancelled = false;
+        const workLogId = Number(id);
+
+        void (async () => {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const userId = sessionData.session?.user?.id;
+            if (!userId || cancelled) return;
+
+            const { data, error } = await supabase
+                .from("work_log_editors")
+                .select("user_id")
+                .eq("work_log_id", workLogId)
+                .eq("user_id", userId)
+                .limit(1);
+
+            if (cancelled) return;
+            if (error) {
+                console.error(error);
+                return;
+            }
+
+            const granted = (data ?? []).length > 0;
+            if (granted) {
+                setHasEditGrant(true);
+                writeEditGrantHint(String(id), true);
+            } else if (locationState?.canEdit !== true) {
+                setHasEditGrant(false);
+                writeEditGrantHint(String(id), false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [id]);
+
+    useEffect(() => {
+        if (!id) {
+            setEditorNames([]);
+            return;
+        }
+
+        let cancelled = false;
+        void fetchWorkLogEditorNames(Number(id))
+            .then((names) => {
+                if (!cancelled) setEditorNames(names);
+            })
+            .catch((error) => {
+                console.error(error);
+                if (!cancelled) setEditorNames([]);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [id]);
+
+    const authorLine = useMemo(() => {
+        const author = workLog?.author?.trim() || "";
+        const editors = editorNames.filter((name) => name !== author);
+        if (!author && editors.length === 0) return "(작성자 없음)";
+        if (!author) return editors.join(",");
+        if (editors.length === 0) return author;
+        return `${author}/${editors.join(",")}`;
+    }, [workLog?.author, editorNames]);
+
+    // 스태프는 본인 작성 보고서, 또는 수정 권한을 받은 보고서만 수정 가능
     const canShowEditButton = !userPermissions.isStaff
         ? true
-        : !!workLog?.created_by && workLog.created_by === currentUserId;
+        : (!!workLog?.created_by && workLog.created_by === currentUserId) || hasEditGrant;
 
     const handleBackToList = () => {
         const pathname = locationState?.from?.pathname || "/report";
@@ -800,7 +902,7 @@ export default function ReportViewPage() {
                                         <div className="flex">
                                             <span className="w-28 text-gray-400 shrink-0">작성자 / 작성일</span>
                                             <span className="text-gray-900">
-                                                {workLog?.author?.trim() ? workLog.author : "(작성자 없음)"}
+                                                {authorLine}
                                                 <span className="text-gray-400 ml-2">
                                                     · {formatDate(workLog?.created_at)}
                                                 </span>

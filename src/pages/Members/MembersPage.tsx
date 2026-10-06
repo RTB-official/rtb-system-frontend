@@ -30,6 +30,7 @@ export default function MembersPage() {
         roleReady,
         isAdmin,
         isStaff,
+        isStaffRole,
         myUserId,
         fetchMembers,
         downloadStorageFile,
@@ -149,6 +150,7 @@ export default function MembersPage() {
                                         isAdmin={isAdmin}
                                         myUserId={myUserId}
                                         isStaff={isStaff}
+                                        isStaffRole={isStaffRole}
                                         downloadStorageFile={downloadStorageFile}
                                         showError={showError}
                                     />
@@ -162,6 +164,7 @@ export default function MembersPage() {
                                     isAdmin={isAdmin}
                                     myUserId={myUserId}
                                     isStaff={isStaff}
+                                    isStaffRole={isStaffRole}
                                     downloadStorageFile={downloadStorageFile}
                                     showError={showError}
                                     setSelectedMemberId={setSelectedMemberId}
@@ -181,7 +184,7 @@ export default function MembersPage() {
                 member={selectedMember}
                 onSubmit={async (payload) => {
                     if (!selectedMemberId || !selectedMember) return;
-                    if (!isAdmin && selectedMemberId !== myUserId) {
+                    if ((isStaffRole || !isAdmin) && selectedMemberId !== myUserId) {
                         showError("본인 계정만 수정할 수 있습니다.");
                         return;
                     }
@@ -295,17 +298,17 @@ export default function MembersPage() {
                 anchorEl={actionAnchor}
                 onClose={() => { setActionOpen(false); setActionAnchor(null); }}
                 onEdit={() => {
-                    if (!isAdmin && selectedMemberId !== myUserId) return;
+                    if ((isStaffRole || !isAdmin) && selectedMemberId !== myUserId) return;
                     setActionOpen(false);
                     setEditModalOpen(true);
                 }}
                 onResetPassword={() => {
-                    if (!isAdmin && selectedMemberId !== myUserId) return;
+                    if ((isStaffRole || !isAdmin) && selectedMemberId !== myUserId) return;
                     setActionOpen(false);
                     setResetPasswordModalOpen(true);
                 }}
-                onDelete={isAdmin ? () => { if (selectedMemberId) setDeleteConfirmOpen(true); } : undefined}
-                showDelete={isAdmin}
+                onDelete={isAdmin && !isStaffRole ? () => { if (selectedMemberId) setDeleteConfirmOpen(true); } : undefined}
+                showDelete={isAdmin && !isStaffRole}
                 width="w-44"
             />
 
@@ -338,7 +341,7 @@ export default function MembersPage() {
                 onClose={() => setResetPasswordModalOpen(false)}
                 onSubmit={async (payload) => {
                     if (!selectedMemberId) return false;
-                    if (!isAdmin && selectedMemberId !== myUserId) {
+                    if ((isStaffRole || !isAdmin) && selectedMemberId !== myUserId) {
                         showError("본인 비밀번호만 변경할 수 있습니다.");
                         return false;
                     }

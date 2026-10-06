@@ -24,6 +24,7 @@ import {
     getWorkLogById,
     deleteWorkLogReceipt,
 } from "../../lib/workLogApi";
+import { fetchWorkLogEditorIds } from "../../lib/workLogEditorsApi";
 import { useAuth } from "../../store/auth";
 import { supabase, formatSupabaseErrorMessage, withSupabaseRetry } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -114,6 +115,7 @@ export default function ReportEditPage() {
         setLocations,
         setVehicles,
         setWorkers,
+        setEditPermissionUserIds,
         setExpenses,
         setMaterials,
         setWorkLogEntries,
@@ -316,6 +318,17 @@ export default function ReportEditPage() {
 
                 // 작업자 설정
                 setWorkers(data.workers);
+
+                try {
+                    const editorIds = await fetchWorkLogEditorIds(workLogId);
+                    if (thisLoadId !== loadIdRef.current) return;
+                    setEditPermissionUserIds(editorIds);
+                } catch (editorError) {
+                    console.error(editorError);
+                    if (thisLoadId === loadIdRef.current) {
+                        setEditPermissionUserIds([]);
+                    }
+                }
 
                 // 업무 일지 설정
                 const workLogEntries = data.entries.map((entry) => ({
@@ -917,7 +930,13 @@ if (newFiles.length > 0) {
                             )}
 
                             {/* 작업자 */}
-                            <WorkerSection title={reportType === "work" ? "투입 인원" : "교육 참석자"} />
+                            <WorkerSection
+                                title={reportType === "work" ? "투입 인원" : "교육 참석자"}
+                                workLogId={workLogId}
+                                canManageEditPermission={
+                                    !!user?.id && originalCreatedBy === user.id
+                                }
+                            />
 
                             {/* 출장 업무 일지 */}
                             <WorkLogSection />

@@ -3,6 +3,16 @@ import { compressReceiptImage } from "./workLogApi";
 
 const RECEIPT_BUCKET = "material-purchase-receipts";
 
+export const URGENT_AMOUNT_LIMIT_WON = 300_000;
+export const URGENT_AMOUNT_LIMIT_MESSAGE = "30만 원 이상이면 긴급으로 등록할 수 없습니다.";
+
+export function isUrgentAmountOverLimit(urgent: boolean, amount: number | null, currency: string) {
+    if (!urgent) return false;
+    if ((currency || "원") !== "원") return false;
+    if (amount == null || !Number.isFinite(amount)) return false;
+    return amount >= URGENT_AMOUNT_LIMIT_WON;
+}
+
 export type MaterialPurchaseStatus = "planned" | "confirmed";
 export type MaterialPurchaseKind = "work" | "personal";
 
@@ -152,6 +162,13 @@ export async function createMaterialPurchase(input: CreateMaterialPurchaseInput)
 
 export type MaterialPurchaseApproval = "pending" | "approved";
 
+export interface MaterialPurchaseListReceipt {
+    id: string;
+    fileName: string;
+    contentType: string;
+    url: string;
+}
+
 export interface MaterialPurchaseListItem {
     id: string;
     purchaseId: string;
@@ -169,12 +186,13 @@ export interface MaterialPurchaseListItem {
     approvalStatus: MaterialPurchaseApproval;
     purchased: boolean;
     urgent: boolean;
+    receipts: MaterialPurchaseListReceipt[];
 }
 
 function formatListDate(dateString: string) {
     const date = new Date(dateString);
     if (Number.isNaN(date.getTime())) return "";
-    const year = date.getFullYear();
+    const year = String(date.getFullYear()).slice(-2);
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}.${month}.${day}.`;
@@ -190,7 +208,7 @@ export async function fetchMaterialPurchaseList(): Promise<MaterialPurchaseListI
     const { data, error } = await supabase
         .from("material_purchases")
         .select(
-            "id, user_id, status, kind, approval_status, purchased, vessel_name, created_at, material_purchase_lines(id, sort_order, material_name, vendor, amount, currency, urgent)"
+            "id, user_id, status, kind, approval_status, purchased, vessel_name, created_at, material_purchase_lines(id, sort_order, material_name, vendor, amount, currency, urgent, material_purchase_receipts(id, storage_path, file_name, content_type))"
         )
         .order("created_at", { ascending: false });
 
@@ -213,6 +231,23 @@ export async function fetchMaterialPurchaseList(): Promise<MaterialPurchaseListI
                 email: profile.email ?? null,
                 position: profile.position ?? null,
             });
+        }
+    }
+
+    const receiptPaths = [
+        ...new Set(
+            purchases.flatMap((purchase) =>
+                (purchase.material_purchase_lines ?? []).flatMap((line) =>
+                    (line.material_purchase_receipts ?? []).map((receipt) => receipt.storage_path).filter(Boolean)
+                )
+            )
+        ),
+    ];
+    const signedByPath = new Map<string, string>();
+    if (receiptPaths.length > 0) {
+        const { data: signed } = await supabase.storage.from(RECEIPT_BUCKET).createSignedUrls(receiptPaths, 60 * 60);
+        for (const row of signed ?? []) {
+            if (row.path && row.signedUrl) signedByPath.set(row.path, row.signedUrl);
         }
     }
 
@@ -243,10 +278,22 @@ export async function fetchMaterialPurchaseList(): Promise<MaterialPurchaseListI
                 materialName: "",
                 vendor: "",
                 amountLabel: "",
+                receipts: [],
             });
             continue;
         }
         for (const line of lines) {
+            const receipts: MaterialPurchaseListReceipt[] = [];
+            for (const receipt of line.material_purchase_receipts ?? []) {
+                const url = signedByPath.get(receipt.storage_path);
+                if (!url) continue;
+                receipts.push({
+                    id: receipt.id,
+                    fileName: receipt.file_name || "영수증",
+                    contentType: receipt.content_type || "application/octet-stream",
+                    url,
+                });
+            }
             items.push({
                 ...base,
                 id: line.id,
@@ -256,6 +303,7 @@ export async function fetchMaterialPurchaseList(): Promise<MaterialPurchaseListI
                 vendor: line.vendor?.trim() || "",
                 amountLabel: formatAmountLabel(line.amount == null ? null : Number(line.amount), line.currency),
                 urgent: line.urgent === true,
+                receipts,
             });
         }
     }
@@ -568,6 +616,18 @@ async function uploadReceiptFiles(userId: string, purchaseId: string, lineId: st
         }
         throw error instanceof Error ? error : new Error("영수증 저장에 실패했습니다.");
     }
+}
+
+export async function deleteMaterialPurchaseReceipt(receipt: {
+    id: string;
+    storagePath: string;
+}): Promise<void> {
+    if (receipt.storagePath) {
+        const { error: storageError } = await supabase.storage.from(RECEIPT_BUCKET).remove([receipt.storagePath]);
+        if (storageError) throw new Error(storageError.message || "영수증 파일 삭제에 실패했습니다.");
+    }
+    const { error } = await supabase.from("material_purchase_receipts").delete().eq("id", receipt.id);
+    if (error) throw new Error(error.message || "영수증 삭제에 실패했습니다.");
 }
 
 export async function addMaterialPurchaseReceipts(input: {
