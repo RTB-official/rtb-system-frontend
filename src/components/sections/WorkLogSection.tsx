@@ -14,6 +14,7 @@ import { IconEdit, IconTrash, IconClose } from "../icons/Icons";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import { useToast } from "../ui/ToastProvider";
 import CopyCardModal from "./CopyCardModal";
+import { GANGDONG_FACTORY } from "../../utils/travelRouteParse";
 
 // ✅ 작업 시간(분) 계산: 점심(12:00~13:00) 제외 옵션 포함
 function calcWorkMinutesWithLunchRule(params: {
@@ -278,7 +279,7 @@ const descTypeOptionsEducation = [
 ];
 
 // 이동 장소 기본 옵션
-const baseMovePlaces = ["자택", "강동동 공장", "출장지", "숙소"];
+const baseMovePlaces = ["자택", GANGDONG_FACTORY, "출장지", "숙소"];
 
 
 export default function WorkLogSection() {
@@ -483,6 +484,7 @@ export default function WorkLogSection() {
     const handleDetourToggle = () => {
         const newHasDetour = !hasDetour;
         setHasDetour(newHasDetour);
+        setCurrentEntry({ moveVia: newHasDetour ? GANGDONG_FACTORY : "" });
         updateMoveDetails(
             currentEntry.moveFrom,
             currentEntry.moveTo,
@@ -498,19 +500,19 @@ export default function WorkLogSection() {
     ) => {
         if (from && to) {
             if (detour) {
-                setCurrentEntry({ details: `${from}→강동동 공장→${to} 이동.` });
+                setCurrentEntry({ details: `${from}→${GANGDONG_FACTORY}→${to} 이동.` });
             } else {
                 setCurrentEntry({ details: `${from}→${to} 이동.` });
             }
         } else if (from) {
             if (detour) {
-                setCurrentEntry({ details: `${from}→강동동 공장→` });
+                setCurrentEntry({ details: `${from}→${GANGDONG_FACTORY}→` });
             } else {
                 setCurrentEntry({ details: `${from}→` });
             }
         } else if (to) {
             if (detour) {
-                setCurrentEntry({ details: `→강동동 공장→${to} 이동.` });
+                setCurrentEntry({ details: `→${GANGDONG_FACTORY}→${to} 이동.` });
             } else {
                 setCurrentEntry({ details: `→${to} 이동.` });
             }
@@ -737,6 +739,7 @@ export default function WorkLogSection() {
                 note: entry.note || "",
                 moveFrom: entry.moveFrom || "",
                 moveTo: entry.moveTo || "",
+                moveVia: entry.moveVia || "",
                 noLunch: entry.noLunch || false,
             } as any;
         });
@@ -950,7 +953,11 @@ export default function WorkLogSection() {
                                     onClick={() => {
                                         setCurrentEntry({
                                             descType: opt.value as any, // type assertion needed due to extended union
+                                            ...(opt.value !== "이동" ? { moveVia: "" } : {}),
                                         });
+                                        if (opt.value !== "이동") {
+                                            setHasDetour(false);
+                                        }
 
                                         if (errors.descType) {
                                             setErrors((prev) => ({
@@ -972,7 +979,7 @@ export default function WorkLogSection() {
 
 {/* 이동일 때 From/To 선택 */}
 {currentEntry.descType === "이동" && (() => {
-    const corePlaces = ["자택", "강동동 공장", "숙소"];
+    const corePlaces = ["자택", GANGDONG_FACTORY, "숙소"];
 
     // 선택한 출장지들 (기본 장소/출장지 라벨 제외)
     const tripPlaces = movePlaces.filter(
@@ -1007,7 +1014,7 @@ export default function WorkLogSection() {
                                 variant={currentEntry.moveFrom === place ? "primary" : "outline"}
                                 disabled={
                                     (!!currentEntry.moveTo && currentEntry.moveTo === place) ||
-                                    (hasDetour && place === "강동동 공장")
+                                    (hasDetour && place === GANGDONG_FACTORY)
                                 }
                                 onClick={() => handleMovePlace("from", place)}
                             >
@@ -1026,7 +1033,7 @@ export default function WorkLogSection() {
                                 variant={currentEntry.moveFrom === place ? "primary" : "outline"}
                                 disabled={
                                     (!!currentEntry.moveTo && currentEntry.moveTo === place) ||
-                                    (hasDetour && place === "강동동 공장")
+                                    (hasDetour && place === GANGDONG_FACTORY)
                                 }
                                 onClick={() => handleMovePlace("from", place)}
                             >
@@ -1054,7 +1061,7 @@ export default function WorkLogSection() {
                                 variant={currentEntry.moveTo === place ? "primary" : "outline"}
                                 disabled={
                                     (!!currentEntry.moveFrom && currentEntry.moveFrom === place) ||
-                                    (hasDetour && place === "강동동 공장")
+                                    (hasDetour && place === GANGDONG_FACTORY)
                                 }
                                 onClick={() => handleMovePlace("to", place)}
                             >
@@ -1089,7 +1096,7 @@ export default function WorkLogSection() {
                                 variant={currentEntry.moveTo === place ? "primary" : "outline"}
                                 disabled={
                                     (!!currentEntry.moveFrom && currentEntry.moveFrom === place) ||
-                                    (hasDetour && place === "강동동 공장")
+                                    (hasDetour && place === GANGDONG_FACTORY)
                                 }
                                 onClick={() => handleMovePlace("to", place)}
                             >
@@ -1525,7 +1532,11 @@ export default function WorkLogSection() {
                                             <Button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
+                                                    const origin = workLogEntries.find(
+                                                        (item) => item.id === entry.__originId
+                                                    );
                                                     editWorkLogEntry(entry.__originId);
+                                                    setHasDetour(origin?.moveVia?.trim() === GANGDONG_FACTORY);
                                                     setTimeout(() => {
                                                         formRef.current?.scrollIntoView({
                                                             behavior: "smooth",

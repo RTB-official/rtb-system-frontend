@@ -254,6 +254,7 @@ export default function CreationPage() {
                     noLunch: (entry as any).lunch_worked ?? false,
                     moveFrom: entry.moveFrom,
                     moveTo: entry.moveTo,
+                    moveVia: entry.moveVia,
                 }));
                 setWorkLogEntries(workLogEntries);
 
@@ -349,6 +350,7 @@ export default function CreationPage() {
                     note: entry.note || undefined,
                     moveFrom: entry.moveFrom || undefined,
                     moveTo: entry.moveTo || undefined,
+                    moveVia: entry.moveVia || undefined,
                     lunch_worked: !!entry.noLunch,
                 })),
                 expenses: expenses.map((exp) => ({
@@ -546,6 +548,7 @@ export default function CreationPage() {
                         note: entry.note || undefined,
                         moveFrom: entry.moveFrom || undefined,
                         moveTo: entry.moveTo || undefined,
+                        moveVia: entry.moveVia || undefined,
                         lunch_worked: !!entry.noLunch,
                     })),
                     expenses: expenses.map((exp) => ({

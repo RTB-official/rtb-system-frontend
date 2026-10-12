@@ -83,10 +83,15 @@ type ScheduleSheetTableProps = {
 const MULTILINE_FIELDS = new Set([
     "customerCompany",
     "customerContact",
+    "shipName",
+    "engineType",
+    "workLocation",
     "period",
     "workItem",
+    "manpower",
     "teamMember",
     "car",
+    "yardPic",
     "remark",
 ]);
 

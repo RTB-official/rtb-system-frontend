@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import PageContainer from "../../components/common/PageContainer";
-import { IconArrowBack, IconPlus, IconSave, IconTrash } from "../../components/icons/Icons";
+import { IconArrowBack, IconExportDocuments, IconPlus, IconSave, IconTrash } from "../../components/icons/Icons";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
@@ -19,7 +19,7 @@ import {
 } from "../../components/schedule/scheduleTableShared";
 import ScheduleSheetSkeleton from "../../components/schedule/ScheduleSheetSkeleton";
 import { setNavigationGuard } from "../../lib/navigationGuard";
-import { fetchNextScheduleVersion, saveScheduleVersion } from "../../lib/scheduleApi";
+import { fetchLatestScheduleSheet, fetchNextScheduleVersion, saveScheduleVersion } from "../../lib/scheduleApi";
 import { PATHS } from "../../utils/paths";
 import { parseScheduleExcelFile } from "../../utils/parseScheduleExcel";
 
@@ -27,6 +27,11 @@ const COPY = {
     pageTitle: "\uC77C\uC815 \uB4F1\uB85D",
     save: "\uC800\uC7A5",
     excelImport: "\uC5D1\uC140 \uBD88\uB7EC\uC624\uAE30",
+    importLatest: "\uAC00\uC838\uC624\uAE30",
+    importLatestEmpty: "\uAC00\uC838\uC62C \uC77C\uC815\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.",
+    importLatestSuccess: (key: string, n: number) =>
+        `${key} \uC77C\uC815 ${n}\uAC74\uC744 \uAC00\uC838\uC654\uC2B5\uB2C8\uB2E4.`,
+    importLatestFailed: "\uC77C\uC815\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.",
     addRow: "\uD589 \uCD94\uAC00",
     deleteRow: "\uD589 \uC0AD\uC81C",
     excelLoaded: (n: number) =>
@@ -219,6 +224,8 @@ export default function ScheduleCreatePage() {
         Array.from({ length: 5 }, () => createEmptyRow())
     );
     const [excelImporting, setExcelImporting] = useState(false);
+    const [importingLatest, setImportingLatest] = useState(false);
+    const [importConfirmOpen, setImportConfirmOpen] = useState(false);
     const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
     const [trashOffsetTop, setTrashOffsetTop] = useState<number | null>(null);
     const [versionKey, setVersionKey] = useState<string | null>(null);
@@ -446,6 +453,31 @@ export default function ScheduleCreatePage() {
         };
     }, [selectedRowId, rows]);
 
+    const handleImportLatest = async () => {
+        if (importingLatest || saving || excelImporting) return;
+        setImportingLatest(true);
+        setSelectedRowId(null);
+        try {
+            const sheet = await fetchLatestScheduleSheet();
+            if (!sheet || sheet.rows.length === 0) {
+                showError(COPY.importLatestEmpty);
+                return;
+            }
+            setRows(
+                sheet.rows.map((row) => ({
+                    ...row,
+                    id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                }))
+            );
+            showSuccess(COPY.importLatestSuccess(sheet.versionKey, sheet.rows.length));
+        } catch (err) {
+            showError(err instanceof Error ? err.message : COPY.importLatestFailed);
+        } finally {
+            setImportingLatest(false);
+            setImportConfirmOpen(false);
+        }
+    };
+
     const handleExcelImportClick = () => {
         if (excelImporting) return;
         excelFileInputRef.current?.click();
@@ -531,6 +563,21 @@ export default function ScheduleCreatePage() {
                                     <span className="text-sm font-bold">…</span>
                                 ) : (
                                     <IconSave />
+                                )}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setImportConfirmOpen(true)}
+                                disabled={importingLatest || saving || excelImporting}
+                                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-50"
+                                aria-busy={importingLatest}
+                                aria-label={COPY.importLatest}
+                                title={COPY.importLatest}
+                            >
+                                {importingLatest ? (
+                                    <span className="text-sm font-bold">…</span>
+                                ) : (
+                                    <IconExportDocuments />
                                 )}
                             </button>
                             <input
@@ -686,6 +733,7 @@ export default function ScheduleCreatePage() {
                                                 <CellInput
                                                     value={row.shipName}
                                                     onChange={(v) => updateCell(row.id, "shipName", v)}
+                                                    multiline
                                                     uppercaseLettersOnly
                                                     {...cellNav("shipName")}
                                                 />
@@ -694,6 +742,7 @@ export default function ScheduleCreatePage() {
                                                 <CellInput
                                                     value={row.engineType}
                                                     onChange={(v) => updateCell(row.id, "engineType", v)}
+                                                    multiline
                                                     uppercaseLettersOnly
                                                     {...cellNav("engineType")}
                                                 />
@@ -704,6 +753,7 @@ export default function ScheduleCreatePage() {
                                                     onChange={(v) =>
                                                         updateCell(row.id, "workLocation", v)
                                                     }
+                                                    multiline
                                                     {...cellNav("workLocation")}
                                                 />
                                             </td>
@@ -727,6 +777,7 @@ export default function ScheduleCreatePage() {
                                                 <CellInput
                                                     value={row.manpower}
                                                     onChange={(v) => updateCell(row.id, "manpower", v)}
+                                                    multiline
                                                     {...cellNav("manpower")}
                                                 />
                                             </td>
@@ -752,6 +803,7 @@ export default function ScheduleCreatePage() {
                                                 <CellInput
                                                     value={row.yardPic}
                                                     onChange={(v) => updateCell(row.id, "yardPic", v)}
+                                                    multiline
                                                     {...cellNav("yardPic")}
                                                 />
                                             </td>
@@ -789,6 +841,19 @@ export default function ScheduleCreatePage() {
                 </div>
             </div>
 
+            <ConfirmDialog
+                isOpen={importConfirmOpen}
+                onClose={() => {
+                    if (importingLatest) return;
+                    setImportConfirmOpen(false);
+                }}
+                onConfirm={() => void handleImportLatest()}
+                title="가져오기"
+                message="가장 최신 일정을 가져오시겠습니까?"
+                confirmText="가져오기"
+                cancelText="취소"
+                isLoading={importingLatest}
+            />
             <ConfirmDialog
                 isOpen={leaveConfirmOpen}
                 onClose={handleLeaveConfirmClose}
