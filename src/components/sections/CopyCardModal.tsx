@@ -669,6 +669,7 @@ export default function CopyCardModal({
                     note: entry.note || "",
                     moveFrom: entry.moveFrom || "",
                     moveTo: entry.moveTo || "",
+                    moveVia: entry.moveVia || "",
                     noLunch: entry.noLunch || false,
                 } as any;
             })

@@ -1,5 +1,6 @@
 //workLogApi.ts
 import { supabase } from "./supabase";
+import { gangdongViaFromDetails } from "../utils/travelRouteParse";
 import {
     getGongmuTeamUserIds,
     createNotificationsForUsers,
@@ -10,9 +11,15 @@ const workLogInFlight = new Map<number, Promise<WorkLogFullData | null>>();
 
 /** 원격 DB에 `split_group_id` 컬럼 존재 여부 (미확인 | 있음 | 없음) */
 let workLogEntriesSplitGroupIdSupported: boolean | null = null;
+/** 원격 DB에 `move_via` 컬럼 존재 여부 (미확인 | 있음 | 없음) */
+let workLogEntriesMoveViaSupported: boolean | null = null;
 
 function isSplitGroupIdSchemaError(message: string): boolean {
     return /split_group_id/i.test(message);
+}
+
+function isMoveViaSchemaError(message: string): boolean {
+    return /move_via/i.test(message) && /schema cache|could not find/i.test(message);
 }
 
 /** Supabase/PostgREST 오류 객체 → 사용자 메시지 */
@@ -37,6 +44,17 @@ function omitSplitGroupId<T extends Record<string, unknown>>(payload: T): T {
     return rest as T;
 }
 
+function omitMoveVia<T extends Record<string, unknown>>(payload: T): T {
+    const { move_via: _removed, ...rest } = payload as T & { move_via?: unknown };
+    return rest as T;
+}
+
+function moveViaColumnValue(descType: string, moveVia?: string | null): string | null {
+    if (descType !== "이동") return null;
+    const value = moveVia?.trim();
+    return value ? value : null;
+}
+
 /**
  * `split_group_id` 컬럼이 없는 DB(마이그레이션 미적용)에서는 `null`로 보내는 것도
  * 스키마에 없는 키로 인해 PostgREST 오류가 난다. 값이 있을 때만 컬럼을 포함한다.
@@ -57,21 +75,28 @@ async function insertWorkLogEntryRow(
     const run = (row: WorkLogEntryRowPayload) =>
         supabase.from("work_log_entries").insert([row]).select("id").single();
 
-    let { data, error } = await run(payload);
+    let row = payload;
+    if (workLogEntriesSplitGroupIdSupported === false) row = omitSplitGroupId(row);
+    if (workLogEntriesMoveViaSupported === false) row = omitMoveVia(row);
 
-    if (
-        error &&
-        isSplitGroupIdSchemaError(error.message) &&
-        "split_group_id" in payload
-    ) {
+    let { data, error } = await run(row);
+
+    if (error && isSplitGroupIdSchemaError(error.message) && "split_group_id" in row) {
         workLogEntriesSplitGroupIdSupported = false;
-        ({ data, error } = await run(omitSplitGroupId(payload)));
+        row = omitSplitGroupId(row);
+        ({ data, error } = await run(row));
+    }
+    if (error && isMoveViaSchemaError(error.message) && "move_via" in row) {
+        workLogEntriesMoveViaSupported = false;
+        row = omitMoveVia(row);
+        ({ data, error } = await run(row));
     }
 
     if (error) {
         throw new Error(formatUnknownError(error));
     }
-    if ("split_group_id" in payload) workLogEntriesSplitGroupIdSupported = true;
+    if ("split_group_id" in row) workLogEntriesSplitGroupIdSupported = true;
+    if ("move_via" in row) workLogEntriesMoveViaSupported = true;
 
     const id = Number((data as { id?: number })?.id);
     if (!Number.isFinite(id) || id <= 0) {
@@ -94,21 +119,28 @@ async function updateWorkLogEntryRow(
             .select("id")
             .maybeSingle();
 
-    let { data, error } = await run(payload);
+    let row = payload;
+    if (workLogEntriesSplitGroupIdSupported === false) row = omitSplitGroupId(row);
+    if (workLogEntriesMoveViaSupported === false) row = omitMoveVia(row);
 
-    if (
-        error &&
-        isSplitGroupIdSchemaError(error.message) &&
-        "split_group_id" in payload
-    ) {
+    let { data, error } = await run(row);
+
+    if (error && isSplitGroupIdSchemaError(error.message) && "split_group_id" in row) {
         workLogEntriesSplitGroupIdSupported = false;
-        ({ data, error } = await run(omitSplitGroupId(payload)));
+        row = omitSplitGroupId(row);
+        ({ data, error } = await run(row));
+    }
+    if (error && isMoveViaSchemaError(error.message) && "move_via" in row) {
+        workLogEntriesMoveViaSupported = false;
+        row = omitMoveVia(row);
+        ({ data, error } = await run(row));
     }
 
     if (error) {
         throw new Error(formatUnknownError(error));
     }
-    if ("split_group_id" in payload) workLogEntriesSplitGroupIdSupported = true;
+    if ("split_group_id" in row) workLogEntriesSplitGroupIdSupported = true;
+    if ("move_via" in row) workLogEntriesMoveViaSupported = true;
     if (!data) return null;
 
     const id = Number((data as { id?: number }).id);
@@ -145,6 +177,7 @@ export interface WorkLogEntry {
     note: string | null;
     move_from: string | null;
     move_to: string | null;
+    move_via: string | null;
 }
 
 export interface WorkLogEntryPerson {
@@ -207,6 +240,8 @@ export interface CreateWorkLogInput {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        /** 이동 경유지. 없으면 빈 값. 현재는 강동동 공장 */
+        moveVia?: string;
         lunch_worked?: boolean;
         /** 자정 분할로 묶인 세그먼트 공통 id (DB `split_group_id`) */
         splitGroupId?: string | null;
@@ -251,6 +286,8 @@ export interface WorkLogFullData {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        /** 이동 경유지. 없으면 빈 값. 현재는 강동동 공장 */
+        moveVia?: string;
         lunch_worked?: boolean;
         /** 인보이스 생성 화면에서 복사로 만든 항목(저장 payload에는 미사용) */
         clientDuplicated?: boolean;
@@ -322,6 +359,7 @@ function splitEntryByDate(entry: {
     note?: string;
     moveFrom?: string;
     moveTo?: string;
+    moveVia?: string;
     lunch_worked?: boolean;
     splitGroupId?: string | null;
 }): {
@@ -337,6 +375,7 @@ function splitEntryByDate(entry: {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        moveVia?: string;
         lunch_worked?: boolean;
         splitGroupId?: string | null;
     }>;
@@ -359,6 +398,7 @@ function splitEntryByDate(entry: {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        moveVia?: string;
         lunch_worked?: boolean;
         splitGroupId?: string | null;
     };
@@ -516,6 +556,7 @@ export async function createWorkLog(
                             note: segment.note || null,
                             move_from: segment.moveFrom || null,
                             move_to: segment.moveTo || null,
+                            move_via: moveViaColumnValue(segment.descType, segment.moveVia),
                             lunch_worked: segment.lunch_worked ?? false,
                             ...workLogEntrySplitGroupIdPayload(segment.splitGroupId),
                         });
@@ -918,6 +959,7 @@ function mapJoinedWorkLogRow(row: WorkLogByIdJoinedRow): WorkLogFullData {
                 note: entry.note || undefined,
                 moveFrom: entry.move_from || undefined,
                 moveTo: entry.move_to || undefined,
+                moveVia: entry.move_via?.trim() || gangdongViaFromDetails(entry.details),
                 lunch_worked: entry.lunch_worked ?? false,
                 splitGroupId: (entry as { split_group_id?: string | null }).split_group_id ?? undefined,
             };
@@ -1257,6 +1299,7 @@ for (const r of curRows ?? []) {
           note: e.note || null,
           move_from: e.moveFrom || null,
           move_to: e.moveTo || null,
+          move_via: moveViaColumnValue(e.descType, e.moveVia),
           lunch_worked: e.lunch_worked ?? false,
           ...workLogEntrySplitGroupIdPayload(
             (e as { splitGroupId?: string | null }).splitGroupId

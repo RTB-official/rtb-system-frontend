@@ -1,3 +1,6 @@
+/** 이동 엔트리에서 경유로 쓰는 고정 장소 */
+export const GANGDONG_FACTORY = "강동동 공장";
+
 /** details 안의 이동 경로 화살표: DB/입력에 `→`와 `->`가 혼재한다. */
 const TRAVEL_ARROW_SPLIT_RE = /\s*(?:→|->)\s*/;
 const TRAVEL_ARROW_TEST_RE = /→|->/;
@@ -33,4 +36,16 @@ export function parseTravelRoutePlaces(details: string): {
         origin: parts[0],
         destination: parts[parts.length - 1],
     };
+}
+
+/** 상세 문장 한가운데 `→강동동 공장→`가 있으면 경유지로 본다. */
+export function gangdongViaFromDetails(details?: string | null): string | undefined {
+    const text = details ?? "";
+    if (
+        text.includes(`→${GANGDONG_FACTORY}→`) ||
+        text.includes(`->${GANGDONG_FACTORY}->`)
+    ) {
+        return GANGDONG_FACTORY;
+    }
+    return undefined;
 }

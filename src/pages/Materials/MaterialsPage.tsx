@@ -25,6 +25,7 @@ import {
     fetchCurrentUserIsAdmin,
     fetchMaterialPurchaseDetail,
     fetchMaterialPurchaseList,
+    materialPurchaseApprovalView,
     revokeMaterialPurchaseApproval,
     setMaterialPurchasePurchased,
     type MaterialPurchaseDetail,
@@ -45,8 +46,8 @@ function purchasedLabel(purchased: boolean) {
     return purchased ? "완료" : "예정";
 }
 
-function approvalStatusLabel(status: MaterialPurchaseListItem["approvalStatus"]) {
-    return status === "approved" ? "승인" : "미승인";
+function approvalStatusLabel(item: Pick<MaterialPurchaseListItem, "urgent" | "amountLabel" | "approvalStatus">) {
+    return materialPurchaseApprovalView(item.urgent, item.amountLabel, item.approvalStatus === "approved");
 }
 
 export default function MaterialsPage({ title }: { title: string }) {
@@ -160,7 +161,7 @@ export default function MaterialsPage({ title }: { title: string }) {
                 item.amountLabel,
                 item.createdAtLabel,
                 purchasedLabel(item.purchased),
-                approvalStatusLabel(item.approvalStatus),
+                approvalStatusLabel(item).label,
             ]
                 .join(" ")
                 .toLowerCase();
@@ -275,16 +276,17 @@ export default function MaterialsPage({ title }: { title: string }) {
         {
             key: "approvalStatus",
             label: "승인 상태",
-            width: "11%",
-            render: (_, row) => (
-                <Chip
-                    color={row.approvalStatus === "approved" ? "green-500" : "gray-500"}
-                    variant="solid"
-                    size="md"
-                >
-                    {approvalStatusLabel(row.approvalStatus)}
-                </Chip>
-            ),
+            width: "16%",
+            headerClassName: "whitespace-nowrap",
+            cellClassName: "whitespace-nowrap",
+            render: (_, row) => {
+                const approval = approvalStatusLabel(row);
+                return (
+                    <Chip color={approval.color} variant="solid" size="md">
+                        {approval.label}
+                    </Chip>
+                );
+            },
         },
         {
             key: "purchased",
@@ -391,11 +393,7 @@ export default function MaterialsPage({ title }: { title: string }) {
                                                 return (
                                                     <li key={row.id}>
                                                         <div
-                                                            className={`rounded-xl border p-4 flex items-start gap-3 cursor-pointer ${
-                                                                row.urgent
-                                                                    ? "border-red-200 bg-red-50"
-                                                                    : "border-gray-200 bg-white"
-                                                            }`}
+                                                            className="rounded-xl border border-gray-200 bg-white p-4 flex items-start gap-3 cursor-pointer"
                                                             onClick={() => setDetailTarget({ purchaseId: row.purchaseId, lineId: row.lineId })}
                                                         >
                                                             <div className="flex-1 min-w-0">
@@ -434,11 +432,11 @@ export default function MaterialsPage({ title }: { title: string }) {
                                                                         {purchasedLabel(row.purchased)}
                                                                     </Chip>
                                                                     <Chip
-                                                                        color={row.approvalStatus === "approved" ? "green-500" : "gray-500"}
+                                                                        color={approvalStatusLabel(row).color}
                                                                         variant="solid"
                                                                         size="sm"
                                                                     >
-                                                                        {approvalStatusLabel(row.approvalStatus)}
+                                                                        {approvalStatusLabel(row).label}
                                                                     </Chip>
                                                                 </div>
                                                             </div>
@@ -488,9 +486,6 @@ export default function MaterialsPage({ title }: { title: string }) {
                                 rowKey="id"
                                 emptyText="조회된 내역이 없습니다."
                                 onRowClick={(row) => setDetailTarget({ purchaseId: row.purchaseId, lineId: row.lineId })}
-                                rowClassName={(row) =>
-                                    row.urgent ? "!bg-red-50 hover:!bg-red-100" : ""
-                                }
                                 pagination={
                                     filteredItems.length > ITEMS_PER_PAGE
                                         ? {

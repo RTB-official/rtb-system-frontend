@@ -14,6 +14,7 @@ import {
     addMaterialPurchaseReceipts,
     deleteMaterialPurchaseReceipt,
     isUrgentAmountOverLimit,
+    materialPurchaseApprovalView,
     updateMaterialPurchase,
     URGENT_AMOUNT_LIMIT_MESSAGE,
     type MaterialPurchaseDetail,
@@ -146,20 +147,8 @@ function ReadValue({ label, value }: { label: string; value: string }) {
 }
 
 function approvalStatusView(urgent: boolean, amountText: string, currency: string, approved: boolean) {
-    if (urgent) return { label: "긴급 구매", color: "red-500" };
-    const amount = (currency || "원") === "원" && amountText.trim() ? parseCurrency(amountText) : null;
-    if (amount != null && amount <= 100_000) return { label: "자동 승인", color: "blue-500" };
-    if (amount != null && amount <= 300_000) {
-        return approved
-            ? { label: "공무팀장 승인 완료", color: "green-500" }
-            : { label: "공무팀장 승인 대기", color: "orange-500" };
-    }
-    if (amount != null && amount > 300_000) {
-        return approved
-            ? { label: "대표 승인 완료", color: "green-500" }
-            : { label: "대표 승인 대기", color: "orange-500" };
-    }
-    return approved ? { label: "승인 완료", color: "green-500" } : { label: "승인 대기", color: "orange-500" };
+    const unit = currency || "원";
+    return materialPurchaseApprovalView(urgent, amountText.trim() ? `${amountText}${unit}` : "", approved);
 }
 
 export default function MaterialPurchaseDetailSidePanel({
@@ -268,8 +257,13 @@ export default function MaterialPurchaseDetailSidePanel({
 
     const view = shown;
     const line = view?.lines[0];
-    const showApprove = canApprove && view?.approvalStatus === "pending";
-    const showRevoke = canApprove && view?.approvalStatus === "approved";
+    const autoApproved =
+        !!view &&
+        !!line &&
+        approvalStatusView(line.urgent, line.amountText, line.currency, view.approvalStatus === "approved").label ===
+            "자동 승인";
+    const showApprove = canApprove && view?.approvalStatus === "pending" && !autoApproved;
+    const showRevoke = canApprove && view?.approvalStatus === "approved" && !autoApproved;
 
     const orderPersonOptions = useMemo(() => {
         if (!draft?.orderGroup || draft.orderGroup === "OTHER" || draft.orderGroup === "MITSUI") return [];
@@ -412,7 +406,7 @@ export default function MaterialPurchaseDetailSidePanel({
         }
     };
 
-    const receiptRegistrationOpen = !!line && (line.urgent || view?.approvalStatus === "approved");
+    const receiptRegistrationOpen = !!line && (line.urgent || autoApproved || view?.approvalStatus === "approved");
     const blockPurchaseComplete = !!view && !view.purchased && !receiptRegistrationOpen;
     const approvalView =
         view && line
@@ -948,14 +942,8 @@ export default function MaterialPurchaseDetailSidePanel({
                                     </div>
                                     <div className="flex flex-col gap-2 border-t border-gray-200/80 pt-4">
                                         <p className="text-xs text-gray-500">영수증</p>
-                                        {!receiptRegistrationOpen && line.receipts.length === 0 ? (
-                                            <p className="text-sm text-gray-500">구매 완료 후 영수증을 등록할 수 있습니다.</p>
-                                        ) : (
-                                            <p className="text-sm text-gray-500">
-                                                {line.receipts.length > 0
-                                                    ? "등록된 영수증"
-                                                    : "구매 후 영수증 등록이 필수입니다."}
-                                            </p>
+                                        {line.receipts.length > 0 && (
+                                            <p className="text-sm text-gray-500">등록된 영수증</p>
                                         )}
                                         {line.receipts.map((receipt) => (
                                             <div
@@ -988,8 +976,7 @@ export default function MaterialPurchaseDetailSidePanel({
                                                 </button>
                                             </div>
                                         ))}
-                                        {receiptRegistrationOpen && (
-                                            <label
+                                        <label
                                                 className={`flex h-14 items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white px-4 text-sm text-gray-600 ${
                                                     uploadingReceipts ? "pointer-events-none opacity-60" : "cursor-pointer"
                                                 }`}
@@ -1008,7 +995,6 @@ export default function MaterialPurchaseDetailSidePanel({
                                                     }}
                                                 />
                                             </label>
-                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1025,13 +1011,14 @@ export default function MaterialPurchaseDetailSidePanel({
                             </Button>
                         </div>
                     ) : (
-                        (showApprove || showRevoke) && (
+                        canApprove && (showApprove || showRevoke || autoApproved) && (
                             <div className="flex shrink-0 gap-2 border-t border-gray-200 bg-white px-4 py-4 sm:justify-end sm:px-6">
-                                {showApprove ? (
+                                {showApprove && (
                                     <Button variant="outline" size="lg" loading={approving} disabled={completing} onClick={onApprove} className="flex-1 sm:flex-none">
                                         승인
                                     </Button>
-                                ) : (
+                                )}
+                                {showRevoke && (
                                     <Button variant="outline" size="lg" loading={approving} disabled={completing} onClick={onRevoke} className="flex-1 sm:flex-none">
                                         승인 해제
                                     </Button>

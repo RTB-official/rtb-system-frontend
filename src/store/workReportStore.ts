@@ -16,6 +16,8 @@ export interface WorkLogEntry {
   noLunch: boolean;
   moveFrom?: string;
   moveTo?: string;
+  /** 이동 경유지. 경유가 없으면 빈 문자열. 현재는 강동동 공장 */
+  moveVia?: string;
 }
 
 export interface ExpenseEntry {
@@ -249,6 +251,7 @@ const initialCurrentEntry: Partial<WorkLogEntry> = {
   noLunch: false,
   moveFrom: '',
   moveTo: '',
+  moveVia: '',
 };
 
 let uploadedFileIdSequence = 0;
@@ -440,6 +443,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
       noLunch: currentEntry.noLunch || false,
       moveFrom: currentEntry.moveFrom,
       moveTo: currentEntry.moveTo,
+      moveVia: currentEntry.descType === '이동' ? (currentEntry.moveVia?.trim() || '') : '',
     };
 
     // 다음 엔트리의 시작 시간을 현재 종료 시간으로 자동 설정
@@ -495,6 +499,7 @@ export const useWorkReportStore = create<WorkReportState>((set, get) => ({
         noLunch: entry.noLunch,
         moveFrom: entry.moveFrom,
         moveTo: entry.moveTo,
+        moveVia: entry.moveVia,
       },
       currentEntryPersons: [...entry.persons],
     };

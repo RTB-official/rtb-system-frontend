@@ -70,7 +70,7 @@ export async function getWorkLogExtras(admin: SupabaseClient, workLogId?: number
     admin.from("work_log_persons").select("person_name").eq("work_log_id", workLogId),
     admin
       .from("work_log_entries")
-      .select("date_from, time_from, date_to, time_to, desc_type, details, note, move_from, move_to")
+      .select("date_from, time_from, date_to, time_to, desc_type, details, note, move_from, move_to, move_via")
       .eq("work_log_id", workLogId),
   ]);
 
@@ -191,6 +191,7 @@ type WorkLogEntrySummary = {
   note?: string;
   move_from?: string;
   move_to?: string;
+  move_via?: string;
 };
 
 function formatEntryLine(entry: WorkLogEntrySummary): string {
@@ -212,9 +213,13 @@ function formatEntryLine(entry: WorkLogEntrySummary): string {
   const note = normalize(entry.note);
   const moveFrom = normalize(entry.move_from);
   const moveTo = normalize(entry.move_to);
+  const moveVia = normalize(entry.move_via);
 
   let line = [[date, time].filter(Boolean).join(" "), type].filter(Boolean).join(" · ");
-  if (moveFrom || moveTo) line += ` (${moveFrom || "-"} → ${moveTo || "-"})`;
+  if (moveFrom || moveVia || moveTo) {
+    const route = [moveFrom || "-", moveVia, moveTo || "-"].filter(Boolean).join(" → ");
+    line += ` (${route})`;
+  }
   if (detail) line += ` | ${detail}`;
   if (note) line += ` | 특이사항: ${note}`;
   return line;
@@ -242,6 +247,7 @@ const entryChangeLabels: Record<string, string> = {
   details: "작업 내용",
   note: "특이 사항",
   move_from: "출발지",
+  move_via: "경유지",
   move_to: "도착지",
   lunch_worked: "점심",
   updated_at: "수정 시각",
@@ -788,8 +794,12 @@ export async function buildWorkLogContent(
     baseDetails.push(`작업 유형: ${normalize(record.desc_type) || "-"}`);
     if (entryDate) baseDetails.push(`작업 일자: ${entryDate}`);
     if (entryTime) baseDetails.push(`작업 시간: ${entryTime}`);
-    if (normalize(record.move_from) || normalize(record.move_to))
-      baseDetails.push(`이동: ${normalize(record.move_from) || "-"} → ${normalize(record.move_to) || "-"}`);
+    if (normalize(record.move_from) || normalize(record.move_via) || normalize(record.move_to)) {
+      const route = [normalize(record.move_from) || "-", normalize(record.move_via), normalize(record.move_to) || "-"]
+        .filter(Boolean)
+        .join(" → ");
+      baseDetails.push(`이동: ${route}`);
+    }
     if (normalize(record.details)) baseDetails.push(`상세 내용: ${normalize(record.details)}`);
     if (normalize(record.note)) baseDetails.push(`특이 사항: ${normalize(record.note)}`);
 
@@ -802,8 +812,11 @@ export async function buildWorkLogContent(
       if (entryTime) snapshot.push(`작업 시간: ${entryTime}`);
       const entryType = normalize(record.desc_type) || "-";
       snapshot.push(`작업 유형: ${entryType}`);
-      if (normalize(record.move_from) || normalize(record.move_to)) {
-        snapshot.push(`이동: ${normalize(record.move_from) || "-"} → ${normalize(record.move_to) || "-"}`);
+      if (normalize(record.move_from) || normalize(record.move_via) || normalize(record.move_to)) {
+        const route = [normalize(record.move_from) || "-", normalize(record.move_via), normalize(record.move_to) || "-"]
+          .filter(Boolean)
+          .join(" → ");
+        snapshot.push(`이동: ${route}`);
       }
       if (normalize(record.details)) snapshot.push(`상세 내용: ${normalize(record.details)}`);
       if (normalize(record.note)) snapshot.push(`특이 사항: ${normalize(record.note)}`);

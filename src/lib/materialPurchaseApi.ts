@@ -198,6 +198,33 @@ function formatListDate(dateString: string) {
     return `${year}.${month}.${day}.`;
 }
 
+const AMOUNT_UNITS = ["달러", "유로", "위안", "엔", "원"] as const;
+
+export function materialPurchaseApprovalView(
+    urgent: boolean,
+    amountLabel: string,
+    approved: boolean
+): { label: string; color: string } {
+    if (urgent) return { label: "긴급 구매", color: "red-500" };
+    const currency = AMOUNT_UNITS.find((unit) => amountLabel.endsWith(unit)) ?? "";
+    const numeric = currency ? amountLabel.slice(0, -currency.length) : amountLabel;
+    const cleaned = numeric.replace(/,/g, "").trim();
+    const amount = currency === "원" && cleaned ? Number(cleaned) : null;
+    const wonAmount = amount != null && Number.isFinite(amount) ? amount : null;
+    if (wonAmount != null && wonAmount <= 100_000) return { label: "자동 승인", color: "blue-500" };
+    if (wonAmount != null && wonAmount <= 300_000) {
+        return approved
+            ? { label: "공무팀 승인 완료", color: "green-500" }
+            : { label: "공무팀 승인 대기", color: "orange-500" };
+    }
+    if (wonAmount != null && wonAmount > 300_000) {
+        return approved
+            ? { label: "대표 승인 완료", color: "green-500" }
+            : { label: "대표 승인 대기", color: "orange-500" };
+    }
+    return approved ? { label: "승인 완료", color: "green-500" } : { label: "승인 대기", color: "orange-500" };
+}
+
 function formatAmountLabel(amount: number | null, currency: string | null) {
     if (amount == null || !Number.isFinite(amount)) return "";
     const formatted = amount.toLocaleString(undefined, { maximumFractionDigits: 2 });

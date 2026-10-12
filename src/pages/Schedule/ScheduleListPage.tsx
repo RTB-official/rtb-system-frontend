@@ -1,5 +1,6 @@
 // src/pages/Schedule/ScheduleListPage.tsx
 import { useSidebarOpen } from "../../hooks/useSidebarOpen";
+import { useUser } from "../../hooks/useUser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -10,10 +11,12 @@ import DatePicker from "../../components/ui/DatePicker";
 import ScheduleSheetTable, {
     highlightSearchMatches,
 } from "../../components/schedule/ScheduleSheetTable";
-import { IconClose, IconCopy, IconSearch } from "../../components/icons/Icons";
+import { IconClose, IconCopy, IconDownload, IconSearch, IconTrash } from "../../components/icons/Icons";
+import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import { domToBlob } from "modern-screenshot";
 import {
+    deleteScheduleVersionAndRepack,
     fetchScheduleDistinctDates,
     fetchScheduleVersionSheetsByDates,
     type ScheduleVersionSheet,
@@ -27,10 +30,7 @@ function scheduleImageFileName(versionKey: string): string {
     return `${safe || "schedule"}.png`;
 }
 
-async function downloadScheduleTableImage(
-    root: HTMLElement,
-    versionKey: string
-): Promise<void> {
+async function captureScheduleTableBlob(root: HTMLElement): Promise<Blob> {
     const table = root.querySelector("table");
     if (!(table instanceof HTMLElement)) {
         throw new Error("표를 찾지 못했습니다.");
@@ -46,7 +46,16 @@ async function downloadScheduleTableImage(
         type: "image/png",
     });
     if (!blob) throw new Error("이미지 생성에 실패했습니다.");
+    return blob.type === "image/png"
+        ? blob
+        : new Blob([await blob.arrayBuffer()], { type: "image/png" });
+}
 
+async function downloadScheduleTableImage(
+    root: HTMLElement,
+    versionKey: string
+): Promise<void> {
+    const blob = await captureScheduleTableBlob(root);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -55,6 +64,107 @@ async function downloadScheduleTableImage(
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+}
+
+function clipboardItemAcceptsPromise(): boolean {
+    if (typeof ClipboardItem === "undefined") return false;
+    try {
+        new ClipboardItem({
+            "image/png": Promise.resolve(new Blob([], { type: "image/png" })),
+        });
+        return true;
+    } catch (err) {
+        return !(err instanceof TypeError);
+    }
+}
+
+function isClipboardDenied(err: unknown): boolean {
+    return (
+        err instanceof DOMException &&
+        (err.name === "NotAllowedError" || err.name === "SecurityError")
+    );
+}
+
+async function copyImageBySelection(blob: Blob): Promise<void> {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.alt = "";
+    img.src = url;
+
+    const container = document.createElement("div");
+    container.contentEditable = "true";
+    container.setAttribute("aria-hidden", "true");
+    container.style.position = "fixed";
+    container.style.left = "-10000px";
+    container.style.top = "0";
+    container.style.opacity = "0";
+    container.appendChild(img);
+    document.body.appendChild(container);
+
+    try {
+        await img.decode();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNode(img);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        container.focus({ preventScroll: true });
+        const copied = document.execCommand("copy");
+        selection?.removeAllRanges();
+        if (!copied) throw new Error("클립보드 복사에 실패했습니다.");
+    } finally {
+        container.remove();
+        URL.revokeObjectURL(url);
+    }
+}
+
+async function copyScheduleTableImage(root: HTMLElement): Promise<void> {
+    if (!window.isSecureContext) {
+        throw new Error("보안 연결(HTTPS)에서만 이미지를 복사할 수 있습니다.");
+    }
+
+    window.focus();
+    const blobPromise = captureScheduleTableBlob(root);
+    const canClipboardWrite =
+        typeof navigator.clipboard?.write === "function" &&
+        typeof ClipboardItem !== "undefined";
+    const failures: unknown[] = [];
+
+    if (canClipboardWrite && clipboardItemAcceptsPromise()) {
+        try {
+            await navigator.clipboard.write([
+                new ClipboardItem({ "image/png": blobPromise }),
+            ]);
+            return;
+        } catch (err) {
+            failures.push(err);
+        }
+    }
+
+    const blob = await blobPromise;
+
+    if (canClipboardWrite) {
+        try {
+            await navigator.clipboard.write([
+                new ClipboardItem({ "image/png": blob }),
+            ]);
+            return;
+        } catch (err) {
+            failures.push(err);
+        }
+    }
+
+    try {
+        await copyImageBySelection(blob);
+    } catch (err) {
+        failures.push(err);
+        if (failures.some(isClipboardDenied)) {
+            throw new Error(
+                "브라우저가 클립보드 복사를 막았습니다. 페이지를 클릭한 뒤 다시 시도해 주세요."
+            );
+        }
+        throw new Error("클립보드 복사에 실패했습니다.");
+    }
 }
 
 function sheetMatchesSearch(
@@ -90,8 +200,49 @@ function sheetMatchesSearch(
     );
 }
 
+/** Drop a version and renumber that date's remaining sheets to A, B, C… */
+function sheetsAfterVersionDelete(
+    sheets: ScheduleVersionSheet[],
+    deletedId: string
+): ScheduleVersionSheet[] {
+    const deleted = sheets.find((sheet) => sheet.id === deletedId);
+    if (!deleted) return sheets.filter((sheet) => sheet.id !== deletedId);
+
+    const remaining = sheets
+        .filter(
+            (sheet) =>
+                sheet.scheduleDate === deleted.scheduleDate && sheet.id !== deletedId
+        )
+        .sort((a, b) => {
+            const byLabel = a.versionLabel.localeCompare(b.versionLabel);
+            if (byLabel !== 0) return byLabel;
+            const byCreated = a.createdAt.localeCompare(b.createdAt);
+            if (byCreated !== 0) return byCreated;
+            return a.id.localeCompare(b.id);
+        });
+
+    const relabeled = new Map(
+        remaining.map((sheet, index) => {
+            const versionLabel = String.fromCharCode(65 + index);
+            return [
+                sheet.id,
+                {
+                    ...sheet,
+                    versionLabel,
+                    versionKey: `${sheet.scheduleDate}${versionLabel}`,
+                },
+            ] as const;
+        })
+    );
+
+    return sheets
+        .filter((sheet) => sheet.id !== deletedId)
+        .map((sheet) => relabeled.get(sheet.id) ?? sheet);
+}
+
 export default function ScheduleListPage() {
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
+    const { userPermissions } = useUser();
     const [allDates, setAllDates] = useState<string[]>([]);
     const [dayLimit, setDayLimit] = useState(INITIAL_DAY_LIMIT);
     const [sheets, setSheets] = useState<ScheduleVersionSheet[]>([]);
@@ -103,7 +254,12 @@ export default function ScheduleListPage() {
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const { showError, showSuccess } = useToast();
-    const [savingSheetId, setSavingSheetId] = useState<string | null>(null);
+    const [sheetImageBusy, setSheetImageBusy] = useState<{
+        id: string;
+        action: "download" | "copy";
+    } | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<ScheduleVersionSheet | null>(null);
+    const [deletingSheetId, setDeletingSheetId] = useState<string | null>(null);
     const tableRootRefs = useRef(new Map<string, HTMLDivElement>());
     const searchButtonRef = useRef<HTMLButtonElement>(null);
     const searchPopoverRef = useRef<HTMLDivElement>(null);
@@ -241,21 +397,64 @@ export default function ScheduleListPage() {
     const hasActiveFilter =
         searchQuery.trim() !== "" || dateFrom !== "" || dateTo !== "";
 
-    const saveSheetImage = async (sheet: ScheduleVersionSheet) => {
+    const runSheetImageAction = async (
+        sheet: ScheduleVersionSheet,
+        action: "download" | "copy"
+    ) => {
         const root = tableRootRefs.current.get(sheet.id);
-        if (!root || savingSheetId) return;
+        if (!root || sheetImageBusy) return;
 
-        setSavingSheetId(sheet.id);
+        setSheetImageBusy({ id: sheet.id, action });
         try {
-            await downloadScheduleTableImage(root, sheet.versionKey);
-            showSuccess("일정 표를 이미지로 저장했습니다.");
+            if (action === "download") {
+                await downloadScheduleTableImage(root, sheet.versionKey);
+                showSuccess("일정 표를 이미지로 저장했습니다.");
+            } else {
+                await copyScheduleTableImage(root);
+                showSuccess("일정 표 이미지를 클립보드에 복사했습니다.");
+            }
         } catch (err) {
             console.error(err);
             showError(
-                err instanceof Error ? err.message : "이미지 저장에 실패했습니다."
+                err instanceof Error
+                    ? err.message
+                    : action === "download"
+                      ? "이미지 저장에 실패했습니다."
+                      : "클립보드 복사에 실패했습니다."
             );
         } finally {
-            setSavingSheetId(null);
+            setSheetImageBusy(null);
+        }
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deleteTarget || deletingSheetId) return;
+        const sheet = deleteTarget;
+        setDeletingSheetId(sheet.id);
+        try {
+            await deleteScheduleVersionAndRepack(sheet.id);
+            let dateRemoved = false;
+            setSheets((current) => {
+                const next = sheetsAfterVersionDelete(current, sheet.id);
+                dateRemoved = !next.some(
+                    (item) => item.scheduleDate === sheet.scheduleDate
+                );
+                return next;
+            });
+            if (dateRemoved) {
+                setAllDates((dates) =>
+                    dates.filter((date) => date !== sheet.scheduleDate)
+                );
+            }
+            setDeleteTarget(null);
+            showSuccess("일정을 삭제했습니다.");
+        } catch (err) {
+            console.error(err);
+            showError(
+                err instanceof Error ? err.message : "일정 삭제에 실패했습니다."
+            );
+        } finally {
+            setDeletingSheetId(null);
         }
     };
 
@@ -411,22 +610,74 @@ export default function ScheduleListPage() {
                                                         searchQuery
                                                     )}
                                                 </h2>
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="shrink-0"
-                                                    icon={
-                                                        <IconCopy className="h-4 w-4" />
-                                                    }
-                                                    loading={savingSheetId === sheet.id}
-                                                    disabled={savingSheetId != null}
-                                                    onClick={() => void saveSheetImage(sheet)}
-                                                    title="표를 이미지로 저장"
-                                                    aria-label={`${sheet.versionKey} 표를 이미지로 저장`}
-                                                >
-                                                    복사
-                                                </Button>
+                                                <div className="flex shrink-0 items-center gap-1">
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="border-0 text-gray-700! hover:text-gray-900!"
+                                                        icon={
+                                                            <IconCopy className="h-5 w-5" />
+                                                        }
+                                                        loading={
+                                                            sheetImageBusy?.id === sheet.id &&
+                                                            sheetImageBusy.action === "copy"
+                                                        }
+                                                        disabled={
+                                                            sheetImageBusy != null ||
+                                                            deletingSheetId != null
+                                                        }
+                                                        onClick={() =>
+                                                            void runSheetImageAction(sheet, "copy")
+                                                        }
+                                                        title="표를 이미지로 복사"
+                                                        aria-label={`${sheet.versionKey} 표를 이미지로 복사`}
+                                                    />
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="border-0 text-gray-700! hover:text-gray-900!"
+                                                        icon={
+                                                            <IconDownload className="h-5 w-5" />
+                                                        }
+                                                        loading={
+                                                            sheetImageBusy?.id === sheet.id &&
+                                                            sheetImageBusy.action === "download"
+                                                        }
+                                                        disabled={
+                                                            sheetImageBusy != null ||
+                                                            deletingSheetId != null
+                                                        }
+                                                        onClick={() =>
+                                                            void runSheetImageAction(
+                                                                sheet,
+                                                                "download"
+                                                            )
+                                                        }
+                                                        title="표를 이미지로 저장"
+                                                        aria-label={`${sheet.versionKey} 표를 이미지로 저장`}
+                                                    />
+                                                    {userPermissions.isAdmin ? (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="border-0 text-gray-700! hover:text-red-600!"
+                                                            icon={
+                                                                <IconTrash className="h-5 w-5" />
+                                                            }
+                                                            loading={deletingSheetId === sheet.id}
+                                                            disabled={
+                                                                sheetImageBusy != null ||
+                                                                deletingSheetId != null
+                                                            }
+                                                            onClick={() => setDeleteTarget(sheet)}
+                                                            title="일정 삭제"
+                                                            aria-label={`${sheet.versionKey} 일정 삭제`}
+                                                        />
+                                                    ) : null}
+                                                </div>
                                             </div>
                                             <ScheduleSheetTable
                                                 rootRef={(node) => {
@@ -452,6 +703,23 @@ export default function ScheduleListPage() {
                     </PageContainer>
                 </div>
             </div>
+            <ConfirmDialog
+                isOpen={deleteTarget != null}
+                onClose={() => {
+                    if (deletingSheetId) return;
+                    setDeleteTarget(null);
+                }}
+                onConfirm={() => void handleConfirmDelete()}
+                title="일정 삭제"
+                message={
+                    deleteTarget
+                        ? `${deleteTarget.versionKey} 일정을 삭제하시겠습니까?`
+                        : "이 일정을 삭제하시겠습니까?"
+                }
+                confirmText="삭제"
+                cancelText="취소"
+                isLoading={deletingSheetId != null}
+            />
         </div>
     );
 }

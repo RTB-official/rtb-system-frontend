@@ -771,19 +771,12 @@ export default function MaterialPurchasePage() {
                                                 {historyMatches.map((item) => (
                                                     <li key={item.id} className="flex h-[52px] items-center gap-2 border-b border-gray-100 px-3 last:border-b-0">
                                                         <div className="min-w-0 flex-1">
-                                                        <div className="flex items-baseline justify-between gap-2">
-                                                            <p className="min-w-0 truncate text-[13px] font-medium text-gray-900">
-                                                                {item.urgent && (
-                                                                    <span className="mr-1 text-[11px] font-medium text-red-500">긴급</span>
-                                                                )}
-                                                                {highlightText(item.materialName, historyFilter)}
-                                                            </p>
-                                                            <span className="shrink-0 text-[12px] text-gray-800">
-                                                                {item.amountLabel
-                                                                    ? highlightText(item.amountLabel, historyFilter)
-                                                                    : "-"}
-                                                            </span>
-                                                        </div>
+                                                        <p className="min-w-0 truncate text-[13px] font-medium text-gray-900">
+                                                            {item.urgent && (
+                                                                <span className="mr-1 text-[11px] font-medium text-red-500">긴급</span>
+                                                            )}
+                                                            {highlightText(item.materialName, historyFilter)}
+                                                        </p>
                                                         <p className="truncate text-[11px] leading-4 text-gray-500">
                                                             {[item.vendor, item.createdAtLabel, item.vessel, item.author].filter(
                                                                 Boolean
@@ -799,7 +792,12 @@ export default function MaterialPurchasePage() {
                                                                 : "—"}
                                                         </p>
                                                         </div>
-                                                        {item.receipts.length > 0 && (
+                                                        <span className="shrink-0 text-[12px] leading-none text-gray-800">
+                                                            {item.amountLabel
+                                                                ? highlightText(item.amountLabel, historyFilter)
+                                                                : "-"}
+                                                        </span>
+                                                        {item.receipts.length > 0 ? (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => setHistoryPreview({ receipts: item.receipts, index: 0 })}
@@ -808,6 +806,24 @@ export default function MaterialPurchasePage() {
                                                             >
                                                                 <IconImage className="h-5 w-5" />
                                                             </button>
+                                                        ) : (
+                                                            <span
+                                                                className="flex h-8 w-8 shrink-0 items-center justify-center text-gray-300"
+                                                                aria-label="영수증 없음"
+                                                            >
+                                                                <svg className="h-5 w-5" viewBox="0 -960 960 960" aria-hidden="true">
+                                                                    <path
+                                                                        fill="currentColor"
+                                                                        d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm80-160h400L578-440 446-280l-66-88-120 160Z"
+                                                                    />
+                                                                    <path
+                                                                        d="M168-792 792-168"
+                                                                        stroke="currentColor"
+                                                                        strokeWidth="64"
+                                                                        strokeLinecap="round"
+                                                                    />
+                                                                </svg>
+                                                            </span>
                                                         )}
                                                     </li>
                                                 ))}

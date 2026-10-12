@@ -477,6 +477,7 @@ export default function ReportViewPage() {
                             noLunch,
                             moveFrom: e.moveFrom,
                             moveTo: e.moveTo,
+                            moveVia: e.moveVia,
                         };
                     });
                     setWorkLogEntries(mapped);
@@ -685,6 +686,7 @@ export default function ReportViewPage() {
                     note: entry.note || undefined,
                     moveFrom: entry.moveFrom || undefined,
                     moveTo: entry.moveTo || undefined,
+                    moveVia: entry.moveVia || undefined,
                     lunch_worked: !!entry.lunch_worked,
                 })),
                 expenses: (data.expenses || []).map((expense: any) => ({

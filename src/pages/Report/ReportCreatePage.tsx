@@ -312,6 +312,7 @@ export default function ReportCreatePage() {
                     note: e.note,
                     moveFrom: e.moveFrom,
                     moveTo: e.moveTo,
+                    moveVia: e.moveVia,
                     lunch_worked: e.noLunch
                 })),
                 expenses: expenses,
