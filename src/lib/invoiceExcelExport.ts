@@ -305,16 +305,19 @@ function uniqJoin(values: (string | null | undefined)[], sep: string): string {
 
 /**
  * 인보이스 엑셀 다운로드 파일명
- * `{업체명}_{호선}_{Work Item}_{기간}_{R}.xlsx`
- * 예: Everllence_ELU_YZJ2023-1552_R&D Test_22.Jul~24.Aug.2026_R.xlsx
+ * `{업체명}_{호선}_{Work Item}_{기간}_{인보이스번호}.xlsx`
+ * 인보이스 번호가 없으면 끝은 `R`.
+ * 예: Everllence_ELU_YZJ2023-1552_R&D Test_22.Jul~24.Aug.2026_INV-12.xlsx
  * Work Item은 인보이스 섹션 표시값(override 또는 기본값)을 그대로 사용한다.
  */
 export function buildInvoiceExcelDownloadFilename(
     workLogDataList: WorkLogFullData[],
-    workItem?: string
+    workItem?: string,
+    invoiceNumber?: string
 ): string {
+    const suffix = (invoiceNumber ?? "").trim() || "R";
     if (workLogDataList.length === 0) {
-        return "invoice_R.xlsx";
+        return `invoice_${suffix}.xlsx`;
     }
 
     const orderGroup = resolvePrimaryWorkLogOrderGroup(
@@ -330,7 +333,7 @@ export function buildInvoiceExcelDownloadFilename(
     const { start, end } = aggregateWorkLogEntryDateRange(flatEntries);
     const period = formatInvoiceExcelFilenamePeriod(start, end);
 
-    const parts = [company, vessel, subject, period, "R"].filter(
+    const parts = [company, vessel, subject, period, suffix].filter(
         (part) => part.length > 0
     );
     const safeBase = parts
@@ -340,7 +343,7 @@ export function buildInvoiceExcelDownloadFilename(
         .trim()
         .slice(0, 180);
 
-    return `${safeBase.length > 0 ? safeBase : "invoice_R"}.xlsx`;
+    return `${safeBase.length > 0 ? safeBase : `invoice_${suffix}`}.xlsx`;
 }
 
 export function buildInvoiceExcelMeta(
@@ -3691,11 +3694,13 @@ function buildDrawingRelsXml(hasSignature: boolean): string {
     ].join("");
 }
 
-function buildSignatureAnchorXml(anchorRow: number): string {
+function buildSignatureAnchorXml(anchorRow: number, colShift = 0): string {
     const zeroBasedRow = Math.max(0, anchorRow - 1);
+    // 템플릿 서명은 H열(0-based 7). Total Meals 열을 넣은 타임시트는 G열 이후가 한 칸 밀린다.
+    const zeroBasedCol = 7 + colShift;
     return [
         "<xdr:oneCellAnchor>",
-        `<xdr:from><xdr:col>7</xdr:col><xdr:colOff>809625</xdr:colOff><xdr:row>${zeroBasedRow}</xdr:row><xdr:rowOff>133350</xdr:rowOff></xdr:from>`,
+        `<xdr:from><xdr:col>${zeroBasedCol}</xdr:col><xdr:colOff>809625</xdr:colOff><xdr:row>${zeroBasedRow}</xdr:row><xdr:rowOff>133350</xdr:rowOff></xdr:from>`,
         '<xdr:ext cx="3248025" cy="1285875"/>',
         '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="3" name="image2.png"/><xdr:cNvPicPr preferRelativeResize="0"/></xdr:nvPicPr>',
         '<xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId2" cstate="print"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>',
@@ -3750,6 +3755,7 @@ async function restoreTemplateSheetDrawings(
         logoImage?: Uint8Array;
         signatureImage?: Uint8Array;
         templateLogoAnchorByName: Map<string, string>;
+        colShiftBySheetName?: Map<string, number>;
     }
 ) {
     if (!options.logoImage || options.templateLogoAnchorByName.size === 0) {
@@ -3791,7 +3797,12 @@ async function restoreTemplateSheetDrawings(
         const anchors = [logoAnchor];
         const hasSignature = Boolean(signatureRow && options.signatureImage);
         if (hasSignature) {
-            anchors.push(buildSignatureAnchorXml(signatureRow! - 2));
+            anchors.push(
+                buildSignatureAnchorXml(
+                    signatureRow! - 2,
+                    options.colShiftBySheetName?.get(sheetName) ?? 0
+                )
+            );
         }
 
         drawingIndex += 1;
@@ -3812,6 +3823,64 @@ async function restoreTemplateSheetDrawings(
         zip.file(worksheetPath, attachDrawingToWorksheet(xml));
         await ensureContentTypesForPngAndDrawing(zip, drawingPath);
     }
+}
+
+/**
+ * 인쇄 배율 "한 페이지에 모든 열 맞추기".
+ * fitToWidth=1, fitToHeight=0 이고 fitToPage가 켜져 있어야 엑셀이 그 항목을 선택한다.
+ */
+function applyFitAllColumnsOnOnePage(xml: string): string {
+    let next = xml;
+    if (/<pageSetUpPr\b/.test(next)) {
+        next = next
+            .replace(/<pageSetUpPr\b[^>]*\/>/, '<pageSetUpPr fitToPage="1"/>')
+            .replace(
+                /<pageSetUpPr\b[^>]*>[\s\S]*?<\/pageSetUpPr>/,
+                '<pageSetUpPr fitToPage="1"/>'
+            );
+    } else if (/<\/sheetPr>/.test(next)) {
+        next = next.replace(
+            "</sheetPr>",
+            '<pageSetUpPr fitToPage="1"/></sheetPr>'
+        );
+    } else if (/<sheetPr\b[^>]*\/>/.test(next)) {
+        next = next.replace(
+            /<sheetPr\b[^>]*\/>/,
+            '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
+        );
+    } else {
+        next = next.replace(
+            /(<worksheet\b[^>]*>)/,
+            '$1<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
+        );
+    }
+
+    if (/<pageSetup\b[^>]*\/>/.test(next)) {
+        next = next.replace(/<pageSetup\b([^>]*?)\/>/, (_match, attrs: string) => {
+            const cleaned = attrs
+                .replace(/\s+fitToWidth="[^"]*"/g, "")
+                .replace(/\s+fitToHeight="[^"]*"/g, "");
+            return `<pageSetup${cleaned} fitToWidth="1" fitToHeight="0"/>`;
+        });
+    } else {
+        next = next.replace(
+            "</worksheet>",
+            '<pageSetup fitToWidth="1" fitToHeight="0"/></worksheet>'
+        );
+    }
+
+    return next;
+}
+
+async function applyCurrencySheetFitAllColumns(zip: JSZip): Promise<void> {
+    const sheets = await readWorkbookSheetInfos(zip);
+    const currencySheet = sheets.find((sheet) => sheet.name.trim() === "Currency");
+    if (!currencySheet) return;
+
+    const file = zip.file(currencySheet.path);
+    if (!file) return;
+
+    zip.file(currencySheet.path, applyFitAllColumnsOnOnePage(await file.async("string")));
 }
 
 async function normalizeXlsxWorksheetDimensions(
@@ -3847,6 +3916,7 @@ async function normalizeXlsxWorksheetDimensions(
     );
 
     await stripXlsxStylesForExcelCompatibility(zip, worksheetPaths, templateStyles);
+    await applyCurrencySheetFitAllColumns(zip);
     await syncPrintAreasToCompanyAddressFooter(
         zip,
         templateStyles.rowShiftBySheetName,
@@ -4104,6 +4174,7 @@ async function stripXlsxStylesForExcelCompatibility(
         logoImage: templateStyles.logoImage,
         signatureImage: templateStyles.signatureImage,
         templateLogoAnchorByName: templateStyles.templateLogoAnchorByName,
+        colShiftBySheetName: templateStyles.colShiftBySheetName,
     });
 }
 
@@ -4929,6 +5000,90 @@ function setTimesheetWorkOrderFromDisplay(
     }
 }
 
+function isTimesheetPoNumberLabel(text: string): boolean {
+    return /^p\s*\.?\s*o\s*\.?\s*(no\.?|number)\b/i.test(text);
+}
+
+/** 라벨 바로 아래 칸에 값을 쓴다. 라벨을 찾으면 true. */
+function setTimesheetValueBelowLabel(
+    ws: ExcelJS.Worksheet,
+    matchesLabel: (label: string) => boolean,
+    value: string | undefined
+): boolean {
+    const maxRow = Math.min(Math.max(ws.rowCount || 0, 12), 16);
+    for (let row = 1; row <= maxRow; row += 1) {
+        for (let col = 1; col <= 16; col += 1) {
+            const label = getWorksheetCellDisplayText(ws.getCell(row, col))
+                .replace(/\s+/g, " ")
+                .trim();
+            if (!matchesLabel(label)) continue;
+            const valueRow = row + 1;
+            const merge = findMergeContainingCell(ws, valueRow, col);
+            const mergeStartsAtValue = merge != null && merge.top !== row;
+            const targetRow = mergeStartsAtValue ? merge.top : valueRow;
+            const targetCol = mergeStartsAtValue ? merge.left : col;
+            setCellValue(
+                ws,
+                ws.getCell(targetRow, targetCol).address,
+                withLeadingSpace(value)
+            );
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Time Sheet 상단 P.O No. 값 칸.
+ * Total Meals 열 삽입으로 열이 밀려도, 라벨 바로 아래(없으면 Work order 값의 두 칸 아래)에 쓴다.
+ */
+function setTimesheetPoNumberDisplay(
+    ws: ExcelJS.Worksheet,
+    poNumber: string | undefined
+) {
+    if (
+        setTimesheetValueBelowLabel(ws, isTimesheetPoNumberLabel, poNumber)
+    ) {
+        return;
+    }
+
+    const maxRow = Math.min(Math.max(ws.rowCount || 0, 12), 16);
+    for (let row = 1; row <= maxRow; row += 1) {
+        for (let col = 1; col <= 16; col += 1) {
+            const label = getWorksheetCellDisplayText(ws.getCell(row, col))
+                .replace(/\s+/g, " ")
+                .trim();
+            if (!/^work order from$/i.test(label)) continue;
+            const workOrderValueRow = row + 1;
+            const workOrderMerge = findMergeContainingCell(
+                ws,
+                workOrderValueRow,
+                col
+            );
+            const workOrderValueCol =
+                workOrderMerge != null && workOrderMerge.top !== row
+                    ? workOrderMerge.left
+                    : col;
+            const poValueRow = workOrderValueRow + 2;
+            const poMerge = findMergeContainingCell(ws, poValueRow, workOrderValueCol);
+            const targetRow =
+                poMerge != null && poMerge.top === poValueRow
+                    ? poMerge.top
+                    : poValueRow;
+            const targetCol =
+                poMerge != null && poMerge.top === poValueRow
+                    ? poMerge.left
+                    : workOrderValueCol;
+            setCellValue(
+                ws,
+                ws.getCell(targetRow, targetCol).address,
+                withLeadingSpace(poNumber)
+            );
+            return;
+        }
+    }
+}
+
 export async function fillNormalTimesheetInvoiceExcelWorkbook(
     templateBuffer: ArrayBuffer,
     mappings: InvoiceExcelFieldMappings | null | undefined,
@@ -5004,6 +5159,7 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
         setCellValue(ws, "K7", withLeadingSpace(section.departureDisplay));
         setCellValue(ws, "K9", withLeadingSpace(section.returnDisplay));
         setTimesheetWorkOrderFromDisplay(ws, jobDescription?.workOrderFrom);
+        setTimesheetPoNumberDisplay(ws, jobDescription?.poNumber);
         setCellValue(ws, "C12", resolveSectionYear(section.rows));
         applyNormalTimesheetSheetBorderFormatting(ws);
 
@@ -5148,6 +5304,7 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
         withLeadingSpace(data.workPlace)
     );
     setTimesheetWorkOrderFromDisplay(ws, jobDescription?.workOrderFrom);
+    setTimesheetPoNumberDisplay(ws, jobDescription?.poNumber);
     setCellValue(
         ws,
         RD_TIMESHEET_EXCEL.year,
