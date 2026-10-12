@@ -28,7 +28,13 @@ import {
     sumClusterWorkBillableHours,
     type WorkEntryClusterable,
 } from "../../utils/workEntryBillableHours";
-import { parseTravelRoutePlaces } from "../../utils/travelRouteParse";
+import {
+    getGangdongHomeLegHours,
+    getGangdongViaHomeDirection,
+    isGangdongHomeLeg,
+    parseTravelRoutePlaces,
+    resolveMoveEndpointBadge,
+} from "../../utils/travelRouteParse";
 
 interface TimesheetRowDetailSidePanelProps {
     isOpen: boolean;
@@ -53,6 +59,7 @@ interface TimesheetRowDetailSidePanelProps {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        moveVia?: string;
         location?: string | null;
         lunchWorked?: boolean;
         clientDuplicated?: boolean;
@@ -70,6 +77,7 @@ interface TimesheetRowDetailSidePanelProps {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        moveVia?: string;
         location?: string | null;
         lunchWorked?: boolean;
         clientDuplicated?: boolean;
@@ -146,6 +154,7 @@ interface TimesheetRowDetailSidePanelProps {
         note?: string;
         moveFrom?: string;
         moveTo?: string;
+        moveVia?: string;
         location?: string | null;
         lunchWorked?: boolean;
         clientDuplicated?: boolean;
@@ -2090,6 +2099,98 @@ export default function TimesheetRowDetailSidePanel({
         return Math.floor((end.getTime() - start.getTime()) / 60000) / 60;
     };
 
+    const isGangdongHomeTravel = (entry: PanelEntry): boolean =>
+        entry.descType === "이동" &&
+        (isGangdongHomeLeg(entry) || getGangdongViaHomeDirection(entry) !== null);
+
+    /**
+     * 자택↔강동동 공장 이동은 청구하지 않는다.
+     * 단독 엔트리면 0시간, 강동동 공장 경유 엔트리면 자택 쪽 인원별 시간(기본 1시간)을 뺀다.
+     * 자정에서 잘린 경유 이동은 자택 쪽 조각부터 한 번만 뺀다.
+     */
+    const getGangdongBillableHoursByEntryId = (
+        journey: PanelEntry[],
+        person?: string
+    ): Map<number, number> => {
+        const hoursByEntryId = new Map<number, number>();
+        const viaDirection = getGangdongViaHomeDirection(journey[0]);
+        const fillOrder =
+            viaDirection === "arrival" ? [...journey].reverse() : journey;
+        let remainingDeduction = viaDirection ? getGangdongHomeLegHours(person) : 0;
+
+        fillOrder.forEach((item) => {
+            if (isGangdongHomeLeg(item)) {
+                hoursByEntryId.set(item.id, 0);
+                return;
+            }
+            const rawHours = calculateRawTravelHours(item);
+            const deduction = Math.min(rawHours, remainingDeduction);
+            remainingDeduction -= deduction;
+            hoursByEntryId.set(item.id, roundHours(rawHours - deduction));
+        });
+
+        return hoursByEntryId;
+    };
+
+    /**
+     * 자정에서 나뉜 같은 경유 이동 조각(다른 날짜 포함)을 앞뒤로 이어 붙인다.
+     * 자택 쪽 시간은 이어 붙인 이동 전체에서 한 번만 빼야 한다.
+     */
+    const getGangdongViaJourneyForEntry = (
+        entry: PanelEntry,
+        person?: string
+    ): PanelEntry[] => {
+        const journeyKey = getTravelJourneyKey(entry);
+        const sharesPerson = (candidate: PanelEntry) =>
+            person
+                ? (candidate.persons ?? []).includes(person)
+                : (candidate.persons ?? []).some((name) =>
+                      (entry.persons ?? []).includes(name)
+                  );
+        const candidateById = new Map<number, PanelEntry>();
+        [...displayData.groupSourceEntries, ...displayData.sourceEntries].forEach(
+            (candidate) => {
+                if (
+                    candidate.id !== entry.id &&
+                    candidate.descType === entry.descType &&
+                    (candidate.moveVia ?? "") === (entry.moveVia ?? "") &&
+                    getTravelJourneyKey(candidate) === journeyKey &&
+                    sharesPerson(candidate)
+                ) {
+                    candidateById.set(candidate.id, candidate);
+                }
+            }
+        );
+        const sorted = sortEntriesByStart([entry, ...candidateById.values()]);
+        const index = sorted.findIndex((candidate) => candidate.id === entry.id);
+        const isContiguous = (previous: PanelEntry, next: PanelEntry) => {
+            const previousEnd = getEntryEndTime(previous);
+            return previousEnd !== null && previousEnd === getEntryStartTime(next);
+        };
+        let first = index;
+        let last = index;
+        while (first > 0 && isContiguous(sorted[first - 1], sorted[first])) {
+            first -= 1;
+        }
+        while (last < sorted.length - 1 && isContiguous(sorted[last], sorted[last + 1])) {
+            last += 1;
+        }
+        return sorted.slice(first, last + 1);
+    };
+
+    const calculateBillableTravelHours = (
+        entry: PanelEntry,
+        person?: string
+    ): number => {
+        if (!isGangdongHomeTravel(entry)) {
+            return calculateRawTravelHours(entry);
+        }
+        const journey = isGangdongHomeLeg(entry)
+            ? [entry]
+            : getGangdongViaJourneyForEntry(entry, person);
+        return getGangdongBillableHoursByEntryId(journey, person).get(entry.id) ?? 0;
+    };
+
     const getPrimaryLocation = (location?: string | null) =>
         normalizeLocationName(location?.split(",")[0].trim() ?? "");
 
@@ -2153,6 +2254,9 @@ export default function TimesheetRowDetailSidePanel({
      * 곳으로 가는 이동은 실제 이동시간을 그대로 청구한다.
      */
     const isHomeWorkSiteCommute = (entry: PanelEntry): boolean => {
+        if (isGangdongHomeTravel(entry)) {
+            return false;
+        }
         const workPlace = getPrimaryLocation(entry.location);
         if (!workPlace) {
             return false;
@@ -2217,11 +2321,22 @@ export default function TimesheetRowDetailSidePanel({
      * 자택 ↔ 출장지 구간은 출장지별 고정시간, 그 외 구간은 실제 이동시간을 쓴다.
      */
     const getFixedTravelHoursByEntryId = (
-        entries: PanelEntry[]
+        entries: PanelEntry[],
+        person?: string
     ): Map<number, number> => {
         const allocationByEntryId = new Map<number, number>();
 
         groupTravelEntriesByJourney(entries).forEach((journey) => {
+            if (journey.some(isGangdongHomeTravel)) {
+                journey.forEach((item) => {
+                    allocationByEntryId.set(
+                        item.id,
+                        roundHours(calculateBillableTravelHours(item, person))
+                    );
+                });
+                return;
+            }
+
             const fixedHours = getHomeTravelHours(journey[0].location) ?? 0;
             const isCommute = fixedHours > 0 && isHomeWorkSiteCommute(journey[0]);
 
@@ -2263,17 +2378,17 @@ export default function TimesheetRowDetailSidePanel({
     };
 
     /** 자택 ↔ 출장지 구간은 출장지별 고정시간, 그 외 구간은 실제 이동시간. */
-    const getHomeFixedTravelHours = (entry: PanelEntry): number => {
+    const getHomeFixedTravelHours = (entry: PanelEntry, person?: string): number => {
         const fixedHours = getHomeTravelHours(entry.location) ?? 0;
 
         return fixedHours > 0 && isHomeWorkSiteCommute(entry)
             ? fixedHours
-            : calculateRawTravelHours(entry);
+            : calculateBillableTravelHours(entry, person);
     };
 
-    const sumFixedTravelHours = (entries: PanelEntry[]): number => {
+    const sumFixedTravelHours = (entries: PanelEntry[], person?: string): number => {
         let total = 0;
-        getFixedTravelHoursByEntryId(entries).forEach((hours) => {
+        getFixedTravelHoursByEntryId(entries, person).forEach((hours) => {
             total += hours;
         });
         return roundHours(total);
@@ -2281,7 +2396,8 @@ export default function TimesheetRowDetailSidePanel({
 
     const summarizeTravelEntries = (
         entries: PanelEntry[],
-        useFixedHomeHours: boolean
+        useFixedHomeHours: boolean,
+        person?: string
     ) => {
         if (entries.length === 0) {
             return {
@@ -2295,10 +2411,11 @@ export default function TimesheetRowDetailSidePanel({
         return {
             kind: useFixedHomeHours && hasHome ? "home" : "travel",
             hours: useFixedHomeHours
-                ? sumFixedTravelHours(entries)
+                ? sumFixedTravelHours(entries, person)
                 : roundHours(
                       entries.reduce(
-                          (sum, entry) => sum + calculateRawTravelHours(entry),
+                          (sum, entry) =>
+                              sum + calculateBillableTravelHours(entry, person),
                           0
                       )
                   ),
@@ -2455,18 +2572,18 @@ export default function TimesheetRowDetailSidePanel({
                 if (hasHome && fixedHours > 0) {
                     return {
                         kind: "initial-home",
-                        hours: summarizeTravelEntries(beforeTravelEntries, true)
+                        hours: summarizeTravelEntries(beforeTravelEntries, true, person)
                             .hours,
                     };
                 }
 
-                return summarizeTravelEntries(beforeTravelEntries, false);
+                return summarizeTravelEntries(beforeTravelEntries, false, person);
             }
 
             return { kind: "continued", hours: 1 };
         }
 
-        return summarizeTravelEntries(beforeTravelEntries, true);
+        return summarizeTravelEntries(beforeTravelEntries, true, person);
     };
 
     const getAfterTravelSummary = (
@@ -2481,7 +2598,7 @@ export default function TimesheetRowDetailSidePanel({
         }
 
         if (blockIndex < totalBlocks - 1) {
-            return summarizeTravelEntries(afterTravelEntries, true);
+            return summarizeTravelEntries(afterTravelEntries, true, person);
         }
 
         if (
@@ -2495,7 +2612,7 @@ export default function TimesheetRowDetailSidePanel({
             return { kind: "continued", hours: 1 };
         }
 
-        return summarizeTravelEntries(afterTravelEntries, true);
+        return summarizeTravelEntries(afterTravelEntries, true, person);
     };
 
     const isTravelEntrySettledByEarlierLodgingOverride = (
@@ -2595,7 +2712,8 @@ export default function TimesheetRowDetailSidePanel({
 
             return summarizeTravelEntries(
                 personEntries.filter((candidate) => candidate.descType === "이동"),
-                true
+                true,
+                person
             );
         }
 
@@ -2611,7 +2729,7 @@ export default function TimesheetRowDetailSidePanel({
                 .find((group) => group.some((candidate) => candidate.id === entry.id));
 
             if (detachedAfterTravelGroup) {
-                return summarizeTravelEntries(detachedAfterTravelGroup, true);
+                return summarizeTravelEntries(detachedAfterTravelGroup, true, person);
             }
 
             const blockSpan = getBlockSpanForEntries(block.anchorEntries);
@@ -2703,7 +2821,7 @@ export default function TimesheetRowDetailSidePanel({
          * 체인 합계가 구간별 계산 합과 같으면(일반 경로) 각 구간이 자기 몫을 그대로 가진다.
          * 총량이 따로 지정된 경우(수동 override 등)에만 아래 순차 배분으로 넘어간다.
          */
-        const fixedHoursByEntryId = getFixedTravelHoursByEntryId(targetGroup);
+        const fixedHoursByEntryId = getFixedTravelHoursByEntryId(targetGroup, person);
         let fixedTotal = 0;
         fixedHoursByEntryId.forEach((hours) => {
             fixedTotal += hours;
@@ -2711,7 +2829,7 @@ export default function TimesheetRowDetailSidePanel({
         if (Math.abs(roundHours(fixedTotal) - roundHours(totalHours)) < 0.01) {
             return (
                 fixedHoursByEntryId.get(entry.id) ??
-                roundHours(getHomeFixedTravelHours(entry))
+                roundHours(getHomeFixedTravelHours(entry, person))
             );
         }
 
@@ -2751,7 +2869,6 @@ export default function TimesheetRowDetailSidePanel({
         ignoreEntryManual = false,
         opts?: { manualBillableHours?: number; ignoreTravelOverrides?: boolean }
     ) => {
-        const rawTravelHours = roundHours(calculateRawTravelHours(entry));
         const durationLabel = getDurationLabel(
             entry.dateFrom,
             entry.timeFrom,
@@ -2816,7 +2933,7 @@ export default function TimesheetRowDetailSidePanel({
                 // 상세 패널의 청구시간은 행 단위 값이어야 하므로,
                 // 일반 이동(travel)은 이동 묶음 합계 대신 현재 엔트리의 시간만 표시한다.
                 if (chargeResult.kind === "travel") {
-                    return rawTravelHours;
+                    return roundHours(calculateBillableTravelHours(entry, person));
                 }
                 const isHomeKind =
                     chargeResult.kind === "home" ||
@@ -2928,35 +3045,19 @@ export default function TimesheetRowDetailSidePanel({
 
     const getTravelDescriptionBadges = (
         entry: PanelEntry,
-        contextEntries: PanelEntry[],
-        zeroBillingTravelIds: Set<number>
+        _contextEntries: PanelEntry[],
+        _zeroBillingTravelIds: Set<number>
     ): TravelDescriptionBadgeData[] => {
         if (entry.descType !== "이동") {
             return [];
         }
 
-        const details = entry.details ?? "";
-        const containsLodging = details.includes("숙소");
-        const containsHome =
-            details.includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택";
-        const travelOrigin = normalizeLocationName(getTravelEntryOrigin(entry));
-        const travelDestination = normalizeLocationName(getFinalDestination(entry));
-        const direction: TravelBadgeDirection | null =
-            travelDestination === "자택"
-                ? "arrival"
-                : travelOrigin === "자택"
-                  ? "departure"
-                  : travelDestination === "숙소"
-                    ? "arrival"
-                    : travelOrigin === "숙소"
-                      ? "departure"
-                      : null;
-
-        if (!direction) {
+        const placeBadge = resolveMoveEndpointBadge(entry.moveFrom, entry.moveTo);
+        if (!placeBadge) {
             return [];
         }
+
+        const { direction, target: dbTarget } = placeBadge;
 
         const groupedPeople: Record<TravelChargeOverrideTarget, string[]> = {
             home: [],
@@ -2966,45 +3067,17 @@ export default function TimesheetRowDetailSidePanel({
             home: [],
             lodging: [],
         };
-        const resolveBadgeTargetFromChargeResult = (chargeResult: {
-            hours: number | null;
-            kind: string;
-        }): TravelChargeOverrideTarget | null => {
-            const isHomeCharge =
-                chargeResult.kind === "home" ||
-                chargeResult.kind.endsWith("-home");
-            if (isHomeCharge) {
-                return "home";
-            }
-
-            return chargeResult.hours === 1 && (containsLodging || containsHome)
-                ? "lodging"
-                : null;
-        };
 
         entry.persons.forEach((person) => {
-            const chargeResult = getTravelChargeResultForPerson(
-                entry,
-                person,
-                contextEntries,
-                zeroBillingTravelIds
-            );
-            const target = resolveBadgeTargetFromChargeResult(chargeResult);
-
-            if (target) {
-                groupedPeople[target].push(person);
-                const baselineTarget = resolveBadgeTargetFromChargeResult(
-                    getTravelChargeResultForPerson(
-                        entry,
-                        person,
-                        contextEntries,
-                        zeroBillingTravelIds,
-                        { ignoreOverride: true }
-                    )
-                );
-                if (target !== baselineTarget) {
-                    groupedChangedPeople[target].push(person);
-                }
+            const override =
+                travelChargeOverrides[getTravelChargeOverrideKey(entry.id, person)];
+            const target =
+                override?.target === "home" || override?.target === "lodging"
+                    ? override.target
+                    : dbTarget;
+            groupedPeople[target].push(person);
+            if (override && override.target !== dbTarget) {
+                groupedChangedPeople[target].push(person);
             }
         });
 

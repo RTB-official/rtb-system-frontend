@@ -483,6 +483,14 @@ export default function WorkLogSection() {
     // 경유지 토글
     const handleDetourToggle = () => {
         const newHasDetour = !hasDetour;
+        if (
+            newHasDetour &&
+            (currentEntry.moveFrom === GANGDONG_FACTORY ||
+                currentEntry.moveTo === GANGDONG_FACTORY)
+        ) {
+            showError("From/To에 강동동 공장이 선택돼 있으면 경유를 켤 수 없습니다.");
+            return;
+        }
         setHasDetour(newHasDetour);
         setCurrentEntry({ moveVia: newHasDetour ? GANGDONG_FACTORY : "" });
         updateMoveDetails(

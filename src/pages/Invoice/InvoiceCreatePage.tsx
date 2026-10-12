@@ -56,7 +56,14 @@ import {
     aggregateWorkLogEntryDateRange,
     formatInvoiceReportTableTitle,
 } from "../../utils/invoiceReportDisplayTitle";
-import { parseTravelRoutePlaces } from "../../utils/travelRouteParse";
+import {
+    GANGDONG_HOME_LEG_HOURS,
+    getGangdongHomeLegHours,
+    getGangdongViaHomeDirection,
+    isGangdongHomeLeg,
+    parseTravelRoutePlaces,
+    resolveMoveEndpointBadge,
+} from "../../utils/travelRouteParse";
 import {
     resolveInvoiceRecipientInfo,
     resolveInvoiceWorkOrderFromDisplay,
@@ -152,6 +159,7 @@ interface TimesheetSourceEntryData {
     note?: string;
     moveFrom?: string;
     moveTo?: string;
+    moveVia?: string;
     location?: string | null;
     lunchWorked?: boolean;
     /** 사이드패널에서 복사로 만든 행(빨간 테두리 등) */
@@ -221,6 +229,7 @@ function timesheetSourceToWorkLogEntry(
         note: src.note,
         moveFrom: src.moveFrom,
         moveTo: src.moveTo,
+        moveVia: src.moveVia,
         lunch_worked: src.lunchWorked,
         clientDuplicated: src.clientDuplicated === true,
         clientHomeTravelSpilloverOf: src.clientHomeTravelSpilloverOf ?? null,
@@ -271,6 +280,7 @@ function isTimesheetSourceEntryPanelSyncEqual(
         (a.note ?? "") === (b.note ?? "") &&
         (a.moveFrom ?? "") === (b.moveFrom ?? "") &&
         (a.moveTo ?? "") === (b.moveTo ?? "") &&
+        (a.moveVia ?? "") === (b.moveVia ?? "") &&
         (a.location ?? null) === (b.location ?? null) &&
         Boolean(a.lunchWorked) === Boolean(b.lunchWorked) &&
         Boolean(a.clientDuplicated) === Boolean(b.clientDuplicated) &&
@@ -674,6 +684,8 @@ type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
     invoiceHullNoOverride?: string | null;
     invoiceEngineTypeOverride?: string | null;
     invoiceWorkPeriodPlaceOverride?: string | null;
+    invoicePoNumberOverride?: string | null;
+    invoiceInvoiceNumberOverride?: string | null;
     timesheetCommentOverridesBySectionKey?: Record<
         string,
         TimesheetCommentOverrideState
@@ -685,7 +697,12 @@ type InvoiceInlineEditFieldKey =
     | "shipName"
     | "hullNo"
     | "engineType"
-    | "workPeriodPlace";
+    | "workPeriodPlace"
+    | "timesheetPoNumber"
+    | "rdTimesheetPoNumber"
+    | "jobDescriptionPoNumber"
+    | "invoicePoNumber"
+    | "invoiceNumber";
 
 type InvoiceUndoSnapshot = {
     workLogDataList: WorkLogFullData[];
@@ -703,6 +720,8 @@ type InvoiceUndoSnapshot = {
     invoiceHullNoOverride: string | null;
     invoiceEngineTypeOverride: string | null;
     invoiceWorkPeriodPlaceOverride: string | null;
+    invoicePoNumberOverride: string | null;
+    invoiceInvoiceNumberOverride: string | null;
 };
 
 const MAX_INVOICE_UNDO = 40;
@@ -809,6 +828,16 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
             s.invoiceWorkPeriodPlaceOverride === null
                 ? null
                 : s.invoiceWorkPeriodPlaceOverride,
+        invoicePoNumberOverride:
+            s.invoicePoNumberOverride === undefined ||
+            s.invoicePoNumberOverride === null
+                ? null
+                : s.invoicePoNumberOverride,
+        invoiceInvoiceNumberOverride:
+            s.invoiceInvoiceNumberOverride === undefined ||
+            s.invoiceInvoiceNumberOverride === null
+                ? null
+                : s.invoiceInvoiceNumberOverride,
     };
 }
 
@@ -878,6 +907,11 @@ type InvoiceTimesheetEntry = WorkLogEntryItem & {
     sourceEntryIds: number[];
     /** 자택 고정 청구시간을 반영해 시간 구간 자체를 이미 보정했는지 여부 */
     fixedHomeTravelWindowApplied?: boolean;
+    /** 강동동 공장 경유 이동에서 자택↔공장 시간을 이미 잘라낸 구간인지 여부 */
+    gangdongHomeLegTrimmed?: boolean;
+    /** 강동동 공장 경유 이동의 원래(자르기 전) 구간. 인원별 자택↔공장 시간 적용용 */
+    gangdongViaRawStartMs?: number;
+    gangdongViaRawEndMs?: number;
 };
 
 const SKILLED_FITTER_PRIORITY = [...SKILLED_FITTER_KOREAN_NAMES];
@@ -1547,6 +1581,11 @@ export default function InvoiceCreatePage() {
     >(null);
     const [invoiceWorkPeriodPlaceOverride, setInvoiceWorkPeriodPlaceOverride] =
         useState<string | null>(null);
+    const [invoicePoNumberOverride, setInvoicePoNumberOverride] = useState<
+        string | null
+    >(null);
+    const [invoiceInvoiceNumberOverride, setInvoiceInvoiceNumberOverride] =
+        useState<string | null>(null);
     const [invoiceInlineEditField, setInvoiceInlineEditField] =
         useState<InvoiceInlineEditFieldKey | null>(null);
     const [invoiceInlineEditDraft, setInvoiceInlineEditDraft] = useState("");
@@ -1760,6 +1799,8 @@ export default function InvoiceCreatePage() {
         invoiceHullNoOverride,
         invoiceEngineTypeOverride,
         invoiceWorkPeriodPlaceOverride,
+        invoicePoNumberOverride,
+        invoiceInvoiceNumberOverride,
     };
 
     const resetInvoiceUndoRedoStacks = useCallback(() => {
@@ -1815,6 +1856,8 @@ export default function InvoiceCreatePage() {
             invoiceHullNoOverride,
             invoiceEngineTypeOverride,
             invoiceWorkPeriodPlaceOverride,
+            invoicePoNumberOverride,
+            invoiceInvoiceNumberOverride,
             timesheetCommentOverridesBySectionKey,
             mealCountAdjustmentsBySectionDate,
             lodgingCountAdjustmentsBySectionDate,
@@ -1836,6 +1879,8 @@ export default function InvoiceCreatePage() {
         invoiceHullNoOverride,
         invoiceEngineTypeOverride,
         invoiceWorkPeriodPlaceOverride,
+        invoicePoNumberOverride,
+        invoiceInvoiceNumberOverride,
         timesheetCommentOverridesBySectionKey,
         mealCountAdjustmentsBySectionDate,
         lodgingCountAdjustmentsBySectionDate,
@@ -1978,6 +2023,16 @@ export default function InvoiceCreatePage() {
                 normalized.invoiceWorkPeriodPlaceOverride === undefined
                     ? null
                     : normalized.invoiceWorkPeriodPlaceOverride
+            );
+            setInvoicePoNumberOverride(
+                normalized.invoicePoNumberOverride === undefined
+                    ? null
+                    : normalized.invoicePoNumberOverride
+            );
+            setInvoiceInvoiceNumberOverride(
+                normalized.invoiceInvoiceNumberOverride === undefined
+                    ? null
+                    : normalized.invoiceInvoiceNumberOverride
             );
             setInvoiceInlineEditField(null);
             setTimesheetCommentOverridesBySectionKey(
@@ -2504,33 +2559,9 @@ export default function InvoiceCreatePage() {
             return null;
         }
 
-        const fixedHours = getHomeTravelHours(entry.location ?? null) ?? 0;
-        const containsLodging = (entry.details ?? "").includes("숙소");
-        const containsHome =
-            (entry.details ?? "").includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택";
-        const travelHours = calculateTravelHours({
-            ...entry,
-            location: entry.location ?? null,
-            sourceEntryIds: [entry.id],
-        } as InvoiceTimesheetEntry);
-
-        if (travelHours === 1 && containsLodging) {
-            return "lodging";
-        }
-
-        // 사이드패널 `resolveBadgeTargetFromChargeResult`와 맞춤: 1h + 자택 키워드는 숙소 쪽(continued)으로
-        // 묶이는 경우가 많아 기본을 lodging으로 둔다.
-        if (travelHours === 1 && containsHome) {
-            return "lodging";
-        }
-
-        if (containsHome && fixedHours > 0) {
-            return "home";
-        }
-
-        return null;
+        return (
+            resolveMoveEndpointBadge(entry.moveFrom, entry.moveTo)?.target ?? null
+        );
     };
 
     /** 맵에만 남아 있는데 청구 기본값과 같은 오버라이드는 제거 — 타임시트 수정 표시(시그니처)가 안 풀리는 현상 방지 */
@@ -2954,6 +2985,10 @@ export default function InvoiceCreatePage() {
         setInvoiceWorkPeriodPlaceOverride(
             snapshot.invoiceWorkPeriodPlaceOverride ?? null
         );
+        setInvoicePoNumberOverride(snapshot.invoicePoNumberOverride ?? null);
+        setInvoiceInvoiceNumberOverride(
+            snapshot.invoiceInvoiceNumberOverride ?? null
+        );
         setInvoiceInlineEditField(null);
         setInvoiceUndoRedoCounts({
             past: invoiceUndoPastRef.current.length,
@@ -2991,6 +3026,10 @@ export default function InvoiceCreatePage() {
         setInvoiceEngineTypeOverride(snapshot.invoiceEngineTypeOverride ?? null);
         setInvoiceWorkPeriodPlaceOverride(
             snapshot.invoiceWorkPeriodPlaceOverride ?? null
+        );
+        setInvoicePoNumberOverride(snapshot.invoicePoNumberOverride ?? null);
+        setInvoiceInvoiceNumberOverride(
+            snapshot.invoiceInvoiceNumberOverride ?? null
         );
         setInvoiceInlineEditField(null);
         setInvoiceUndoRedoCounts({
@@ -3040,6 +3079,8 @@ export default function InvoiceCreatePage() {
         setInvoiceHullNoOverride(null);
         setInvoiceEngineTypeOverride(null);
         setInvoiceWorkPeriodPlaceOverride(null);
+        setInvoicePoNumberOverride(null);
+        setInvoiceInvoiceNumberOverride(null);
         setInvoiceInlineEditField(null);
         showSuccess("최초 로드 상태로 되돌렸습니다.");
     }, [pushInvoiceUndoSnapshot, showError, showSuccess]);
@@ -3255,7 +3296,15 @@ export default function InvoiceCreatePage() {
                 getTravelChargeOverride(entry.id, person)?.target === "home"
         );
 
+    /** 자택↔강동동 공장이 걸린 이동은 출장지별 고정시간 대신 공장 기준 실제시간을 쓴다. */
+    const isGangdongHomeTravel = (entry: InvoiceTimesheetEntry): boolean =>
+        entry.descType === "이동" &&
+        (isGangdongHomeLeg(entry) || getGangdongViaHomeDirection(entry) !== null);
+
     const isHomeWorkSiteCommute = (entry: InvoiceTimesheetEntry): boolean => {
+        if (isGangdongHomeTravel(entry)) {
+            return false;
+        }
         const workPlace = normalizeLocationName(
             getPrimaryLocation(entry.location)
         );
@@ -3281,7 +3330,12 @@ export default function InvoiceCreatePage() {
         entry: InvoiceTimesheetEntry
     ): Pick<
         InvoiceTimesheetEntry,
-        "dateFrom" | "dateTo" | "timeFrom" | "timeTo" | "fixedHomeTravelWindowApplied"
+        | "dateFrom"
+        | "dateTo"
+        | "timeFrom"
+        | "timeTo"
+        | "fixedHomeTravelWindowApplied"
+        | "gangdongHomeLegTrimmed"
     > => {
         const originalTimeFrom = entry.timeFrom || "";
         const originalTimeTo = entry.timeTo || "";
@@ -3299,6 +3353,50 @@ export default function InvoiceCreatePage() {
                 timeFrom: entry.timeFrom,
                 timeTo: entry.timeTo,
                 fixedHomeTravelWindowApplied: false,
+            };
+        }
+
+        const gangdongViaDirection = getGangdongViaHomeDirection(entry);
+        if (gangdongViaDirection) {
+            const start = toDateSafe(entry.dateFrom, originalTimeFrom);
+            const end = toDateSafe(entry.dateTo, originalTimeTo);
+            const legMs = GANGDONG_HOME_LEG_HOURS * 60 * 60 * 1000;
+            if (
+                Number.isNaN(start.getTime()) ||
+                Number.isNaN(end.getTime()) ||
+                end.getTime() - start.getTime() <= legMs
+            ) {
+                return {
+                    dateFrom: entry.dateFrom,
+                    dateTo: entry.dateTo,
+                    timeFrom: entry.timeFrom,
+                    timeTo: entry.timeTo,
+                    fixedHomeTravelWindowApplied: false,
+                };
+            }
+            const trimmedStart =
+                gangdongViaDirection === "departure"
+                    ? new Date(start.getTime() + legMs)
+                    : start;
+            const trimmedEnd =
+                gangdongViaDirection === "arrival"
+                    ? new Date(end.getTime() - legMs)
+                    : end;
+            return {
+                dateFrom: formatDateKey(trimmedStart),
+                dateTo:
+                    formatTimeHHMM(trimmedEnd) === "00:00" &&
+                    trimmedEnd.getTime() > trimmedStart.getTime()
+                        ? formatDateKey(new Date(trimmedEnd.getTime() - 1))
+                        : formatDateKey(trimmedEnd),
+                timeFrom: formatTimeHHMM(trimmedStart),
+                timeTo:
+                    formatTimeHHMM(trimmedEnd) === "00:00" &&
+                    trimmedEnd.getTime() > trimmedStart.getTime()
+                        ? "24:00"
+                        : formatTimeHHMM(trimmedEnd),
+                fixedHomeTravelWindowApplied: true,
+                gangdongHomeLegTrimmed: true,
             };
         }
 
@@ -3657,6 +3755,10 @@ export default function InvoiceCreatePage() {
             return 0;
         }
 
+        if (isGangdongHomeLeg(entry)) {
+            return 0;
+        }
+
         const start = toDateSafe(entry.dateFrom, entry.timeFrom);
         const end = toDateSafe(entry.dateTo, entry.timeTo);
 
@@ -3664,7 +3766,14 @@ export default function InvoiceCreatePage() {
             return 0;
         }
 
-        return Math.floor((end.getTime() - start.getTime()) / 60000) / 60;
+        const hours = Math.floor((end.getTime() - start.getTime()) / 60000) / 60;
+        if (
+            !entry.gangdongHomeLegTrimmed &&
+            getGangdongViaHomeDirection(entry) !== null
+        ) {
+            return Math.max(0, hours - GANGDONG_HOME_LEG_HOURS);
+        }
+        return hours;
     };
 
     const calculateTravelHours = (entry: InvoiceTimesheetEntry): number => {
@@ -3676,6 +3785,10 @@ export default function InvoiceCreatePage() {
             !entry.timeTo
         ) {
             return 0;
+        }
+
+        if (isGangdongHomeTravel(entry)) {
+            return calculateRawTravelHours(entry);
         }
 
         const fixedHours = getHomeTravelHours(entry.location);
@@ -4084,6 +4197,8 @@ export default function InvoiceCreatePage() {
                     setInvoiceHullNoOverride(null);
                     setInvoiceEngineTypeOverride(null);
                     setInvoiceWorkPeriodPlaceOverride(null);
+                    setInvoicePoNumberOverride(null);
+                    setInvoiceInvoiceNumberOverride(null);
                     setInvoiceInlineEditField(null);
 
                     const rawEntriesForHoliday: InvoiceTimesheetEntry[] = validData.flatMap(
@@ -4132,7 +4247,8 @@ export default function InvoiceCreatePage() {
                     let hasManualOverride = false;
                     let hours = 0;
                     const fixedWindowHours =
-                        useFixedHomeWindow && entry.fixedHomeTravelWindowApplied
+                        (useFixedHomeWindow || entry.gangdongHomeLegTrimmed) &&
+                        entry.fixedHomeTravelWindowApplied
                         ? calculateRawTravelHours(entry)
                         : null;
 
@@ -4213,9 +4329,20 @@ export default function InvoiceCreatePage() {
                 };
                 allEntries.forEach(entry => {
                     if (!entry.dateFrom) return;
+                    const viaRawStartMs = getGangdongViaHomeDirection(entry)
+                        ? getEntryStartTime(entry)
+                        : null;
+                    const viaRawEndMs =
+                        viaRawStartMs !== null ? getEntryEndTime(entry) : null;
                     const adjustedEntry = {
                         ...entry,
                         ...getAdjustedTravelDateTimes(entry),
+                        ...(viaRawStartMs !== null && viaRawEndMs !== null
+                            ? {
+                                  gangdongViaRawStartMs: viaRawStartMs,
+                                  gangdongViaRawEndMs: viaRawEndMs,
+                              }
+                            : {}),
                     };
                     if (!adjustedEntry.dateFrom || !adjustedEntry.dateTo) return;
                     
@@ -4539,6 +4666,7 @@ export default function InvoiceCreatePage() {
                             getHomeTravelHours(journey[0].location) ?? 0;
                         const isCommute =
                             fixedHours > 0 &&
+                            !journey.some(isGangdongHomeTravel) &&
                             (isHomeWorkSiteCommute(journey[0]) ||
                                 journey.some(
                                     (item) =>
@@ -4592,6 +4720,44 @@ export default function InvoiceCreatePage() {
                         )
                     );
 
+                /** 자택↔강동동 공장 단독 이동은 청구 0시간이라 청구 구간(From/To)에서도 뺀다. */
+                const getBillableTravelWindowEntries = (
+                    entries: InvoiceTimesheetEntry[]
+                ): InvoiceTimesheetEntry[] => {
+                    const billable = entries.filter(
+                        (entry) => !isGangdongHomeLeg(entry)
+                    );
+                    return billable.length > 0 ? billable : entries;
+                };
+
+                /**
+                 * 원본 구간 기준 From/To 계산용. 강동동 공장 경유로 이미 잘라낸 구간은
+                 * 원본(자택 출발 시각)으로 되돌리지 않고 잘라낸 구간을 그대로 쓴다.
+                 */
+                const getRawTravelWindowEntries = (
+                    windowEntries: InvoiceTimesheetEntry[]
+                ): InvoiceTimesheetEntry[] => {
+                    const seen = new Set<number>();
+                    const result: InvoiceTimesheetEntry[] = [];
+                    windowEntries.forEach((entry) => {
+                        if (entry.gangdongHomeLegTrimmed) {
+                            result.push(entry);
+                            return;
+                        }
+                        entry.sourceEntryIds.forEach((entryId) => {
+                            if (seen.has(entryId)) {
+                                return;
+                            }
+                            seen.add(entryId);
+                            const raw = rawEntryById.get(entryId);
+                            if (raw) {
+                                result.push(raw);
+                            }
+                        });
+                    });
+                    return getBillableTravelWindowEntries(result);
+                };
+
                 const sumAllocatedTravelHoursForEntries = (
                     entries: InvoiceTimesheetEntry[]
                 ): number =>
@@ -4610,6 +4776,70 @@ export default function InvoiceCreatePage() {
                             return sum + calculateRawTravelHours(entry);
                         }, 0)
                     );
+
+                /**
+                 * 날짜별 구간은 기본 자택↔강동동 공장 시간으로 잘려 있다.
+                 * 그 시간이 다른 인원은 원래 구간에서 본인 시간만큼 다시 잘라
+                 * 당일 구간과 겹치는 부분만 남긴다. 남는 게 없으면 null.
+                 */
+                const applyPersonGangdongHomeLeg = (
+                    entry: InvoiceTimesheetEntry,
+                    person: string
+                ): InvoiceTimesheetEntry | null => {
+                    const legHours = getGangdongHomeLegHours(person);
+                    const direction = getGangdongViaHomeDirection(entry);
+                    const rawStartMs = entry.gangdongViaRawStartMs;
+                    const rawEndMs = entry.gangdongViaRawEndMs;
+                    const segmentStartMs = getEntryStartTime(entry);
+                    const segmentEndMs = getEntryEndTime(entry);
+                    if (
+                        legHours === GANGDONG_HOME_LEG_HOURS ||
+                        !direction ||
+                        rawStartMs === undefined ||
+                        rawEndMs === undefined ||
+                        segmentStartMs === null ||
+                        segmentEndMs === null
+                    ) {
+                        return entry;
+                    }
+
+                    const legMs = legHours * 60 * 60 * 1000;
+                    const windowStartMs =
+                        direction === "departure" ? rawStartMs + legMs : rawStartMs;
+                    const windowEndMs =
+                        direction === "arrival" ? rawEndMs - legMs : rawEndMs;
+                    const startMs = Math.max(segmentStartMs, windowStartMs);
+                    const endMs = Math.min(segmentEndMs, windowEndMs);
+                    if (endMs <= startMs) {
+                        return null;
+                    }
+
+                    return {
+                        ...entry,
+                        timeFrom:
+                            startMs === segmentStartMs
+                                ? entry.timeFrom
+                                : formatTimeHHMM(new Date(startMs)),
+                        timeTo:
+                            endMs === segmentEndMs
+                                ? entry.timeTo
+                                : formatTimeHHMM(new Date(endMs)),
+                        fixedHomeTravelWindowApplied: true,
+                        gangdongHomeLegTrimmed: true,
+                    };
+                };
+
+                const getDayEntriesForPerson = (
+                    entries: InvoiceTimesheetEntry[],
+                    person: string
+                ): InvoiceTimesheetEntry[] =>
+                    entries.flatMap((entry) => {
+                        if (!(entry.persons ?? []).includes(person)) {
+                            return [];
+                        }
+                        const personEntry = applyPersonGangdongHomeLeg(entry, person);
+                        return personEntry ? [personEntry] : [];
+                    });
 
                 sortedDates.forEach((date) => {
                     const dayEntries = entriesByDate.get(date)!;
@@ -4708,27 +4938,21 @@ export default function InvoiceCreatePage() {
 
                         const lastEntry = entries[entries.length - 1];
                         const fixedHours = getHomeTravelHours(lastEntry.location) ?? 0;
+                        const windowEntries = getBillableTravelWindowEntries(entries);
                         const earliest =
-                            entries
+                            windowEntries
                                 .map((entry) => entry.timeFrom)
                                 .filter((value): value is string => Boolean(value))
                                 .sort()[0] ?? null;
                         const latest =
-                            entries
+                            windowEntries
                                 .map((entry) => entry.timeTo)
                                 .filter((value): value is string => Boolean(value))
                                 .sort();
                         const latestValue =
                             latest.length > 0 ? latest[latest.length - 1] : null;
-                        const rawWindowEntries = Array.from(
-                            new Set(entries.flatMap((entry) => entry.sourceEntryIds))
-                        )
-                            .map((entryId) => rawEntryById.get(entryId))
-                            .filter(
-                                (
-                                    entry
-                                ): entry is InvoiceTimesheetEntry => Boolean(entry)
-                            );
+                        const rawWindowEntries =
+                            getRawTravelWindowEntries(windowEntries);
                         const rawEarliest =
                             rawWindowEntries
                                 .map((entry) => entry.timeFrom)
@@ -4783,6 +5007,7 @@ export default function InvoiceCreatePage() {
                         const usesHomeFixedCharge =
                             (override?.target === "home" && fixedHours > 0) ||
                             (fixedHours > 0 &&
+                                !entries.some(isGangdongHomeTravel) &&
                                 entries.some(
                                     (entry) =>
                                         isHomeWorkSiteCommute(entry) ||
@@ -4796,7 +5021,7 @@ export default function InvoiceCreatePage() {
                             const destination = getFinalDestination(lastEntry);
                             const returnsHome =
                                 normalizeLocationName(destination) === "자택" ||
-                                entries.some(
+                                windowEntries.some(
                                     (entry) =>
                                         entryHasHomeTravelOverride(entry) ||
                                         hasHomeInTravel(entry)
@@ -4883,6 +5108,7 @@ export default function InvoiceCreatePage() {
                                 note: entry.note,
                                 moveFrom: entry.moveFrom,
                                 moveTo: entry.moveTo,
+                                moveVia: entry.moveVia,
                                 location: entry.location,
                                 lunchWorked: entry.lunch_worked,
                                 clientDuplicated: entry.clientDuplicated === true,
@@ -4926,11 +5152,10 @@ export default function InvoiceCreatePage() {
                         ).sort();
 
                         allDayPersons.forEach((person) => {
-                            const personTravelEntries = sortedDayEntries.filter(
-                                (entry) =>
-                                    entry.descType === "이동" &&
-                                    (entry.persons ?? []).includes(person)
-                            );
+                            const personTravelEntries = getDayEntriesForPerson(
+                                sortedDayEntries,
+                                person
+                            ).filter((entry) => entry.descType === "이동");
 
                             splitTravelOnlyEntriesByGap(personTravelEntries, 2).forEach(
                                 (travelEntries) => {
@@ -5269,27 +5494,21 @@ export default function InvoiceCreatePage() {
                         const lastEntry = entries[entries.length - 1];
                         const fixedHours =
                             getHomeTravelHours(lastEntry.location) ?? 0;
+                        const windowEntries = getBillableTravelWindowEntries(entries);
                         const earliest =
-                            entries
+                            windowEntries
                                 .map((entry) => entry.timeFrom)
                                 .filter((value): value is string => Boolean(value))
                                 .sort()[0] ?? null;
                         const latest =
-                            entries
+                            windowEntries
                                 .map((entry) => entry.timeTo)
                                 .filter((value): value is string => Boolean(value))
                                 .sort();
                         const latestValue =
                             latest.length > 0 ? latest[latest.length - 1] : null;
-                        const rawWindowEntries = Array.from(
-                            new Set(entries.flatMap((entry) => entry.sourceEntryIds))
-                        )
-                            .map((entryId) => rawEntryById.get(entryId))
-                            .filter(
-                                (
-                                    entry
-                                ): entry is InvoiceTimesheetEntry => Boolean(entry)
-                            );
+                        const rawWindowEntries =
+                            getRawTravelWindowEntries(windowEntries);
                         const rawEarliest =
                             rawWindowEntries
                                 .map((entry) => entry.timeFrom)
@@ -5403,6 +5622,7 @@ export default function InvoiceCreatePage() {
                             (override?.target === "home" && fixedHours > 0) ||
                             (useFixedHomeHours &&
                                 fixedHours > 0 &&
+                                !entries.some(isGangdongHomeTravel) &&
                                 entries.some(
                                     (entry) =>
                                         isHomeWorkSiteCommute(entry) ||
@@ -5475,8 +5695,9 @@ export default function InvoiceCreatePage() {
                     };
 
                     const getPersonBlocks = (person: string) => {
-                        const personEntries = sortedDayEntries.filter((entry) =>
-                            (entry.persons ?? []).includes(person)
+                        const personEntries = getDayEntriesForPerson(
+                            sortedDayEntries,
+                            person
                         );
                         type PersonBlock = {
                             workEntries: InvoiceTimesheetEntry[];
@@ -6165,8 +6386,9 @@ export default function InvoiceCreatePage() {
                                 return [];
                             }
 
-                            const personEntries = sortedDayEntries.filter((entry) =>
-                                (entry.persons ?? []).includes(person)
+                            const personEntries = getDayEntriesForPerson(
+                                sortedDayEntries,
+                                person
                             );
 
                             const row = buildTravelOnlyRow(person, personEntries);
@@ -6603,6 +6825,7 @@ export default function InvoiceCreatePage() {
                                     note: entry.note,
                                     moveFrom: entry.moveFrom,
                                     moveTo: entry.moveTo,
+                                    moveVia: entry.moveVia,
                                     location: entry.location,
                                     lunchWorked: entry.lunch_worked,
                                     clientDuplicated:
@@ -6776,6 +6999,8 @@ export default function InvoiceCreatePage() {
         invoiceEngineTypeOverride !== null
             ? invoiceEngineTypeOverride
             : engineTypeBase;
+    const poNumberDisplay = invoicePoNumberOverride ?? "";
+    const invoiceNumberDisplay = invoiceInvoiceNumberOverride ?? "";
     /** Hull no. ↔ 잡디/타임시트 SHIP NAME 동일 값 */
     const hullNoDisplay = shipNameDisplay;
     const workItemDisplay = useMemo(
@@ -8824,7 +9049,14 @@ export default function InvoiceCreatePage() {
                   ? invoiceHullNoOverride
                   : field === "engineType"
                     ? invoiceEngineTypeOverride
-                    : invoiceWorkPeriodPlaceOverride;
+                    : field === "timesheetPoNumber" ||
+                        field === "rdTimesheetPoNumber" ||
+                        field === "jobDescriptionPoNumber" ||
+                        field === "invoicePoNumber"
+                      ? invoicePoNumberOverride
+                      : field === "invoiceNumber"
+                        ? invoiceInvoiceNumberOverride
+                        : invoiceWorkPeriodPlaceOverride;
         // blur 중복 호출 방지(Enter → unmount → blur)
         invoiceInlineEditSkipCommitRef.current = true;
         if (field === "shipName" || field === "hullNo") {
@@ -8869,6 +9101,15 @@ export default function InvoiceCreatePage() {
             setInvoiceWorkPlaceOverride(nextOverride);
         } else if (field === "engineType") {
             setInvoiceEngineTypeOverride(nextOverride);
+        } else if (
+            field === "timesheetPoNumber" ||
+            field === "rdTimesheetPoNumber" ||
+            field === "jobDescriptionPoNumber" ||
+            field === "invoicePoNumber"
+        ) {
+            setInvoicePoNumberOverride(nextOverride);
+        } else if (field === "invoiceNumber") {
+            setInvoiceInvoiceNumberOverride(nextOverride);
         } else {
             setInvoiceWorkPeriodPlaceOverride(nextOverride);
         }
@@ -8914,6 +9155,50 @@ export default function InvoiceCreatePage() {
             aria-label="인라인 수정"
         />
     );
+
+    const renderEditableInvoiceCard = (
+        field: InvoiceInlineEditFieldKey,
+        label: string,
+        displayValue: string,
+        defaultValue: string
+    ) => {
+        const isEditing = invoiceInlineEditField === field;
+        return (
+            <div
+                className={`group relative rounded-lg border border-gray-200 bg-white p-4 transition-shadow ${
+                    isEditing
+                        ? "shadow-sm ring-1 ring-blue-200"
+                        : "hover:shadow-sm hover:ring-1 hover:ring-blue-200"
+                }`}
+            >
+                {isEditing ? null : (
+                    <button
+                        type="button"
+                        className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group-hover:opacity-100"
+                        onClick={() =>
+                            startInvoiceInlineEdit(field, displayValue, defaultValue)
+                        }
+                        aria-label={`${label} 수정`}
+                    >
+                        <IconEdit className="h-4 w-4" />
+                    </button>
+                )}
+                <div className="mb-2 pr-10 text-xs font-semibold text-gray-700">
+                    {label}
+                </div>
+                {isEditing ? (
+                    renderInvoiceInlineEditInput({
+                        className:
+                            "w-full rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm text-gray-900 shadow-sm outline-none ring-2 ring-blue-500/20",
+                    })
+                ) : (
+                    <div className="text-sm text-gray-900">
+                        {displayValue || "—"}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const renderEditableInvoiceJobInfoRow = (
         field: InvoiceInlineEditFieldKey,
@@ -9251,235 +9536,6 @@ export default function InvoiceCreatePage() {
                     : null,
         };
     };
-    const inferWorkPlaceFromTravelSegmentsForBadge = (
-        leadingTravelEntries: TimesheetSourceEntryData[],
-        trailingTravelEntries: TimesheetSourceEntryData[]
-    ) => {
-        const lastLeadingTravelEntry =
-            leadingTravelEntries[leadingTravelEntries.length - 1];
-        const leadingDestination = lastLeadingTravelEntry
-            ? normalizeLocationName(
-                  getFinalDestination({
-                      ...lastLeadingTravelEntry,
-                      sourceEntryIds: [lastLeadingTravelEntry.id],
-                  } as InvoiceTimesheetEntry)
-              )
-            : "";
-        if (leadingDestination && leadingDestination !== "자택") {
-            return leadingDestination;
-        }
-
-        const firstTrailingTravelEntry = trailingTravelEntries[0];
-        const trailingOrigin = firstTrailingTravelEntry
-            ? normalizeLocationName(
-                  getTravelEntryOrigin({
-                      ...firstTrailingTravelEntry,
-                      sourceEntryIds: [firstTrailingTravelEntry.id],
-                  } as InvoiceTimesheetEntry)
-              )
-            : "";
-        if (trailingOrigin && trailingOrigin !== "자택") {
-            return trailingOrigin;
-        }
-
-        return "";
-    };
-
-    const getPersonDaySourceEntriesForBadge = (
-        person: string,
-        dateKey: string
-    ) => {
-        const byId = new Map<number, TimesheetSourceEntryData>();
-        for (const row of timesheetRows) {
-            if (row.date !== dateKey) {
-                continue;
-            }
-            for (const sourceEntry of row.sourceEntries) {
-                if (!(sourceEntry.persons ?? []).includes(person)) {
-                    continue;
-                }
-                if (!byId.has(sourceEntry.id)) {
-                    byId.set(sourceEntry.id, sourceEntry);
-                }
-            }
-        }
-        for (const data of workLogDataList) {
-            for (const raw of data.entries) {
-                if (raw.dateFrom !== dateKey) {
-                    continue;
-                }
-                if (!(raw.persons ?? []).includes(person)) {
-                    continue;
-                }
-                if (!byId.has(raw.id)) {
-                    byId.set(
-                        raw.id,
-                        mapWorkLogEntryToTimesheetSource(
-                            raw,
-                            data.workLog.id,
-                            data.workLog.location
-                        )
-                    );
-                }
-            }
-        }
-        return [...byId.values()].sort(compareTimesheetSourceEntriesByTimeThenId);
-    };
-
-    /** 사이드패널 `resolveBadgeTargetFromChargeResult`와 동일 */
-    const resolveTravelBadgeTargetFromChargeResult = (
-        chargeResult: { hours: number; kind: string },
-        entry: TimesheetSourceEntryData
-    ): TravelChargeOverrideTarget | null => {
-        const containsLodging = (entry.details ?? "").includes("숙소");
-        const containsHome =
-            (entry.details ?? "").includes("자택") ||
-            entry.moveFrom === "자택" ||
-            entry.moveTo === "자택";
-        const isHomeCharge =
-            chargeResult.kind === "home" ||
-            chargeResult.kind === "initial-home" ||
-            chargeResult.kind.endsWith("-home");
-        if (isHomeCharge) {
-            return "home";
-        }
-        if (chargeResult.hours === 1 && (containsLodging || containsHome)) {
-            return "lodging";
-        }
-        return null;
-    };
-
-    /** 사이드패널 `getTravelChargeResultForPerson`에 맞춘 청구 시간·종류 (배지·숙박 집계용) */
-    const getTravelChargeResultForBadge = (
-        entry: TimesheetSourceEntryData,
-        person: string
-    ): { hours: number; kind: string } => {
-        const override = getTravelChargeOverride(entry.id, person);
-        const fixedHours = getHomeTravelHours(entry.location ?? null) ?? 0;
-
-        if (override?.target === "lodging") {
-            return { hours: 1, kind: "continued" };
-        }
-        if (override?.target === "home" && fixedHours > 0) {
-            if (entry.clientHomeTravelSpilloverOf != null) {
-                return {
-                    hours: calculateRawTravelHours({
-                        ...entry,
-                        sourceEntryIds: [entry.id],
-                    } as InvoiceTimesheetEntry),
-                    kind: "home",
-                };
-            }
-            return { hours: fixedHours, kind: "home" };
-        }
-
-        const dateKey = entry.dateFrom ?? "";
-        const personEntries = getPersonDaySourceEntriesForBadge(person, dateKey);
-        const sorted = personEntries.map(
-            (sourceEntry) =>
-                ({
-                    ...sourceEntry,
-                    sourceEntryIds: [sourceEntry.id],
-                }) as InvoiceTimesheetEntry
-        );
-
-        let index = 0;
-        const leadingTravel: InvoiceTimesheetEntry[] = [];
-        while (index < sorted.length && sorted[index].descType === "이동") {
-            leadingTravel.push(sorted[index]);
-            index += 1;
-        }
-
-        if (leadingTravel.some((candidate) => candidate.id === entry.id)) {
-            const afterTravel: InvoiceTimesheetEntry[] = [];
-            const workEntries: InvoiceTimesheetEntry[] = [];
-
-            while (index < sorted.length && sorted[index].descType !== "이동") {
-                workEntries.push(sorted[index]);
-                index += 1;
-            }
-            while (index < sorted.length && sorted[index].descType === "이동") {
-                afterTravel.push(sorted[index]);
-                index += 1;
-            }
-
-            const workPlaces = new Set(
-                workEntries
-                    .map((workEntry) =>
-                        normalizeLocationName(
-                            getPrimaryLocation(
-                                workEntry.location ?? entry.location ?? null
-                            )
-                        )
-                    )
-                    .filter(Boolean)
-            );
-            const blockWorkPlace = inferWorkPlaceFromTravelSegmentsForBadge(
-                leadingTravel,
-                afterTravel
-            );
-
-            if (
-                workEntries.length > 0 &&
-                blockWorkPlace &&
-                workPlaces.has(blockWorkPlace)
-            ) {
-                return { hours: 1, kind: "continued" };
-            }
-
-            const hasHome = leadingTravel.some((travelEntry) =>
-                hasHomeInTravel(travelEntry)
-            );
-            if (hasHome && fixedHours > 0) {
-                return { hours: fixedHours, kind: "initial-home" };
-            }
-
-            const travelHours = roundHoursForInvoice(
-                leadingTravel.reduce(
-                    (sum, travelEntry) =>
-                        sum + calculateTravelHours(travelEntry),
-                    0
-                )
-            );
-            return { hours: travelHours, kind: "travel" };
-        }
-
-        const travelOnly = sorted.filter(
-            (candidate) => candidate.descType === "이동"
-        );
-        if (
-            travelOnly.some((candidate) => candidate.id === entry.id) &&
-            sorted.every((candidate) => candidate.descType === "이동")
-        ) {
-            const hasHome = travelOnly.some((travelEntry) =>
-                hasHomeInTravel(travelEntry)
-            );
-            if (hasHome && fixedHours > 0) {
-                return { hours: fixedHours, kind: "home" };
-            }
-            return {
-                hours: calculateTravelHours({
-                    ...entry,
-                    sourceEntryIds: [entry.id],
-                } as InvoiceTimesheetEntry),
-                kind: "travel",
-            };
-        }
-
-        const hours = calculateTravelHours({
-            ...entry,
-            sourceEntryIds: [entry.id],
-        } as InvoiceTimesheetEntry);
-        const hasHome = hasHomeInTravel({
-            ...entry,
-            sourceEntryIds: [entry.id],
-        } as InvoiceTimesheetEntry);
-        if (hasHome && fixedHours > 0 && hours === fixedHours) {
-            return { hours: fixedHours, kind: "home" };
-        }
-        return { hours, kind: "travel" };
-    };
-
     const getTravelBadgeTargetForPerson = (
         entry: TimesheetSourceEntryData,
         person: string
@@ -9493,11 +9549,7 @@ export default function InvoiceCreatePage() {
             return override.target;
         }
 
-        const chargeResult = getTravelChargeResultForBadge(entry, person);
-        return (
-            resolveTravelBadgeTargetFromChargeResult(chargeResult, entry) ??
-            getDefaultTravelChargeTargetForEntry(entry)
-        );
+        return resolveMoveEndpointBadge(entry.moveFrom, entry.moveTo)?.target ?? null;
     };
 
     const getTravelBadgeLabelForPerson = (
@@ -9508,25 +9560,8 @@ export default function InvoiceCreatePage() {
             return "";
         }
 
-        const travelOrigin = normalizeLocationName(getInitialOrigin(entry));
-        const travelDestination = normalizeLocationName(
-            getFinalDestination({
-                ...entry,
-                sourceEntryIds: [entry.id],
-            } as InvoiceTimesheetEntry)
-        );
-        const direction =
-            travelDestination === "자택"
-                ? "arrival"
-                : travelOrigin === "자택"
-                  ? "departure"
-                  : travelDestination === "숙소"
-                    ? "arrival"
-                    : travelOrigin === "숙소"
-                      ? "departure"
-                      : null;
-
-        if (!direction) {
+        const placeBadge = resolveMoveEndpointBadge(entry.moveFrom, entry.moveTo);
+        if (!placeBadge) {
             return "";
         }
 
@@ -9535,7 +9570,7 @@ export default function InvoiceCreatePage() {
             return "";
         }
 
-        if (direction === "departure") {
+        if (placeBadge.direction === "departure") {
             return target === "home" ? "자택→" : "숙소→";
         }
 
@@ -12161,6 +12196,7 @@ export default function InvoiceCreatePage() {
             note: entry.note,
             moveFrom: entry.moveFrom,
             moveTo: entry.moveTo,
+            moveVia: entry.moveVia,
             location,
             lunchWorked: entry.lunch_worked,
             clientDuplicated: entry.clientDuplicated === true,
@@ -12355,6 +12391,7 @@ export default function InvoiceCreatePage() {
                           note: fromSnap.note,
                           moveFrom: fromSnap.moveFrom,
                           moveTo: fromSnap.moveTo,
+                          moveVia: fromSnap.moveVia,
                           lunch_worked: fromSnap.lunch_worked,
                       }
                     : {
@@ -13429,8 +13466,8 @@ export default function InvoiceCreatePage() {
                         workPeriodAndPlace: invoiceWorkPeriodDisplay,
                         workItem: workItemDisplay,
                     },
-                    poNumber: "",
-                    invoiceNumber: "",
+                    poNumber: poNumberDisplay,
+                    invoiceNumber: invoiceNumberDisplay,
                     invoiceDate: invoiceDateDisplay,
                     validity: "14 days",
                     currencyUnit: "EUR",
@@ -13461,7 +13498,7 @@ export default function InvoiceCreatePage() {
                     mechanicNamesAndNumbers:
                         jobDescriptionPersonnel.mechanicDisplay,
                     workOrderFrom: workOrderFromDisplay,
-                    poNumber: "",
+                    poNumber: poNumberDisplay,
                     departureDisplay: jobDescriptionDepartureDisplay,
                     returnDisplay: jobDescriptionReturnDisplay,
                     manPowerLine: formatJobDescriptionManPowerLine(
@@ -13506,7 +13543,8 @@ export default function InvoiceCreatePage() {
                 blob,
                 buildInvoiceExcelDownloadFilename(
                     workLogDataList,
-                    workItemDisplay
+                    workItemDisplay,
+                    invoiceNumberDisplay
                 )
             );
             showSuccess("엑셀 파일을 저장했습니다.");
@@ -13531,6 +13569,8 @@ export default function InvoiceCreatePage() {
         hullNoDisplay,
         engineTypeDisplay,
         workItemDisplay,
+        invoiceNumberDisplay,
+        poNumberDisplay,
         invoiceWorkPeriodDisplay,
         invoiceDateDisplay,
         invoiceRecipientDisplay,
@@ -14030,7 +14070,36 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-gray-900 border-b border-l border-gray-300">
                                                             {workOrderFromDisplay}
                                                         </td>
-                                                        <td className="px-4 py-2 text-gray-900 border-b border-l border-gray-300"></td>
+                                                        <td className="border-b border-l border-gray-300 px-4 py-2 text-gray-900">
+                                                            {invoiceInlineEditField ===
+                                                            "rdTimesheetPoNumber" ? (
+                                                                renderInvoiceInlineEditInput({
+                                                                    className:
+                                                                        "w-full rounded-md border border-blue-300 bg-white px-2 py-1 text-sm text-gray-900 shadow-sm outline-none ring-2 ring-blue-500/20",
+                                                                })
+                                                            ) : (
+                                                                <div className="group flex items-center justify-between gap-2">
+                                                                    <span>
+                                                                        {poNumberDisplay ||
+                                                                            "—"}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 opacity-0 shadow-sm transition-all hover:border-blue-200 hover:text-blue-600 group-hover:opacity-100"
+                                                                        onClick={() =>
+                                                                            startInvoiceInlineEdit(
+                                                                                "rdTimesheetPoNumber",
+                                                                                poNumberDisplay,
+                                                                                ""
+                                                                            )
+                                                                        }
+                                                                        aria-label="P.O No. 수정"
+                                                                    >
+                                                                        <IconEdit className="h-4 w-4" />
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </td>
                                                     </tr>
                                                 </tbody>
                                             </table>
@@ -14564,10 +14633,12 @@ export default function InvoiceCreatePage() {
                                                                         "mechanic",
                                                                         section.people
                                                                     )}
-                                                                    <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                                                        <div className="text-xs font-semibold text-gray-700 mb-2">P.O No.</div>
-                                                                        <div className="text-sm text-gray-900"></div>
-                                                                    </div>
+                                                                    {renderEditableInvoiceCard(
+                                                                        "timesheetPoNumber",
+                                                                        "P.O No.",
+                                                                        poNumberDisplay,
+                                                                        ""
+                                                                    )}
                                                                     <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                                                         <div className="text-xs font-semibold text-gray-700 mb-2">Return date &amp; time, to place</div>
                                                                         <div className="text-sm text-gray-900">
@@ -14936,11 +15007,12 @@ export default function InvoiceCreatePage() {
                                             "mechanic",
                                             allTimesheetPeople
                                         )}
-                                        {/* Row 2 - Card 7: P.O No. */}
-                                        <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
-                                            <div className="text-xs font-semibold text-gray-700 mb-2">P.O No.</div>
-                                            <div className="text-sm text-gray-900"></div>
-                                        </div>
+                                        {renderEditableInvoiceCard(
+                                            "jobDescriptionPoNumber",
+                                            "P.O No.",
+                                            poNumberDisplay,
+                                            ""
+                                        )}
                                         {/* Row 2 - Card 8: Return date & time, to place */}
                                         <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col">
                                             <div className="text-xs font-semibold text-gray-700 mb-2">Return date & time, to place</div>
@@ -15038,14 +15110,18 @@ export default function InvoiceCreatePage() {
 
                                         {/* Invoice Numbers & Dates (Right Column) */}
                                         <div className="flex shrink-0 flex-col gap-3 md:justify-self-end">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm text-gray-700">P.O No:</span>
-                                                <span className="text-sm text-gray-900"></span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm text-gray-700">INVOICE No:</span>
-                                                <span className="text-sm text-gray-900"></span>
-                                            </div>
+                                            {renderEditableInvoiceJobInfoRow(
+                                                "invoicePoNumber",
+                                                "P.O No:",
+                                                poNumberDisplay,
+                                                ""
+                                            )}
+                                            {renderEditableInvoiceJobInfoRow(
+                                                "invoiceNumber",
+                                                "INVOICE No:",
+                                                invoiceNumberDisplay,
+                                                ""
+                                            )}
                                             <div className="flex items-center gap-2">
                                                 <span className="text-sm text-gray-700">Date:</span>
                                                 <span className="text-sm text-gray-900">{invoiceDateDisplay}</span>

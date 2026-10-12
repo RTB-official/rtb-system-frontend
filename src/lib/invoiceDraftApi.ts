@@ -64,6 +64,10 @@ export type InvoiceDraftPayloadV1 = {
     invoiceEngineTypeOverride?: string | null;
     /** 인보이스 Work Period & Place. 생략·null = 타임시트 기간 + WORK PLACE 합성 */
     invoiceWorkPeriodPlaceOverride?: string | null;
+    /** JOB DESCRIPTION / INVOICE P.O No. 생략·null = 빈 값 */
+    invoicePoNumberOverride?: string | null;
+    /** INVOICE No. 생략·null = 빈 값 */
+    invoiceInvoiceNumberOverride?: string | null;
     /** 타임시트 Meals ± 조정 (섹션·날짜 키 → delta) */
     mealCountAdjustmentsBySectionDate?: Record<
         string,
