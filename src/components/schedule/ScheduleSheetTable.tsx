@@ -6,6 +6,7 @@ import {
     SCHEDULE_TITLE_BG,
     type ScheduleSheetRow,
 } from "./scheduleTableShared";
+import ScheduleTableZoom from "./ScheduleTableZoom";
 
 /** Split text and wrap case-insensitive matches in a yellow mark. */
 export function highlightSearchMatches(
@@ -120,10 +121,7 @@ export default function ScheduleSheetTable({
     );
 
     return (
-        <div
-            ref={rootRef}
-            className="w-full overflow-x-auto rounded-sm bg-white shadow-sm"
-        >
+        <ScheduleTableZoom scrollerRef={rootRef}>
             <table className="w-full border-collapse min-w-[1280px] table-fixed">
                 <colgroup>
                     {SCHEDULE_COLUMNS.map((col) => (
@@ -253,6 +251,6 @@ export default function ScheduleSheetTable({
                     })}
                 </tbody>
             </table>
-        </div>
+        </ScheduleTableZoom>
     );
 }

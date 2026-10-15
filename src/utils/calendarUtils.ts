@@ -40,6 +40,57 @@ export function getSafeDateKey(d: Date): string {
     return `${y}-${m}-${day}`;
 }
 
+/** How a day sits inside a clicked departure–return range. */
+export type DateRangeRole = "single" | "pending" | "start" | "end" | "middle";
+
+export function getDateRangeRole(
+    dateKey: string,
+    start: string | null,
+    end: string | null,
+    pending = false
+): DateRangeRole | null {
+    if (!start || !end) return null;
+    const min = start < end ? start : end;
+    const max = start < end ? end : start;
+    if (dateKey < min || dateKey > max) return null;
+    if (min === max) return pending ? "pending" : "single";
+    if (dateKey === min) return "start";
+    if (dateKey === max) return "end";
+    return "middle";
+}
+
+/** Airline-style range: first click anchors, second click completes, third click clears. */
+export type ScheduleDateSelection = {
+    anchor: string | null;
+    start: string | null;
+    end: string | null;
+};
+
+export const EMPTY_SCHEDULE_DATE_SELECTION: ScheduleDateSelection = {
+    anchor: null,
+    start: null,
+    end: null,
+};
+
+export function applyScheduleDateClick(
+    current: ScheduleDateSelection,
+    dateKey: string
+): ScheduleDateSelection {
+    const selectionComplete = current.anchor == null && current.start != null;
+    if (selectionComplete) {
+        return EMPTY_SCHEDULE_DATE_SELECTION;
+    }
+    if (!current.anchor) {
+        return { anchor: dateKey, start: dateKey, end: dateKey };
+    }
+    if (current.anchor === dateKey) {
+        return { anchor: null, start: dateKey, end: dateKey };
+    }
+    const start = current.anchor < dateKey ? current.anchor : dateKey;
+    const end = current.anchor < dateKey ? dateKey : current.anchor;
+    return { anchor: null, start, end };
+}
+
 /**
  * 주 단위 이벤트 행 계산 함수 (연속된 일정을 위해)
  */
@@ -199,11 +250,12 @@ export function formatDateRange(startDate: string, endDate: string): string {
 /**
  * 컬럼 패딩 계산 (모바일에서 좌우 여백 축소)
  */
-export function getColumnPadding(index: number, isMobile?: boolean): string {
+export function getColumnPadding(index: number, isMobile?: boolean, uniform?: boolean): string {
     if (isMobile) {
         // 모바일: 좌우 대칭으로 7열 균등 유지
         return "px-1";
     }
+    if (uniform) return "";
     if (index === 0) return "pl-9 pr-4";
     if (index === 6) return "pl-4 pr-9";
     return "";

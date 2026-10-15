@@ -775,8 +775,7 @@ export default function ReportViewPage() {
                                         disabled={submitting}
                                         className="h-8! px-2! text-sm! md:h-12! md:px-4! md:text-base! shrink-0"
                                     >
-                                        <span className="hidden sm:inline">제출하기</span>
-                                        <span className="sm:hidden">제출</span>
+                                        제출
                                     </Button>
                                     <Button
                                         variant="outline"

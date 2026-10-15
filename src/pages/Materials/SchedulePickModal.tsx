@@ -6,9 +6,12 @@ import { fetchLatestScheduleSheet, type ScheduleVersionSheet } from "../../lib/s
 export interface SchedulePickItem {
     id: string;
     shipName: string;
+    engineType: string;
+    workLocation: string;
     period: string;
     workItem: string;
     teamMember: string;
+    car: string;
     customerCompany: string;
     customerContact: string;
 }
@@ -63,6 +66,7 @@ export default function SchedulePickModal({ isOpen, onClose, onSelect }: Schedul
             onClose={onClose}
             title={sheet ? `일정 ${sheet.versionKey}` : "일정"}
             maxWidth="max-w-[720px]"
+            className="h-[90vh]"
         >
             {loading ? (
                 <div className="flex flex-col gap-3">
@@ -84,9 +88,12 @@ export default function SchedulePickModal({ isOpen, onClose, onSelect }: Schedul
                                 onSelect({
                                     id: row.id,
                                     shipName: row.shipName,
+                                    engineType: row.engineType,
+                                    workLocation: row.workLocation,
                                     period: row.period,
                                     workItem: row.workItem,
                                     teamMember: row.teamMember,
+                                    car: row.car,
                                     customerCompany: row.customerCompany,
                                     customerContact: row.customerContact,
                                 })

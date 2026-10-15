@@ -437,6 +437,56 @@ export const IconChevronLeft = (props: { className?: string }) => (
     </svg>
 );
 
+export const IconArrowUp = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M12 19V5" />
+        <path d="M6 11l6-6 6 6" />
+    </svg>
+);
+
+export const IconArrowDown = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M12 5v14" />
+        <path d="M6 13l6 6 6-6" />
+    </svg>
+);
+
+export const IconPaste = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+        <path d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z" />
+        <path d="M9 12h6" />
+        <path d="M9 16h6" />
+    </svg>
+);
+
 export const IconChevronRight = (props: { className?: string }) => (
     <svg
         className={props.className || "w-4 h-4"}

@@ -871,7 +871,7 @@ if (newFiles.length > 0) {
                     title="보고서 수정"
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
-                        <div className="flex items-center gap-3">
+                        <div className="hidden md:flex items-center gap-3">
                             <button
                                 onClick={handleBackClick}
                                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
@@ -899,7 +899,7 @@ if (newFiles.length > 0) {
                                     disabled={savingDraft}
                                     className="md:h-12 md:px-4 md:text-base"
                                 >
-                                    {savingDraft ? "저장 중..." : "임시 저장"}
+                                    {savingDraft ? "저장 중..." : "임시"}
                                 </Button>
                             <Button
                                 variant="primary"
@@ -908,10 +908,7 @@ if (newFiles.length > 0) {
                                 disabled={submitting}
                                 className="md:h-12 md:px-4 md:text-base"
                             >
-                                <span className="hidden sm:inline">
-                                    {submitting ? "제출 중..." : "제출하기"}
-                                </span>
-                                <span className="sm:hidden">{submitting ? "제출 중" : "제출"}</span>
+                                {submitting ? "제출 중..." : "제출"}
                             </Button>
                         </div>
                     }

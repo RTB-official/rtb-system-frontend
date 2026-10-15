@@ -79,7 +79,7 @@ export const LOCATIONS = [
 ];
 
 // 운행차량 목록
-export const VEHICLES = ['5423', '4272', '0892', '5739', '0598', '7203', '6297', '카니발'];
+export const VEHICLES = ['5423', '4272', '0598', '5739', '7203', '6298', '카니발', '레이'];
 
 // 자재 단위 매핑
 export const MATERIAL_UNITS: Record<string, string> = {

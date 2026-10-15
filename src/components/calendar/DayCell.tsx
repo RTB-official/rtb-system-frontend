@@ -2,6 +2,7 @@ import React from "react";
 import CalendarTag from "../common/CalendarTag";
 import { CalendarEvent } from "../../types";
 import { CELL_PADDING_LEFT, CELL_PADDING_RIGHT } from "../../utils/calendarConstants";
+import type { DateRangeRole } from "../../utils/calendarUtils";
 
 interface WeekEventSegment {
     event: CalendarEvent;
@@ -24,6 +25,7 @@ interface DayCellProps {
     tagHeight: number;
     tagSpacing: number;
     tagLayerTop: number;
+    tagInsetLeft?: number;
     isMobile?: boolean;
     visibleSegments: WeekEventSegment[];
     week: { date: Date; inMonth: boolean }[];
@@ -34,6 +36,8 @@ interface DayCellProps {
     onMouseDown: (e: React.MouseEvent) => void;
     onMouseEnter: () => void;
     onClick: (e: React.MouseEvent) => void;
+    rangeRole?: DateRangeRole | null;
+    allowOutsideMonthSelect?: boolean;
     getEventsForDate: (dateKey: string) => CalendarEvent[];
     onCellHeightChange?: (dateKey: string, height: number) => void;
 }
@@ -52,6 +56,7 @@ const DayCell: React.FC<DayCellProps> = ({
     tagHeight,
     tagSpacing,
     tagLayerTop,
+    tagInsetLeft = 0,
     visibleSegments,
     week,
     getSafeDateKey,
@@ -61,6 +66,8 @@ const DayCell: React.FC<DayCellProps> = ({
     onMouseDown,
     onMouseEnter,
     onClick,
+    rangeRole = null,
+    allowOutsideMonthSelect = false,
     getEventsForDate,
     onCellHeightChange,
     isMobile = false,
@@ -113,6 +120,27 @@ const DayCell: React.FC<DayCellProps> = ({
     // 공휴일과 일반 이벤트 분리 (공휴일은 제일 위에 배치)
     const holidaySegments = visibleSegments.filter(seg => seg.event.isHoliday);
     const nonHolidaySegments = visibleSegments.filter(seg => !seg.event.isHoliday);
+
+    const pointsRight = rangeRole === "pending" || rangeRole === "start";
+    const pointsLeft = rangeRole === "end";
+    const isRangeMarker =
+        rangeRole === "single" || pointsRight || pointsLeft;
+    const isWeekdayHoliday =
+        date.getDay() !== 0 &&
+        date.getDay() !== 6 &&
+        getEventsForDate(dateKey).some((event) => event.isHoliday);
+    const canSelect = inMonth || allowOutsideMonthSelect;
+
+    const placeBesideDate = (left: string, width: string) => {
+        if (!tagInsetLeft) return { left, width };
+        const baseLeft = left.endsWith("px") ? Number.parseFloat(left) : 0;
+        const nextLeft = Math.max(baseLeft, tagInsetLeft);
+        const extra = nextLeft - baseLeft;
+        return {
+            left: `${nextLeft}px`,
+            width: extra > 0 ? `calc(${width} - ${extra}px)` : width,
+        };
+    };
     return (
         <div
             key={dayIdx}
@@ -127,8 +155,10 @@ const DayCell: React.FC<DayCellProps> = ({
             onMouseDown={onMouseDown}
             onMouseEnter={onMouseEnter}
             onClick={onClick}
+            aria-selected={rangeRole != null}
+            data-range-role={rangeRole ?? undefined}
             className={`p-1 md:p-2 relative min-w-0 ${dayIdx < 6 ? "border-r border-gray-200" : ""
-                } ${inMonth ? "cursor-pointer" : "cursor-default"
+                } ${canSelect ? "cursor-pointer" : "cursor-default"
                 } transition-colors select-none flex flex-col ${isInDragRange
                     ? "bg-blue-50"
                     : inMonth
@@ -142,19 +172,51 @@ const DayCell: React.FC<DayCellProps> = ({
                 isolation: 'isolate',
             }}
         >
-            <div className={`${columnPadding} flex items-start min-w-0`}>
+            {rangeRole && rangeRole !== "single" && rangeRole !== "pending" && (
+                <div
+                    aria-hidden
+                    className={`pointer-events-none absolute z-0 bg-yellow-200 top-1 h-6 md:top-2 md:h-[1.875rem] ${
+                        rangeRole === "start"
+                            ? "right-0 left-5 md:left-[31px]"
+                            : rangeRole === "end"
+                                ? "left-0 w-5 md:w-[31px]"
+                                : "inset-x-0"
+                    }`}
+                />
+            )}
+            <div className={`${columnPadding} relative z-20 flex items-start min-w-0`}>
                 <div className={`${isMobile ? "w-6 h-6" : "w-7.5 h-7.5"} flex flex-shrink-0 items-center justify-center relative`}>
-                    {isToday && (
-                        <div className="absolute inset-0 rounded-full bg-blue-500" />
+                    {(isToday || isRangeMarker) && (
+                        <div
+                            aria-hidden
+                            className={`absolute inset-0 ${
+                                isToday && !isRangeMarker
+                                    ? "rounded-full bg-blue-500"
+                                    : pointsRight || pointsLeft
+                                        ? "bg-yellow-400"
+                                        : "rounded-full bg-yellow-400"
+                            }`}
+                            style={
+                                pointsRight
+                                    ? { clipPath: "polygon(0% 0%, 68% 0%, 100% 50%, 68% 100%, 0% 100%)" }
+                                    : pointsLeft
+                                        ? { clipPath: "polygon(32% 0%, 100% 0%, 100% 100%, 32% 100%, 0% 50%)" }
+                                        : undefined
+                            }
+                        />
                     )}
                     <span
                         data-date-number
                         dir="ltr"
-                        className={`relative z-10 font-medium tabular-nums ${isMobile ? "text-[13px]" : "text-[17px]"} ${isToday
+                        className={`relative z-10 font-medium tabular-nums ${isMobile ? "text-[13px]" : "text-[17px]"} ${
+                            pointsRight ? "-translate-x-0.5" : pointsLeft ? "translate-x-0.5" : ""
+                        } ${isRangeMarker
+                            ? "text-gray-900"
+                            : isToday
                             ? "text-white"
                             : !inMonth
                                 ? "text-gray-400"
-                                : date.getDay() === 0
+                                : date.getDay() === 0 || isWeekdayHoliday
                                     ? "text-red-500"
                                     : date.getDay() === 6
                                         ? "text-blue-500"
@@ -216,6 +278,7 @@ const DayCell: React.FC<DayCellProps> = ({
                         width = "100%";
                         left = "0px";
                     }
+                    ({ left, width } = placeBesideDate(left, width));
 
                     // 공휴일도 rowIndex 기준으로 배치 (우선순위 낮춤)
                     const top = segment.rowIndex * (tagHeight + tagSpacing);
@@ -278,6 +341,7 @@ const DayCell: React.FC<DayCellProps> = ({
                         width = "100%";
                         left = "0px";
                     }
+                    ({ left, width } = placeBesideDate(left, width));
 
                     // rowIndex로 위치 계산
                     const top = segment.rowIndex * (tagHeight + tagSpacing);

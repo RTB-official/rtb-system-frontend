@@ -10,6 +10,8 @@ interface CalendarHeaderProps {
     onNextMonth: () => void;
     onGoToday: () => void;
     isMobile?: boolean;
+    /** Tighter title and padding for embedding under another page. */
+    compact?: boolean;
 }
 
 export default function CalendarHeader({
@@ -19,29 +21,36 @@ export default function CalendarHeader({
     onNextMonth,
     onGoToday,
     isMobile = false,
+    compact = false,
 }: CalendarHeaderProps) {
     return (
-        <div className="flex items-center justify-between mb-4 md:mb-6 px-4 md:px-6 lg:px-9">
-            <h2 className="text-xl md:text-3xl font-bold">
+        <div
+            className={
+                compact
+                    ? "mb-3 flex items-center justify-between"
+                    : "mb-4 flex items-center justify-between px-4 md:mb-6 md:px-6 lg:px-9"
+            }
+        >
+            <h2 className={compact ? "text-lg font-bold" : "text-xl font-bold md:text-3xl"}>
                 {year}년 {month + 1}월
             </h2>
             <div className="flex items-center gap-1">
                 <Button
                     variant="outline"
-                    size={isMobile ? "sm" : "md"}
+                    size={compact || isMobile ? "sm" : "md"}
                     onClick={onPrevMonth}
                     icon={<IconChevronLeft />}
                 />
                 <Button
                     variant="outline"
-                    size={isMobile ? "sm" : "md"}
+                    size={compact || isMobile ? "sm" : "md"}
                     onClick={onGoToday}
                 >
                     오늘
                 </Button>
                 <Button
                     variant="outline"
-                    size={isMobile ? "sm" : "md"}
+                    size={compact || isMobile ? "sm" : "md"}
                     onClick={onNextMonth}
                     icon={<IconChevronRight />}
                 />
@@ -53,7 +62,13 @@ export default function CalendarHeader({
 /**
  * 요일 헤더 컴포넌트 (반응형)
  */
-export function WeekDayHeader({ isMobile = false }: { isMobile?: boolean }) {
+export function WeekDayHeader({
+    isMobile = false,
+    uniformColumns = false,
+}: {
+    isMobile?: boolean;
+    uniformColumns?: boolean;
+}) {
     const weekDays = ["일", "월", "화", "수", "목", "금", "토"];
 
     return (
@@ -68,7 +83,7 @@ export function WeekDayHeader({ isMobile = false }: { isMobile?: boolean }) {
                             : "text-gray-800"
                         }`}
                 >
-                    <div className={`${getColumnPadding(i, isMobile)}`}>
+                    <div className={`${getColumnPadding(i, isMobile, uniformColumns)}`}>
                         <div className="w-6 h-6 md:w-8 md:h-8 flex items-center justify-center">
                             {d}
                         </div>

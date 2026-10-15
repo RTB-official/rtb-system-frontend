@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import ActionMenu from "./common/ActionMenu";
-import { IconCalendar, IconVacation, IconCard } from "./icons/Icons";
+import { IconCalendar, IconPerson, IconVacation, IconCard } from "./icons/Icons";
 
 interface Props {
     isOpen: boolean;
@@ -9,6 +9,9 @@ interface Props {
     position?: { x: number; y: number };
     onClose: () => void;
     selectedDate?: string | null;
+    /** Schedule registration shows only 일정 추가 and 개인 일정. */
+    variant?: "dashboard" | "schedule";
+    onAddSchedule?: () => void;
 }
 
 export default function CalendarMenu({
@@ -17,8 +20,41 @@ export default function CalendarMenu({
     position,
     onClose,
     selectedDate,
+    variant = "dashboard",
+    onAddSchedule,
 }: Props) {
     const navigate = useNavigate();
+    const itemClass =
+        "w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer font-medium";
+
+    if (variant === "schedule") {
+        return (
+            <ActionMenu
+                isOpen={isOpen}
+                anchorEl={anchorEl}
+                position={position}
+                onClose={onClose}
+                width="w-44"
+                placement="right"
+            >
+                <button
+                    type="button"
+                    className={itemClass}
+                    onClick={() => {
+                        onAddSchedule?.();
+                        onClose();
+                    }}
+                >
+                    <IconCalendar className="w-6 h-6 text-gray-700" />
+                    일정 추가
+                </button>
+                <button type="button" className={itemClass} onClick={onClose}>
+                    <IconPerson className="w-6 h-6 text-gray-700" />
+                    개인 일정
+                </button>
+            </ActionMenu>
+        );
+    }
 
     return (
         <ActionMenu
