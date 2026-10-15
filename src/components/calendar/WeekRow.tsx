@@ -1,7 +1,7 @@
 import React from "react";
 import DayCell from "./DayCell";
 import { CalendarEvent } from "../../types";
-import { isVacationEvent, CALENDAR_TAG_ICON_SPACING, CALENDAR_TAG_ICON_SIZES } from "../../utils/calendarUtils";
+import { isVacationEvent, CALENDAR_TAG_ICON_SPACING, CALENDAR_TAG_ICON_SIZES, getDateRangeRole } from "../../utils/calendarUtils";
 import { CELL_PADDING_LEFT, TAG_INNER_PADDING_LEFT } from "../../utils/calendarConstants";
 import { useCalendarTagVisibility } from "../../hooks/useCalendarTagVisibility";
 
@@ -34,13 +34,31 @@ interface WeekRowProps {
     onDeleteEvent: (eventId: string) => void;
     onEventClick: (event: CalendarEvent, e: React.MouseEvent) => void;
     onDateClick: (dateKey: string, e: React.MouseEvent) => void;
+    onDateHover?: (dateKey: string) => void;
+    selectionStart?: string | null;
+    selectionEnd?: string | null;
+    /** First click is waiting for the second date. */
+    selectionPending?: boolean;
+    allowOutsideMonthSelect?: boolean;
     onDragStart: (dateKey: string, e: React.MouseEvent) => void;
     onDragEnter: (dateKey: string) => void;
     onHiddenCountClick: (dateKey: string, hiddenEventIds: string[]) => void;
     onCellHeightChange?: (dateKey: string, height: number) => void;
+    tagsBesideDate?: boolean;
+    uniformColumns?: boolean;
+    /** Keep this week at a fixed height instead of sharing leftover space. */
+    rowHeight?: number;
 }
 
 const pad = (n: number) => (n < 10 ? "0" + n : String(n));
+
+/** Left edge of an event bar that sits to the right of the date number. */
+function dateTagInset(dayIdx: number, isMobile: boolean, uniform = false): number {
+    if (isMobile) return 30;
+    if (!uniform && dayIdx === 0) return 68;
+    if (!uniform && dayIdx === 6) return 48;
+    return 36;
+}
 
 const WeekRow: React.FC<WeekRowProps> = ({
     week,
@@ -63,10 +81,18 @@ const WeekRow: React.FC<WeekRowProps> = ({
     onDeleteEvent,
     onEventClick,
     onDateClick,
+    onDateHover,
+    selectionStart = null,
+    selectionEnd = null,
+    selectionPending = false,
+    allowOutsideMonthSelect = false,
     onDragStart,
     onDragEnter,
     onHiddenCountClick,
     onCellHeightChange,
+    tagsBesideDate = false,
+    uniformColumns = false,
+    rowHeight,
 }) => {
     // 각 날짜별로 보여줄 태그와 숨길 태그 계산
     const dateTagInfo = useCalendarTagVisibility(
@@ -128,7 +154,10 @@ const WeekRow: React.FC<WeekRowProps> = ({
     };
 
     return (
-        <div className="flex-1 grid grid-cols-7 border-b border-gray-200 relative" style={{ overflowX: 'visible' }}>
+        <div
+            className={`${rowHeight ? "shrink-0" : "flex-1"} grid grid-cols-7 border-b border-gray-200 relative`}
+            style={{ overflowX: "visible", height: rowHeight }}
+        >
             {/* 연속된 태그의 텍스트를 WeekRow 레벨에 배치하여 전체 이벤트 너비에 걸쳐 표시 */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 {cellWidth > 0 && weekEventRows
@@ -169,7 +198,10 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         const totalEventWidth = visibleDuration * cellWidth;
 
                         // 첫 셀의 패딩: 셀 패딩(12px) + 태그 내부 패딩(4px)
-                        const firstCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT;
+                        const firstCellPadding =
+                            (tagsBesideDate
+                                ? dateTagInset(startDayIdx, isMobile, uniformColumns)
+                                : CELL_PADDING_LEFT) + TAG_INNER_PADDING_LEFT;
                         const lastCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT + 6;
 
                         const isHoliday = !!segment.event.isHoliday;
@@ -287,6 +319,9 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         tagHeight={tagHeight}
                         tagSpacing={tagSpacing}
                         tagLayerTop={tagLayerTop}
+                        tagInsetLeft={
+                            tagsBesideDate ? dateTagInset(dayIdx, isMobile, uniformColumns) : 0
+                        }
                         isMobile={isMobile}
                         visibleSegments={
                             cellHeight > 0
@@ -304,13 +339,21 @@ const WeekRow: React.FC<WeekRowProps> = ({
                             if (isDragging && dragStart) {
                                 onDragEnter(dateKey);
                             }
+                            onDateHover?.(dateKey);
                         }}
                         onClick={(e) => {
-                            if (!inMonth) return;
+                            if (!inMonth && !allowOutsideMonthSelect) return;
                             if (!isDragging && !dragStart) {
                                 onDateClick(dateKey, e);
                             }
                         }}
+                        rangeRole={getDateRangeRole(
+                            dateKey,
+                            selectionStart,
+                            selectionEnd,
+                            selectionPending
+                        )}
+                        allowOutsideMonthSelect={allowOutsideMonthSelect}
                         onCellHeightChange={onCellHeightChange}
                     />
                 );

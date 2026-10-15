@@ -5,7 +5,9 @@ import Select from "../common/Select";
 import Button from "../common/Button";
 import RequiredIndicator from "../ui/RequiredIndicator";
 import { useMemo, useRef, useState } from "react";
-import { IconClose } from "../icons/Icons";
+import { IconCalendar, IconClose } from "../icons/Icons";
+import SchedulePickModal, { type SchedulePickItem } from "../../pages/Materials/SchedulePickModal";
+import { supervisorsFromCustomer, valuesFromSchedule } from "../../utils/scheduleSupervisors";
 import {
     useWorkReportStore,
     ORDER_PERSONS,
@@ -18,9 +20,11 @@ import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocomplet
 type BasicInfoSectionProps = {
     /** 이전 작업 불러오기 최대 건수 (미지정 시 전체) */
     previousWorkLimit?: number;
+    /** 우측 상단 일정 선택 */
+    schedulePicker?: boolean;
 };
 
-export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSectionProps) {
+export default function BasicInfoSection({ previousWorkLimit, schedulePicker = false }: BasicInfoSectionProps) {
     const {
         vessel,
         setVessel,
@@ -31,6 +35,7 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
         orderPersons,
         addOrderPerson,
         removeOrderPerson,
+        setOrderPersons,
         orderPersonCustom,
         setOrderPersonCustom,
         locations,
@@ -38,8 +43,12 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
         removeLocation,
         locationCustom,
         setLocationCustom,
+        setLocations,
         vehicles,
         toggleVehicle,
+        setVehicles,
+        setWorkers,
+        allStaff,
         subject,
         setSubject,
     } = useWorkReportStore();
@@ -58,6 +67,25 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
     const [isAddingLocation, setIsAddingLocation] = useState(false);
     const isAddingLocationRef = useRef(false);
     const purposeInputRef = useRef<HTMLInputElement>(null);
+    const [scheduleOpen, setScheduleOpen] = useState(false);
+
+    const applySchedule = (item: SchedulePickItem) => {
+        const supervisors = supervisorsFromCustomer(item.customerCompany, item.customerContact);
+        const staffNames = allStaff.map((member) => member.name.trim()).filter(Boolean);
+        setVessel(item.shipName.trim().toUpperCase());
+        setEngine(item.engineType.trim());
+        setOrderGroup(supervisors.group);
+        setOrderPersons(supervisors.persons);
+        setOrderPersonCustom("");
+        setSelectedOrderPerson("");
+        setLocations(valuesFromSchedule(item.workLocation, LOCATIONS));
+        setLocationCustom("");
+        setSelectedLocation("");
+        setVehicles(valuesFromSchedule(item.car, VEHICLES));
+        setWorkers(valuesFromSchedule(item.teamMember, staffNames));
+        setSubject(item.workItem.replace(/\s+/g, " ").trim());
+        setScheduleOpen(false);
+    };
 
     const orderPersonOptions = useMemo(() => {
         if (!orderGroup || orderGroup === "OTHER" || orderGroup === "MITSUI") return [];
@@ -174,7 +202,24 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
     }, [subject]);
 
     return (
-        <SectionCard title="기본 정보">
+        <>
+        <SectionCard
+            title="기본 정보"
+            headerContent={
+                schedulePicker ? (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="lg"
+                        onClick={() => setScheduleOpen(true)}
+                        icon={<IconCalendar className="w-5 h-5" />}
+                        aria-label="일정"
+                        title="일정"
+                        className="h-auto! w-auto! px-0! text-gray-700! hover:bg-transparent! focus:ring-0! focus:ring-offset-0!"
+                    />
+                ) : undefined
+            }
+        >
             <div className="flex flex-col gap-5 md:gap-7">
                 {/* 이전 작업 기본정보 복사 + 참관감독 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:items-start">
@@ -381,5 +426,13 @@ export default function BasicInfoSection({ previousWorkLimit }: BasicInfoSection
                 </div>
             </div>
         </SectionCard>
+        {schedulePicker && (
+            <SchedulePickModal
+                isOpen={scheduleOpen}
+                onClose={() => setScheduleOpen(false)}
+                onSelect={applySchedule}
+            />
+        )}
+        </>
     );
 }

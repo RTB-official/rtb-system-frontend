@@ -89,6 +89,8 @@ interface ActionMenuProps {
     showLogout?: boolean;
     placement?: "right" | "bottom-right" | "bottom-left";
     width?: string;
+    /** Used only to keep the menu inside the viewport. */
+    estimatedHeight?: number;
     children?: React.ReactNode;
     userDisplayName?: string;
     userEmail?: string;
@@ -113,6 +115,7 @@ export default function ActionMenu({
     showLogout = true,
     placement = "bottom-right",
     width = "w-64",
+    estimatedHeight = 220,
     children,
     userDisplayName,
     userEmail,
@@ -165,7 +168,7 @@ export default function ActionMenu({
     };
 
     const menuWidthPx = getWidthValue(width);
-    const menuHeightPx = 220; // CalendarMenu 항목 3개 기준 예상 높이
+    const menuHeightPx = estimatedHeight;
     let top = 0;
     let left = 0;
 

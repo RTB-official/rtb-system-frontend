@@ -3,12 +3,13 @@ import { createPortal } from "react-dom";
 import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
+import Tabs from "../../components/common/Tabs";
 import SectionCard from "../../components/ui/SectionCard";
 import Input from "../../components/common/Input";
 import Select from "../../components/common/Select";
 import TextInput from "../../components/ui/TextInput";
 import Button from "../../components/common/Button";
-import { IconClose, IconImage, IconPlus, IconSearch, IconUpload } from "../../components/icons/Icons";
+import { IconCalendar, IconClose, IconImage, IconPlus, IconSearch, IconUpload } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
     createMaterialPurchase,
@@ -22,6 +23,7 @@ import Chip from "../../components/ui/Chip";
 import ImagePreviewModal from "../../components/ui/ImagePreviewModal";
 import SchedulePickModal, { type SchedulePickItem } from "./SchedulePickModal";
 import { EXPENSE_CURRENCY_OPTIONS, ORDER_PERSONS, formatCurrency, parseCurrency, sanitizeDecimalAmountInput } from "../../store/workReportStore";
+import { supervisorsFromCustomer } from "../../utils/scheduleSupervisors";
 import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocompleteOptions";
 
 type LineReceipt = {
@@ -246,38 +248,6 @@ function revokeReceipts(receipts: LineReceipt[]) {
     });
 }
 
-function orderGroupFromCustomer(company: string): string {
-    const normalized = company.replace(/\s+/g, "").toLowerCase();
-    if (!normalized) return "";
-    if (normalized.includes("prime")) return "PRIME";
-    if (normalized.includes("mitsui")) return "MITSUI";
-    if (normalized.includes("elu") || normalized.includes("leo")) return "ELU";
-    return "";
-}
-
-function supervisorNamesFromContact(contact: string): string[] {
-    return [
-        ...new Set(
-            contact
-                .split(/[,、·/\n]+/)
-                .map((name) => name.replace(/감독/g, "").trim())
-                .filter(Boolean)
-        ),
-    ];
-}
-
-function supervisorsFromCustomer(company: string, contact: string): { group: string; persons: string[] } {
-    const persons = supervisorNamesFromContact(contact);
-    const companyGroup = orderGroupFromCustomer(company);
-    if (companyGroup) return { group: companyGroup, persons };
-    const matchedGroup = (["ELU", "PRIME"] as const).find((group) =>
-        persons.length > 0 && persons.every((name) => (ORDER_PERSONS[group] ?? []).includes(name))
-    );
-    if (matchedGroup) return { group: matchedGroup, persons };
-    if (persons.length === 0 && !company.trim()) return { group: "", persons: [] };
-    return { group: "OTHER", persons };
-}
-
 const CURRENCY_MARK: Record<string, string> = {
     원: "₩",
     엔: "¥",
@@ -315,6 +285,9 @@ export default function MaterialPurchasePage() {
     } | null>(null);
     const skipWorkFieldsIntro = useRef(true);
     const formColumnRef = useRef<HTMLDivElement>(null);
+    const workFieldsShellRef = useRef<HTMLDivElement>(null);
+    const workFieldsContentRef = useRef<HTMLDivElement>(null);
+    const workFieldsSpacerRef = useRef<HTMLDivElement>(null);
     const [historyLineId, setHistoryLineId] = useState<string | null>(null);
     const [historyDismissedQuery, setHistoryDismissedQuery] = useState<string | null>(null);
     const [historyItems, setHistoryItems] = useState<MaterialPurchaseListItem[]>([]);
@@ -434,8 +407,35 @@ export default function MaterialPurchasePage() {
             setWorkFieldsOpen(false);
             return;
         }
+        const spacer = workFieldsSpacerRef.current;
+        if (spacer) {
+            spacer.style.transition = "none";
+            spacer.style.height = "0px";
+        }
         setWorkFieldsOpen(false);
     }, [purchaseKind]);
+
+    useLayoutEffect(() => {
+        if (purchaseKind !== "work" || !workFieldsRendered || workFieldsOpen) return;
+        const content = workFieldsContentRef.current;
+        const shell = workFieldsShellRef.current;
+        const spacer = workFieldsSpacerRef.current;
+        if (!content || !shell || !spacer) return;
+        shell.style.removeProperty("grid-template-rows");
+        const height = content.offsetHeight || content.scrollHeight;
+        if (height <= 0) return;
+        spacer.style.transition = "none";
+        spacer.style.height = `${height}px`;
+        void spacer.offsetHeight;
+        spacer.style.transition = "";
+    }, [purchaseKind, workFieldsRendered, workFieldsOpen]);
+
+    useLayoutEffect(() => {
+        if (purchaseKind !== "work" || !workFieldsOpen) return;
+        const spacer = workFieldsSpacerRef.current;
+        if (!spacer) return;
+        spacer.style.height = "0px";
+    }, [purchaseKind, workFieldsOpen]);
 
     useEffect(() => {
         if (purchaseKind !== "work" || !workFieldsRendered) return;
@@ -642,7 +642,7 @@ export default function MaterialPurchasePage() {
     };
 
     return (
-        <div className="flex min-h-dvh bg-white lg:h-dvh lg:max-h-dvh lg:overflow-hidden">
+        <div className="flex h-dvh max-h-dvh overflow-hidden bg-white">
             {sidebarOpen && (
                 <div
                     className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -661,22 +661,37 @@ export default function MaterialPurchasePage() {
                 <Sidebar onClose={() => setSidebarOpen(false)} />
             </div>
 
-            <div className="flex w-full min-w-0 flex-1 flex-col lg:min-h-0 lg:overflow-hidden">
+            <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
                 <Header
                     title="등록"
                     onMenuClick={() => setSidebarOpen(true)}
                     rightContent={
                         <div className="flex items-center gap-2 md:gap-3">
-                            <Button type="button" variant="outline" size="lg" onClick={() => setScheduleOpen(true)}>
-                                일정
-                            </Button>
-                            <Button type="button" variant="primary" size="lg" onClick={handleSubmit} loading={saving}>
+                            <Button
+                                type="button"
+                                variant="primary"
+                                size="md"
+                                onClick={handleSubmit}
+                                loading={saving}
+                                className="md:h-12 md:px-4 md:text-base"
+                            >
                                 등록
                             </Button>
                         </div>
                     }
                     bottomContent={
-                        historyHeaderReopen ? (
+                        <>
+                        <div className="px-4 md:px-6">
+                            <Tabs
+                                items={[
+                                    { value: "work", label: "작업 자재" },
+                                    { value: "personal", label: "기타" },
+                                ]}
+                                value={purchaseKind}
+                                onChange={(value) => setPurchaseKind(value as "work" | "personal")}
+                            />
+                        </div>
+                        {historyHeaderReopen ? (
                             <div className="relative flex h-10 flex-nowrap items-center justify-between gap-2 overflow-visible border-t border-gray-200 bg-white px-3">
                                 <p className="min-w-0 flex-1 truncate whitespace-nowrap text-sm font-medium text-gray-800">
                                     과거내역
@@ -831,60 +846,45 @@ export default function MaterialPurchasePage() {
                                         )}
                                     </div>
                             </div>
-                        ) : null
+                        ) : null}
+                        </>
                     }
                 />
                 <div
                     data-purchase-form-scroll="true"
-                    className="px-4 sm:px-6 md:px-12 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain lg:[overflow-anchor:none] lg:px-24 xl:px-48 py-6 md:py-9"
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [overflow-anchor:none] px-4 py-6 sm:px-6 md:px-12 md:py-9 lg:px-24 xl:px-48"
                 >
                     <div ref={formColumnRef} className="max-w-[960px] mx-auto flex flex-col gap-4 md:gap-6">
                         <SectionCard
                             title="구매·가공"
                             headerContent={
-                                <div className="flex items-center gap-2">
+                                purchaseKind === "work" ? (
                                     <Button
                                         type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        aria-pressed={purchaseKind === "work"}
-                                        className={
-                                            purchaseKind === "work"
-                                                ? "border-2! border-green-600! bg-green-500! text-white! hover:bg-green-600!"
-                                                : "border-2! border-transparent! bg-green-100! text-green-800! hover:bg-green-200!"
-                                        }
-                                        onClick={() => setPurchaseKind("work")}
-                                    >
-                                        작업 자재
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        aria-pressed={purchaseKind === "personal"}
-                                        className={
-                                            purchaseKind === "personal"
-                                                ? "border-2! border-gray-900! bg-gray-100! text-gray-900"
-                                                : "border-2! border-transparent! bg-gray-100! text-gray-700"
-                                        }
-                                        onClick={() => setPurchaseKind("personal")}
-                                    >
-                                        기타
-                                    </Button>
-                                </div>
+                                        variant="ghost"
+                                        size="lg"
+                                        onClick={() => setScheduleOpen(true)}
+                                        icon={<IconCalendar className="w-5 h-5" />}
+                                        aria-label="일정"
+                                        title="일정"
+                                        className="h-auto! w-auto! px-0! text-gray-700! hover:bg-transparent! focus:ring-0! focus:ring-offset-0!"
+                                    />
+                                ) : undefined
                             }
                         >
                             <div
+                                ref={workFieldsShellRef}
                                 className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
                                     workFieldsOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
                                 } ${workFieldsRendered ? "" : "hidden"}`}
                                 onTransitionEnd={(event) => {
-                                    if (event.propertyName !== "grid-template-rows" || purchaseKind === "work") return;
+                                    if (event.propertyName !== "grid-template-rows" || event.target !== event.currentTarget) return;
+                                    if (purchaseKind === "work") return;
                                     setWorkFieldsRendered(false);
                                 }}
                             >
                                 <div className={`overflow-hidden min-h-0 ${workFieldsOpen ? "" : "pointer-events-none"}`}>
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:items-start">
+                            <div ref={workFieldsContentRef} className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:items-start">
                                 <Input
                                     label="호선명"
                                     value={vessel}
@@ -1268,6 +1268,12 @@ export default function MaterialPurchasePage() {
                                 {errors.lines && <span className="text-red-500">{errors.lines}</span>}
                             </div>
                         </SectionCard>
+                        {purchaseKind === "personal" && <div className="h-64 shrink-0" aria-hidden="true" />}
+                        <div
+                            ref={workFieldsSpacerRef}
+                            aria-hidden="true"
+                            className="h-0 shrink-0 overflow-hidden transition-[height] duration-300 ease-in-out motion-reduce:transition-none"
+                        />
                     </div>
                 </div>
             </div>

@@ -175,6 +175,26 @@ export default function ReportCreatePage() {
 
     // Tab State
     const [activeTab, setActiveTab] = useState<"work" | "education">("work");
+    const mainRef = useRef<HTMLElement>(null);
+    /** 모바일: 본문이 맨 위일 때만 보고서 종류 탭을 펼침 */
+    const [reportTabsOpen, setReportTabsOpen] = useState(true);
+
+    useEffect(() => {
+        const el = mainRef.current;
+        if (!el || !isMobile) {
+            setReportTabsOpen(true);
+            return;
+        }
+
+        const update = () => {
+            const open = el.scrollTop <= 1;
+            setReportTabsOpen((prev) => (prev === open ? prev : open));
+        };
+
+        update();
+        el.addEventListener("scroll", update, { passive: true });
+        return () => el.removeEventListener("scroll", update);
+    }, [isMobile]);
 
     // Warning Modal State
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -415,7 +435,7 @@ export default function ReportCreatePage() {
                     title="보고서 작성"
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
-                        <div className="flex items-center gap-3">
+                        <div className="hidden md:flex items-center gap-3">
                             <button
                                 onClick={handleBackClick}
                                 className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
@@ -425,15 +445,26 @@ export default function ReportCreatePage() {
                         </div>
                     }
                     bottomContent={
-                        <div className="px-4 md:px-6">
-                            <Tabs
-                                items={[
-                                    { value: "work", label: "출장 보고서" },
-                                    { value: "education", label: "교육 보고서" },
-                                ]}
-                                value={activeTab}
-                                onChange={handleTabChange}
-                            />
+                        <div
+                            className={`grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-in-out motion-reduce:transition-none ${
+                                isMobile && !reportTabsOpen
+                                    ? "grid-rows-[0fr] opacity-0"
+                                    : "grid-rows-[1fr] opacity-100"
+                            }`}
+                            aria-hidden={isMobile && !reportTabsOpen}
+                        >
+                            <div className="min-h-0 overflow-hidden">
+                                <div className="px-4 md:px-6">
+                                    <Tabs
+                                        items={[
+                                            { value: "work", label: "출장 보고서" },
+                                            { value: "education", label: "교육 보고서" },
+                                        ]}
+                                        value={activeTab}
+                                        onChange={handleTabChange}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     }
                     rightContent={
@@ -453,7 +484,7 @@ export default function ReportCreatePage() {
                                 disabled={isSubmitting}
                                 className="md:h-12 md:px-4 md:text-base"
                             >
-                                임시 저장
+                                임시
                             </Button>
                             <Button
                                 variant="primary"
@@ -462,19 +493,19 @@ export default function ReportCreatePage() {
                                 disabled={isSubmitting}
                                 className="md:h-12 md:px-4 md:text-base"
                             >
-                                제출하기
+                                제출
                             </Button>
                         </div>
                     }
                 />
 
-                <main className="flex-1 overflow-auto px-4 md:px-6 lg:px-12 pt-6 md:pt-10 pb-28 bg-gray-50/50">
+                <main ref={mainRef} className="flex-1 overflow-auto px-4 md:px-6 lg:px-12 pt-6 md:pt-10 pb-28 bg-gray-50/50">
                     <div className="max-w-[800px] mx-auto flex flex-col gap-5">
 
                         {/* Sections based on Report Type */}
                         {activeTab === "work" ? (
                             <>
-                                <BasicInfoSection previousWorkLimit={30} />
+                                <BasicInfoSection previousWorkLimit={30} schedulePicker />
                                 <WorkerSection title="투입 인원" />
                                 <WorkLogSection />
                                 <ConsumablesSection />

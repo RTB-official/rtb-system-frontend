@@ -5,7 +5,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Button from "../../components/common/Button";
-import { IconArrowBack, IconClose } from "../../components/icons/Icons";
+import { IconArrowBack, IconCalendar, IconClose } from "../../components/icons/Icons";
+import SchedulePickModal, { type SchedulePickItem } from "../Materials/SchedulePickModal";
+import { valuesFromSchedule } from "../../utils/scheduleSupervisors";
 import DatePicker from "../../components/ui/DatePicker";
 import Select from "../../components/common/Select";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -92,6 +94,7 @@ export default function TbmCreatePage() {
     const [tbmImportOptions, setTbmImportOptions] = useState<TbmRecord[]>([]);
     const [tbmImportLoading, setTbmImportLoading] = useState(false);
     const [selectedTbmImportId, setSelectedTbmImportId] = useState("");
+    const [scheduleOpen, setScheduleOpen] = useState(false);
 
     const editId = searchParams.get("edit");
     const isEdit = !!editId;
@@ -170,6 +173,37 @@ export default function TbmCreatePage() {
             }),
         [tbmImportOptions]
     );
+
+    const applySchedule = (item: SchedulePickItem) => {
+        setLineName(item.shipName.trim().toUpperCase());
+        setWorkName(item.workItem.replace(/\s+/g, " ").trim());
+        setWorkContentFromImport(false);
+
+        const staffNames = allStaff.map((member) => member.name.trim()).filter(Boolean);
+        const names = valuesFromSchedule(item.teamMember, staffNames);
+        setParticipants((prev) => {
+            const author = prev.find((row) => authUser?.id && row.userId === authUser.id);
+            const fromSchedule = names.map((name) => {
+                const staff = allStaff.find(
+                    (member) => member.name.replace(/\s+/g, "") === name.replace(/\s+/g, "")
+                );
+                return {
+                    name: staff?.name.trim() || name,
+                    userId: staff?.id ?? null,
+                };
+            });
+            const rest = author
+                ? fromSchedule.filter(
+                      (row) => row.userId !== author.userId && row.name !== author.name
+                  )
+                : fromSchedule;
+            const merged = author ? [author, ...rest] : rest;
+            const padded = [...merged];
+            while (padded.length < 12) padded.push({ name: "", userId: null });
+            return padded;
+        });
+        setScheduleOpen(false);
+    };
 
     const appendLocationQuickInsert = (token: string) => {
         setLocation((prev) => {
@@ -629,7 +663,7 @@ export default function TbmCreatePage() {
                     leftContent={
                         <button
                             onClick={() => navigate("/tbm")}
-                            className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                            className="hidden md:inline-flex items-center p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
                             title="목록으로 돌아가기"
                         >
                             <IconArrowBack className="w-5 h-5" />
@@ -639,11 +673,12 @@ export default function TbmCreatePage() {
                         <div className="flex gap-2">
                             <Button
                                 variant="primary"
-                                size="sm"
+                                size="md"
                                 onClick={handleSave}
                                 disabled={isSaving}
+                                className="md:h-12 md:px-4 md:text-base"
                             >
-                                {isEdit ? "수정" : "제출하기"}
+                                {isEdit ? "수정" : "제출"}
                             </Button>
                         </div>
                     }
@@ -652,8 +687,18 @@ export default function TbmCreatePage() {
                 <div className="flex-1 overflow-y-auto px-4 md:px-6 lg:px-12 pt-4 md:pt-6 pb-24">
                     <div className="max-w-[900px] mx-auto">
                         <div className="border border-gray-300 rounded-lg overflow-hidden bg-white">
-                            <div className="text-center font-semibold py-3 px-2 md:px-3 border-b border-gray-300 text-sm md:text-base">
-                                TBM 회의록
+                            <div className="relative flex items-center justify-center border-b border-gray-300 py-3 px-10 text-sm md:text-base">
+                                <span className="font-semibold">TBM 회의록</span>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="lg"
+                                    onClick={() => setScheduleOpen(true)}
+                                    icon={<IconCalendar className="w-5 h-5" />}
+                                    aria-label="일정"
+                                    title="일정"
+                                    className="absolute right-2 md:right-3 h-auto! w-auto! px-0! text-gray-700! hover:bg-transparent! focus:ring-0! focus:ring-offset-0!"
+                                />
                             </div>
 
                             <table className="w-full text-sm border-collapse table-fixed">
@@ -1213,6 +1258,11 @@ export default function TbmCreatePage() {
                     </div>
                 </div>
             </div>
+            <SchedulePickModal
+                isOpen={scheduleOpen}
+                onClose={() => setScheduleOpen(false)}
+                onSelect={applySchedule}
+            />
         </div>
     );
 }

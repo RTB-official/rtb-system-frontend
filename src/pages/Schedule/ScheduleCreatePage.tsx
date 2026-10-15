@@ -1,12 +1,24 @@
 // src/pages/Schedule/ScheduleCreatePage.tsx
 import { useSidebarOpen } from "../../hooks/useSidebarOpen";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import useIsMobile from "../../hooks/useIsMobile";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import PageContainer from "../../components/common/PageContainer";
-import { IconArrowBack, IconExportDocuments, IconPlus, IconSave, IconTrash } from "../../components/icons/Icons";
+import ActionMenu from "../../components/common/ActionMenu";
+import {
+    IconArrowBack,
+    IconArrowDown,
+    IconArrowUp,
+    IconCopy,
+    IconExportDocuments,
+    IconPaste,
+    IconPlus,
+    IconSave,
+    IconTrash,
+} from "../../components/icons/Icons";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
@@ -18,6 +30,8 @@ import {
     type ScheduleSheetRow,
 } from "../../components/schedule/scheduleTableShared";
 import ScheduleSheetSkeleton from "../../components/schedule/ScheduleSheetSkeleton";
+import ScheduleTableZoom from "../../components/schedule/ScheduleTableZoom";
+import ScheduleDashboardCalendar from "../../components/schedule/ScheduleDashboardCalendar";
 import { setNavigationGuard } from "../../lib/navigationGuard";
 import { fetchLatestScheduleSheet, fetchNextScheduleVersion, saveScheduleVersion } from "../../lib/scheduleApi";
 import { PATHS } from "../../utils/paths";
@@ -33,7 +47,11 @@ const COPY = {
         `${key} \uC77C\uC815 ${n}\uAC74\uC744 \uAC00\uC838\uC654\uC2B5\uB2C8\uB2E4.`,
     importLatestFailed: "\uC77C\uC815\uC744 \uAC00\uC838\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.",
     addRow: "\uD589 \uCD94\uAC00",
-    deleteRow: "\uD589 \uC0AD\uC81C",
+    deleteRow: "\uC0AD\uC81C",
+    moveUp: "\uD55C\uCE78\uC704\uB85C",
+    moveDown: "\uD55C\uCE78\uC544\uB798\uB85C",
+    copyRow: "\uBCF5\uC0AC",
+    pasteRow: "\uBD99\uC5EC\uB123\uAE30",
     excelLoaded: (n: number) =>
         `\uC5D1\uC140\uC5D0\uC11C ${n}\uAC74\uC744 \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`,
     excelLoadFailed: "\uC5D1\uC140 \uBD88\uB7EC\uC624\uAE30\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.",
@@ -216,18 +234,48 @@ function CellInput({
     );
 }
 
+function RowMenuButton({
+    icon,
+    label,
+    disabled = false,
+    onClick,
+}: {
+    icon: ReactNode;
+    label: string;
+    disabled?: boolean;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            disabled={disabled}
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[15px] font-medium transition-colors ${
+                disabled
+                    ? "cursor-not-allowed text-gray-300"
+                    : "cursor-pointer text-gray-800 hover:bg-gray-50 active:bg-gray-100"
+            }`}
+            onClick={onClick}
+        >
+            <span className={disabled ? "text-gray-300" : "text-gray-700"}>{icon}</span>
+            {label}
+        </button>
+    );
+}
+
 export default function ScheduleCreatePage() {
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
+    const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const [rows, setRows] = useState<ScheduleRow[]>(() =>
-        Array.from({ length: 5 }, () => createEmptyRow())
+        [createEmptyRow()]
     );
     const [excelImporting, setExcelImporting] = useState(false);
     const [importingLatest, setImportingLatest] = useState(false);
     const [importConfirmOpen, setImportConfirmOpen] = useState(false);
     const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-    const [trashOffsetTop, setTrashOffsetTop] = useState<number | null>(null);
+    const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
+    const [copiedRow, setCopiedRow] = useState<Omit<ScheduleRow, "id"> | null>(null);
     const [versionKey, setVersionKey] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
@@ -398,31 +446,45 @@ export default function ScheduleCreatePage() {
         setRows((prev) => [...prev, createEmptyRow()]);
     };
 
+    const closeRowMenu = () => {
+        setSelectedRowId(null);
+        setRowMenuAnchor(null);
+    };
+
     const deleteRow = (id: string) => {
         setRows((prev) => prev.filter((row) => row.id !== id));
         setSelectedRowId((prev) => (prev === id ? null : prev));
+        setRowMenuAnchor(null);
     };
 
-    const updateTrashPosition = () => {
-        if (!selectedRowId || !tableAreaRef.current) {
-            setTrashOffsetTop(null);
-            return;
-        }
-        const rowEl = tableAreaRef.current.querySelector(
-            `[data-schedule-row-id="${CSS.escape(selectedRowId)}"]`
-        ) as HTMLElement | null;
-        if (!rowEl) {
-            setTrashOffsetTop(null);
-            return;
-        }
-        const areaRect = tableAreaRef.current.getBoundingClientRect();
-        const rowRect = rowEl.getBoundingClientRect();
-        setTrashOffsetTop(rowRect.top - areaRect.top + rowRect.height / 2);
+    const moveRow = (id: string, direction: -1 | 1) => {
+        setRows((prev) => {
+            const index = prev.findIndex((row) => row.id === id);
+            const nextIndex = index + direction;
+            if (index < 0 || nextIndex < 0 || nextIndex >= prev.length) return prev;
+            const next = [...prev];
+            const [item] = next.splice(index, 1);
+            next.splice(nextIndex, 0, item!);
+            return next;
+        });
+        closeRowMenu();
     };
 
-    useLayoutEffect(() => {
-        updateTrashPosition();
-    }, [selectedRowId, rows]);
+    const copyRow = (id: string) => {
+        const row = rows.find((item) => item.id === id);
+        if (!row) return;
+        const { id: _id, ...fields } = row;
+        setCopiedRow(fields);
+        closeRowMenu();
+    };
+
+    const pasteRow = (id: string) => {
+        if (!copiedRow) return;
+        setRows((prev) =>
+            prev.map((row) => (row.id === id ? { ...row, ...copiedRow } : row))
+        );
+        closeRowMenu();
+    };
 
     useEffect(() => {
         if (!selectedRowId) return;
@@ -433,25 +495,15 @@ export default function ScheduleCreatePage() {
             const inSelectedRow = target.closest(
                 `[data-schedule-row-id="${CSS.escape(selectedRowId)}"]`
             );
-            const inTrash = target.closest("[data-schedule-row-trash]");
-            if (!inSelectedRow && !inTrash) {
-                setSelectedRowId(null);
+            const inMenu = target.closest("[data-schedule-row-menu]");
+            if (!inSelectedRow && !inMenu) {
+                closeRowMenu();
             }
         };
 
-        const handleReposition = () => updateTrashPosition();
-        const scrollRoot = tableAreaRef.current?.closest(".overflow-auto");
-
         document.addEventListener("pointerdown", handlePointerDown);
-        scrollRoot?.addEventListener("scroll", handleReposition, { passive: true });
-        window.addEventListener("resize", handleReposition);
-
-        return () => {
-            document.removeEventListener("pointerdown", handlePointerDown);
-            scrollRoot?.removeEventListener("scroll", handleReposition);
-            window.removeEventListener("resize", handleReposition);
-        };
-    }, [selectedRowId, rows]);
+        return () => document.removeEventListener("pointerdown", handlePointerDown);
+    }, [selectedRowId]);
 
     const handleImportLatest = async () => {
         if (importingLatest || saving || excelImporting) return;
@@ -516,6 +568,8 @@ export default function ScheduleCreatePage() {
             setExcelImporting(false);
         }
     };
+
+    const selectedIndex = rows.findIndex((row) => row.id === selectedRowId);
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -614,20 +668,50 @@ export default function ScheduleCreatePage() {
                                 />
                             ) : (
                                 <>
-                            {selectedRowId && trashOffsetTop != null && (
-                                <button
-                                    type="button"
-                                    data-schedule-row-trash=""
-                                    className="absolute left-0 z-10 inline-flex h-8 w-8 -translate-x-[calc(100%+4px)] -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-200 hover:text-red-600"
-                                    style={{ top: trashOffsetTop }}
-                                    aria-label={COPY.deleteRow}
-                                    title={COPY.deleteRow}
-                                    onClick={() => deleteRow(selectedRowId)}
-                                >
-                                    <IconTrash className="h-5 w-5" />
-                                </button>
-                            )}
-                            <div className="w-full overflow-x-auto rounded-sm bg-white shadow-sm">
+                            <ActionMenu
+                                isOpen={selectedRowId != null && rowMenuAnchor != null}
+                                anchorEl={rowMenuAnchor}
+                                onClose={closeRowMenu}
+                                placement="right"
+                                width="w-48"
+                                estimatedHeight={280}
+                                showDelete={false}
+                                showLogout={false}
+                            >
+                                <div data-schedule-row-menu="">
+                                    <RowMenuButton
+                                        icon={<IconArrowUp className="h-6 w-6" />}
+                                        label={COPY.moveUp}
+                                        disabled={selectedIndex <= 0}
+                                        onClick={() => selectedRowId && moveRow(selectedRowId, -1)}
+                                    />
+                                    <RowMenuButton
+                                        icon={<IconArrowDown className="h-6 w-6" />}
+                                        label={COPY.moveDown}
+                                        disabled={
+                                            selectedIndex < 0 || selectedIndex >= rows.length - 1
+                                        }
+                                        onClick={() => selectedRowId && moveRow(selectedRowId, 1)}
+                                    />
+                                    <RowMenuButton
+                                        icon={<IconCopy className="h-6 w-6" />}
+                                        label={COPY.copyRow}
+                                        onClick={() => selectedRowId && copyRow(selectedRowId)}
+                                    />
+                                    <RowMenuButton
+                                        icon={<IconPaste className="h-6 w-6" />}
+                                        label={COPY.pasteRow}
+                                        disabled={!copiedRow}
+                                        onClick={() => selectedRowId && pasteRow(selectedRowId)}
+                                    />
+                                    <RowMenuButton
+                                        icon={<IconTrash className="h-6 w-6" />}
+                                        label={COPY.deleteRow}
+                                        onClick={() => selectedRowId && deleteRow(selectedRowId)}
+                                    />
+                                </div>
+                            </ActionMenu>
+                            <ScheduleTableZoom>
                             <table className="w-full border-collapse min-w-[1280px] table-fixed">
                                 <colgroup>
                                     {COLUMNS.map((col) => (
@@ -701,9 +785,14 @@ export default function ScheduleCreatePage() {
                                                 className={`${CELL_BORDER} min-h-[72px] p-0 text-center align-middle text-[11px] md:text-[12px] text-gray-900 font-medium transition-colors cursor-pointer ${
                                                     isSelected ? "bg-gray-100" : "hover:bg-blue-50"
                                                 }`}
-                                                onClick={() =>
-                                                    setSelectedRowId(isSelected ? null : row.id)
-                                                }
+                                                onClick={(event) => {
+                                                    if (isSelected) {
+                                                        closeRowMenu();
+                                                        return;
+                                                    }
+                                                    setSelectedRowId(row.id);
+                                                    setRowMenuAnchor(event.currentTarget);
+                                                }}
                                             >
                                                 <div className="flex min-h-[72px] w-full items-center justify-center px-1">
                                                     <span>{index + 1}</span>
@@ -820,7 +909,7 @@ export default function ScheduleCreatePage() {
                                     })}
                                 </tbody>
                             </table>
-                            </div>
+                            </ScheduleTableZoom>
                                 </>
                             )}
                         </div>
@@ -837,6 +926,7 @@ export default function ScheduleCreatePage() {
                                 <IconPlus className="h-6 w-6" />
                             </button>
                         </div>
+                        <ScheduleDashboardCalendar />
                     </PageContainer>
                 </div>
             </div>
