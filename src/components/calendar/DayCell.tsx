@@ -37,9 +37,114 @@ interface DayCellProps {
     onMouseEnter: () => void;
     onClick: (e: React.MouseEvent) => void;
     rangeRole?: DateRangeRole | null;
+    scheduleMarks?: {
+        id: string;
+        role: DateRangeRole;
+        lane: number;
+        ratio: number;
+        color: string;
+        shipName: string;
+        teamMember: string;
+        priorLaneRatios: number[];
+    }[];
+    scheduleCellHeight?: number;
+    dayAvailability?: { leaders: number; members: number };
+    onDayScheduleHover?: (info: DayScheduleHoverInfo) => void;
+    onDayScheduleLeave?: () => void;
     allowOutsideMonthSelect?: boolean;
     getEventsForDate: (dateKey: string) => CalendarEvent[];
     onCellHeightChange?: (dateKey: string, height: number) => void;
+}
+
+function scheduleBarEdgeStyle(
+    role: DateRangeRole,
+    color: string
+): React.CSSProperties {
+    // Fill the cell's right border with the bar color so multi-day spans look continuous.
+    const joinRight = { boxShadow: `1px 0 0 0 ${color}` };
+    if (role === "start") {
+        return { left: 6, right: 0, borderRadius: "6px 0 0 6px", ...joinRight };
+    }
+    if (role === "end") {
+        return { left: 0, right: 6, borderRadius: "0 6px 6px 0" };
+    }
+    if (role === "middle") {
+        return { left: 0, right: 0, borderRadius: 0, ...joinRight };
+    }
+    return { left: 6, right: 6, borderRadius: 6 };
+}
+
+export type DayScheduleHoverInfo = {
+    dateKey: string;
+    schedules: { id: string; shipName: string; teamMember: string; color: string }[];
+    anchorEl: HTMLElement;
+};
+
+function ScheduleBarMark({
+    mark,
+    top,
+    height,
+}: {
+    mark: {
+        id: string;
+        role: DateRangeRole;
+        color: string;
+        shipName: string;
+        teamMember: string;
+    };
+    top: number;
+    height: number;
+}) {
+    return (
+        <div
+            aria-hidden
+            className="pointer-events-none absolute z-[2]"
+            style={{
+                top,
+                height,
+                backgroundColor: mark.color,
+                ...scheduleBarEdgeStyle(mark.role, mark.color),
+            }}
+        />
+    );
+}
+
+function stackedScheduleMarks(
+    marks: {
+        id: string;
+        role: DateRangeRole;
+        lane: number;
+        ratio: number;
+        color: string;
+        shipName: string;
+        teamMember: string;
+        priorLaneRatios: number[];
+    }[],
+    isMobile: boolean,
+    cellHeight: number
+) {
+    const baseTop = isMobile ? 28 : 40;
+    const minHeight = isMobile ? 4 : 6;
+    const gap = 2;
+    if (marks.length === 0) return [];
+    const available = Math.max(minHeight, cellHeight > 0 ? cellHeight - baseTop - 4 : 80);
+
+    const rawHeight = (ratio: number) => {
+        const clamped = Math.min(1, Math.max(0, ratio));
+        return Math.max(minHeight, available * clamped);
+    };
+
+    return marks.map((mark) => {
+        let offset = 0;
+        mark.priorLaneRatios.forEach((ratio) => {
+            offset += rawHeight(ratio) + gap;
+        });
+        return {
+            mark,
+            top: baseTop + offset,
+            height: rawHeight(mark.ratio),
+        };
+    });
 }
 
 const DayCell: React.FC<DayCellProps> = ({
@@ -67,6 +172,11 @@ const DayCell: React.FC<DayCellProps> = ({
     onMouseEnter,
     onClick,
     rangeRole = null,
+    scheduleMarks = [],
+    scheduleCellHeight = 0,
+    dayAvailability,
+    onDayScheduleHover,
+    onDayScheduleLeave,
     allowOutsideMonthSelect = false,
     getEventsForDate,
     onCellHeightChange,
@@ -153,7 +263,21 @@ const DayCell: React.FC<DayCellProps> = ({
                 }
             }}
             onMouseDown={onMouseDown}
-            onMouseEnter={onMouseEnter}
+            onMouseEnter={(event) => {
+                onMouseEnter();
+                if (scheduleMarks.length === 0) return;
+                onDayScheduleHover?.({
+                    dateKey,
+                    schedules: scheduleMarks.map((mark) => ({
+                        id: mark.id,
+                        shipName: mark.shipName,
+                        teamMember: mark.teamMember,
+                        color: mark.color,
+                    })),
+                    anchorEl: event.currentTarget,
+                });
+            }}
+            onMouseLeave={() => onDayScheduleLeave?.()}
             onClick={onClick}
             aria-selected={rangeRole != null}
             data-range-role={rangeRole ?? undefined}
@@ -172,6 +296,16 @@ const DayCell: React.FC<DayCellProps> = ({
                 isolation: 'isolate',
             }}
         >
+            {stackedScheduleMarks(scheduleMarks, isMobile, scheduleCellHeight).map(
+                ({ mark, top, height }) => (
+                    <ScheduleBarMark
+                        key={mark.id}
+                        mark={mark}
+                        top={top}
+                        height={height}
+                    />
+                )
+            )}
             {rangeRole && rangeRole !== "single" && rangeRole !== "pending" && (
                 <div
                     aria-hidden
@@ -184,6 +318,18 @@ const DayCell: React.FC<DayCellProps> = ({
                     }`}
                 />
             )}
+            {dayAvailability ? (
+                <div
+                    className={`pointer-events-none absolute z-20 text-right leading-tight text-gray-500 ${
+                        isMobile
+                            ? "top-0.5 right-0.5 text-[9px]"
+                            : "top-1 right-1.5 text-[11px]"
+                    }`}
+                    title="그날 일지에 미등록된 투입 가능 인원 (SF=팀장, F=팀원)"
+                >
+                    SF{dayAvailability.leaders} / F{dayAvailability.members}
+                </div>
+            ) : null}
             <div className={`${columnPadding} relative z-20 flex items-start min-w-0`}>
                 <div className={`${isMobile ? "w-6 h-6" : "w-7.5 h-7.5"} flex flex-shrink-0 items-center justify-center relative`}>
                     {(isToday || isRangeMarker) && (

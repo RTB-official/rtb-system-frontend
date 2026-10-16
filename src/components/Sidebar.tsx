@@ -216,8 +216,11 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
     const invoiceActive = menuFocus === "INVOICE" || (!menuFocus && !pendingActivePath && isInvoiceRoute);
     const canShowHome = stablePermissions.isCEO || stablePermissions.isAdmin || isAdmin;
     const sidebarAccountId = (sidebarLoginId || currentUser?.email?.split("@")[0] || "").toLowerCase();
-    const canShowSchedule = ["mw.park", "brian.ko"].includes(sidebarAccountId);
-    const canShowMaterials = ["mw.park", "brian.ko"].includes(sidebarAccountId);
+    const isRestrictedMenuAccount = ["mw.park", "brian.ko"].includes(sidebarAccountId);
+    const canShowSchedule =
+        isRestrictedMenuAccount || stablePermissions.isAdmin || isAdmin;
+    const canShowMaterials =
+        isRestrictedMenuAccount || stablePermissions.isAdmin || isAdmin;
     const expenseActive = menuFocus === "EXPENSE" || (!menuFocus && !pendingActivePath && isExpenseRoute);
     const materialsActive = menuFocus === "MATERIALS" || (!menuFocus && !pendingActivePath && isMaterialsRoute);
     const settingsActive = isPathActive((p) => p.startsWith("/settings"));

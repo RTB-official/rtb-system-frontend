@@ -16,11 +16,17 @@ export type ScheduleSheetRow = {
     remark: string;
 };
 
+/** Values written from the calendar insert form into the sheet. */
+export type ScheduleInsertValues = Omit<ScheduleSheetRow, "id"> & {
+    /** YYYY-MM-DD of the period start, used to order rows. */
+    periodFrom: string;
+};
+
 /** Column widths (sum 100%) — keep in sync across create/list */
 export const SCHEDULE_COLUMNS = [
     { key: "no", label: "No.", width: "2%", center: true },
-    { key: "customerCompany", label: "Customer", width: "4.5%", center: false },
-    { key: "customerContact", label: "", width: "4.5%", center: false },
+    { key: "customerCompany", label: "Customer", width: "5.4%", center: false },
+    { key: "customerContact", label: "", width: "3.6%", center: false },
     { key: "shipName", label: "Ship name", width: "5.5%", center: false },
     { key: "engineType", label: "Engine type", width: "9%", center: false },
     { key: "workLocation", label: "Work location", width: "5.5%", center: false },

@@ -8,8 +8,8 @@ import {
 } from "react";
 import useIsMobile from "../../hooks/useIsMobile";
 
-/** Natural sheet width; must match the table's `min-w-[1280px]`. */
-const SHEET_WIDTH = 1280;
+/** Desktop sheet width the mobile view is scaled from, so the fitted table keeps the wide PC proportions. */
+const SHEET_WIDTH = 1840;
 /** Max zoom relative to the natural (100%) sheet size. */
 const MAX_SCALE = 2;
 const LOCKED_VIEWPORT =

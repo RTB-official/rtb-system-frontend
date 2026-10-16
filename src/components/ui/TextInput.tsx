@@ -21,6 +21,7 @@ interface TextInputProps {
   error?: string;
   list?: string;
   autoComplete?: string;
+  boxStyle?: React.CSSProperties;
 }
 
 export default function TextInput({ 
@@ -43,6 +44,7 @@ export default function TextInput({
   error,
   list,
   autoComplete,
+  boxStyle,
 }: TextInputProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value;
@@ -60,7 +62,10 @@ export default function TextInput({
           {required && <RequiredIndicator />}
         </div>
       )}
-      <div className={`bg-white border ${error ? 'border-red-300' : 'border-[#e5e7eb]'} rounded-xl h-12 flex items-center overflow-hidden p-3 ${disabled ? 'bg-gray-50' : ''}`}>
+      <div
+        style={boxStyle}
+        className={`border ${error ? 'border-red-300' : 'border-[#e5e7eb]'} rounded-xl h-12 flex items-center overflow-hidden p-3 ${disabled ? 'bg-gray-50' : 'bg-white'}`}
+      >
         <div className="flex-1 flex items-center justify-between min-h-[24px] min-w-0 px-1">
           <input
             ref={inputRef}
@@ -76,7 +81,7 @@ export default function TextInput({
             readOnly={readOnly}
             list={list}
             autoComplete={autoComplete}
-            className="min-w-0 flex-1 font-normal text-[16px] text-[#101828] leading-[1.5] placeholder:text-[#99a1af] outline-none disabled:bg-transparent disabled:text-gray-400"
+            className="min-w-0 flex-1 bg-transparent font-normal text-[16px] text-[#101828] leading-[1.5] placeholder:text-[#99a1af] outline-none disabled:bg-transparent disabled:text-gray-400"
           />
           {icon}
         </div>

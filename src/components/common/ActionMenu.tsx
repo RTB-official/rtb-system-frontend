@@ -1,5 +1,5 @@
 // src/components/common/ActionMenu.tsx
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
     IconCheck,
@@ -121,6 +121,25 @@ export default function ActionMenu({
     userEmail,
 }: ActionMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
+    const [anchorTick, setAnchorTick] = useState(0);
+
+    useEffect(() => {
+        if (!isOpen || !anchorEl) return;
+        let frame = 0;
+        const sync = () => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => setAnchorTick((value) => value + 1));
+        };
+        document.addEventListener("scroll", sync, true);
+        document.addEventListener("scrollend", sync, true);
+        window.addEventListener("resize", sync);
+        return () => {
+            cancelAnimationFrame(frame);
+            document.removeEventListener("scroll", sync, true);
+            document.removeEventListener("scrollend", sync, true);
+            window.removeEventListener("resize", sync);
+        };
+    }, [isOpen, anchorEl]);
 
     // 바깥 클릭 닫기
     useEffect(() => {
@@ -163,6 +182,10 @@ export default function ActionMenu({
             "w-64": 256,
             "w-72": 288,
             "w-80": 320,
+            "w-96": 384,
+            "w-[560px]": 560,
+            "w-[600px]": 600,
+            "w-[640px]": 640,
         };
         return tailwindWidths[w] || 256;
     };
@@ -176,6 +199,7 @@ export default function ActionMenu({
         top = position.y;
         left = position.x;
     } else if (anchorEl) {
+        void anchorTick;
         const rect = anchorEl.getBoundingClientRect();
         top = rect.bottom + 8;
         left = rect.right - menuWidthPx;
@@ -204,10 +228,11 @@ export default function ActionMenu({
     return createPortal(
         <div
             ref={menuRef}
-            className={`fixed ${width} rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999`}
+            className={`fixed ${width.startsWith("w-[") ? "" : width} rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999`}
             style={{
                 top,
                 left,
+                width: menuWidthPx,
             }}
         >
             {(userDisplayName || userEmail || headerContent) && (
