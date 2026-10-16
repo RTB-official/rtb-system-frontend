@@ -242,6 +242,9 @@ function sheetsAfterVersionDelete(
 
 export default function ScheduleListPage() {
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
+    useEffect(() => {
+        setSidebarOpen(false);
+    }, [setSidebarOpen]);
     const { userPermissions } = useUser();
     const [allDates, setAllDates] = useState<string[]>([]);
     const [dayLimit, setDayLimit] = useState(INITIAL_DAY_LIMIT);
@@ -469,22 +472,24 @@ export default function ScheduleListPage() {
         <div className="flex h-screen bg-gray-50 overflow-hidden">
             {sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+                    className="fixed inset-0 bg-black/50 z-40"
                     onClick={() => setSidebarOpen(false)}
                 />
             )}
             <div
-                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
-                    sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+                className={`fixed inset-y-0 left-0 z-50 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
+                    sidebarOpen ? "translate-x-0" : "-translate-x-full"
                 }`}
+                onClick={(e) => e.stopPropagation()}
             >
-                <Sidebar onClose={() => setSidebarOpen(false)} />
+                <Sidebar onClose={() => setSidebarOpen(false)} showCloseOnDesktop />
             </div>
 
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
                     title="일정 목록"
-                    onMenuClick={() => setSidebarOpen(true)}
+                    onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+                    showMenuOnDesktop
                     rightContent={
                         <button
                             ref={searchButtonRef}

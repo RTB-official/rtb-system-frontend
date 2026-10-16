@@ -667,3 +667,47 @@ export function generateTableData(
         days: `${summary.totalDays}일`,
     }));
 }
+
+function eachDateKeyInclusive(from: string, to: string): string[] {
+    const start = new Date(`${from.slice(0, 10)}T00:00:00`);
+    const end = new Date(`${to.slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+    const keys: string[] = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+        const y = cursor.getFullYear();
+        const m = String(cursor.getMonth() + 1).padStart(2, "0");
+        const d = String(cursor.getDate()).padStart(2, "0");
+        keys.push(`${y}-${m}-${d}`);
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return keys;
+}
+
+/**
+ * 해당 년·월에 작업일지(entry)에 등록된 인원 이름 — 날짜별 Set.
+ * 초안(is_draft)은 제외한다.
+ */
+export async function fetchRegisteredNamesByDay(
+    year: number,
+    month: number
+): Promise<Map<string, Set<string>>> {
+    const entries = await getWorkloadData({ year, month, includeDrafts: false });
+    const byDay = new Map<string, Set<string>>();
+    for (const entry of entries) {
+        const from = entry.date_from?.slice(0, 10);
+        const to = (entry.date_to ?? entry.date_from)?.slice(0, 10);
+        if (!from || !to) continue;
+        const name = entry.person_name?.trim();
+        if (!name) continue;
+        for (const day of eachDateKeyInclusive(from, to)) {
+            let set = byDay.get(day);
+            if (!set) {
+                set = new Set();
+                byDay.set(day, set);
+            }
+            set.add(name);
+        }
+    }
+    return byDay;
+}

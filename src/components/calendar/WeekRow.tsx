@@ -1,5 +1,5 @@
 import React from "react";
-import DayCell from "./DayCell";
+import DayCell, { type DayScheduleHoverInfo } from "./DayCell";
 import { CalendarEvent } from "../../types";
 import { isVacationEvent, CALENDAR_TAG_ICON_SPACING, CALENDAR_TAG_ICON_SIZES, getDateRangeRole } from "../../utils/calendarUtils";
 import { CELL_PADDING_LEFT, TAG_INNER_PADDING_LEFT } from "../../utils/calendarConstants";
@@ -48,6 +48,20 @@ interface WeekRowProps {
     uniformColumns?: boolean;
     /** Keep this week at a fixed height instead of sharing leftover space. */
     rowHeight?: number;
+    scheduleBars?: {
+        id: string;
+        start: string;
+        end: string;
+        lane: number;
+        ratio: number;
+        color: string;
+        shipName: string;
+        teamMember: string;
+        priorLaneRatios: number[];
+    }[];
+    dayAvailability?: Record<string, { leaders: number; members: number }>;
+    onDayScheduleHover?: (info: DayScheduleHoverInfo) => void;
+    onDayScheduleLeave?: () => void;
 }
 
 const pad = (n: number) => (n < 10 ? "0" + n : String(n));
@@ -93,6 +107,10 @@ const WeekRow: React.FC<WeekRowProps> = ({
     tagsBesideDate = false,
     uniformColumns = false,
     rowHeight,
+    scheduleBars = [],
+    dayAvailability,
+    onDayScheduleHover,
+    onDayScheduleLeave,
 }) => {
     // 각 날짜별로 보여줄 태그와 숨길 태그 계산
     const dateTagInfo = useCalendarTagVisibility(
@@ -353,8 +371,27 @@ const WeekRow: React.FC<WeekRowProps> = ({
                             selectionEnd,
                             selectionPending
                         )}
+                        scheduleMarks={scheduleBars.flatMap((bar) => {
+                            const role = getDateRangeRole(dateKey, bar.start, bar.end);
+                            return role
+                                ? [{
+                                      id: bar.id,
+                                      role,
+                                      lane: bar.lane,
+                                      ratio: bar.ratio,
+                                      color: bar.color,
+                                      shipName: bar.shipName,
+                                      teamMember: bar.teamMember,
+                                      priorLaneRatios: bar.priorLaneRatios,
+                                  }]
+                                : [];
+                        })}
                         allowOutsideMonthSelect={allowOutsideMonthSelect}
                         onCellHeightChange={onCellHeightChange}
+                        scheduleCellHeight={rowHeight ?? cellHeight}
+                        dayAvailability={dayAvailability?.[dateKey]}
+                        onDayScheduleHover={onDayScheduleHover}
+                        onDayScheduleLeave={onDayScheduleLeave}
                     />
                 );
             })}

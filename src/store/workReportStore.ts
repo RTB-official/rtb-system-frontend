@@ -75,7 +75,7 @@ export const ORDER_PERSONS: Record<string, string[]> = {
 
 // 출장지 목록
 export const LOCATIONS = [
-  'HD중공업(해양)', 'HD미포', 'HD삼호', 'PNC', 'PNIT', 'HPNT', 'BNCT', 'HJNC', '한화오션', '삼성중공업',
+  'HD중공업', 'HD해양', 'HD미포', 'HD삼호', 'PNC', 'PNIT', 'HPNT', 'BNCT', 'HJNC', '한화오션', '삼성중공업',
 ];
 
 // 운행차량 목록

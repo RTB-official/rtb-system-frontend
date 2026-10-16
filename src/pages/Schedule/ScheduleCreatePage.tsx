@@ -28,6 +28,7 @@ import {
     SCHEDULE_TITLE_BG,
     type ScheduleFieldKey,
     type ScheduleSheetRow,
+    type ScheduleInsertValues,
 } from "../../components/schedule/scheduleTableShared";
 import ScheduleSheetSkeleton from "../../components/schedule/ScheduleSheetSkeleton";
 import ScheduleTableZoom from "../../components/schedule/ScheduleTableZoom";
@@ -61,7 +62,19 @@ const COPY = {
 } as const;
 
 
-export type ScheduleRow = ScheduleSheetRow;
+export type ScheduleRow = ScheduleSheetRow & {
+    /** YYYY-MM-DD start used to order rows added from the calendar. */
+    periodFrom?: string;
+};
+
+function periodSortKey(row: ScheduleRow): string {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(row.periodFrom ?? "")) return row.periodFrom as string;
+    const from = row.period.split("~")[0]?.trim() ?? "";
+    const match = from.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (!match) return "9999-99-99";
+    const year = new Date().getFullYear();
+    return `${year}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+}
 
 /** Column widths (sum 100%) — shared with list page */
 const COLUMNS = SCHEDULE_COLUMNS;
@@ -267,6 +280,9 @@ export default function ScheduleCreatePage() {
     const { showSuccess, showError } = useToast();
     const isMobile = useIsMobile();
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
+    useEffect(() => {
+        setSidebarOpen(false);
+    }, [setSidebarOpen]);
     const [rows, setRows] = useState<ScheduleRow[]>(() =>
         [createEmptyRow()]
     );
@@ -382,6 +398,10 @@ export default function ScheduleCreatePage() {
         };
     }, [showError]);
 
+    useEffect(() => {
+        setImportConfirmOpen(true);
+    }, []);
+
     const handleSave = async () => {
         if (saving) return;
         setSaving(true);
@@ -403,7 +423,30 @@ export default function ScheduleCreatePage() {
     };
 
     const updateCell = (id: string, key: FieldKey, value: string) => {
-        setRows((prev) => prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)));
+        setRows((prev) =>
+            prev.map((row) => {
+                if (row.id !== id) return row;
+                const next = { ...row, [key]: value };
+                if (key === "period") delete next.periodFrom;
+                return next;
+            })
+        );
+    };
+
+    const addScheduleFromCalendar = (values: ScheduleInsertValues) => {
+        setRows((prev) => {
+            const blank = prev.filter((row) => !rowHasInput(row));
+            const filled = prev.filter(rowHasInput);
+            const next: ScheduleRow = {
+                ...createEmptyRow(),
+                ...values,
+            };
+            const sorted = [...filled, next].sort((a, b) =>
+                periodSortKey(a).localeCompare(periodSortKey(b))
+            );
+            return [...sorted, ...blank];
+        });
+        tableAreaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     };
 
     const focusScheduleCell = (rowIndex: number, fieldKey: FieldKey) => {
@@ -575,22 +618,24 @@ export default function ScheduleCreatePage() {
         <div className="flex h-screen bg-gray-50 overflow-hidden">
             {sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+                    className="fixed inset-0 bg-black/50 z-40"
                     onClick={() => setSidebarOpen(false)}
                 />
             )}
             <div
-                className={`fixed lg:static inset-y-0 left-0 z-30 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
-                    sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+                className={`fixed inset-y-0 left-0 z-50 w-[260px] max-w-[88vw] lg:max-w-none lg:w-[239px] h-screen shrink-0 transform transition-transform duration-300 ease-in-out ${
+                    sidebarOpen ? "translate-x-0" : "-translate-x-full"
                 }`}
+                onClick={(e) => e.stopPropagation()}
             >
-                <Sidebar onClose={() => setSidebarOpen(false)} />
+                <Sidebar onClose={() => setSidebarOpen(false)} showCloseOnDesktop />
             </div>
 
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
                     title={COPY.pageTitle}
-                    onMenuClick={() => setSidebarOpen(true)}
+                    onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+                    showMenuOnDesktop
                     leftContent={
                         <button
                             type="button"
@@ -926,7 +971,16 @@ export default function ScheduleCreatePage() {
                                 <IconPlus className="h-6 w-6" />
                             </button>
                         </div>
-                        <ScheduleDashboardCalendar />
+                        <ScheduleDashboardCalendar
+                            onScheduleSave={addScheduleFromCalendar}
+                            schedules={rows.map((row) => ({
+                                id: row.id,
+                                period: row.period,
+                                periodFrom: row.periodFrom,
+                                teamMember: row.teamMember,
+                                shipName: row.shipName,
+                            }))}
+                        />
                     </PageContainer>
                 </div>
             </div>
@@ -938,10 +992,10 @@ export default function ScheduleCreatePage() {
                     setImportConfirmOpen(false);
                 }}
                 onConfirm={() => void handleImportLatest()}
-                title="가져오기"
-                message="가장 최신 일정을 가져오시겠습니까?"
-                confirmText="가져오기"
-                cancelText="취소"
+                title="일정표 불러오기"
+                message="가장 최근 일정표를 불러오시겠습니까?"
+                confirmText="불러오기"
+                cancelText="새로 작성"
                 isLoading={importingLatest}
             />
             <ConfirmDialog
