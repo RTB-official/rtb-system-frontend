@@ -45,6 +45,9 @@ export const SCHEDULE_TITLE_BG = "#A8D0F0";
 export const SCHEDULE_LABEL_BG = "#E2E8F0";
 export const SCHEDULE_CELL_BORDER = "border border-gray-800";
 
+/** SF(팀장) — Team member 정렬 시 직급·입사일보다 우선 */
+export const SCHEDULE_TEAM_LEADERS = ["안재훈", "온권태", "정상민", "이효익"] as const;
+
 export function formatScheduleVersionKey(
     scheduleDate: string,
     versionLabel: string

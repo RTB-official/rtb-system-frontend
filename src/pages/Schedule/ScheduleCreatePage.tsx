@@ -13,6 +13,7 @@ import {
     IconArrowDown,
     IconArrowUp,
     IconCopy,
+    IconEdit,
     IconExportDocuments,
     IconPaste,
     IconPlus,
@@ -32,7 +33,9 @@ import {
 } from "../../components/schedule/scheduleTableShared";
 import ScheduleSheetSkeleton from "../../components/schedule/ScheduleSheetSkeleton";
 import ScheduleTableZoom from "../../components/schedule/ScheduleTableZoom";
-import ScheduleDashboardCalendar from "../../components/schedule/ScheduleDashboardCalendar";
+import ScheduleDashboardCalendar, {
+    type ScheduleCalendarEditTarget,
+} from "../../components/schedule/ScheduleDashboardCalendar";
 import { setNavigationGuard } from "../../lib/navigationGuard";
 import { fetchLatestScheduleSheet, fetchNextScheduleVersion, saveScheduleVersion } from "../../lib/scheduleApi";
 import { PATHS } from "../../utils/paths";
@@ -53,6 +56,7 @@ const COPY = {
     moveDown: "\uD55C\uCE78\uC544\uB798\uB85C",
     copyRow: "\uBCF5\uC0AC",
     pasteRow: "\uBD99\uC5EC\uB123\uAE30",
+    editRow: "\uC218\uC815",
     excelLoaded: (n: number) =>
         `\uC5D1\uC140\uC5D0\uC11C ${n}\uAC74\uC744 \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`,
     excelLoadFailed: "\uC5D1\uC140 \uBD88\uB7EC\uC624\uAE30\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.",
@@ -292,6 +296,8 @@ export default function ScheduleCreatePage() {
     const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
     const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
     const [copiedRow, setCopiedRow] = useState<Omit<ScheduleRow, "id"> | null>(null);
+    const [calendarEditTarget, setCalendarEditTarget] =
+        useState<ScheduleCalendarEditTarget | null>(null);
     const [versionKey, setVersionKey] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
@@ -447,6 +453,34 @@ export default function ScheduleCreatePage() {
             return [...sorted, ...blank];
         });
         tableAreaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    const updateScheduleFromCalendar = (id: string, values: ScheduleInsertValues) => {
+        setRows((prev) => {
+            const updated = prev.map((row) =>
+                row.id === id ? { ...row, ...values } : row
+            );
+            const blank = updated.filter((row) => !rowHasInput(row));
+            const filled = updated.filter(rowHasInput);
+            const sorted = [...filled].sort((a, b) =>
+                periodSortKey(a).localeCompare(periodSortKey(b))
+            );
+            return [...sorted, ...blank];
+        });
+        setCalendarEditTarget(null);
+        tableAreaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    const editRowInCalendar = (id: string) => {
+        const row = rows.find((item) => item.id === id);
+        if (!row) return;
+        const { id: rowId, periodFrom, ...fields } = row;
+        setCalendarEditTarget({
+            id: rowId,
+            ...fields,
+            periodFrom: periodFrom ?? "",
+        });
+        closeRowMenu();
     };
 
     const focusScheduleCell = (rowIndex: number, fieldKey: FieldKey) => {
@@ -719,7 +753,7 @@ export default function ScheduleCreatePage() {
                                 onClose={closeRowMenu}
                                 placement="right"
                                 width="w-48"
-                                estimatedHeight={280}
+                                estimatedHeight={330}
                                 showDelete={false}
                                 showLogout={false}
                             >
@@ -748,6 +782,13 @@ export default function ScheduleCreatePage() {
                                         label={COPY.pasteRow}
                                         disabled={!copiedRow}
                                         onClick={() => selectedRowId && pasteRow(selectedRowId)}
+                                    />
+                                    <RowMenuButton
+                                        icon={<IconEdit className="h-6 w-6" />}
+                                        label={COPY.editRow}
+                                        onClick={() =>
+                                            selectedRowId && editRowInCalendar(selectedRowId)
+                                        }
                                     />
                                     <RowMenuButton
                                         icon={<IconTrash className="h-6 w-6" />}
@@ -973,6 +1014,9 @@ export default function ScheduleCreatePage() {
                         </div>
                         <ScheduleDashboardCalendar
                             onScheduleSave={addScheduleFromCalendar}
+                            onScheduleUpdate={updateScheduleFromCalendar}
+                            editTarget={calendarEditTarget}
+                            onEditTargetClear={() => setCalendarEditTarget(null)}
                             schedules={rows.map((row) => ({
                                 id: row.id,
                                 period: row.period,

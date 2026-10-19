@@ -19,18 +19,51 @@ import {
     splitIntoWeeks,
     type ScheduleDateSelection,
 } from "../../utils/calendarUtils";
-import type { ScheduleInsertValues } from "./scheduleTableShared";
+import {
+    SCHEDULE_TEAM_LEADERS,
+    type ScheduleInsertValues,
+} from "./scheduleTableShared";
 import { useWorkReportStore, type StaffProfile } from "../../store/workReportStore";
-import { fetchRegisteredNamesByDay } from "../../lib/workloadApi";
 
-const SCHEDULE_TEAM_LEADERS = ["안재훈", "온권태", "정상민", "이효익"] as const;
+export type DayAvailability = {
+    leaders: number;
+    members: number;
+    /** 그날 일정에 미배정된 투입 가능 인원 (팀장 → 팀원 순) */
+    names: string[];
+};
 
-export type DayAvailability = { leaders: number; members: number };
+function pad2(n: number) {
+    return n < 10 ? `0${n}` : String(n);
+}
+
+/** 일정 막대 기간별 배정 인원 → 날짜별 이름 집합 */
+function buildScheduledNamesByDay(
+    bars: { start: string; end: string; teamMember: string }[]
+): Map<string, Set<string>> {
+    const byDay = new Map<string, Set<string>>();
+    for (const bar of bars) {
+        const names = bar.teamMember.split(/\s+/).filter(Boolean);
+        if (names.length === 0) continue;
+        const start = new Date(`${bar.start}T00:00:00`);
+        const end = new Date(`${bar.end}T00:00:00`);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+            let set = byDay.get(key);
+            if (!set) {
+                set = new Set();
+                byDay.set(key, set);
+            }
+            for (const name of names) set.add(name);
+        }
+    }
+    return byDay;
+}
 
 function buildDayAvailability(
     dateKeys: string[],
     staff: StaffProfile[],
-    registeredByDay: Map<string, Set<string>>
+    scheduledByDay: Map<string, Set<string>>
 ): Record<string, DayAvailability> {
     const leaderSet = new Set<string>(SCHEDULE_TEAM_LEADERS);
     const members = staff
@@ -44,10 +77,13 @@ function buildDayAvailability(
 
     const result: Record<string, DayAvailability> = {};
     for (const dateKey of dateKeys) {
-        const busy = registeredByDay.get(dateKey) ?? new Set();
+        const busy = scheduledByDay.get(dateKey) ?? new Set();
+        const availableLeaders = SCHEDULE_TEAM_LEADERS.filter((name) => !busy.has(name));
+        const availableMembers = members.filter((name) => !busy.has(name));
         result[dateKey] = {
-            leaders: SCHEDULE_TEAM_LEADERS.filter((name) => !busy.has(name)).length,
-            members: members.filter((name) => !busy.has(name)).length,
+            leaders: availableLeaders.length,
+            members: availableMembers.length,
+            names: [...availableLeaders, ...availableMembers],
         };
     }
     return result;
@@ -59,6 +95,11 @@ export type ScheduleCalendarEntry = {
     periodFrom?: string;
     teamMember?: string;
     shipName?: string;
+};
+
+/** Table row opened for calendar edit (prefill + update on save). */
+export type ScheduleCalendarEditTarget = ScheduleInsertValues & {
+    id: string;
 };
 
 const SCHEDULE_BAR_COLORS = [
@@ -92,6 +133,36 @@ function monthDayKey(year: number, value: string): string | null {
     const match = value.trim().match(/^(\d{1,2})\/(\d{1,2})$/);
     if (!match) return null;
     return `${year}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+}
+
+function padDatePart(n: number) {
+    return n < 10 ? `0${n}` : String(n);
+}
+
+function todayDateKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${padDatePart(now.getMonth() + 1)}-${padDatePart(now.getDate())}`;
+}
+
+/** Resolve MM/DD~MM/DD (+ optional periodFrom) to YYYY-MM-DD start/end. */
+export function resolveSchedulePeriodRange(
+    period: string,
+    periodFrom: string | undefined,
+    viewYear: number
+): { start: string; end: string } | null {
+    const parts = period.split("~").map((part) => part.trim()).filter(Boolean);
+    const storedFrom = /^\d{4}-\d{2}-\d{2}$/.test(periodFrom ?? "")
+        ? periodFrom
+        : null;
+    const startYear = storedFrom ? Number(storedFrom.slice(0, 4)) : viewYear;
+    const start = storedFrom ?? (parts[0] ? monthDayKey(startYear, parts[0]) : null);
+    if (!start) return null;
+    let end = parts[1] ? monthDayKey(startYear, parts[1]) : start;
+    if (!end) end = start;
+    if (parts[1] && end < start) {
+        end = monthDayKey(startYear + 1, parts[1]) ?? end;
+    }
+    return { start, end };
 }
 
 export function scheduleBarsFromEntries(
@@ -130,10 +201,16 @@ export function scheduleBarsFromEntries(
  */
 export default function ScheduleDashboardCalendar({
     onScheduleSave,
+    onScheduleUpdate,
     schedules = [],
+    editTarget = null,
+    onEditTargetClear,
 }: {
     onScheduleSave?: (values: ScheduleInsertValues) => void;
+    onScheduleUpdate?: (id: string, values: ScheduleInsertValues) => void;
     schedules?: ScheduleCalendarEntry[];
+    editTarget?: ScheduleCalendarEditTarget | null;
+    onEditTargetClear?: () => void;
 }) {
     const today = new Date();
     const isMobile = useIsMobile();
@@ -145,7 +222,16 @@ export default function ScheduleDashboardCalendar({
     const [hoverDate, setHoverDate] = useState<string | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+    const [menuAnchorKey, setMenuAnchorKey] = useState<string | null>(null);
+    const [dayDetailDateKey, setDayDetailDateKey] = useState<string | null>(null);
+    const [dayDetailPosition, setDayDetailPosition] = useState<{
+        x: number;
+        y: number;
+    } | null>(null);
     const [insertAfterDate, setInsertAfterDate] = useState<string | null>(null);
+    const [insertEditId, setInsertEditId] = useState<string | null>(null);
+    const [insertInitialValues, setInsertInitialValues] =
+        useState<ScheduleInsertValues | null>(null);
     const allStaff = useWorkReportStore((state) => state.allStaff);
     const fetchAllStaff = useWorkReportStore((state) => state.fetchAllStaff);
 
@@ -153,24 +239,38 @@ export default function ScheduleDashboardCalendar({
         void fetchAllStaff();
     }, [fetchAllStaff]);
 
-    const [registeredByDay, setRegisteredByDay] = useState<Map<string, Set<string>>>(
-        () => new Map()
-    );
-
     useEffect(() => {
-        let cancelled = false;
-        void fetchRegisteredNamesByDay(year, month + 1)
-            .then((map) => {
-                if (!cancelled) setRegisteredByDay(map);
-            })
-            .catch((err) => {
-                console.error("일지 등록 인원 조회 실패:", err);
-                if (!cancelled) setRegisteredByDay(new Map());
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [year, month]);
+        if (!editTarget) return;
+        const fallbackYear = /^\d{4}/.test(editTarget.periodFrom)
+            ? Number(editTarget.periodFrom.slice(0, 4))
+            : new Date().getFullYear();
+        const range =
+            resolveSchedulePeriodRange(
+                editTarget.period,
+                editTarget.periodFrom,
+                fallbackYear
+            ) ?? (() => {
+                const key = todayDateKey();
+                return { start: key, end: key };
+            })();
+        const startDate = new Date(`${range.start}T00:00:00`);
+        if (!Number.isNaN(startDate.getTime())) {
+            setYear(startDate.getFullYear());
+            setMonth(startDate.getMonth());
+        }
+        setHoverDate(null);
+        setMenuOpen(false);
+        setMenuPos(null);
+        setSelection({
+            anchor: null,
+            start: range.start,
+            end: range.end,
+        });
+        setInsertAfterDate(range.end);
+        setInsertEditId(editTarget.id);
+        const { id: _id, ...values } = editTarget;
+        setInsertInitialValues(values);
+    }, [editTarget]);
 
     const holidays = useHolidays(year, month);
     const { loading } = useDashboardEvents(year, month);
@@ -179,6 +279,10 @@ export default function ScheduleDashboardCalendar({
 
     const grid = useMemo(() => generateMonthGrid(year, month), [year, month]);
     const weeks = useMemo(() => splitIntoWeeks(grid), [grid]);
+    const scheduleBars = useMemo(
+        () => scheduleBarsFromEntries(schedules, year, allStaff),
+        [schedules, year, allStaff]
+    );
     const dayAvailability = useMemo(() => {
         const dateKeys = grid.map((cell) => {
             const d = cell.date;
@@ -186,8 +290,12 @@ export default function ScheduleDashboardCalendar({
             const day = String(d.getDate()).padStart(2, "0");
             return `${d.getFullYear()}-${m}-${day}`;
         });
-        return buildDayAvailability(dateKeys, allStaff, registeredByDay);
-    }, [grid, allStaff, registeredByDay]);
+        return buildDayAvailability(
+            dateKeys,
+            allStaff,
+            buildScheduledNamesByDay(scheduleBars)
+        );
+    }, [grid, allStaff, scheduleBars]);
     const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const headerRef = useRef<HTMLDivElement>(null);
     const { cellHeights, handleCellHeightChange } = useCellHeights(cellRefs, weeks);
@@ -286,12 +394,14 @@ export default function ScheduleDashboardCalendar({
                             setSelection(next);
                             const completed = next.anchor == null && next.start != null;
                             if (completed) {
+                                setMenuAnchorKey(dateKey);
                                 setMenuPos({ x: event.clientX, y: event.clientY });
                                 setMenuOpen(true);
                                 return;
                             }
                             setMenuOpen(false);
                             setMenuPos(null);
+                            setMenuAnchorKey(null);
                         }}
                         onDateHover={(dateKey) => {
                             if (selection.anchor) setHoverDate(dateKey);
@@ -307,26 +417,65 @@ export default function ScheduleDashboardCalendar({
                         tagsBesideDate
                         uniformColumns
                         insertAfterDate={insertAfterDate}
-                        onInsertClose={() => setInsertAfterDate(null)}
+                        onInsertClose={() => {
+                            setInsertAfterDate(null);
+                            setInsertEditId(null);
+                            setInsertInitialValues(null);
+                            onEditTargetClear?.();
+                        }}
                         onScheduleSave={onScheduleSave}
-                        scheduleBars={scheduleBarsFromEntries(schedules, year, allStaff)}
+                        insertInitialValues={insertInitialValues}
+                        insertEditId={insertEditId}
+                        onScheduleUpdate={(id, values) => {
+                            onScheduleUpdate?.(id, values);
+                            onEditTargetClear?.();
+                        }}
+                        scheduleBars={scheduleBars}
                         dayAvailability={dayAvailability}
                         rowHeight={rowHeight}
+                        dayDetailDateKey={dayDetailDateKey}
+                        dayDetailPosition={dayDetailPosition}
+                        onDayDetailClose={() => {
+                            setDayDetailDateKey(null);
+                            setDayDetailPosition(null);
+                        }}
                     />
                 )}
             </div>
             <CalendarMenu
                 variant="schedule"
                 isOpen={menuOpen}
-                anchorEl={null}
+                anchorEl={
+                    menuAnchorKey ? cellRefs.current[menuAnchorKey] ?? null : null
+                }
                 position={menuPos ?? undefined}
                 selectedDate={selection.start}
                 onClose={() => {
                     setMenuOpen(false);
                     setMenuPos(null);
+                    setMenuAnchorKey(null);
                 }}
+                onDayDetail={
+                    isMobile &&
+                    selection.start != null &&
+                    selection.end != null &&
+                    selection.start === selection.end
+                        ? () => {
+                              const dateKey = selection.start;
+                              if (!dateKey) return;
+                              setDayDetailPosition(menuPos);
+                              setDayDetailDateKey(dateKey);
+                          }
+                        : undefined
+                }
                 onAddSchedule={() => {
-                    if (selection.end) setInsertAfterDate(selection.end);
+                    if (selection.end) {
+                        setDayDetailDateKey(null);
+                        setDayDetailPosition(null);
+                        setInsertEditId(null);
+                        setInsertInitialValues(null);
+                        setInsertAfterDate(selection.end);
+                    }
                 }}
             />
         </section>

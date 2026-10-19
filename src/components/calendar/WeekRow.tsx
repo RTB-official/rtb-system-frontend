@@ -59,7 +59,10 @@ interface WeekRowProps {
         teamMember: string;
         priorLaneRatios: number[];
     }[];
-    dayAvailability?: Record<string, { leaders: number; members: number }>;
+    dayAvailability?: Record<
+        string,
+        { leaders: number; members: number; names: string[] }
+    >;
     onDayScheduleHover?: (info: DayScheduleHoverInfo) => void;
     onDayScheduleLeave?: () => void;
 }

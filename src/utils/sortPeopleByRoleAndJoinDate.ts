@@ -5,10 +5,16 @@ export type PersonSortMeta = {
     joinDate?: string | null;
 };
 
+export type SortPeopleOptions = {
+    /** 이 목록에 있는 이름은 직급·입사일보다 먼저 (배열 순서 유지) */
+    priorityFirst?: readonly string[];
+};
+
 /** 직급 높은 순 → 같은 직급이면 입사일 빠른 순 → 이름순 */
 export function sortPeopleByRoleAndJoinDate(
     people: string[],
-    metaByName: Map<string, PersonSortMeta> | Record<string, PersonSortMeta>
+    metaByName: Map<string, PersonSortMeta> | Record<string, PersonSortMeta>,
+    options?: SortPeopleOptions
 ): string[] {
     const get = (name: string): PersonSortMeta => {
         if (metaByName instanceof Map) {
@@ -17,7 +23,15 @@ export function sortPeopleByRoleAndJoinDate(
         return metaByName[name] ?? {};
     };
 
+    const priorityIndex = new Map(
+        (options?.priorityFirst ?? []).map((name, index) => [name, index])
+    );
+
     return [...people].sort((a, b) => {
+        const pa = priorityIndex.has(a) ? priorityIndex.get(a)! : Number.POSITIVE_INFINITY;
+        const pb = priorityIndex.has(b) ? priorityIndex.get(b)! : Number.POSITIVE_INFINITY;
+        if (pa !== pb) return pa - pb;
+
         const ma = get(a);
         const mb = get(b);
         const orderA = ROLE_ORDER[ma.position ?? ""] ?? 999;

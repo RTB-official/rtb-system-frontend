@@ -2,6 +2,9 @@
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
+import { installTouchHoverGuard } from "./lib/touchHoverGuard";
+
+installTouchHoverGuard();
 
 function mount() {
   const rootEl = document.getElementById("root");

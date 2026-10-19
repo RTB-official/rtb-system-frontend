@@ -81,7 +81,7 @@ export default function BaseModal({
                 >
                     {/* Header */}
                     <div className={`flex items-center ${showCloseButton ? 'justify-between' : 'justify-start'} ${compactHeader ? 'py-0 md:py-0 mb-0 md:mb-0' : ''}`}>
-                        <h2 className={`${compactHeader ? 'text-[11px] md:text-[22px]' : 'text-[22px]'} font-semibold text-gray-900`}>
+                        <h2 className={`${compactHeader ? 'text-[11px] md:text-[22px]' : 'text-[22px]'} min-w-0 flex-1 font-semibold text-gray-900`}>
                             {title}
                         </h2>
                         {showCloseButton && (

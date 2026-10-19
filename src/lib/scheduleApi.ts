@@ -349,3 +349,36 @@ export async function fetchLatestScheduleSheet(): Promise<ScheduleVersionSheet |
     return sheets[0] ?? null;
 }
 
+/**
+ * Paginated schedule version sheets, newest → oldest.
+ * `offset` skips that many newest versions.
+ */
+export async function fetchScheduleVersionSheetsPage(
+    offset: number,
+    limit: number
+): Promise<{ sheets: ScheduleVersionSheet[]; hasMore: boolean }> {
+    if (limit <= 0) return { sheets: [], hasMore: false };
+    const from = Math.max(0, offset);
+    const to = from + limit - 1;
+
+    const { data, error } = await supabase
+        .from("schedule_versions")
+        .select(VERSION_SELECT)
+        .order("schedule_date", { ascending: false })
+        .order("version_label", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("position", {
+            referencedTable: "schedule_version_rows",
+            ascending: true,
+        })
+        .range(from, to);
+
+    if (error) throw error;
+
+    const sheets = ((data ?? []) as DbScheduleVersion[]).map(mapVersionSheet);
+    return {
+        sheets,
+        hasMore: sheets.length === limit,
+    };
+}
+
