@@ -1,7 +1,13 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import ActionMenu from "./common/ActionMenu";
-import { IconCalendar, IconPerson, IconVacation, IconCard } from "./icons/Icons";
+import {
+    IconCalendar,
+    IconInfo,
+    IconPerson,
+    IconVacation,
+    IconCard,
+} from "./icons/Icons";
 
 interface Props {
     isOpen: boolean;
@@ -12,6 +18,8 @@ interface Props {
     /** Schedule registration shows only 일정 추가 and 개인 일정. */
     variant?: "dashboard" | "schedule";
     onAddSchedule?: () => void;
+    /** 모바일 등: 일정 추가 위에 상세정보 항목 표시 */
+    onDayDetail?: () => void;
 }
 
 export default function CalendarMenu({
@@ -22,6 +30,7 @@ export default function CalendarMenu({
     selectedDate,
     variant = "dashboard",
     onAddSchedule,
+    onDayDetail,
 }: Props) {
     const navigate = useNavigate();
     const itemClass =
@@ -35,8 +44,22 @@ export default function CalendarMenu({
                 position={position}
                 onClose={onClose}
                 width="w-44"
-                placement="right"
+                placement="bottom-right"
+                estimatedHeight={onDayDetail ? 168 : 120}
             >
+                {onDayDetail ? (
+                    <button
+                        type="button"
+                        className={itemClass}
+                        onClick={() => {
+                            onDayDetail();
+                            onClose();
+                        }}
+                    >
+                        <IconInfo className="w-6 h-6 text-gray-700" />
+                        상세정보
+                    </button>
+                ) : null}
                 <button
                     type="button"
                     className={itemClass}

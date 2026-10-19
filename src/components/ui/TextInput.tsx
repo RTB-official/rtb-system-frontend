@@ -81,6 +81,7 @@ export default function TextInput({
             readOnly={readOnly}
             list={list}
             autoComplete={autoComplete}
+            spellCheck={false}
             className="min-w-0 flex-1 bg-transparent font-normal text-[16px] text-[#101828] leading-[1.5] placeholder:text-[#99a1af] outline-none disabled:bg-transparent disabled:text-gray-400"
           />
           {icon}

@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/*
+ * sticky hover 방지.
+ * - 터치 세션이면 html.no-hover (JS가 설정) → hover 유틸 비활성
+ * - 마우스로 다시 움직이면 no-hover 제거
+ */
+@custom-variant hover {
+    html:not(.no-hover) &:hover {
+        @slot;
+    }
+}
+
+/* 모바일: 더블탭 줌/클릭 지연 완화 */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea,
+label {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
 /* Pretendard JP 폰트 정의 */
 @font-face {
     font-family: "Pretendard JP";
@@ -134,4 +157,32 @@ button:focus {
     to {
         opacity: 1;
     }
+}
+
+/* 일정 선택 모달: 좌우 이동 */
+@keyframes schedule-pick-slide-from-left {
+    from {
+        opacity: 0;
+        transform: translateX(-28px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+@keyframes schedule-pick-slide-from-right {
+    from {
+        opacity: 0;
+        transform: translateX(28px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+.schedule-pick-slide-from-left {
+    animation: schedule-pick-slide-from-left 280ms cubic-bezier(0, 0, 0.2, 1);
+}
+.schedule-pick-slide-from-right {
+    animation: schedule-pick-slide-from-right 280ms cubic-bezier(0, 0, 0.2, 1);
 }

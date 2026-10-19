@@ -1,10 +1,20 @@
 // src/App.tsx
-import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { lazy, Suspense, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./store/auth";
 import RequireAuth from "./components/RequireAuth";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import PageSkeleton from "./components/common/PageSkeleton";
+
+/** 페이지 이동 시 sticky :hover / focus 잔여로 첫 탭이 씹히는 현상 완화 */
+function ClearTouchHoverOnNavigate() {
+  const location = useLocation();
+  useEffect(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  }, [location.pathname, location.search]);
+  return null;
+}
 
 const ReportPdfPage = lazy(() => import("./pages/Report/ReportPdfPage"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
@@ -62,6 +72,7 @@ function App() {
     <ToastProvider>
       <AuthProvider>
         <BrowserRouter>
+          <ClearTouchHoverOnNavigate />
           <Suspense fallback={<PageSkeleton />}>
             <Routes>
               {/* public */}

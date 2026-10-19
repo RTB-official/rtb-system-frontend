@@ -48,7 +48,7 @@ interface DayCellProps {
         priorLaneRatios: number[];
     }[];
     scheduleCellHeight?: number;
-    dayAvailability?: { leaders: number; members: number };
+    dayAvailability?: { leaders: number; members: number; names: string[] };
     onDayScheduleHover?: (info: DayScheduleHoverInfo) => void;
     onDayScheduleLeave?: () => void;
     allowOutsideMonthSelect?: boolean;
@@ -318,14 +318,10 @@ const DayCell: React.FC<DayCellProps> = ({
                     }`}
                 />
             )}
-            {dayAvailability ? (
+            {!isMobile && dayAvailability ? (
                 <div
-                    className={`pointer-events-none absolute z-20 text-right leading-tight text-gray-500 ${
-                        isMobile
-                            ? "top-0.5 right-0.5 text-[9px]"
-                            : "top-1 right-1.5 text-[11px]"
-                    }`}
-                    title="그날 일지에 미등록된 투입 가능 인원 (SF=팀장, F=팀원)"
+                    className="pointer-events-none absolute z-20 top-1 right-1.5 text-right text-[11px] leading-tight text-gray-500"
+                    title="그날 일정에 미배정된 투입 가능 인원 (SF=팀장, F=팀원)"
                 >
                     SF{dayAvailability.leaders} / F{dayAvailability.members}
                 </div>

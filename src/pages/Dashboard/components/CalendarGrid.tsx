@@ -14,7 +14,13 @@ import {
     type StaffProfile,
 } from "../../../store/workReportStore";
 import { CalendarEvent } from "../../../types";
-import { getWeekEventRows, getEventsForDate, getSafeDateKey, getColumnPadding } from "../../../utils/calendarUtils";
+import {
+    getWeekEventRows,
+    getEventsForDate,
+    getSafeDateKey,
+    getColumnPadding,
+    getDateRangeRole,
+} from "../../../utils/calendarUtils";
 import { prefetchWorkLogById } from "../../../lib/workLogApi";
 import { useStaffSortMeta } from "../../../hooks/useStaffSortMeta";
 import {
@@ -23,6 +29,7 @@ import {
 } from "../../../utils/sortPeopleByRoleAndJoinDate";
 import {
     SCHEDULE_COLUMNS,
+    SCHEDULE_TEAM_LEADERS,
     type ScheduleInsertValues,
 } from "../../../components/schedule/scheduleTableShared";
 
@@ -50,6 +57,11 @@ interface CalendarGridProps {
     insertAfterDate?: string | null;
     onInsertClose?: () => void;
     onScheduleSave?: (values: ScheduleInsertValues) => void;
+    /** Prefill the insert form (edit mode). */
+    insertInitialValues?: ScheduleInsertValues | null;
+    /** When set, save updates this row instead of inserting. */
+    insertEditId?: string | null;
+    onScheduleUpdate?: (id: string, values: ScheduleInsertValues) => void;
     onDragStart: (dateKey: string, e: React.MouseEvent) => void;
     onDragEnter: (dateKey: string) => void;
     onHiddenCountClick: (dateKey: string, hiddenEventIds: string[]) => void;
@@ -72,8 +84,15 @@ interface CalendarGridProps {
         shipName: string;
         teamMember: string;
     }[];
-    /** Per-day available leaders/members (not on a work log that day). */
-    dayAvailability?: Record<string, { leaders: number; members: number }>;
+    /** Per-day available leaders/members (not assigned to a schedule that day). */
+    dayAvailability?: Record<
+        string,
+        { leaders: number; members: number; names: string[] }
+    >;
+    /** 외부(예: 일정 메뉴)에서 해당 날짜 상세 팝오버를 연다. */
+    dayDetailDateKey?: string | null;
+    dayDetailPosition?: { x: number; y: number } | null;
+    onDayDetailClose?: () => void;
 }
 
 function scheduleBarLength(bar: { start: string; end: string }) {
@@ -316,6 +335,7 @@ const ToneTextarea = React.forwardRef<
         <textarea
             ref={ref}
             {...props}
+            spellCheck={false}
             className={className}
             style={{ backgroundColor: tone.fill, borderColor: tone.line, ...style }}
         />
@@ -642,7 +662,9 @@ function teamMemberTableValue(
     metaByName: Map<string, PersonSortMeta>
 ) {
     const names = draft.members.filter((name) => name.trim());
-    return sortPeopleByRoleAndJoinDate(names, metaByName).join(" ");
+    return sortPeopleByRoleAndJoinDate(names, metaByName, {
+        priorityFirst: SCHEDULE_TEAM_LEADERS,
+    }).join(" ");
 }
 
 type CarDraft = {
@@ -992,6 +1014,113 @@ function earlierScheduleDate(start: string | null, end: string | null) {
     return start <= end ? start : end;
 }
 
+function customerDraftFromValues(
+    company: string,
+    contact: string
+): CustomerDraft {
+    const companyTrim = company.trim();
+    const contactTrim = contact.trim();
+    const group = CUSTOMER_GROUPS.find((item) => item.label === companyTrim);
+    if (group && (group.id === "ELU" || group.id === "PRIME")) {
+        const known = ORDER_PERSONS[group.id] ?? [];
+        if (known.includes(contactTrim)) {
+            return {
+                ...EMPTY_CUSTOMER_DRAFT,
+                group: group.id,
+                person: contactTrim,
+            };
+        }
+        if (contactTrim) {
+            return {
+                ...EMPTY_CUSTOMER_DRAFT,
+                group: group.id,
+                person: contactTrim,
+                extraNames: [contactTrim],
+            };
+        }
+        return { ...EMPTY_CUSTOMER_DRAFT, group: group.id };
+    }
+    if (companyTrim || contactTrim) {
+        return {
+            ...EMPTY_CUSTOMER_DRAFT,
+            group: "DIRECT",
+            companyDirect: companyTrim,
+            contactDirect: contactTrim,
+        };
+    }
+    return EMPTY_CUSTOMER_DRAFT;
+}
+
+function locationDraftFromValue(value: string): LocationDraft {
+    const lines = value.split("\n");
+    const placesLine = lines[0] ?? "";
+    const detail = lines.slice(1).join("\n").trim();
+    const places = placesLine
+        .split(/[,，]/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+    const locations: string[] = [];
+    const extraLocations: string[] = [];
+    for (const place of places) {
+        locations.push(place);
+        if (!(LOCATIONS as readonly string[]).includes(place)) {
+            extraLocations.push(place);
+        }
+    }
+    return {
+        locations,
+        locationCustom: "",
+        extraLocations,
+        locationDetail: detail,
+    };
+}
+
+function teamDraftFromValue(value: string): TeamDraft {
+    const members = value.split(/\s+/).filter(Boolean);
+    return {
+        members,
+        memberCustom: "",
+        extraMembers: members,
+    };
+}
+
+function carDraftFromValue(value: string): CarDraft {
+    const selected: string[] = [];
+    const notes: Record<string, string> = {};
+    for (const line of value
+        .split("\n")
+        .map((part) => part.trim())
+        .filter(Boolean)) {
+        const vehicle = VEHICLES.find(
+            (item) => line === item || line.startsWith(`${item} `)
+        );
+        if (!vehicle) continue;
+        selected.push(vehicle);
+        const note = line.slice(vehicle.length).trim();
+        if (note) notes[vehicle] = note;
+    }
+    return { selected, notes };
+}
+
+function draftsFromScheduleValues(values: ScheduleInsertValues) {
+    return {
+        customer: customerDraftFromValues(
+            values.customerCompany,
+            values.customerContact
+        ),
+        ship: {
+            shipName: values.shipName,
+            engineType: values.engineType,
+        },
+        workLocation: locationDraftFromValue(values.workLocation),
+        workItem: values.workItem,
+        team: teamDraftFromValue(values.teamMember),
+        cars: carDraftFromValue(values.car),
+        yardPic: values.yardPic,
+        remark: values.remark,
+    };
+}
+
 function scrollParentOf(element: HTMLElement): HTMLElement | null {
     const candidates: HTMLElement[] = [];
     let parent = element.parentElement;
@@ -1025,14 +1154,23 @@ function easeOut(t: number) {
 function WeekInsertSlot({
     onClose,
     onSave,
+    onUpdate,
+    editId = null,
+    initialValues = null,
     periodStart,
     periodEnd,
+    isMobile = false,
 }: {
     onClose: () => void;
     onSave?: (values: ScheduleInsertValues) => void;
+    onUpdate?: (id: string, values: ScheduleInsertValues) => void;
+    editId?: string | null;
+    initialValues?: ScheduleInsertValues | null;
     periodStart: string | null;
     periodEnd: string | null;
+    isMobile?: boolean;
 }) {
+    const seeded = initialValues ? draftsFromScheduleValues(initialValues) : null;
     const [expanded, setExpanded] = useState(false);
     const [activeTab, setActiveTab] = useState<(typeof SCHEDULE_FORM_TABS)[number]>(
         SCHEDULE_FORM_TABS[0]
@@ -1049,14 +1187,18 @@ function WeekInsertSlot({
     const cardRefs = React.useRef<Array<HTMLDivElement | null>>([]);
     const [cardWidth, setCardWidth] = useState(0);
     const [sidePad, setSidePad] = useState(0);
-    const [customer, setCustomer] = useState<CustomerDraft>(EMPTY_CUSTOMER_DRAFT);
-    const [ship, setShip] = useState<ShipDraft>(EMPTY_SHIP_DRAFT);
-    const [workLocation, setWorkLocation] = useState<LocationDraft>(EMPTY_LOCATION_DRAFT);
-    const [workItem, setWorkItem] = useState("");
-    const [team, setTeam] = useState<TeamDraft>(EMPTY_TEAM_DRAFT);
-    const [cars, setCars] = useState<CarDraft>(EMPTY_CAR_DRAFT);
-    const [yardPic, setYardPic] = useState("");
-    const [remark, setRemark] = useState("");
+    const [customer, setCustomer] = useState<CustomerDraft>(
+        () => seeded?.customer ?? EMPTY_CUSTOMER_DRAFT
+    );
+    const [ship, setShip] = useState<ShipDraft>(() => seeded?.ship ?? EMPTY_SHIP_DRAFT);
+    const [workLocation, setWorkLocation] = useState<LocationDraft>(
+        () => seeded?.workLocation ?? EMPTY_LOCATION_DRAFT
+    );
+    const [workItem, setWorkItem] = useState(() => seeded?.workItem ?? "");
+    const [team, setTeam] = useState<TeamDraft>(() => seeded?.team ?? EMPTY_TEAM_DRAFT);
+    const [cars, setCars] = useState<CarDraft>(() => seeded?.cars ?? EMPTY_CAR_DRAFT);
+    const [yardPic, setYardPic] = useState(() => seeded?.yardPic ?? "");
+    const [remark, setRemark] = useState(() => seeded?.remark ?? "");
     const workItemCardRef = useRef<HTMLTextAreaElement>(null);
     const workItemTableRef = useRef<HTMLTextAreaElement>(null);
     const workItemCaretRef = useRef({ start: 0, end: 0 });
@@ -1182,6 +1324,11 @@ function WeekInsertSlot({
         const scroller = scrollerRef.current;
         if (!scroller || !expanded) return;
         const updateWidth = () => {
+            if (isMobile) {
+                setCardWidth(Math.max(0, scroller.clientWidth));
+                setSidePad(0);
+                return;
+            }
             const width = Math.max(0, ((scroller.clientWidth - 48) / 3) * 0.8);
             setCardWidth(width);
             setSidePad(Math.max(0, (scroller.clientWidth - width) / 2));
@@ -1190,12 +1337,12 @@ function WeekInsertSlot({
         const observer = new ResizeObserver(updateWidth);
         observer.observe(scroller);
         return () => observer.disconnect();
-    }, [expanded]);
+    }, [expanded, isMobile]);
 
     useEffect(() => {
         const scroller = scrollerRef.current;
+        if (!scroller || !expanded || isMobile) return;
         const tabBar = tabBarRef.current;
-        if (!scroller || !tabBar || !expanded) return;
         const onWheel = (event: WheelEvent) => {
             if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
             const raw = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
@@ -1209,13 +1356,177 @@ function WeekInsertSlot({
             event.preventDefault();
             scroller.scrollLeft += delta;
         };
-        tabBar.addEventListener("wheel", onWheel, { passive: false });
+        tabBar?.addEventListener("wheel", onWheel, { passive: false });
         scroller.addEventListener("wheel", onWheel, { passive: false });
         return () => {
-            tabBar.removeEventListener("wheel", onWheel);
+            tabBar?.removeEventListener("wheel", onWheel);
             scroller.removeEventListener("wheel", onWheel);
         };
-    }, [expanded]);
+    }, [expanded, isMobile]);
+
+    /**
+     * 모바일:
+     * 1) 가로 드래그 (탭은 가로채지 않음)
+     * 2) 버튼/입력 focus 시 브라우저가 카드를 가로로 밀어 focus 맞추며
+     *    첫 탭의 클릭이 씹히는 문제 방지 (scroll 위치 고정)
+     */
+    useEffect(() => {
+        const scroller = scrollerRef.current;
+        if (!scroller || !expanded || !isMobile) return;
+
+        const DRAG_LOCK_PX = 28;
+        let startX = 0;
+        let startY = 0;
+        let startScroll = 0;
+        let lastX = 0;
+        let lastT = 0;
+        let velocity = 0;
+        let axis: "h" | "v" | null = null;
+        let dragged = false;
+        let momentumFrame = 0;
+        let startOnField = false;
+        let freezeScrollLeft: number | null = null;
+        /** 스와이프 직후 ghost click만 짧게 무시 (다음 탭까지 막지 않음) */
+        let ignoreClicksUntil = 0;
+
+        const maxScroll = () =>
+            Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+
+        const clampScroll = (value: number) =>
+            Math.max(0, Math.min(maxScroll(), value));
+
+        const stopMomentum = () => {
+            if (momentumFrame) {
+                cancelAnimationFrame(momentumFrame);
+                momentumFrame = 0;
+            }
+        };
+
+        const runMomentum = (initialVelocity: number) => {
+            stopMomentum();
+            let v = initialVelocity;
+            const step = () => {
+                if (Math.abs(v) < 0.4) {
+                    momentumFrame = 0;
+                    syncTabWithScroll();
+                    return;
+                }
+                scroller.scrollLeft = clampScroll(scroller.scrollLeft + v);
+                if (
+                    scroller.scrollLeft <= 0 ||
+                    scroller.scrollLeft >= maxScroll()
+                ) {
+                    v = 0;
+                } else {
+                    v *= 0.95;
+                }
+                momentumFrame = requestAnimationFrame(step);
+            };
+            momentumFrame = requestAnimationFrame(step);
+        };
+
+        const onTouchStart = (event: TouchEvent) => {
+            const touch = event.touches[0];
+            if (!touch) return;
+            const target = event.target;
+            startOnField =
+                target instanceof HTMLElement &&
+                Boolean(
+                    target.closest(
+                        "input, textarea, select, [contenteditable='true']"
+                    )
+                );
+            stopMomentum();
+            startX = touch.clientX;
+            startY = touch.clientY;
+            lastX = touch.clientX;
+            lastT = performance.now();
+            startScroll = scroller.scrollLeft;
+            velocity = 0;
+            axis = null;
+            dragged = false;
+        };
+
+        const onTouchMove = (event: TouchEvent) => {
+            if (startOnField) return;
+            const touch = event.touches[0];
+            if (!touch) return;
+            const dx = touch.clientX - startX;
+            const dy = touch.clientY - startY;
+            if (axis == null) {
+                if (Math.abs(dx) < DRAG_LOCK_PX && Math.abs(dy) < DRAG_LOCK_PX) {
+                    return;
+                }
+                axis = Math.abs(dx) > Math.abs(dy) * 1.35 ? "h" : "v";
+            }
+            if (axis !== "h") return;
+            event.preventDefault();
+            dragged = true;
+            const now = performance.now();
+            const dt = Math.max(1, now - lastT);
+            velocity = -(touch.clientX - lastX) / dt;
+            lastX = touch.clientX;
+            lastT = now;
+            scroller.scrollLeft = clampScroll(startScroll - dx);
+        };
+
+        const onClickCapture = (event: Event) => {
+            if (performance.now() >= ignoreClicksUntil) return;
+            event.preventDefault();
+            event.stopPropagation();
+        };
+
+        const onTouchEnd = () => {
+            const scrolled = Math.abs(scroller.scrollLeft - startScroll);
+            const movedFar = axis === "h" && dragged && scrolled > 24;
+            if (movedFar) {
+                runMomentum(velocity * 16);
+                // 같은 제스처의 ghost click만 ~300ms 차단.
+                // once 리스너는 이후 진짜 버튼 탭까지 가로채서 첫 탭이 포커스만 됨.
+                ignoreClicksUntil = performance.now() + 300;
+            } else {
+                syncTabWithScroll();
+            }
+            axis = null;
+            dragged = false;
+            startOnField = false;
+        };
+
+        /** focus scroll-into-view가 캐러셀을 밀며 클릭을 취소하는 것 차단 */
+        const onFocusIn = () => {
+            freezeScrollLeft = scroller.scrollLeft;
+            const restore = () => {
+                if (freezeScrollLeft == null) return;
+                if (scroller.scrollLeft !== freezeScrollLeft) {
+                    scroller.scrollLeft = freezeScrollLeft;
+                }
+            };
+            restore();
+            requestAnimationFrame(() => {
+                restore();
+                requestAnimationFrame(() => {
+                    restore();
+                    freezeScrollLeft = null;
+                });
+            });
+        };
+
+        scroller.addEventListener("touchstart", onTouchStart, { passive: true });
+        scroller.addEventListener("touchmove", onTouchMove, { passive: false });
+        scroller.addEventListener("touchend", onTouchEnd);
+        scroller.addEventListener("touchcancel", onTouchEnd);
+        scroller.addEventListener("click", onClickCapture, true);
+        scroller.addEventListener("focusin", onFocusIn);
+        return () => {
+            stopMomentum();
+            scroller.removeEventListener("touchstart", onTouchStart);
+            scroller.removeEventListener("touchmove", onTouchMove);
+            scroller.removeEventListener("touchend", onTouchEnd);
+            scroller.removeEventListener("touchcancel", onTouchEnd);
+            scroller.removeEventListener("click", onClickCapture, true);
+            scroller.removeEventListener("focusin", onFocusIn);
+        };
+    }, [expanded, isMobile]);
 
     const scrollToTab = (label: (typeof SCHEDULE_FORM_TABS)[number]) => {
         setActiveTab(label);
@@ -1270,6 +1581,41 @@ function WeekInsertSlot({
         setExpanded(false);
     };
 
+    const saveActions = (
+        <div className="mb-1 flex shrink-0">
+            <Button
+                type="button"
+                tabIndex={-1}
+                variant="ghost"
+                size="sm"
+                className="!h-9 !w-9 !rounded-full !px-0 !text-gray-700 hover:!bg-gray-200"
+                aria-label="저장"
+                title="저장"
+                icon={<IconCheck className="h-5 w-5" />}
+                onClick={() => {
+                    const payload: ScheduleInsertValues = {
+                        ...tableCells,
+                        periodFrom: earlierScheduleDate(periodStart, periodEnd),
+                    };
+                    if (editId) onUpdate?.(editId, payload);
+                    else onSave?.(payload);
+                    requestClose();
+                }}
+            />
+            <Button
+                type="button"
+                tabIndex={-1}
+                variant="ghost"
+                size="sm"
+                className="!h-9 !w-9 !rounded-full !px-0 !text-gray-700 hover:!bg-gray-200"
+                aria-label="닫기"
+                title="닫기"
+                icon={<IconClose className="h-5 w-5" />}
+                onClick={requestClose}
+            />
+        </div>
+    );
+
     return (
         <div
             ref={slotRef}
@@ -1284,6 +1630,7 @@ function WeekInsertSlot({
             }}
         >
             <div ref={slotContentRef} className="flex shrink-0 flex-col">
+            {!isMobile ? (
             <div className="shrink-0 px-3 pt-3">
                 <div className="overflow-hidden rounded-xl border border-gray-800">
                     <table className="w-full table-fixed border-separate border-spacing-0 text-[11px] text-gray-900 md:text-[12px]">
@@ -1334,6 +1681,7 @@ function WeekInsertSlot({
                                                     ref={workItemTableRef}
                                                     value={workItem}
                                                     rows={1}
+                                                    spellCheck={false}
                                                     onChange={(event) => {
                                                         rememberWorkItemCaret(event.target);
                                                         setWorkItem(event.target.value);
@@ -1357,6 +1705,12 @@ function WeekInsertSlot({
                     </table>
                 </div>
             </div>
+            ) : null}
+            {isMobile ? (
+                <div className="flex items-center justify-end border-b border-gray-200 px-2 pt-2">
+                    {saveActions}
+                </div>
+            ) : (
             <div ref={tabBarRef} className="flex items-end gap-1 border-b border-gray-200 px-2 pt-2">
                 <div role="tablist" className="flex min-w-0 flex-1 items-end">
                     {SCHEDULE_FORM_TABS.map((label) => {
@@ -1387,43 +1741,19 @@ function WeekInsertSlot({
                         );
                     })}
                 </div>
-                <div className="mb-1 flex shrink-0">
-                    <Button
-                        type="button"
-                        tabIndex={-1}
-                        variant="ghost"
-                        size="sm"
-                        className="!h-9 !w-9 !rounded-full !px-0 !text-gray-700 hover:!bg-gray-200"
-                        aria-label="저장"
-                        title="저장"
-                        icon={<IconCheck className="h-5 w-5" />}
-                        onClick={() => {
-                            onSave?.({
-                                ...tableCells,
-                                periodFrom: earlierScheduleDate(periodStart, periodEnd),
-                            });
-                            requestClose();
-                        }}
-                    />
-                    <Button
-                        type="button"
-                        tabIndex={-1}
-                        variant="ghost"
-                        size="sm"
-                        className="!h-9 !w-9 !rounded-full !px-0 !text-gray-700 hover:!bg-gray-200"
-                        aria-label="닫기"
-                        title="닫기"
-                        icon={<IconClose className="h-5 w-5" />}
-                        onClick={requestClose}
-                    />
-                </div>
+                {saveActions}
             </div>
+            )}
             <div
                 ref={scrollerRef}
                 onScroll={syncTabWithScroll}
-                className="h-[23rem] shrink-0 overflow-x-scroll overflow-y-hidden"
+                className={
+                    isMobile
+                        ? "h-[23rem] shrink-0 overflow-x-auto overflow-y-hidden overscroll-x-contain [overflow-anchor:none] touch-pan-x"
+                        : "h-[23rem] shrink-0 overflow-x-scroll overflow-y-hidden"
+                }
             >
-                <div className="flex h-full py-3">
+                <div className={`flex h-full ${isMobile ? "py-0" : "py-3"}`}>
                     <div aria-hidden className="shrink-0" style={{ width: sidePad, minWidth: sidePad }} />
                     {SCHEDULE_FORM_TABS.map((label, index) => {
                         const selected = activeTab === label;
@@ -1434,17 +1764,27 @@ function WeekInsertSlot({
                             ref={(element) => {
                                 cardRefs.current[index] = element;
                             }}
-                            className="flex h-full shrink-0 flex-col overflow-hidden rounded-2xl p-4 transition-[box-shadow,background-color]"
+                            className={`flex h-full shrink-0 flex-col overflow-hidden p-4 transition-[box-shadow,background-color] ${
+                                isMobile ? "" : "rounded-2xl"
+                            }`}
                             style={{
                                 width: cardWidth > 0 ? cardWidth : "100%",
-                                marginRight: index < SCHEDULE_FORM_TABS.length - 1 ? 16 : 0,
+                                marginRight:
+                                    index < SCHEDULE_FORM_TABS.length - 1 ? (isMobile ? 0 : 16) : 0,
                                 backgroundColor: TAB_GROUP_COLOR[label],
-                                boxShadow: selected ? `0 0 0 2px ${tone.active}` : undefined,
+                                boxShadow:
+                                    !isMobile && selected
+                                        ? `0 0 0 2px ${tone.active}`
+                                        : undefined,
                             }}
                             aria-label={label}
-                            onClick={() => scrollToTab(label)}
+                            onClick={() => {
+                                if (!isMobile) scrollToTab(label);
+                            }}
                             onFocus={() => {
-                                requestAnimationFrame(() => scrollToTab(label));
+                                if (!isMobile) {
+                                    requestAnimationFrame(() => scrollToTab(label));
+                                }
                             }}
                         >
                             <p className="text-left text-sm font-medium text-gray-800">
@@ -1529,6 +1869,9 @@ export default function CalendarGrid({
     insertAfterDate = null,
     onInsertClose,
     onScheduleSave,
+    insertInitialValues = null,
+    insertEditId = null,
+    onScheduleUpdate,
     onDragStart,
     onDragEnter,
     onHiddenCountClick,
@@ -1539,8 +1882,13 @@ export default function CalendarGrid({
     rowHeight,
     scheduleBars = [],
     dayAvailability,
+    dayDetailDateKey = null,
+    dayDetailPosition = null,
+    onDayDetailClose,
 }: CalendarGridProps) {
+    const dayHoverStaffSortMeta = useStaffSortMeta();
     const [dayHover, setDayHover] = useState<DayScheduleHoverInfo | null>(null);
+    const [dayScheduleIndex, setDayScheduleIndex] = useState(0);
     const dayHoverCloseTimer = useRef<number | null>(null);
 
     const clearDayHoverClose = () => {
@@ -1550,23 +1898,79 @@ export default function CalendarGrid({
         }
     };
 
+    const closeDayDetail = () => {
+        clearDayHoverClose();
+        setDayHover(null);
+        onDayDetailClose?.();
+    };
+
     const handleDayScheduleHover = (info: DayScheduleHoverInfo) => {
+        // 모바일: 셀 호버/탭으로는 열지 않고, 일정 메뉴 → 상세정보로만 연다.
+        if (isMobile) return;
         clearDayHoverClose();
         setDayHover(info);
     };
 
     const handleDayScheduleLeave = () => {
+        if (isMobile) return;
         clearDayHoverClose();
         dayHoverCloseTimer.current = window.setTimeout(() => {
             setDayHover(null);
         }, 180);
     };
 
-    const dayHoverColumnCount = Math.max(dayHover?.schedules.length ?? 1, 1);
+    useEffect(() => {
+        if (!dayDetailDateKey) return;
+        clearDayHoverClose();
+        const schedules = scheduleBars
+            .filter((bar) => getDateRangeRole(dayDetailDateKey, bar.start, bar.end))
+            .map((bar) => ({
+                id: bar.id,
+                shipName: bar.shipName,
+                teamMember: bar.teamMember,
+                color: bar.color,
+            }));
+        const anchorEl = cellRefs.current[dayDetailDateKey] ?? null;
+        setDayScheduleIndex(0);
+        setDayHover({
+            dateKey: dayDetailDateKey,
+            schedules,
+            anchorEl: anchorEl as HTMLElement,
+        });
+    }, [dayDetailDateKey, scheduleBars, cellRefs]);
+
+    useEffect(() => {
+        setDayScheduleIndex(0);
+    }, [dayHover?.dateKey]);
+
+    const dayHoverScheduleCount = dayHover?.schedules.length ?? 0;
+    const dayHoverColumnCount = isMobile
+        ? 1
+        : Math.max(dayHoverScheduleCount, 1);
     const dayHoverMenuWidthPx = Math.min(
-        dayHoverColumnCount * 280 + 24,
+        isMobile
+            ? Math.max(
+                  typeof window !== "undefined" ? window.innerWidth - 24 : 320,
+                  280
+              )
+            : dayHoverColumnCount * 280 + 24,
         typeof window !== "undefined" ? Math.max(window.innerWidth - 24, 280) : 280
     );
+    const safeDayScheduleIndex = Math.min(
+        dayScheduleIndex,
+        Math.max(dayHoverScheduleCount - 1, 0)
+    );
+    const visibleDaySchedules =
+        dayHover == null
+            ? []
+            : isMobile
+              ? dayHover.schedules.slice(
+                    safeDayScheduleIndex,
+                    safeDayScheduleIndex + 1
+                )
+              : dayHover.schedules;
+    const dayHoverAvailableNames =
+        dayHover != null ? (dayAvailability?.[dayHover.dateKey]?.names ?? []) : [];
 
     const scheduleBarBaseTop = isMobile ? 28 : 40;
     const scheduleBarAvailable = Math.max(
@@ -1729,10 +2133,14 @@ export default function CalendarGrid({
                     />
                     {showInsert ? (
                         <WeekInsertSlot
-                            key={insertAfterDate}
+                            key={insertEditId ?? insertAfterDate}
                             periodStart={selectionStart}
                             periodEnd={selectionEnd}
+                            initialValues={insertInitialValues}
+                            editId={insertEditId}
+                            isMobile={isMobile}
                             onSave={onScheduleSave}
+                            onUpdate={onScheduleUpdate}
                             onClose={() => onInsertClose?.()}
                         />
                     ) : null}
@@ -1740,60 +2148,160 @@ export default function CalendarGrid({
                 );
             })}
             <ActionMenu
-                isOpen={dayHover != null && dayHover.schedules.length > 0}
-                anchorEl={dayHover?.anchorEl ?? null}
-                onClose={() => setDayHover(null)}
+                isOpen={dayHover != null && (dayHover.schedules.length > 0 || dayDetailDateKey != null)}
+                anchorEl={
+                    // 모바일 상세: 셀 전체(주 높이) 대신 탭 좌표로 붙여 날짜와 가깝게
+                    isMobile && dayDetailDateKey != null
+                        ? null
+                        : dayHover?.anchorEl ?? null
+                }
+                position={
+                    isMobile && dayDetailDateKey != null
+                        ? dayDetailPosition ?? undefined
+                        : dayDetailDateKey != null && !dayHover?.anchorEl
+                          ? dayDetailPosition ?? undefined
+                          : undefined
+                }
+                onClose={closeDayDetail}
                 showDelete={false}
                 showLogout={false}
                 placement="bottom-right"
                 width={`w-[${dayHoverMenuWidthPx}px]`}
-                estimatedHeight={200}
+                estimatedHeight={
+                    120 +
+                    (dayHoverAvailableNames.length > 0 ? 72 : 0) +
+                    (isMobile ? 200 : Math.max(dayHoverScheduleCount, 1) * 120)
+                }
             >
-                {dayHover && dayHover.schedules.length > 0 ? (
+                {dayHover && (dayHover.schedules.length > 0 || dayDetailDateKey != null) ? (
                     <div
                         className="flex flex-col gap-2 px-1 py-0.5"
                         onMouseEnter={clearDayHoverClose}
                         onMouseLeave={handleDayScheduleLeave}
                     >
-                        <p className="px-1 text-[12px] font-medium text-gray-500">
-                            {dayHover.dateKey.slice(5).replace("-", "/")} 일정
-                        </p>
+                        <div className="flex items-start justify-between gap-2 px-1">
+                            <p className="text-[12px] font-medium text-gray-500">
+                                {dayHover.dateKey.slice(5).replace("-", "/")} 일정
+                            </p>
+                            {isMobile ? (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="!h-7 !w-7 !min-w-0 shrink-0 !rounded-full !px-0 !text-gray-500 hover:!bg-gray-100"
+                                    aria-label="닫기"
+                                    title="닫기"
+                                    icon={<IconClose className="h-4 w-4" />}
+                                    onClick={closeDayDetail}
+                                />
+                            ) : null}
+                        </div>
+                        <div className="px-1">
+                            <p className="flex flex-wrap items-baseline gap-x-1.5 text-[12px] text-gray-500">
+                                <span>투입가능 인원</span>
+                                <span className="text-[14px] font-medium text-gray-900">
+                                    {dayHoverAvailableNames.length}명
+                                </span>
+                            </p>
+                            {dayHoverAvailableNames.length > 0 ? (
+                                <p className="mt-0.5 break-words text-[14px] font-medium text-gray-900">
+                                    {dayHoverAvailableNames.join(", ")}
+                                </p>
+                            ) : null}
+                        </div>
+                        {isMobile && dayHoverScheduleCount > 0 ? (
+                            <div className="flex flex-wrap gap-1.5 px-1">
+                                {dayHover.schedules.map((schedule, index) => {
+                                    const selected = index === safeDayScheduleIndex;
+                                    return (
+                                        <button
+                                            key={schedule.id}
+                                            type="button"
+                                            aria-pressed={selected}
+                                            aria-label={`호선 ${schedule.shipName || "없음"}`}
+                                            onClick={() => setDayScheduleIndex(index)}
+                                            className={`inline-flex max-w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-left text-[12px] font-medium transition-colors ${
+                                                selected
+                                                    ? "border-transparent text-gray-900"
+                                                    : "border-gray-200 bg-white text-gray-700"
+                                            }`}
+                                            style={
+                                                selected
+                                                    ? { backgroundColor: schedule.color }
+                                                    : undefined
+                                            }
+                                        >
+                                            <span
+                                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                                style={{ backgroundColor: schedule.color }}
+                                                aria-hidden
+                                            />
+                                            <span className="min-w-0 truncate">
+                                                {schedule.shipName || "—"}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ) : null}
                         <div
                             className="grid gap-3"
                             style={{
                                 gridTemplateColumns: `repeat(${dayHoverColumnCount}, minmax(0, 1fr))`,
                             }}
                         >
-                            {dayHover.schedules.map((schedule, index) => (
+                            {visibleDaySchedules.map((schedule, index) => (
                                 <div
                                     key={schedule.id}
                                     className={`flex min-w-0 flex-col gap-1.5 px-1 ${
-                                        index > 0
+                                        !isMobile && index > 0
                                             ? "border-l border-gray-100 pl-3"
                                             : ""
                                     }`}
                                 >
-                                    <div className="flex items-center gap-2">
-                                        <span
-                                            className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                            style={{ backgroundColor: schedule.color }}
-                                            aria-hidden
-                                        />
-                                        <div className="min-w-0">
-                                            <p className="text-[12px] text-gray-500">호선</p>
-                                            <p className="truncate text-[14px] font-medium text-gray-900">
-                                                {schedule.shipName || "—"}
-                                            </p>
+                                    {!isMobile ? (
+                                        <div className="flex items-center gap-2">
+                                            <span
+                                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                                style={{ backgroundColor: schedule.color }}
+                                                aria-hidden
+                                            />
+                                            <div className="min-w-0">
+                                                <p className="text-[12px] text-gray-500">호선</p>
+                                                <p className="truncate text-[14px] font-medium text-gray-900">
+                                                    {schedule.shipName || "—"}
+                                                </p>
+                                            </div>
                                         </div>
-                                    </div>
+                                    ) : null}
                                     <div>
                                         <p className="text-[12px] text-gray-500">인원</p>
                                         {schedule.teamMember.trim() ? (
                                             <div className="mt-1 grid grid-cols-4 gap-1">
-                                                {schedule.teamMember
-                                                    .split(/\s+/)
-                                                    .filter(Boolean)
-                                                    .map((name) => (
+                                                {sortPeopleByRoleAndJoinDate(
+                                                    schedule.teamMember
+                                                        .split(/\s+/)
+                                                        .filter(Boolean),
+                                                    dayHoverStaffSortMeta,
+                                                    { priorityFirst: SCHEDULE_TEAM_LEADERS }
+                                                ).map((name) => {
+                                                    const isSf = (
+                                                        SCHEDULE_TEAM_LEADERS as readonly string[]
+                                                    ).includes(name);
+                                                    if (isSf) {
+                                                        return (
+                                                            <span
+                                                                key={`${schedule.id}-${name}`}
+                                                                className="inline-flex min-w-0 items-center justify-center rounded-[6px] border border-transparent px-1 py-[3px] text-[11px] font-medium text-gray-800"
+                                                                style={{
+                                                                    backgroundColor: schedule.color,
+                                                                }}
+                                                            >
+                                                                {name}
+                                                            </span>
+                                                        );
+                                                    }
+                                                    return (
                                                         <Chip
                                                             key={`${schedule.id}-${name}`}
                                                             color="gray-600"
@@ -1803,7 +2311,8 @@ export default function CalendarGrid({
                                                         >
                                                             {name}
                                                         </Chip>
-                                                    ))}
+                                                    );
+                                                })}
                                             </div>
                                         ) : (
                                             <p className="text-[14px] font-medium text-gray-900">—</p>

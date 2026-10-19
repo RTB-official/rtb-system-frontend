@@ -74,6 +74,7 @@ export default function Input({
           onChange={handleChange}
           onClick={onClick}
           {...props}
+          spellCheck={false}
         />
 
         {/* ✅ 오른쪽 아이콘: 클릭 가능/불가능 분기 */}

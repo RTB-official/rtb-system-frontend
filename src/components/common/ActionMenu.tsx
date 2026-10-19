@@ -1,5 +1,5 @@
 // src/components/common/ActionMenu.tsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
     IconCheck,
@@ -122,6 +122,7 @@ export default function ActionMenu({
 }: ActionMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
     const [anchorTick, setAnchorTick] = useState(0);
+    const [measuredHeight, setMeasuredHeight] = useState(0);
 
     useEffect(() => {
         if (!isOpen || !anchorEl) return;
@@ -140,6 +141,16 @@ export default function ActionMenu({
             window.removeEventListener("resize", sync);
         };
     }, [isOpen, anchorEl]);
+
+    useLayoutEffect(() => {
+        if (!isOpen) {
+            setMeasuredHeight(0);
+            return;
+        }
+        const el = menuRef.current;
+        if (!el) return;
+        setMeasuredHeight(el.offsetHeight);
+    }, [isOpen, children, anchorTick, width, estimatedHeight]);
 
     // 바깥 클릭 닫기
     useEffect(() => {
@@ -191,48 +202,84 @@ export default function ActionMenu({
     };
 
     const menuWidthPx = getWidthValue(width);
-    const menuHeightPx = estimatedHeight;
+    /** 실측 높이가 있으면 그걸 쓰고, 없으면 추정값 (과도한 추정으로 멀리 띄우지 않음) */
+    const menuHeightPx = measuredHeight > 0 ? measuredHeight : estimatedHeight;
+    /** 이보다 아래 공간이 좁을 때만 위로 연다 */
+    const minSpaceBelow = 140;
+    const viewPad = 12;
+    const gap = 8;
     let top = 0;
     let left = 0;
+    /** 앵커(또는 클릭) Y — 위로 열 때 메뉴 하단을 여기에 맞춤 */
+    let pivotY = 0;
 
-    if (position) {
-        top = position.y;
-        left = position.x;
-    } else if (anchorEl) {
+    // 날짜 셀 등 앵커가 있으면 클릭 좌표보다 앵커를 우선해 가깝게 붙인다
+    if (anchorEl) {
         void anchorTick;
         const rect = anchorEl.getBoundingClientRect();
-        top = rect.bottom + 8;
         left = rect.right - menuWidthPx;
+        pivotY = rect.top;
 
         if (placement === "right") {
             top = rect.top;
             left = rect.right + 12;
+            pivotY = rect.top;
         } else if (placement === "bottom-left") {
-            top = rect.bottom + 8;
             left = rect.left;
+            const spaceBelow = window.innerHeight - rect.bottom - gap - viewPad;
+            if (spaceBelow < minSpaceBelow) {
+                top = rect.top - gap - menuHeightPx;
+                pivotY = rect.top;
+            } else {
+                top = rect.bottom + gap;
+                pivotY = rect.bottom;
+            }
+        } else {
+            // bottom-right (default)
+            const spaceBelow = window.innerHeight - rect.bottom - gap - viewPad;
+            if (spaceBelow < minSpaceBelow) {
+                top = rect.top - gap - menuHeightPx;
+                pivotY = rect.top;
+            } else {
+                top = rect.bottom + gap;
+                pivotY = rect.bottom;
+            }
+        }
+    } else if (position) {
+        left = position.x;
+        pivotY = position.y;
+        const spaceBelow = window.innerHeight - position.y - viewPad;
+        if (spaceBelow < minSpaceBelow) {
+            top = position.y - gap - menuHeightPx;
+        } else {
+            top = position.y + gap;
         }
     }
 
-    // 화면 밖으로 나가는 것 방지 (가로)
-    if (left < 12) left = 12;
-    if (left + menuWidthPx > window.innerWidth - 12) {
-        left = window.innerWidth - menuWidthPx - 12;
+    // 위로 연 뒤 실측 높이가 추정보다 작으면 메뉴를 앵커 쪽으로 내려 붙인다
+    if (measuredHeight > 0 && top + measuredHeight + gap < pivotY) {
+        top = pivotY - gap - measuredHeight;
     }
 
-    // 화면 밖으로 나가는 것 방지 (세로)
-    if (top + menuHeightPx > window.innerHeight - 12) {
-        top = window.innerHeight - menuHeightPx - 12;
+    // 화면 밖으로 나가는 것 방지 (가로)
+    if (left < viewPad) left = viewPad;
+    if (left + menuWidthPx > window.innerWidth - viewPad) {
+        left = window.innerWidth - menuWidthPx - viewPad;
     }
-    if (top < 12) top = 12;
+
+    // 세로: 앵커에 가깝게 유지. 넘치면 내부 스크롤 (멀리 밀어 올리지 않음)
+    if (top < viewPad) top = viewPad;
+    const clampedMaxHeight = Math.max(120, window.innerHeight - top - viewPad);
 
     return createPortal(
         <div
             ref={menuRef}
-            className={`fixed ${width.startsWith("w-[") ? "" : width} rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999`}
+            className={`fixed ${width.startsWith("w-[") ? "" : width} rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999 overflow-y-auto overscroll-contain`}
             style={{
                 top,
                 left,
                 width: menuWidthPx,
+                maxHeight: clampedMaxHeight,
             }}
         >
             {(userDisplayName || userEmail || headerContent) && (
