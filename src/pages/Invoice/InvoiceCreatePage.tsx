@@ -62,6 +62,7 @@ import {
     getGangdongViaHomeDirection,
     isGangdongHomeLeg,
     parseTravelRoutePlaces,
+    personUsesSiteFixedHoursWithHomeBadge,
     resolveMoveEndpointBadge,
 } from "../../utils/travelRouteParse";
 import {
@@ -3288,13 +3289,30 @@ export default function InvoiceCreatePage() {
      * 자택→태성재처럼 출장지가 아닌 곳으로 가는 이동은 실제 이동시간을 그대로 청구한다.
      * 배지로 자택을 지정한 경우도 출장지↔자택 구간으로 본다.
      */
-    const entryHasHomeTravelOverride = (
+    const personHasHomeTravelOverride = (
+        entry: Pick<InvoiceTimesheetEntry, "id" | "clientHomeTravelSpilloverOf">,
+        person: string
+    ): boolean => {
+        if (getTravelChargeOverride(entry.id, person)?.target === "home") {
+            return true;
+        }
+        const parentId = entry.clientHomeTravelSpilloverOf;
+        if (parentId == null) {
+            return false;
+        }
+        return getTravelChargeOverride(parentId, person)?.target === "home";
+    };
+
+    /** 전원 자택 오버라이드일 때만 엔트리 구간/고정시간 보정에 반영한다. */
+    const entryHasHomeTravelOverrideForAllPersons = (
         entry: Pick<InvoiceTimesheetEntry, "id" | "persons">
-    ): boolean =>
-        (entry.persons ?? []).some(
-            (person) =>
-                getTravelChargeOverride(entry.id, person)?.target === "home"
+    ): boolean => {
+        const persons = entry.persons ?? [];
+        return (
+            persons.length > 0 &&
+            persons.every((person) => personHasHomeTravelOverride(entry, person))
         );
+    };
 
     /** 자택↔강동동 공장이 걸린 이동은 출장지별 고정시간 대신 공장 기준 실제시간을 쓴다. */
     const isGangdongHomeTravel = (entry: InvoiceTimesheetEntry): boolean =>
@@ -3316,7 +3334,11 @@ export default function InvoiceCreatePage() {
         const destination = normalizeLocationName(getFinalDestination(entry));
         // "자택및숙소"처럼 붙어 적히는 경우가 있어 포함 여부로 본다.
         const isHome = (place: string) => place.includes("자택");
-        const overrideHome = entryHasHomeTravelOverride(entry);
+        /**
+         * 인원별 자택 배지는 엔트리 전체를 통근으로 취급하지 않는다.
+         * (한 명만 자택이어도 숙소 인원까지 고정 2h가 되는 것을 막음)
+         */
+        const overrideHome = entryHasHomeTravelOverrideForAllPersons(entry);
 
         return (
             (isHome(origin) && destination === workPlace) ||
@@ -3412,7 +3434,8 @@ export default function InvoiceCreatePage() {
         }
 
         const details = entry.details ?? "";
-        const overrideHome = entryHasHomeTravelOverride(entry);
+        /** 혼재 배지(일부만 자택)는 공유 구간을 늘리지 않는다. */
+        const overrideHome = entryHasHomeTravelOverrideForAllPersons(entry);
 
         if (!isHomeWorkSiteCommute(entry) && !overrideHome) {
             return {
@@ -3472,17 +3495,19 @@ export default function InvoiceCreatePage() {
             originalStart.getTime() + fixedHours * 60 * 60 * 1000
         );
         const startDay = formatDateKey(originalStart);
-        const originalEndDay = formatDateKey(originalEnd);
         const adjustedEndDay = formatDateKey(adjustedEnd);
 
         /**
-         * 이미 자정에서 잘린 조각(23:00~24:00 / 00:00~…)·spillover는
+         * 이미 자정에서 잘린 조각(00:00~…)·spillover는
          * 고정시간으로 다시 늘리지 않는다. 배분은 여정 단위 summarize가 담당.
+         * 종료 시각은 "24:00" / "24:00:00" / 다음날 "00:00"으로 올 수 있어 시각으로 비교한다.
          */
+        const nextMidnightMs = toDateSafe(startDay, "24:00").getTime();
+        const startsAtMidnight =
+            originalStart.getTime() === toDateSafe(startDay, "00:00").getTime() &&
+            originalEnd.getTime() <= nextMidnightMs;
         const isMidnightBoundaryPiece =
-            entry.clientHomeTravelSpilloverOf != null ||
-            (startDay === originalEndDay &&
-                (originalTimeTo === "24:00" || originalTimeFrom === "00:00"));
+            entry.clientHomeTravelSpilloverOf != null || startsAtMidnight;
 
         if (isMidnightBoundaryPiece) {
             return {
@@ -3500,8 +3525,21 @@ export default function InvoiceCreatePage() {
              * DB에서 이미 자정 분할된 조각을 병합한 여정은 고정 창(예: 23:00~01:00)을
              * 유지해야 날짜 분할로 9/1=1, 9/2=1이 나온다. 여기서 잘라 버리면
              * 다음날 조각이 사라지고 당일에 고정 2h가 통째로 붙는다.
+             *
+             * 자정에 딱 끝나는 원본(23:00~24:00)은 다음날로 걸친 것으로 보지 않는다.
+             * 늘리면 다음날 부모 조각과 client spillover가 겹쳐 청구가 중복된다.
              */
             if (adjustedEndDay > startDay && overrideHome) {
+                const originallySpansDays = originalEnd.getTime() > nextMidnightMs;
+                if (originallySpansDays) {
+                    return {
+                        dateFrom: startDay,
+                        dateTo: adjustedEndDay,
+                        timeFrom: formatTimeHHMM(originalStart),
+                        timeTo: formatTimeHHMM(adjustedEnd),
+                        fixedHomeTravelWindowApplied: true,
+                    };
+                }
                 return {
                     dateFrom: startDay,
                     dateTo: startDay,
@@ -3541,7 +3579,10 @@ export default function InvoiceCreatePage() {
     const getTravelJourneyKey = (entry: InvoiceTimesheetEntry): string => {
         const origin = normalizeLocationName(getTravelEntryOrigin(entry));
         let destination = normalizeLocationName(getFinalDestination(entry));
-        if (entryHasHomeTravelOverride(entry) && !destination.includes("자택")) {
+        if (
+            entryHasHomeTravelOverrideForAllPersons(entry) &&
+            !destination.includes("자택")
+        ) {
             destination = "자택";
         }
         return [origin, destination].join("→");
@@ -3587,7 +3628,16 @@ export default function InvoiceCreatePage() {
              * - 반대로 `자택→태성재` + `태성재→강동동 공장`처럼 서로 다른 구간을 합치면
              *   `자택→자택` 같은 덩어리가 되어 어느 구간이 자택과 출장지를 직접
              *   잇는지 판단할 수 없게 된다.
+             * - syncHomeTravelMidnightSpilloverEntries 가 만든 다음날 조각
+             *   (clientHomeTravelSpilloverOf)은 합치지 않는다. 합친 뒤 당일 24:00으로
+             *   자르면 타임시트에서 다음날 00~01 행이 사라진다.
              */
+            if (entry.clientHomeTravelSpilloverOf != null) {
+                merged.push({ ...entry });
+                latestMergedIndexByKey.set(mergeKey, merged.length - 1);
+                return;
+            }
+
             const journeyKey = getTravelJourneyKey(entry);
             const sameJourney =
                 lastEntry !== null &&
@@ -3598,6 +3648,7 @@ export default function InvoiceCreatePage() {
 
             if (
                 lastEntry &&
+                lastEntry.clientHomeTravelSpilloverOf == null &&
                 (!touchesHome || sameJourney) &&
                 lastEntry.descType === "이동" &&
                 lastEnd !== null &&
@@ -3654,8 +3705,13 @@ export default function InvoiceCreatePage() {
         let latestOverride: TravelChargeOverrideValue | null = null;
 
         entries.forEach((entry) => {
-            const overrideIds =
-                entry.sourceEntryIds.length > 0 ? entry.sourceEntryIds : [entry.id];
+            const overrideIds = new Set<number>(
+                entry.sourceEntryIds.length > 0 ? entry.sourceEntryIds : [entry.id]
+            );
+            /** spillover 조각은 부모 엔트리에 자택/숙소 배지가 붙어 있다. */
+            if (entry.clientHomeTravelSpilloverOf != null) {
+                overrideIds.add(entry.clientHomeTravelSpilloverOf);
+            }
 
             overrideIds.forEach((entryId) => {
                 const override = getTravelChargeOverride(entryId, person);
@@ -4664,15 +4720,26 @@ export default function InvoiceCreatePage() {
                     journeys.forEach((journey) => {
                         const fixedHours =
                             getHomeTravelHours(journey[0].location) ?? 0;
+                        const hasHomeSpillover = journey.some(
+                            (item) => item.clientHomeTravelSpilloverOf != null
+                        );
+                        const hasHomeBadgeJourney = journey.some(
+                            (item) =>
+                                hasHomeInTravel(item) ||
+                                entryHasHomeTravelOverrideForAllPersons(item)
+                        );
+                        /**
+                         * 자택 spillover가 붙은 여정은 강동동 경유여도 출장지 고정시간으로
+                         * 조각 배분한다. 안 그러면 spillover가 raw 그대로라 전날 2h +
+                         * 다음날 2h로 중복 청구된다(우상윤 자택 배지 등).
+                         */
                         const isCommute =
                             fixedHours > 0 &&
-                            !journey.some(isGangdongHomeTravel) &&
+                            (hasHomeSpillover ||
+                                !journey.some(isGangdongHomeTravel)) &&
                             (isHomeWorkSiteCommute(journey[0]) ||
-                                journey.some(
-                                    (item) =>
-                                        entryHasHomeTravelOverride(item) ||
-                                        item.clientHomeTravelSpilloverOf != null
-                                ));
+                                hasHomeBadgeJourney ||
+                                hasHomeSpillover);
 
                         if (!isCommute) {
                             journey.forEach((item) => {
@@ -4769,6 +4836,13 @@ export default function InvoiceCreatePage() {
                                 return sum + allocated;
                             }
                             /**
+                             * spillover는 맵에 없으면 0(전날에서 이미 청구)으로 본다.
+                             * raw로 폴백하면 사이드패널 0 / 타임시트 2 불일치가 난다.
+                             */
+                            if (entry.clientHomeTravelSpilloverOf != null) {
+                                return sum;
+                            }
+                            /**
                              * sourceEntryIds 전체를 합치면 자정 병합 엔트리가
                              * 전날+다음날 청구를 하루 행에 몰아 넣는다.
                              * 당일 구간 길이만 쓴다.
@@ -4776,6 +4850,158 @@ export default function InvoiceCreatePage() {
                             return sum + calculateRawTravelHours(entry);
                         }, 0)
                     );
+
+                /**
+                 * 자택 배지일 때 출장지 고정시간을 쓰는 인원(우상윤)용 배분.
+                 * 자정에서 나뉜 같은 이동(22:00~24:00 + 00:00~02:00)에 고정시간을
+                 * 여정 단위로 한 번만 나눠 담는다. 조각마다 고정시간을 붙이면 다음날에도
+                 * 2h가 다시 청구된다. 강동동 경유 차감 전 원본 길이로 채운다.
+                 */
+                const siteFixedAllocationCache = new Map<
+                    string,
+                    Map<string, number>
+                >();
+                const getSiteFixedSegmentKey = (entry: InvoiceTimesheetEntry) =>
+                    `${entry.id}:${entry.dateFrom}`;
+                /** 날짜 분할 조각은 같은 id를 공유하므로 당일 범위로 자른 원본 창을 쓴다. */
+                const getSiteFixedSegmentWindow = (
+                    entry: InvoiceTimesheetEntry
+                ): { start: number; end: number } | null => {
+                    const dayStart = toDateSafe(entry.dateFrom, "00:00").getTime();
+                    const dayEnd = toDateSafe(entry.dateFrom, "24:00").getTime();
+                    let start: number | null = null;
+                    let end: number | null = null;
+                    const sourceIds =
+                        entry.sourceEntryIds.length > 0
+                            ? entry.sourceEntryIds
+                            : [entry.id];
+                    for (const sourceEntryId of sourceIds) {
+                        const raw = rawEntryById.get(sourceEntryId);
+                        if (!raw) {
+                            continue;
+                        }
+                        const rawStart = getEntryStartTime(raw);
+                        const rawEnd = getEntryEndTime(raw);
+                        if (rawStart === null || rawEnd === null) {
+                            continue;
+                        }
+                        if (rawEnd <= dayStart || rawStart >= dayEnd) {
+                            continue;
+                        }
+                        start = start === null ? rawStart : Math.min(start, rawStart);
+                        end = end === null ? rawEnd : Math.max(end, rawEnd);
+                    }
+                    if (start === null || end === null) {
+                        start =
+                            entry.gangdongViaRawStartMs ?? getEntryStartTime(entry);
+                        end = entry.gangdongViaRawEndMs ?? getEntryEndTime(entry);
+                    }
+                    if (start === null || end === null) {
+                        return null;
+                    }
+                    const clippedStart = Math.max(start, dayStart);
+                    const clippedEnd = Math.min(end, dayEnd);
+                    return clippedEnd > clippedStart
+                        ? { start: clippedStart, end: clippedEnd }
+                        : null;
+                };
+                const getSiteFixedHomeAllocationForPerson = (
+                    person: string
+                ): Map<string, number> => {
+                    const cached = siteFixedAllocationCache.get(person);
+                    if (cached) {
+                        return cached;
+                    }
+                    const allocation = new Map<string, number>();
+                    const personTravel = chronologicalEntries.filter(
+                        (entry) =>
+                            entry.descType === "이동" &&
+                            (entry.persons ?? []).includes(person)
+                    );
+                    const getOriginalRawHours = (entry: InvoiceTimesheetEntry) => {
+                        const window = getSiteFixedSegmentWindow(entry);
+                        return window
+                            ? (window.end - window.start) / (1000 * 60 * 60)
+                            : 0;
+                    };
+                    const journeys: InvoiceTimesheetEntry[][] = [];
+                    personTravel.forEach((entry) => {
+                        const current = journeys[journeys.length - 1];
+                        const previous = current?.[current.length - 1];
+                        const previousWindow = previous
+                            ? getSiteFixedSegmentWindow(previous)
+                            : null;
+                        const currentWindow = getSiteFixedSegmentWindow(entry);
+                        const isSameSplitEntry =
+                            previous != null && previous.id === entry.id;
+                        const isContiguous =
+                            previousWindow != null &&
+                            currentWindow != null &&
+                            previousWindow.end === currentWindow.start;
+                        if (
+                            current &&
+                            previous &&
+                            (isSameSplitEntry ||
+                                (isContiguous &&
+                                    getTravelJourneyKey(previous) ===
+                                        getTravelJourneyKey(entry)))
+                        ) {
+                            current.push(entry);
+                            return;
+                        }
+                        journeys.push([entry]);
+                    });
+                    journeys.forEach((journey) => {
+                        const fixedHours =
+                            getHomeTravelHours(journey[0].location) ?? 0;
+                        if (fixedHours <= 0) {
+                            return;
+                        }
+                        const departsFromHome =
+                            normalizeLocationName(
+                                getTravelEntryOrigin(journey[0])
+                            ) === "자택";
+                        const fillOrder = departsFromHome
+                            ? [...journey].reverse()
+                            : journey;
+                        let remaining = roundHours(fixedHours);
+                        fillOrder.forEach((item, index) => {
+                            const isLast = index === fillOrder.length - 1;
+                            const allocated = isLast
+                                ? remaining
+                                : Math.min(
+                                      Math.max(roundHours(getOriginalRawHours(item)), 0),
+                                      remaining
+                                  );
+                            allocation.set(
+                                getSiteFixedSegmentKey(item),
+                                roundHours(Math.max(0, allocated))
+                            );
+                            remaining = roundHours(Math.max(0, remaining - allocated));
+                        });
+                    });
+                    siteFixedAllocationCache.set(person, allocation);
+                    return allocation;
+                };
+                const sumSiteFixedHomeHoursForPerson = (
+                    entries: InvoiceTimesheetEntry[],
+                    person: string,
+                    fallbackHours: number
+                ): number => {
+                    const allocation = getSiteFixedHomeAllocationForPerson(person);
+                    let found = false;
+                    const total = entries.reduce((sum, entry) => {
+                        const allocated = allocation.get(
+                            getSiteFixedSegmentKey(entry)
+                        );
+                        if (allocated === undefined) {
+                            return sum;
+                        }
+                        found = true;
+                        return sum + allocated;
+                    }, 0);
+                    return found ? roundHours(total) : fallbackHours;
+                };
 
                 /**
                  * 날짜별 구간은 기본 자택↔강동동 공장 시간으로 잘려 있다.
@@ -5004,33 +5230,81 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
+                        const hasHomeBadgeForPerson =
+                            override?.target === "home" ||
+                            (override == null &&
+                                entries.some(
+                                    (entry) =>
+                                        hasHomeInTravel(entry) ||
+                                        personHasHomeTravelOverride(
+                                            entry,
+                                            person
+                                        ) ||
+                                        resolveMoveEndpointBadge(
+                                            entry.moveFrom,
+                                            entry.moveTo
+                                        )?.target === "home"
+                                ));
+                        const useSiteFixedOnHomeBadge =
+                            personUsesSiteFixedHoursWithHomeBadge(person) &&
+                            hasHomeBadgeForPerson &&
+                            fixedHours > 0;
                         const usesHomeFixedCharge =
                             (override?.target === "home" && fixedHours > 0) ||
+                            useSiteFixedOnHomeBadge ||
                             (fixedHours > 0 &&
                                 !entries.some(isGangdongHomeTravel) &&
                                 entries.some(
                                     (entry) =>
                                         isHomeWorkSiteCommute(entry) ||
                                         hasHomeInTravel(entry) ||
-                                        entryHasHomeTravelOverride(entry) ||
+                                        personHasHomeTravelOverride(
+                                            entry,
+                                            person
+                                        ) ||
                                         entry.clientHomeTravelSpilloverOf != null
                                 ));
 
                         if (usesHomeFixedCharge) {
-                            const hours = sumAllocatedTravelHoursForEntries(entries);
+                            const onlySpilloverPieces = entries.every(
+                                (entry) => entry.clientHomeTravelSpilloverOf != null
+                            );
+                            /**
+                             * 자택 배지 고정시간(우상윤 포함)은 24:00 종료여도 고정시간을 쓴다.
+                             * spillover 전용 행만 조각 시간을 쓴다.
+                             */
+                            const hours = useSiteFixedOnHomeBadge
+                                ? sumSiteFixedHomeHoursForPerson(
+                                      entries,
+                                      person,
+                                      fixedHours
+                                  )
+                                : override?.target === "home" &&
+                                    fixedHours > 0 &&
+                                    !onlySpilloverPieces
+                                  ? fixedHours
+                                  : sumAllocatedTravelHoursForEntries(entries);
                             const destination = getFinalDestination(lastEntry);
                             const returnsHome =
                                 normalizeLocationName(destination) === "자택" ||
                                 windowEntries.some(
                                     (entry) =>
-                                        entryHasHomeTravelOverride(entry) ||
-                                        hasHomeInTravel(entry)
+                                        personHasHomeTravelOverride(
+                                            entry,
+                                            person
+                                        ) || hasHomeInTravel(entry)
                                 );
                             const windowStart = earliest ?? rawEarliest;
                             const windowEnd =
-                                returnsHome && windowStart
-                                    ? shiftTimeByHours(date, windowStart, hours)
-                                    : latestValue ?? rawLatest;
+                                onlySpilloverPieces
+                                    ? latestValue ?? rawLatest
+                                    : returnsHome && windowStart
+                                      ? shiftTimeByHours(
+                                            date,
+                                            windowStart,
+                                            hours
+                                        )
+                                      : latestValue ?? rawLatest;
                             return {
                                 hours,
                                 start: windowStart,
@@ -5618,8 +5892,35 @@ export default function InvoiceCreatePage() {
                         }
 
                         const destination = getFinalDestination(lastEntry);
+                        const personHasHomeOnEntries =
+                            person !== undefined &&
+                            entries.some((entry) =>
+                                personHasHomeTravelOverride(entry, person)
+                            );
+                        const hasHomeBadgeForPerson =
+                            override?.target === "home" ||
+                            (override == null &&
+                                person !== undefined &&
+                                entries.some(
+                                    (entry) =>
+                                        hasHomeInTravel(entry) ||
+                                        personHasHomeTravelOverride(
+                                            entry,
+                                            person
+                                        ) ||
+                                        resolveMoveEndpointBadge(
+                                            entry.moveFrom,
+                                            entry.moveTo
+                                        )?.target === "home"
+                                ));
+                        const useSiteFixedOnHomeBadge =
+                            person !== undefined &&
+                            personUsesSiteFixedHoursWithHomeBadge(person) &&
+                            hasHomeBadgeForPerson &&
+                            fixedHours > 0;
                         const usesHomeFixedCharge =
                             (override?.target === "home" && fixedHours > 0) ||
+                            useSiteFixedOnHomeBadge ||
                             (useFixedHomeHours &&
                                 fixedHours > 0 &&
                                 !entries.some(isGangdongHomeTravel) &&
@@ -5627,29 +5928,53 @@ export default function InvoiceCreatePage() {
                                     (entry) =>
                                         isHomeWorkSiteCommute(entry) ||
                                         hasHomeInTravel(entry) ||
-                                        entryHasHomeTravelOverride(entry) ||
+                                        (person !== undefined
+                                            ? personHasHomeTravelOverride(
+                                                  entry,
+                                                  person
+                                              )
+                                            : entryHasHomeTravelOverrideForAllPersons(
+                                                  entry
+                                              )) ||
                                         entry.fixedHomeTravelWindowApplied ||
                                         entry.clientHomeTravelSpilloverOf != null
                                 ));
 
                         if (usesHomeFixedCharge) {
-                            const hours = sumAllocatedTravelHoursForEntries(entries);
+                            const onlySpilloverPieces = entries.every(
+                                (entry) => entry.clientHomeTravelSpilloverOf != null
+                            );
+                            /**
+                             * 자택 배지 고정시간(우상윤 포함)은 24:00 종료여도 고정시간을 쓴다.
+                             * spillover 전용 행만 조각 시간을 쓴다.
+                             */
+                            const hours = useSiteFixedOnHomeBadge
+                                ? sumSiteFixedHomeHoursForPerson(
+                                      entries,
+                                      person ?? "",
+                                      fixedHours
+                                  )
+                                : override?.target === "home" &&
+                                    fixedHours > 0 &&
+                                    !onlySpilloverPieces
+                                  ? fixedHours
+                                  : sumAllocatedTravelHoursForEntries(entries);
                             const returnsHome =
                                 normalizeLocationName(destination) === "자택" ||
-                                entries.some(
-                                    (entry) =>
-                                        entryHasHomeTravelOverride(entry) ||
-                                        hasHomeInTravel(entry)
-                                );
+                                personHasHomeOnEntries ||
+                                entries.some((entry) => hasHomeInTravel(entry));
                             const windowStart = useAdjustedTravelWindow
                                 ? earliest
                                 : rawEarliest;
-                            const windowEnd =
-                                returnsHome && windowStart
-                                    ? shiftTimeByHours(date, windowStart, hours)
-                                    : useAdjustedTravelWindow
-                                      ? latestValue
-                                      : rawLatest;
+                            const windowEnd = onlySpilloverPieces
+                                ? useAdjustedTravelWindow
+                                    ? latestValue
+                                    : rawLatest
+                                : returnsHome && windowStart
+                                  ? shiftTimeByHours(date, windowStart, hours)
+                                  : useAdjustedTravelWindow
+                                    ? latestValue
+                                    : rawLatest;
                             return {
                                 kind:
                                     override?.target === "home" ||
@@ -5884,6 +6209,25 @@ export default function InvoiceCreatePage() {
                         );
                         const overrideFixedHours =
                             getHomeTravelHours(beforeTravelEntries[0].location) ?? 0;
+                        const beforeHasHomeBadge =
+                            override?.target === "home" ||
+                            (override == null &&
+                                beforeTravelEntries.some(
+                                    (entry) =>
+                                        hasHomeInTravel(entry) ||
+                                        personHasHomeTravelOverride(
+                                            entry,
+                                            person
+                                        ) ||
+                                        resolveMoveEndpointBadge(
+                                            entry.moveFrom,
+                                            entry.moveTo
+                                        )?.target === "home"
+                                ));
+                        const beforeUseSiteFixedOnHomeBadge =
+                            personUsesSiteFixedHoursWithHomeBadge(person) &&
+                            beforeHasHomeBadge &&
+                            overrideFixedHours > 0;
 
                         if (override?.target === "lodging") {
                             const { anchorDate, anchorTime } =
@@ -5902,10 +6246,29 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
-                        if (override?.target === "home" && overrideFixedHours > 0) {
-                            const chargeHours = sumAllocatedTravelHoursForEntries(
-                                beforeTravelEntries
+                        if (
+                            (override?.target === "home" ||
+                                beforeUseSiteFixedOnHomeBadge) &&
+                            overrideFixedHours > 0
+                        ) {
+                            const onlySpilloverPieces = beforeTravelEntries.every(
+                                (entry) => entry.clientHomeTravelSpilloverOf != null
                             );
+                            /**
+                             * spillover 배분이 0이면 그대로 0이어야 한다.
+                             * `|| raw`를 쓰면 0이 raw(2h)로 덮여 타임시트만 2가 된다.
+                             */
+                            const chargeHours = onlySpilloverPieces
+                                ? sumAllocatedTravelHoursForEntries(
+                                      beforeTravelEntries
+                                  )
+                                : beforeUseSiteFixedOnHomeBadge
+                                  ? sumSiteFixedHomeHoursForPerson(
+                                        beforeTravelEntries,
+                                        person,
+                                        overrideFixedHours
+                                    )
+                                  : overrideFixedHours;
                             const { anchorDate, anchorTime } =
                                 blockIndex === 0
                                     ? getInitialBeforeTravelChargeEndAnchor(
@@ -5931,21 +6294,28 @@ export default function InvoiceCreatePage() {
                         }
 
                         if (blockIndex === 0) {
+                            const hasHome = beforeTravelEntries.some(
+                                (entry) =>
+                                    hasHomeInTravel(entry) ||
+                                    personHasHomeTravelOverride(entry, person)
+                            );
+                            /**
+                             * 자택 이동은 작업지속(1h)을 쓰지 않고
+                             * 강동동 경유(소요-1)·출장지 고정시간 경로를 탄다.
+                             */
                             if (
                                 !doesWorkContextMatchBlockLocation(
                                     person,
                                     beforeTravelEntries,
                                     afterTravelEntries,
                                     previousWorkLocations
-                                )
+                                ) ||
+                                hasHome
                             ) {
                                 const fixedHours =
                                     getHomeTravelHours(
                                         beforeTravelEntries[0].location
                                     ) ?? 0;
-                                const hasHome = beforeTravelEntries.some((entry) =>
-                                    hasHomeInTravel(entry)
-                                );
 
                                 if (hasHome && fixedHours > 0) {
                                     /**
@@ -6049,6 +6419,25 @@ export default function InvoiceCreatePage() {
                         );
                         const overrideFixedHours =
                             getHomeTravelHours(afterTravelEntries[0].location) ?? 0;
+                        const afterHasHomeBadge =
+                            override?.target === "home" ||
+                            (override == null &&
+                                afterTravelEntries.some(
+                                    (entry) =>
+                                        hasHomeInTravel(entry) ||
+                                        personHasHomeTravelOverride(
+                                            entry,
+                                            person
+                                        ) ||
+                                        resolveMoveEndpointBadge(
+                                            entry.moveFrom,
+                                            entry.moveTo
+                                        )?.target === "home"
+                                ));
+                        const afterUseSiteFixedOnHomeBadge =
+                            personUsesSiteFixedHoursWithHomeBadge(person) &&
+                            afterHasHomeBadge &&
+                            overrideFixedHours > 0;
 
                         if (override?.target === "lodging") {
                             return {
@@ -6060,10 +6449,35 @@ export default function InvoiceCreatePage() {
                             };
                         }
 
-                        if (override?.target === "home" && overrideFixedHours > 0) {
-                            const chargeHours = sumAllocatedTravelHoursForEntries(
-                                afterTravelEntries
+                        if (
+                            (override?.target === "home" ||
+                                afterUseSiteFixedOnHomeBadge) &&
+                            overrideFixedHours > 0
+                        ) {
+                            /**
+                             * 출장지 고정시간(우상윤 자택 배지 포함)은 구간이 24:00에
+                             * 끝나도 고정시간을 쓴다. midnight 조각이라고 raw/배분만
+                             * 쓰면 22:00~24:00이 1h로 줄어 이동이 1시간 모자란다.
+                             * spillover 전용 행만 조각 시간을 쓴다.
+                             */
+                            const onlySpilloverPieces = afterTravelEntries.every(
+                                (entry) => entry.clientHomeTravelSpilloverOf != null
                             );
+                            /**
+                             * spillover 배분이 0이면 그대로 0이어야 한다.
+                             * `|| raw`를 쓰면 0이 raw(2h)로 덮여 타임시트만 2가 된다.
+                             */
+                            const chargeHours = onlySpilloverPieces
+                                ? sumAllocatedTravelHoursForEntries(
+                                      afterTravelEntries
+                                  )
+                                : afterUseSiteFixedOnHomeBadge
+                                  ? sumSiteFixedHomeHoursForPerson(
+                                        afterTravelEntries,
+                                        person,
+                                        overrideFixedHours
+                                    )
+                                  : overrideFixedHours;
                             const { anchorDate, anchorTime } =
                                 getAfterTravelChainStartAnchor(
                                     afterTravelEntries,
@@ -6175,8 +6589,17 @@ export default function InvoiceCreatePage() {
                             );
                         }
 
+                        const afterHasHome = afterTravelEntries.some(
+                            (entry) =>
+                                hasHomeInTravel(entry) ||
+                                personHasHomeTravelOverride(entry, person)
+                        );
+                        /**
+                         * 자택 이동은 작업지속(1h) 제외 → 아래 summarize(소요-1/고정시간).
+                         */
                         if (
                             hasNextCalendarWorkDate &&
+                            !afterHasHome &&
                             doesWorkContextMatchBlockLocation(
                                 person,
                                 beforeTravelEntries,

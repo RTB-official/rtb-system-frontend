@@ -33,6 +33,7 @@ import {
     getGangdongViaHomeDirection,
     isGangdongHomeLeg,
     parseTravelRoutePlaces,
+    personUsesSiteFixedHoursWithHomeBadge,
     resolveMoveEndpointBadge,
 } from "../../utils/travelRouteParse";
 
@@ -2327,7 +2328,23 @@ export default function TimesheetRowDetailSidePanel({
         const allocationByEntryId = new Map<number, number>();
 
         groupTravelEntriesByJourney(entries).forEach((journey) => {
-            if (journey.some(isGangdongHomeTravel)) {
+            const fixedHours = getHomeTravelHours(journey[0].location) ?? 0;
+            const journeyHasHomeBadge =
+                journey.some((item) => hasHomeInTravel(item)) ||
+                (person != null &&
+                    journey.some(
+                        (item) =>
+                            travelChargeOverrides[
+                                getTravelChargeOverrideKey(item.id, person)
+                            ]?.target === "home"
+                    ));
+            const useSiteFixedOnHomeBadge =
+                person != null &&
+                personUsesSiteFixedHoursWithHomeBadge(person) &&
+                journeyHasHomeBadge &&
+                fixedHours > 0;
+
+            if (journey.some(isGangdongHomeTravel) && !useSiteFixedOnHomeBadge) {
                 journey.forEach((item) => {
                     allocationByEntryId.set(
                         item.id,
@@ -2337,8 +2354,9 @@ export default function TimesheetRowDetailSidePanel({
                 return;
             }
 
-            const fixedHours = getHomeTravelHours(journey[0].location) ?? 0;
-            const isCommute = fixedHours > 0 && isHomeWorkSiteCommute(journey[0]);
+            const isCommute =
+                fixedHours > 0 &&
+                (isHomeWorkSiteCommute(journey[0]) || useSiteFixedOnHomeBadge);
 
             if (!isCommute) {
                 journey.forEach((item) => {
@@ -2557,17 +2575,22 @@ export default function TimesheetRowDetailSidePanel({
         }
 
         if (blockIndex === 0) {
+            const hasHome = beforeTravelEntries.some((entry) => hasHomeInTravel(entry));
+            /**
+             * 자택 이동은 작업지속(1h)을 쓰지 않고
+             * 강동동 경유(소요-1)·출장지 고정시간 경로를 탄다.
+             */
             if (
                 !doesWorkContextMatchBlockLocation(
                     person,
                     beforeTravelEntries,
                     afterTravelEntries,
                     previousWorkLocations
-                )
+                ) ||
+                hasHome
             ) {
                 const fixedHours =
                     getHomeTravelHours(beforeTravelEntries[0].location) ?? 0;
-                const hasHome = beforeTravelEntries.some((entry) => hasHomeInTravel(entry));
 
                 if (hasHome && fixedHours > 0) {
                     return {
@@ -2601,7 +2624,12 @@ export default function TimesheetRowDetailSidePanel({
             return summarizeTravelEntries(afterTravelEntries, true, person);
         }
 
+        const afterHasHome = afterTravelEntries.some((entry) => hasHomeInTravel(entry));
+        /**
+         * 자택 이동은 작업지속(1h) 제외 → 아래 summarize(소요-1/고정시간).
+         */
         if (
+            !afterHasHome &&
             doesWorkContextMatchBlockLocation(
                 person,
                 beforeTravelEntries,
@@ -2677,7 +2705,39 @@ export default function TimesheetRowDetailSidePanel({
             return { hours: 1, kind: "continued" };
         }
 
-        if (override?.target === "home" && fixedHours > 0) {
+        const hasHomeBadge =
+            override?.target === "home" ||
+            (override == null &&
+                (hasHomeInTravel(entry) ||
+                    resolveMoveEndpointBadge(entry.moveFrom, entry.moveTo)
+                        ?.target === "home"));
+        if (
+            (override?.target === "home" ||
+                (personUsesSiteFixedHoursWithHomeBadge(person) &&
+                    hasHomeBadge)) &&
+            fixedHours > 0
+        ) {
+            if (entry.clientHomeTravelSpilloverOf != null) {
+                const allocationEntries = [
+                    ...displayData.groupSourceEntries,
+                    ...displayData.sourceEntries,
+                    ...contextEntries,
+                ].filter(
+                    (candidate, index, all) =>
+                        candidate.descType === "\uC774\uB3D9" &&
+                        (candidate.persons ?? []).includes(person) &&
+                        all.findIndex((item) => item.id === candidate.id) ===
+                            index
+                );
+                const allocated = getFixedTravelHoursByEntryId(
+                    allocationEntries,
+                    person
+                ).get(entry.id);
+                return {
+                    hours: allocated !== undefined ? allocated : 0,
+                    kind: "home",
+                };
+            }
             return { hours: fixedHours, kind: "home" };
         }
 
@@ -2939,6 +2999,18 @@ export default function TimesheetRowDetailSidePanel({
                     chargeResult.kind === "home" ||
                     chargeResult.kind.endsWith("-home");
                 if (isHomeKind) {
+                    /**
+                     * spillover/자정 조각은 이미 당일 몫이 계산돼 있다.
+                     * 체인 재배분 시 전날 조각이 가져가 charge=0이 된다.
+                     */
+                    if (
+                        entry.clientHomeTravelSpilloverOf != null ||
+                        (entry.dateFrom === entry.dateTo &&
+                            (entry.timeTo === "24:00" ||
+                                entry.timeFrom === "00:00"))
+                    ) {
+                        return roundHours(chargeResult.hours);
+                    }
                     return allocateGroupedHomeChargeHours(
                         entry,
                         person,
