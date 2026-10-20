@@ -31,6 +31,8 @@ export type InvoiceExcelTimesheetRowInput = {
     travelWeekday: number;
     travelWeekend: number;
     hideDayDate?: boolean;
+    /** 올림청구(4h/8h) — 작업시간 분할 칸 노란색 배경 */
+    highlightRoundedBillableHours?: boolean;
 };
 
 export type InvoiceExcelMeta = Record<string, string | number | undefined>;
@@ -62,6 +64,8 @@ export type InvoiceExcelRdRowInput = {
     travelWeekday: number;
     travelWeekend: number;
     summaryLine: string;
+    /** 올림청구(4h/8h) — 작업시간 분할 칸 노란색 배경 */
+    highlightRoundedBillableHours?: boolean;
 };
 
 export type InvoiceExcelRdInput = {
@@ -425,7 +429,167 @@ export function buildInvoiceExcelRowRecords(
         weekend_after: r.weekendAfter,
         travel_weekday: r.travelWeekday,
         travel_weekend: r.travelWeekend,
+        highlight_rounded_billable_hours: r.highlightRoundedBillableHours
+            ? 1
+            : 0,
     }));
+}
+
+/** 올림청구 시 엑셀 작업시간(Normal/After) 칸 배경 (ARGB) */
+const ROUNDED_BILLABLE_HOUR_FILL_ARGB = "FFFFFF00";
+
+/**
+ * ExcelJS fill 은 이후 styles.xml 템플릿 복원에서 지워지므로,
+ * 워크북별 하이라이트 칸을 따로 기억했다가 ZIP 후처리에서 다시 입힌다.
+ */
+const roundedBillableHighlightCellsByWorkbook = new WeakMap<
+    ExcelJS.Workbook,
+    Map<string, Set<string>>
+>();
+
+function markRoundedBillableHourCell(
+    ws: ExcelJS.Worksheet,
+    address: string
+) {
+    const workbook = ws.workbook;
+    let bySheet = roundedBillableHighlightCellsByWorkbook.get(workbook);
+    if (!bySheet) {
+        bySheet = new Map();
+        roundedBillableHighlightCellsByWorkbook.set(workbook, bySheet);
+    }
+    const sheetName = ws.name.trim();
+    let cells = bySheet.get(sheetName);
+    if (!cells) {
+        cells = new Set();
+        bySheet.set(sheetName, cells);
+    }
+    cells.add(address.replace(/\$/g, "").toUpperCase());
+}
+
+function applyRoundedBillableHourCellHighlight(
+    ws: ExcelJS.Worksheet,
+    address: string
+) {
+    markRoundedBillableHourCell(ws, address);
+    const cell = ws.getCell(address);
+    cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: ROUNDED_BILLABLE_HOUR_FILL_ARGB },
+    };
+}
+
+function appendSolidFillToStylesXml(
+    stylesXml: string,
+    argb: string
+): { stylesXml: string; fillId: number } {
+    const block = stylesXml.match(/<fills\b[^>]*>([\s\S]*?)<\/fills>/)?.[1];
+    if (!block) {
+        return { stylesXml, fillId: 0 };
+    }
+    const fills = listXmlBlockItems(block, "fill");
+    const rgb = argb.length === 8 ? argb : `FF${argb}`;
+    fills.push(
+        `<fill><patternFill patternType="solid"><fgColor rgb="${rgb}"/></patternFill></fill>`
+    );
+    return {
+        stylesXml: replaceXmlBlockItems(stylesXml, "fills", fills),
+        fillId: fills.length - 1,
+    };
+}
+
+function appendClonedCellXfWithFill(
+    stylesXml: string,
+    sourceStyleId: number,
+    fillId: number
+): { stylesXml: string; styleId: number } {
+    const block = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1];
+    if (!block) {
+        return { stylesXml, styleId: sourceStyleId };
+    }
+    const items = listXmlBlockItems(block, "xf");
+    const source = items[sourceStyleId] ?? items[0];
+    if (!source) {
+        return { stylesXml, styleId: sourceStyleId };
+    }
+
+    let cloned = source.includes("fillId=")
+        ? source.replace(/\bfillId="\d+"/, `fillId="${fillId}"`)
+        : source.replace(/<xf\b/, `<xf fillId="${fillId}"`);
+    if (/\bapplyFill=/.test(cloned)) {
+        cloned = cloned.replace(/\bapplyFill="\d+"/, `applyFill="1"`);
+    } else {
+        cloned = cloned.replace(/<xf\b/, `<xf applyFill="1"`);
+    }
+    items.push(cloned);
+
+    return {
+        stylesXml: replaceXmlBlockItems(stylesXml, "cellXfs", items),
+        styleId: items.length - 1,
+    };
+}
+
+function applyRoundedBillableHighlightsToTemplateStyles(
+    templateStyles: {
+        stylesXml?: string;
+        byOutputPath: Map<string, Map<string, string>>;
+    },
+    sheetPathByName: Map<string, string>,
+    highlightsBySheetName: Map<string, Set<string>> | undefined
+) {
+    if (!highlightsBySheetName || highlightsBySheetName.size === 0) {
+        return;
+    }
+    if (!templateStyles.stylesXml) {
+        return;
+    }
+
+    let stylesXml = templateStyles.stylesXml;
+    const yellowFill = appendSolidFillToStylesXml(
+        stylesXml,
+        ROUNDED_BILLABLE_HOUR_FILL_ARGB
+    );
+    stylesXml = yellowFill.stylesXml;
+    const styleIdBySource = new Map<string, string>();
+
+    for (const [sheetName, cells] of highlightsBySheetName) {
+        const path = sheetPathByName.get(sheetName.trim());
+        if (!path) {
+            continue;
+        }
+        const styleMap = templateStyles.byOutputPath.get(path);
+        if (!styleMap) {
+            continue;
+        }
+        for (const ref of cells) {
+            const rowMatch = ref.match(/^([A-Z]+)(\d+)$/);
+            if (!rowMatch) {
+                continue;
+            }
+            const col = rowMatch[1];
+            const row = rowMatch[2];
+            const sourceStyleId =
+                styleMap.get(ref) ??
+                styleMap.get(`${col}${row}`) ??
+                styleMap.get(`H${row}`) ??
+                styleMap.get(`F${row}`) ??
+                "0";
+            let nextStyleId = styleIdBySource.get(sourceStyleId);
+            if (nextStyleId === undefined) {
+                const cloned = appendClonedCellXfWithFill(
+                    stylesXml,
+                    Number.parseInt(sourceStyleId, 10) || 0,
+                    yellowFill.fillId
+                );
+                stylesXml = cloned.stylesXml;
+                nextStyleId = String(cloned.styleId);
+                styleIdBySource.set(sourceStyleId, nextStyleId);
+            }
+            styleMap.set(ref, nextStyleId);
+        }
+    }
+
+    templateStyles.stylesXml = stylesXml;
 }
 
 export function formatInvoiceJobInformationRows(
@@ -3885,13 +4049,23 @@ async function applyCurrencySheetFitAllColumns(zip: JSZip): Promise<void> {
 
 async function normalizeXlsxWorksheetDimensions(
     input: ArrayBuffer | Uint8Array,
-    templateBuffer?: ArrayBuffer
+    templateBuffer?: ArrayBuffer,
+    roundedBillableHighlightsBySheetName?: Map<string, Set<string>>
 ): Promise<Blob> {
     const zip = await JSZip.loadAsync(input);
     const worksheetPaths = Object.keys(zip.files).filter((path) =>
         /^xl\/worksheets\/sheet\d+\.xml$/.test(path)
     );
     const templateStyles = await buildTemplateStyleMaps(zip, templateBuffer);
+    const sheetInfos = await readWorkbookSheetInfos(zip);
+    const sheetPathByName = new Map(
+        sheetInfos.map((sheet) => [sheet.name.trim(), sheet.path])
+    );
+    applyRoundedBillableHighlightsToTemplateStyles(
+        templateStyles,
+        sheetPathByName,
+        roundedBillableHighlightsBySheetName
+    );
 
     await Promise.all(
         worksheetPaths.map(async (path) => {
@@ -5188,6 +5362,14 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
 
         rowRecords.forEach((rec, rowIdx) => {
             const lineNo = startRow + rowIdx;
+            const roundedHourFieldKeys = new Set([
+                "weekday_normal",
+                "weekday_after",
+                "weekend_normal",
+                "weekend_after",
+            ]);
+            const highlightRounded =
+                Number(rec.highlight_rounded_billable_hours ?? 0) > 0;
             for (const [colLetter, fieldKey] of Object.entries(cols)) {
                 const shifted = m.table?.columns
                     ? shiftColumnLetter(colLetter, 1)
@@ -5195,6 +5377,17 @@ export async function fillNormalTimesheetInvoiceExcelWorkbook(
                 const raw = rec[fieldKey];
                 const displayValue = raw === 0 ? "" : raw;
                 setCellValue(ws, `${shifted}${lineNo}`, displayValue);
+                if (
+                    highlightRounded &&
+                    roundedHourFieldKeys.has(fieldKey) &&
+                    typeof raw === "number" &&
+                    raw > 0
+                ) {
+                    applyRoundedBillableHourCellHighlight(
+                        ws,
+                        `${shifted}${lineNo}`
+                    );
+                }
             }
             if (!Object.values(cols).includes("total_meals")) {
                 setCellValue(
@@ -5328,12 +5521,44 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
     );
 
     let currentRow = startRow;
-    for (const row of data.rows) {
+    for (let rowIndex = 0; rowIndex < data.rows.length; rowIndex += 1) {
+        const row = data.rows[rowIndex];
         const dataRow = currentRow;
         const descRow = currentRow + 1;
 
-        setCellValue(ws, `B${dataRow}`, row.day);
-        setCellValue(ws, `C${dataRow}`, row.dateFormatted);
+        const startsDateGroup =
+            rowIndex === 0 || data.rows[rowIndex - 1].date !== row.date;
+        if (startsDateGroup) {
+            let groupSize = 1;
+            while (
+                rowIndex + groupSize < data.rows.length &&
+                data.rows[rowIndex + groupSize].date === row.date
+            ) {
+                groupSize += 1;
+            }
+            const groupRows = data.rows.slice(rowIndex, rowIndex + groupSize);
+            const groupLastRow = dataRow + groupSize * 2 - 1;
+            setCellValue(
+                ws,
+                `B${dataRow}`,
+                groupRows.find((r) => r.day)?.day ?? ""
+            );
+            setCellValue(
+                ws,
+                `C${dataRow}`,
+                groupRows.find((r) => r.dateFormatted)?.dateFormatted ?? ""
+            );
+            for (const col of ["B", "C"] as const) {
+                for (let r = dataRow; r <= groupLastRow; r += 1) {
+                    try {
+                        ws.unMergeCells(`${col}${r}`);
+                    } catch {
+                        // 병합이 없으면 무시
+                    }
+                }
+                safeMergeCells(ws, `${col}${dataRow}:${col}${groupLastRow}`);
+            }
+        }
         setCellValue(ws, `D${dataRow}`, row.timeFrom);
         setCellValue(ws, `E${dataRow}`, row.timeTo);
         setCellValue(ws, `F${dataRow}`, excelNumericCell(row.totalHours));
@@ -5344,8 +5569,21 @@ export async function fillRdTimesheetInvoiceExcelWorkbook(
         setCellValue(ws, `K${dataRow}`, excelNumericCell(row.weekendAfter));
         setCellValue(ws, `L${dataRow}`, excelNumericCell(row.travelWeekday));
         setCellValue(ws, `M${dataRow}`, excelNumericCell(row.travelWeekend));
+        if (row.highlightRoundedBillableHours) {
+            const roundedHourCells: Array<[string, number]> = [
+                [`H${dataRow}`, row.weekdayNormal],
+                [`I${dataRow}`, row.weekdayAfter],
+                [`J${dataRow}`, row.weekendNormal],
+                [`K${dataRow}`, row.weekendAfter],
+            ];
+            for (const [address, hours] of roundedHourCells) {
+                if (hours > 0) {
+                    applyRoundedBillableHourCellHighlight(ws, address);
+                }
+            }
+        }
 
-        for (const col of ["B", "C", "D", "E", "F", "G"] as const) {
+        for (const col of ["D", "E", "F", "G"] as const) {
             safeMergeCells(ws, `${col}${dataRow}:${col}${descRow}`);
         }
 
@@ -5424,10 +5662,13 @@ export async function invoiceExcelWorkbookToBlob(
     materializeSharedFormulasInWorkbook(workbook);
     normalizeWorkbookMerges(workbook);
     stripWorksheetImages(workbook);
+    const roundedHighlights =
+        roundedBillableHighlightCellsByWorkbook.get(workbook);
     const buf = await workbook.xlsx.writeBuffer();
     return await normalizeXlsxWorksheetDimensions(
         buf,
-        invoiceExcelTemplateBuffers.get(workbook)
+        invoiceExcelTemplateBuffers.get(workbook),
+        roundedHighlights
     );
 }
 

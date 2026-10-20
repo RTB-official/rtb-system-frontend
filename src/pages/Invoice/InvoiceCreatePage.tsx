@@ -677,7 +677,7 @@ type InvoiceDraftPayloadV1 = InvoiceDraftPayload & {
     entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
     deletedTimesheetEntries: TimesheetSourceEntryData[];
     selectedTimesheetDateGroupKeys: string[];
-    invoiceSkilledFitterByTimesheetRowKey?: Record<string, string>;
+    invoiceSkilledFitterByTimesheetRowKey?: Record<string, string | string[]>;
     invoiceSkilledFitterOptOutByTimesheetRowKey?: Record<string, string[]>;
     entryInvoiceSkilledFitterByEntryId?: Record<number, string>;
     invoiceWorkItemOverride?: string | null;
@@ -711,7 +711,7 @@ type InvoiceUndoSnapshot = {
     entryManualBillableHours: Record<number, number>;
     entryManualBillableSplitHours: Record<number, ManualBillableSplitHours>;
     deletedTimesheetEntries: TimesheetSourceEntryData[];
-    invoiceSkilledFitterByTimesheetRowKey: Record<string, string>;
+    invoiceSkilledFitterByTimesheetRowKey: Record<string, string[]>;
     invoiceSkilledFitterOptOutByTimesheetRowKey: Record<string, string[]>;
     selectedTimesheetDateGroupPanel: TimesheetDateGroupPanelData | null;
     selectedTimesheetRow: TimesheetRowModalData | null;
@@ -791,9 +791,11 @@ function cloneInvoiceUndoSnapshot(s: InvoiceUndoSnapshot): InvoiceUndoSnapshot {
         deletedTimesheetEntries: JSON.parse(
             JSON.stringify(s.deletedTimesheetEntries ?? [])
         ) as TimesheetSourceEntryData[],
-        invoiceSkilledFitterByTimesheetRowKey: {
-            ...(s.invoiceSkilledFitterByTimesheetRowKey ?? {}),
-        },
+        invoiceSkilledFitterByTimesheetRowKey: Object.fromEntries(
+            Object.entries(s.invoiceSkilledFitterByTimesheetRowKey ?? {}).map(
+                ([k, names]) => [k, [...(names ?? [])]]
+            )
+        ),
         invoiceSkilledFitterOptOutByTimesheetRowKey: Object.fromEntries(
             Object.entries(s.invoiceSkilledFitterOptOutByTimesheetRowKey ?? {}).map(
                 ([k, names]) => [k, [...(names ?? [])]]
@@ -1290,7 +1292,13 @@ function buildEffectiveSkilledByDateForInvoice(
         effectiveSkilledByDate.set(date, winners);
     });
 
+    /**
+     * 작업·대기가 없는 날(이동만): 잡 디스크립션 지정 스킬드가 타임시트에 있으면
+     * 포함한다. 다만 같은 날 여러 명이면 겹침 승자와 동일하게 1명만 남긴다
+     * (티어 → 이름). 전원 포함하면 스킬드가 중복 청구·표시된다.
+     */
     if (selectedSkilledSet.size > 0) {
+        const travelOnlyCandidatesByDate = new Map<string, Set<string>>();
         for (const row of rows) {
             const dateKey = row.date;
             if (!dateKey || workIntervalsByDatePerson.has(dateKey)) {
@@ -1304,14 +1312,28 @@ function buildEffectiveSkilledByDateForInvoice(
                 if (!selectedSkilledSet.has(person)) {
                     continue;
                 }
-                let daySet = effectiveSkilledByDate.get(dateKey);
+                let daySet = travelOnlyCandidatesByDate.get(dateKey);
                 if (!daySet) {
                     daySet = new Set<string>();
-                    effectiveSkilledByDate.set(dateKey, daySet);
+                    travelOnlyCandidatesByDate.set(dateKey, daySet);
                 }
                 daySet.add(person);
             }
         }
+        travelOnlyCandidatesByDate.forEach((candidates, date) => {
+            const winner = [...candidates].sort((a, b) => {
+                const tierDiff =
+                    getInvoiceSkilledOverlapTierRank(a) -
+                    getInvoiceSkilledOverlapTierRank(b);
+                if (tierDiff !== 0) {
+                    return tierDiff;
+                }
+                return a.localeCompare(b, "ko");
+            })[0];
+            if (winner) {
+                effectiveSkilledByDate.set(date, new Set([winner]));
+            }
+        });
     }
 
     return effectiveSkilledByDate;
@@ -1320,8 +1342,8 @@ function buildEffectiveSkilledByDateForInvoice(
 function migrateEntrySkilledMapToTimesheetRowKeys(
     timesheetRows: readonly TimesheetRow[],
     entryMap: Record<number, string>
-): Record<string, string> {
-    const out: Record<string, string> = {};
+): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
     for (const [eidStr, person] of Object.entries(entryMap)) {
         const eid = Number(eidStr);
         if (!Number.isFinite(eid) || !person?.trim()) {
@@ -1333,28 +1355,44 @@ function migrateEntrySkilledMapToTimesheetRowKeys(
         if (!row) {
             continue;
         }
-        out[getTimesheetRowSkilledIdentityKey(row)] = person.trim();
+        const key = getTimesheetRowSkilledIdentityKey(row);
+        const name = person.trim();
+        const cur = out[key] ?? [];
+        if (!cur.includes(name)) {
+            out[key] = [...cur, name];
+        }
     }
     return out;
 }
 
 function normalizeInvoiceSkilledRowKeyRecordFromPayload(
     raw: unknown
-): Record<string, string> {
+): Record<string, string[]> {
     if (!raw || typeof raw !== "object") {
         return {};
     }
-    const out: Record<string, string> = {};
+    const out: Record<string, string[]> = {};
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
         const key = k.trim();
-        if (!key || typeof v !== "string") {
+        if (!key) {
             continue;
         }
-        const name = v.trim();
-        if (!name) {
+        if (typeof v === "string") {
+            const name = v.trim();
+            if (name) {
+                out[key] = [name];
+            }
             continue;
         }
-        out[key] = name;
+        if (Array.isArray(v)) {
+            const names = v
+                .filter((item): item is string => typeof item === "string")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            if (names.length > 0) {
+                out[key] = Array.from(new Set(names));
+            }
+        }
     }
     return out;
 }
@@ -1756,8 +1794,10 @@ export default function InvoiceCreatePage() {
         TimesheetSourceEntryData[]
     >([]);
     const [invoiceSkilledFitterByTimesheetRowKey, setInvoiceSkilledFitterByTimesheetRowKey] =
-        useState<Record<string, string>>({});
-    const invoiceSkilledFitterByTimesheetRowKeyRef = useRef<Record<string, string>>({});
+        useState<Record<string, string[]>>({});
+    const invoiceSkilledFitterByTimesheetRowKeyRef = useRef<Record<string, string[]>>(
+        {}
+    );
     invoiceSkilledFitterByTimesheetRowKeyRef.current =
         invoiceSkilledFitterByTimesheetRowKey;
     const [invoiceSkilledFitterOptOutByTimesheetRowKey, setInvoiceSkilledFitterOptOutByTimesheetRowKey] =
@@ -1844,9 +1884,11 @@ export default function InvoiceCreatePage() {
                 JSON.stringify(deletedTimesheetEntries)
             ) as TimesheetSourceEntryData[],
             selectedTimesheetDateGroupKeys: [...selectedTimesheetDateGroupKeys],
-            invoiceSkilledFitterByTimesheetRowKey: {
-                ...invoiceSkilledFitterByTimesheetRowKey,
-            },
+            invoiceSkilledFitterByTimesheetRowKey: Object.fromEntries(
+                Object.entries(invoiceSkilledFitterByTimesheetRowKey).map(
+                    ([k, names]) => [k, [...names]]
+                )
+            ),
             invoiceSkilledFitterOptOutByTimesheetRowKey: Object.fromEntries(
                 Object.entries(invoiceSkilledFitterOptOutByTimesheetRowKey).map(
                     ([k, names]) => [k, [...names]]
@@ -8282,26 +8324,17 @@ export default function InvoiceCreatePage() {
             if (optOut?.includes(person)) {
                 return false;
             }
-            if (
-                Object.prototype.hasOwnProperty.call(
-                    invoiceSkilledFitterByTimesheetRowKey,
-                    key
-                )
-            ) {
-                return invoiceSkilledFitterByTimesheetRowKey[key] === person;
+            const designatedOnRow =
+                invoiceSkilledFitterByTimesheetRowKey[key] ?? [];
+            if (designatedOnRow.includes(person)) {
+                return true;
             }
-            // 같은 날 다른 타임시트 묶음 행에서 이 인원을 수동 스킬드로 지정했다면,
-            // 날짜 전역 알고리즘 폴백으로 이 행까지 스킬드가 번지지 않게 한다.
-            for (const [k, designated] of Object.entries(
-                invoiceSkilledFitterByTimesheetRowKey
-            )) {
-                if (designated !== person) {
-                    continue;
-                }
-                const datePrefix = k.split("::")[0];
-                if (datePrefix !== row.date || k === key) {
-                    continue;
-                }
+            /**
+             * 같은 날 다른 행에 이 인원이 수동 지정돼 있어도, 이 행 인원에 포함되면
+             * 날짜 알고리즘 폴백을 그대로 쓴다. (수동 중복 지정 허용)
+             * 다만 이 행에 다른 인원만 수동 지정된 경우에는 그 목록만 스킬드로 본다.
+             */
+            if (designatedOnRow.length > 0) {
                 return false;
             }
             return effectiveInvoiceSkilledByDate.get(row.date)?.has(person) ?? false;
@@ -8381,12 +8414,6 @@ export default function InvoiceCreatePage() {
                     (entry.persons ?? []).includes(person) &&
                     entryManualBillableHours[entry.id] !== undefined
             );
-        const hasManualBillableTravel = (row: TimesheetRow) =>
-            row.sourceEntries.some(
-                (entry) =>
-                    entry.descType === "이동" &&
-                    entryManualBillableHours[entry.id] !== undefined
-            );
         /** 해당 일에 작업 엔트리가 하나라도 있는지 */
         const dateHasWorkEntry = new Map<string, boolean>();
         /** 해당 일 타임시트에 잡디에서 선택된 Skilled fitter가 한 명이라도 있는지 */
@@ -8435,60 +8462,47 @@ export default function InvoiceCreatePage() {
                     skilledAllocatedWorkKeys.has(blockKey);
                 const travelSkilledAlreadyAllocated =
                     skilledAllocatedTravelKeys.has(blockKey);
-                const hasSelectedSkilledInRow = rowPeople.some((person) =>
+                const workSkilledPeopleCount = rowPeople.filter((person) =>
                     isSkilledFitterForTimesheetRow(row, person)
-                );
-                const hasSelectedSkilledInTravelBillablePeople =
-                    travelBillablePeople.some((person) =>
-                        isSkilledFitterForTimesheetRow(row, person)
-                    );
-                const workSkilled =
-                    hasSelectedSkilledInRow && !workSkilledAlreadyAllocated
-                        ? 1
-                        : 0;
+                ).length;
+                const travelSkilledPeopleCount = travelBillablePeople.filter(
+                    (person) => isSkilledFitterForTimesheetRow(row, person)
+                ).length;
+                const workSkilled = workSkilledAlreadyAllocated
+                    ? 0
+                    : workSkilledPeopleCount;
                 if (hasWorkEntry) {
                     activeSkilledCarry = workSkilled > 0;
                 } else if (!isContinuousWithPrevious) {
                     activeSkilledCarry = false;
                 }
-                const manualBillableTravel = hasManualBillableTravel(row);
                 const hasTravelHours =
                     row.travelWeekday > 0 || row.travelWeekend > 0;
                 const isTravelOnlyRow = !hasWorkEntry;
                 /** 이동만 있는 날: 잡 디스크립션 스킬드가 타임시트 이동 행에 있으면 이동 시간도 스킬드 청구 */
-                const jobSkilledOnPureTravelRow =
-                    isTravelOnlyRow &&
-                    hasTravelHours &&
-                    travelBillablePeople.some(
-                        (person) =>
-                            SKILLED_FITTER_SET.has(person) &&
-                            selectedSkilledFitters.includes(person)
-                    );
-                let travelSkilled =
-                    travelBillablePeople.length > 0 && !travelSkilledAlreadyAllocated
-                        ? manualBillableTravel
-                            ? hasSelectedSkilledInTravelBillablePeople
-                                ? 1
-                                : 0
-                            : hasSelectedSkilledInTravelBillablePeople
-                              ? 1
-                              : 0
+                const jobSkilledOnPureTravelCount =
+                    isTravelOnlyRow && hasTravelHours
+                        ? travelBillablePeople.filter(
+                              (person) =>
+                                  SKILLED_FITTER_SET.has(person) &&
+                                  selectedSkilledFitters.includes(person)
+                          ).length
                         : 0;
-                if (
-                    jobSkilledOnPureTravelRow &&
-                    !travelSkilledAlreadyAllocated
-                ) {
-                    travelSkilled = 1;
-                }
+                let travelSkilled = travelSkilledAlreadyAllocated
+                    ? 0
+                    : Math.max(travelSkilledPeopleCount, jobSkilledOnPureTravelCount);
                 const dayHasWork = dateHasWorkEntry.get(row.date) ?? false;
                 const dayHasSkilled = dateHasJobSkilledFitter.get(row.date) ?? false;
                 if (
                     travelSkilled > 0 &&
                     !dayHasWork &&
                     !dayHasSkilled &&
-                    !jobSkilledOnPureTravelRow
+                    jobSkilledOnPureTravelCount === 0
                 ) {
-                    travelSkilled = isContinuousWithPrevious && activeSkilledCarry ? 1 : 0;
+                    travelSkilled =
+                        isContinuousWithPrevious && activeSkilledCarry
+                            ? Math.max(travelSkilled, 1)
+                            : 0;
                 }
                 if (workSkilled > 0) {
                     skilledAllocatedWorkKeys.add(blockKey);
@@ -8929,46 +8943,23 @@ export default function InvoiceCreatePage() {
     );
 
     const setEntryInvoiceSkilledFitterForEntry = useCallback(
-        (entryId: number, person: string | null) => {
+        (entryId: number, person: string, enabled: boolean) => {
             const row = timesheetRows.find((r) =>
                 r.sourceEntries.some((e) => e.id === entryId)
             );
-            if (!row) {
+            if (!row || !person.trim()) {
                 return;
             }
             const key = getTimesheetRowSkilledIdentityKey(row);
+            const name = person.trim();
             pushInvoiceUndoSnapshot();
-            if (person === null) {
-                const removed =
-                    invoiceSkilledFitterByTimesheetRowKeyRef.current[key];
+            if (!enabled) {
                 setInvoiceSkilledFitterByTimesheetRowKey((prev) => {
-                    const next = { ...prev };
-                    delete next[key];
-                    return next;
-                });
-                if (removed) {
-                    setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
-                        const cur = prev[key] ?? [];
-                        if (cur.includes(removed)) {
-                            return prev;
-                        }
-                        return { ...prev, [key]: [...cur, removed] };
-                    });
-                }
-            } else {
-                setInvoiceSkilledFitterByTimesheetRowKey((prev) => ({
-                    ...prev,
-                    [key]: person,
-                }));
-                setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
-                    const cur = prev[key];
-                    if (!cur?.length) {
+                    const cur = prev[key] ?? [];
+                    if (!cur.includes(name)) {
                         return prev;
                     }
-                    const nextList = cur.filter((p) => p !== person);
-                    if (nextList.length === cur.length) {
-                        return prev;
-                    }
+                    const nextList = cur.filter((p) => p !== name);
                     const next = { ...prev };
                     if (nextList.length === 0) {
                         delete next[key];
@@ -8977,9 +8968,69 @@ export default function InvoiceCreatePage() {
                     }
                     return next;
                 });
+                setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
+                    const cur = prev[key] ?? [];
+                    if (cur.includes(name)) {
+                        return prev;
+                    }
+                    return { ...prev, [key]: [...cur, name] };
+                });
+                return;
             }
+            /**
+             * 수동 On: 이 행에 추가하고, 같은 날 다른 행에서 이미 스킬드인 인원도
+             * 각자 행에 고정한다. 한 명을 켜면 다른 스킬드가 풀리는 일을 막는다.
+             */
+            setInvoiceSkilledFitterByTimesheetRowKey((prev) => {
+                const next: Record<string, string[]> = { ...prev };
+                const addToKey = (rowKey: string, personName: string) => {
+                    const cur = next[rowKey] ?? [];
+                    if (cur.includes(personName)) {
+                        return;
+                    }
+                    next[rowKey] = [...cur, personName];
+                };
+                addToKey(key, name);
+                for (const other of timesheetRows) {
+                    if (other.date !== row.date) {
+                        continue;
+                    }
+                    const otherKey = getTimesheetRowSkilledIdentityKey(other);
+                    for (const otherPerson of getRowPersons(other)) {
+                        if (
+                            otherPerson === name ||
+                            !isSkilledFitterForTimesheetRow(other, otherPerson)
+                        ) {
+                            continue;
+                        }
+                        addToKey(otherKey, otherPerson);
+                    }
+                }
+                return next;
+            });
+            setInvoiceSkilledFitterOptOutByTimesheetRowKey((prev) => {
+                const cur = prev[key];
+                if (!cur?.length) {
+                    return prev;
+                }
+                const nextList = cur.filter((p) => p !== name);
+                if (nextList.length === cur.length) {
+                    return prev;
+                }
+                const next = { ...prev };
+                if (nextList.length === 0) {
+                    delete next[key];
+                } else {
+                    next[key] = nextList;
+                }
+                return next;
+            });
         },
-        [timesheetRows, pushInvoiceUndoSnapshot]
+        [
+            timesheetRows,
+            pushInvoiceUndoSnapshot,
+            isSkilledFitterForTimesheetRow,
+        ]
     );
 
     const getEntryInvoiceSkilledFitterDesignation = useCallback(
@@ -8990,9 +9041,11 @@ export default function InvoiceCreatePage() {
             if (!row) {
                 return undefined;
             }
-            return invoiceSkilledFitterByTimesheetRowKey[
-                getTimesheetRowSkilledIdentityKey(row)
-            ];
+            const designated =
+                invoiceSkilledFitterByTimesheetRowKey[
+                    getTimesheetRowSkilledIdentityKey(row)
+                ] ?? [];
+            return designated.length > 0 ? designated[0] : undefined;
         },
         [timesheetRows, invoiceSkilledFitterByTimesheetRowKey]
     );
@@ -13808,6 +13861,10 @@ export default function InvoiceCreatePage() {
                                           row
                                       ).totalMeals
                                     : 0,
+                                highlightRoundedBillableHours:
+                                    getInvoiceTimesheetRoundedManualBadgeLabel(
+                                        row
+                                    ) !== null,
                             };
                         }),
                         comments: resolveTimesheetSectionComments(
@@ -13845,6 +13902,9 @@ export default function InvoiceCreatePage() {
                         travelWeekday: row.travelWeekday,
                         travelWeekend: row.travelWeekend,
                         summaryLine: formatRdTimesheetRowSummaryLine(row),
+                        highlightRoundedBillableHours:
+                            getInvoiceTimesheetRoundedManualBadgeLabel(row) !==
+                            null,
                     };
                 });
 
