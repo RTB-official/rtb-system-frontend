@@ -51,6 +51,7 @@ import {
     getGangdongViaHomeDirection,
     isGangdongHomeLeg,
     parseTravelRoutePlaces,
+    personUsesSiteFixedHoursWithHomeBadge,
     resolveMoveEndpointBadge,
 } from "../../utils/travelRouteParse";
 
@@ -1812,12 +1813,44 @@ export default function TimesheetDateGroupDetailSidePanel({
         );
     };
 
+    const personHasHomeTravelOverride = (
+        entry: TimesheetSourceEntryData,
+        person: string
+    ): boolean => {
+        if (
+            travelChargeOverrides[getTravelChargeOverrideKey(entry.id, person)]
+                ?.target === "home"
+        ) {
+            return true;
+        }
+        const parentId = entry.clientHomeTravelSpilloverOf;
+        if (parentId == null) {
+            return false;
+        }
+        return (
+            travelChargeOverrides[getTravelChargeOverrideKey(parentId, person)]
+                ?.target === "home"
+        );
+    };
+
     /** 출발지·도착지가 같으면 같은 이동으로 본다(자정에서 잘린 구간 판별용). */
-    const getTravelJourneyKey = (entry: TimesheetSourceEntryData): string =>
-        [
-            normalizeLocationName(getTravelEntryOrigin(entry)),
-            normalizeLocationName(getFinalDestination(entry)),
-        ].join("\u2192");
+    const getTravelJourneyKey = (entry: TimesheetSourceEntryData): string => {
+        const origin = normalizeLocationName(getTravelEntryOrigin(entry));
+        let destination = normalizeLocationName(getFinalDestination(entry));
+        /**
+         * 숙소 행에서 일부/전원이 자택 배지이거나 spillover면 여정 키를 자택으로
+         * 맞춰 23:00~24:00 + 00:00~01:00이 한 여정으로 배분되게 한다.
+         */
+        const treatAsHome =
+            entry.clientHomeTravelSpilloverOf != null ||
+            (entry.persons ?? []).some((person) =>
+                personHasHomeTravelOverride(entry, person)
+            );
+        if (treatAsHome && !destination.includes("\uC790\uD0DD")) {
+            destination = "\uC790\uD0DD";
+        }
+        return [origin, destination].join("\u2192");
+    };
 
     /**
      * 자정에서 잘린 같은 구간(23:00~24:00 + 00:00~01:00)을 한 번의 이동으로 묶는다.
@@ -1866,7 +1899,23 @@ export default function TimesheetDateGroupDetailSidePanel({
         const allocationByEntryId = new Map<number, number>();
 
         groupTravelEntriesByJourney(entries).forEach((journey) => {
-            if (journey.some(isGangdongHomeTravel)) {
+            const fixedHours = getHomeTravelHours(journey[0].location) ?? 0;
+            const journeyHasHomeBadge =
+                journey.some((item) => hasHomeInTravel(item)) ||
+                (person != null &&
+                    journey.some(
+                        (item) =>
+                            travelChargeOverrides[
+                                getTravelChargeOverrideKey(item.id, person)
+                            ]?.target === "home"
+                    ));
+            const useSiteFixedOnHomeBadge =
+                person != null &&
+                personUsesSiteFixedHoursWithHomeBadge(person) &&
+                journeyHasHomeBadge &&
+                fixedHours > 0;
+
+            if (journey.some(isGangdongHomeTravel) && !useSiteFixedOnHomeBadge) {
                 journey.forEach((item) => {
                     allocationByEntryId.set(
                         item.id,
@@ -1876,8 +1925,9 @@ export default function TimesheetDateGroupDetailSidePanel({
                 return;
             }
 
-            const fixedHours = getHomeTravelHours(journey[0].location) ?? 0;
-            const isCommute = fixedHours > 0 && isHomeWorkSiteCommute(journey[0]);
+            const isCommute =
+                fixedHours > 0 &&
+                (isHomeWorkSiteCommute(journey[0]) || useSiteFixedOnHomeBadge);
 
             if (!isCommute) {
                 journey.forEach((item) => {
@@ -2171,7 +2221,17 @@ export default function TimesheetDateGroupDetailSidePanel({
     ): { hours: number | null; kind: string } => {
         const override = opts?.ignoreOverride
             ? null
-            : travelChargeOverrides[getTravelChargeOverrideKey(entry.id, person)] ??
+            : travelChargeOverrides[
+                  getTravelChargeOverrideKey(entry.id, person)
+              ] ??
+              (entry.clientHomeTravelSpilloverOf != null
+                  ? travelChargeOverrides[
+                        getTravelChargeOverrideKey(
+                            entry.clientHomeTravelSpilloverOf,
+                            person
+                        )
+                    ]
+                  : null) ??
               null;
         const fixedHours = getHomeTravelHours(entry.location) ?? 0;
 
@@ -2179,8 +2239,59 @@ export default function TimesheetDateGroupDetailSidePanel({
             return { hours: 1, kind: "continued" };
         }
 
-        if (override?.target === "home" && fixedHours > 0) {
+        /**
+         * 우상윤 등: 자택 배지(오버라이드 또는 경로상 자택)면
+         * 강동동 경유 차감 대신 출장지별 고정시간.
+         */
+        const hasHomeBadge =
+            override?.target === "home" ||
+            (override == null &&
+                (hasHomeInTravel(entry) ||
+                    resolveMoveEndpointBadge(entry.moveFrom, entry.moveTo)
+                        ?.target === "home"));
+        const useSiteFixedOnHomeBadge =
+            personUsesSiteFixedHoursWithHomeBadge(person) &&
+            hasHomeBadge &&
+            fixedHours > 0;
+
+        if (
+            (override?.target === "home" || useSiteFixedOnHomeBadge) &&
+            fixedHours > 0
+        ) {
             if (entry.clientHomeTravelSpilloverOf != null) {
+                /**
+                 * spillover는 여정 배분 몫만 쓴다. 전날 조각이 고정시간을
+                 * 이미 가져가면 0이 맞고, raw를 쓰면 타임시트/패널이 어긋난다.
+                 */
+                const allocated = getFixedTravelHoursByEntryId(
+                    fullGroupEntries.filter(
+                        (candidate) =>
+                            candidate.descType === "\uC774\uB3D9" &&
+                            (candidate.persons ?? []).includes(person)
+                    ),
+                    person
+                ).get(entry.id);
+                return {
+                    hours: allocated !== undefined ? allocated : 0,
+                    kind: "home",
+                };
+            }
+            /**
+             * 자정 직전 조각(23:00~24:00)도 고정 2h가 아니라
+             * 여정 배분 몫(보통 1h)을 쓴다.
+             */
+            if (entry.timeTo === "24:00" && entry.dateFrom === entry.dateTo) {
+                const allocated = getFixedTravelHoursByEntryId(
+                    fullGroupEntries.filter(
+                        (candidate) =>
+                            candidate.descType === "\uC774\uB3D9" &&
+                            (candidate.persons ?? []).includes(person)
+                    ),
+                    person
+                ).get(entry.id);
+                if (allocated !== undefined) {
+                    return { hours: allocated, kind: "home" };
+                }
                 return {
                     hours: roundHours(calculateRawTravelHours(entry)),
                     kind: "home",
@@ -2221,7 +2332,23 @@ export default function TimesheetDateGroupDetailSidePanel({
             /**
              * 작업이 없는 날이라도 자택 이동 체인이면 그날 원본 시간이 아니라
              * 체인 전체의 고정 청구시간을 기준으로 배분한다.
+             * spillover 조각은 여정 배분 몫만 표시한다(전날에서 다 쓰면 0).
              */
+            if (entry.clientHomeTravelSpilloverOf != null) {
+                const allocated = getFixedTravelHoursByEntryId(
+                    fullGroupEntries.filter(
+                        (candidate) =>
+                            candidate.descType === "\uC774\uB3D9" &&
+                            (candidate.persons ?? []).includes(person)
+                    ),
+                    person
+                ).get(entry.id);
+                return {
+                    hours: allocated !== undefined ? allocated : 0,
+                    kind: "home",
+                };
+            }
+
             const dayTravelEntries = personEntries.filter(
                 (candidate) => candidate.descType === "\uC774\uB3D9"
             );
@@ -2261,19 +2388,24 @@ export default function TimesheetDateGroupDetailSidePanel({
                 }
 
                 if (blockIndex === 0) {
+                    const hasHome = block.beforeTravelEntries.some((travelEntry) =>
+                        hasHomeInTravel(travelEntry)
+                    );
+                    /**
+                     * 자택 이동은 작업지속(1h)을 쓰지 않고
+                     * 강동동 경유(소요-1)·출장지 고정시간 경로를 탄다.
+                     */
                     if (
                         !doesWorkContextMatchBlockLocation(
                             person,
                             block.beforeTravelEntries,
                             effectiveAfterTravelEntries,
                             previousWorkLocations
-                        )
+                        ) ||
+                        hasHome
                     ) {
                         const fixedHours =
                             getHomeTravelHours(block.beforeTravelEntries[0].location) ?? 0;
-                        const hasHome = block.beforeTravelEntries.some((travelEntry) =>
-                            hasHomeInTravel(travelEntry)
-                        );
 
                         if (hasHome && fixedHours > 0) {
                             return {
@@ -2304,7 +2436,14 @@ export default function TimesheetDateGroupDetailSidePanel({
                     return summarizeTravelEntries(effectiveAfterTravelEntries, true, person);
                 }
 
+                const afterHasHome = effectiveAfterTravelEntries.some((travelEntry) =>
+                    hasHomeInTravel(travelEntry)
+                );
+                /**
+                 * 자택 이동은 작업지속(1h) 제외 → 아래 summarize(소요-1/고정시간).
+                 */
                 if (
+                    !afterHasHome &&
                     doesWorkContextMatchBlockLocation(
                         person,
                         block.beforeTravelEntries,
@@ -2523,6 +2662,18 @@ export default function TimesheetDateGroupDetailSidePanel({
                     chargeResult.kind === "home" ||
                     chargeResult.kind.endsWith("-home");
                 if (isHomeKind) {
+                    /**
+                     * spillover/자정 조각은 이미 당일 몫(1h)이 계산돼 있다.
+                     * 체인에 다시 배분하면 전날 조각이 1h를 가져가 charge=0이 된다.
+                     */
+                    if (
+                        entry.clientHomeTravelSpilloverOf != null ||
+                        (entry.dateFrom === entry.dateTo &&
+                            (entry.timeTo === "24:00" ||
+                                entry.timeFrom === "00:00"))
+                    ) {
+                        return roundHours(chargeResult.hours);
+                    }
                     return allocateGroupedHomeChargeHours(
                         entry,
                         person,
@@ -2569,6 +2720,15 @@ export default function TimesheetDateGroupDetailSidePanel({
 
         if (!containsHome) {
             return durationLabel || "-";
+        }
+
+        /** spillover/자정 조각에는 고정시간 전체를 붙이지 않는다. */
+        if (
+            entry.clientHomeTravelSpilloverOf != null ||
+            (entry.timeTo === "24:00" && entry.dateFrom === entry.dateTo) ||
+            (entry.timeFrom === "00:00" && entry.dateFrom === entry.dateTo)
+        ) {
+            return durationLabel || formatHoursLabel(calculateRawTravelHours(entry));
         }
 
         return formatHoursLabel(fixedHours);

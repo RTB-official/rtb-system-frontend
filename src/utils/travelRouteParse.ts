@@ -71,14 +71,20 @@ export function resolveMoveEndpointBadge(
 /** 자택↔강동동 공장 구간은 실제 소요와 관계없이 이 시간으로 보고 청구에서 뺀다. */
 export const GANGDONG_HOME_LEG_HOURS = 1;
 
-/** 집이 멀어 자택↔강동동 공장 시간이 기본값과 다른 인원 */
-const GANGDONG_HOME_LEG_HOURS_BY_PERSON: Record<string, number> = {
-    우상윤: 2,
-};
+export function getGangdongHomeLegHours(_person?: string | null): number {
+    return GANGDONG_HOME_LEG_HOURS;
+}
 
-export function getGangdongHomeLegHours(person?: string | null): number {
-    const name = (person ?? "").trim();
-    return GANGDONG_HOME_LEG_HOURS_BY_PERSON[name] ?? GANGDONG_HOME_LEG_HOURS;
+/**
+ * 자택 배지일 때 강동동 경유(소요-1) 대신 출장지별 고정시간을 쓰는 인원.
+ * 예: HD중공업 고정 2h.
+ */
+const HOME_BADGE_USES_SITE_FIXED_HOURS = new Set(["우상윤"]);
+
+export function personUsesSiteFixedHoursWithHomeBadge(
+    person?: string | null
+): boolean {
+    return HOME_BADGE_USES_SITE_FIXED_HOURS.has((person ?? "").trim());
 }
 
 type MoveRoute = {

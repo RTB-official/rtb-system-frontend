@@ -202,16 +202,24 @@ export default function ActionMenu({
     };
 
     const menuWidthPx = getWidthValue(width);
-    /** 실측 높이가 있으면 그걸 쓰고, 없으면 추정값 (과도한 추정으로 멀리 띄우지 않음) */
+    /** 실측 높이가 있으면 그걸 쓰고, 없으면 추정값 */
     const menuHeightPx = measuredHeight > 0 ? measuredHeight : estimatedHeight;
-    /** 이보다 아래 공간이 좁을 때만 위로 연다 */
-    const minSpaceBelow = 140;
     const viewPad = 12;
     const gap = 8;
     let top = 0;
     let left = 0;
     /** 앵커(또는 클릭) Y — 위로 열 때 메뉴 하단을 여기에 맞춤 */
     let pivotY = 0;
+    let openAbove = false;
+    let spaceBelow = Number.POSITIVE_INFINITY;
+    let spaceAbove = Number.POSITIVE_INFINITY;
+
+    /** 아래가 팝오버 높이보다 조금이라도 부족하면 위로. 위도 부족하면 더 넓은 쪽 */
+    const shouldOpenAbove = (below: number, above: number) => {
+        if (below >= menuHeightPx) return false;
+        if (above >= menuHeightPx) return true;
+        return above > below;
+    };
 
     // 날짜 셀 등 앵커가 있으면 클릭 좌표보다 앵커를 우선해 가깝게 붙인다
     if (anchorEl) {
@@ -224,10 +232,14 @@ export default function ActionMenu({
             top = rect.top;
             left = rect.right + 12;
             pivotY = rect.top;
+            spaceBelow = window.innerHeight - rect.top - viewPad;
+            spaceAbove = rect.top - viewPad;
         } else if (placement === "bottom-left") {
             left = rect.left;
-            const spaceBelow = window.innerHeight - rect.bottom - gap - viewPad;
-            if (spaceBelow < minSpaceBelow) {
+            spaceBelow = window.innerHeight - rect.bottom - gap - viewPad;
+            spaceAbove = rect.top - gap - viewPad;
+            openAbove = shouldOpenAbove(spaceBelow, spaceAbove);
+            if (openAbove) {
                 top = rect.top - gap - menuHeightPx;
                 pivotY = rect.top;
             } else {
@@ -236,8 +248,10 @@ export default function ActionMenu({
             }
         } else {
             // bottom-right (default)
-            const spaceBelow = window.innerHeight - rect.bottom - gap - viewPad;
-            if (spaceBelow < minSpaceBelow) {
+            spaceBelow = window.innerHeight - rect.bottom - gap - viewPad;
+            spaceAbove = rect.top - gap - viewPad;
+            openAbove = shouldOpenAbove(spaceBelow, spaceAbove);
+            if (openAbove) {
                 top = rect.top - gap - menuHeightPx;
                 pivotY = rect.top;
             } else {
@@ -248,8 +262,10 @@ export default function ActionMenu({
     } else if (position) {
         left = position.x;
         pivotY = position.y;
-        const spaceBelow = window.innerHeight - position.y - viewPad;
-        if (spaceBelow < minSpaceBelow) {
+        spaceBelow = window.innerHeight - position.y - gap - viewPad;
+        spaceAbove = position.y - gap - viewPad;
+        openAbove = shouldOpenAbove(spaceBelow, spaceAbove);
+        if (openAbove) {
             top = position.y - gap - menuHeightPx;
         } else {
             top = position.y + gap;
@@ -257,7 +273,7 @@ export default function ActionMenu({
     }
 
     // 위로 연 뒤 실측 높이가 추정보다 작으면 메뉴를 앵커 쪽으로 내려 붙인다
-    if (measuredHeight > 0 && top + measuredHeight + gap < pivotY) {
+    if (openAbove && measuredHeight > 0 && top + measuredHeight + gap < pivotY) {
         top = pivotY - gap - measuredHeight;
     }
 
@@ -267,14 +283,20 @@ export default function ActionMenu({
         left = window.innerWidth - menuWidthPx - viewPad;
     }
 
-    // 세로: 앵커에 가깝게 유지. 넘치면 내부 스크롤 (멀리 밀어 올리지 않음)
+    // 세로: 위/아래 중 여유 있는 쪽에 전체 높이로 표시. 양쪽 다 부족할 때만 스크롤
     if (top < viewPad) top = viewPad;
-    const clampedMaxHeight = Math.max(120, window.innerHeight - top - viewPad);
+    const availableHeight = openAbove
+        ? Math.max(120, pivotY - gap - top)
+        : Math.max(120, window.innerHeight - top - viewPad);
+    const needsScroll = menuHeightPx > availableHeight + 1;
+    const clampedMaxHeight = needsScroll ? availableHeight : undefined;
 
     return createPortal(
         <div
             ref={menuRef}
-            className={`fixed ${width.startsWith("w-[") ? "" : width} rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999 overflow-y-auto overscroll-contain`}
+            className={`fixed ${width.startsWith("w-[") ? "" : width} rounded-2xl border border-gray-100 bg-white shadow-xl ring-1 ring-black/5 p-3 flex flex-col z-9999 ${
+                needsScroll ? "overflow-y-auto overscroll-contain" : "overflow-visible"
+            }`}
             style={{
                 top,
                 left,

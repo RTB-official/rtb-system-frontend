@@ -66,6 +66,8 @@ async function downloadScheduleTableImage(
     URL.revokeObjectURL(url);
 }
 
+type CopyScheduleImageResult = "copied" | "shared" | "downloaded";
+
 function clipboardItemAcceptsPromise(): boolean {
     if (typeof ClipboardItem === "undefined") return false;
     try {
@@ -78,11 +80,8 @@ function clipboardItemAcceptsPromise(): boolean {
     }
 }
 
-function isClipboardDenied(err: unknown): boolean {
-    return (
-        err instanceof DOMException &&
-        (err.name === "NotAllowedError" || err.name === "SecurityError")
-    );
+function isShareAbort(err: unknown): boolean {
+    return err instanceof DOMException && err.name === "AbortError";
 }
 
 async function copyImageBySelection(blob: Blob): Promise<void> {
@@ -118,9 +117,47 @@ async function copyImageBySelection(blob: Blob): Promise<void> {
     }
 }
 
-async function copyScheduleTableImage(root: HTMLElement): Promise<void> {
+async function shareScheduleTableImage(
+    blob: Blob,
+    versionKey: string
+): Promise<boolean> {
+    if (typeof navigator.share !== "function") return false;
+    const file = new File([blob], scheduleImageFileName(versionKey), {
+        type: "image/png",
+    });
+    if (
+        typeof navigator.canShare === "function" &&
+        !navigator.canShare({ files: [file] })
+    ) {
+        return false;
+    }
+    await navigator.share({ files: [file], title: versionKey });
+    return true;
+}
+
+function downloadBlobAsPng(blob: Blob, versionKey: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = scheduleImageFileName(versionKey);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * 모바일은 await/setState 뒤에 clipboard.write 하면 사용자 제스처가 끊겨 거절된다.
+ * 클릭과 같은 틱에서 Promise ClipboardItem write를 먼저 걸고, 실패 시 공유→저장으로 폴백한다.
+ */
+function beginCopyScheduleTableImage(
+    root: HTMLElement,
+    versionKey: string
+): Promise<CopyScheduleImageResult> {
     if (!window.isSecureContext) {
-        throw new Error("보안 연결(HTTPS)에서만 이미지를 복사할 수 있습니다.");
+        return Promise.reject(
+            new Error("보안 연결(HTTPS)에서만 이미지를 복사할 수 있습니다.")
+        );
     }
 
     window.focus();
@@ -128,43 +165,61 @@ async function copyScheduleTableImage(root: HTMLElement): Promise<void> {
     const canClipboardWrite =
         typeof navigator.clipboard?.write === "function" &&
         typeof ClipboardItem !== "undefined";
-    const failures: unknown[] = [];
 
+    let clipboardWrite: Promise<void> | null = null;
     if (canClipboardWrite && clipboardItemAcceptsPromise()) {
         try {
-            await navigator.clipboard.write([
+            clipboardWrite = navigator.clipboard.write([
                 new ClipboardItem({ "image/png": blobPromise }),
             ]);
-            return;
-        } catch (err) {
-            failures.push(err);
+        } catch {
+            clipboardWrite = null;
         }
     }
 
-    const blob = await blobPromise;
+    return (async () => {
+        if (clipboardWrite) {
+            try {
+                await clipboardWrite;
+                return "copied";
+            } catch {
+                // 모바일 브라우저는 이미지 클립보드를 막는 경우가 많음 → 폴백
+            }
+        }
 
-    if (canClipboardWrite) {
+        const blob = await blobPromise;
+
+        if (canClipboardWrite) {
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({ "image/png": blob }),
+                ]);
+                return "copied";
+            } catch {
+                // fall through
+            }
+        }
+
         try {
-            await navigator.clipboard.write([
-                new ClipboardItem({ "image/png": blob }),
-            ]);
-            return;
-        } catch (err) {
-            failures.push(err);
+            await copyImageBySelection(blob);
+            return "copied";
+        } catch {
+            // fall through
         }
-    }
 
-    try {
-        await copyImageBySelection(blob);
-    } catch (err) {
-        failures.push(err);
-        if (failures.some(isClipboardDenied)) {
-            throw new Error(
-                "브라우저가 클립보드 복사를 막았습니다. 페이지를 클릭한 뒤 다시 시도해 주세요."
-            );
+        try {
+            if (await shareScheduleTableImage(blob, versionKey)) {
+                return "shared";
+            }
+        } catch (err) {
+            if (isShareAbort(err)) {
+                throw new Error("공유가 취소되었습니다.");
+            }
         }
-        throw new Error("클립보드 복사에 실패했습니다.");
-    }
+
+        downloadBlobAsPng(blob, versionKey);
+        return "downloaded";
+    })();
 }
 
 function sheetMatchesSearch(
@@ -407,23 +462,47 @@ export default function ScheduleListPage() {
         const root = tableRootRefs.current.get(sheet.id);
         if (!root || sheetImageBusy) return;
 
+        if (action === "copy") {
+            // setState보다 먼저 write를 시작해 모바일 사용자 제스처를 유지한다.
+            const copyPromise = beginCopyScheduleTableImage(
+                root,
+                sheet.versionKey
+            );
+            setSheetImageBusy({ id: sheet.id, action });
+            try {
+                const result = await copyPromise;
+                if (result === "copied") {
+                    showSuccess("일정 표 이미지를 클립보드에 복사했습니다.");
+                } else if (result === "shared") {
+                    showSuccess("일정 표 이미지를 공유했습니다.");
+                } else {
+                    showSuccess(
+                        "이 기기에서는 클립보드 복사를 지원하지 않아 이미지로 저장했습니다."
+                    );
+                }
+            } catch (err) {
+                console.error(err);
+                showError(
+                    err instanceof Error
+                        ? err.message
+                        : "클립보드 복사에 실패했습니다."
+                );
+            } finally {
+                setSheetImageBusy(null);
+            }
+            return;
+        }
+
         setSheetImageBusy({ id: sheet.id, action });
         try {
-            if (action === "download") {
-                await downloadScheduleTableImage(root, sheet.versionKey);
-                showSuccess("일정 표를 이미지로 저장했습니다.");
-            } else {
-                await copyScheduleTableImage(root);
-                showSuccess("일정 표 이미지를 클립보드에 복사했습니다.");
-            }
+            await downloadScheduleTableImage(root, sheet.versionKey);
+            showSuccess("일정 표를 이미지로 저장했습니다.");
         } catch (err) {
             console.error(err);
             showError(
                 err instanceof Error
                     ? err.message
-                    : action === "download"
-                      ? "이미지 저장에 실패했습니다."
-                      : "클립보드 복사에 실패했습니다."
+                    : "이미지 저장에 실패했습니다."
             );
         } finally {
             setSheetImageBusy(null);
