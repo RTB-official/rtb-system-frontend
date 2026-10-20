@@ -8175,6 +8175,71 @@ export default function InvoiceCreatePage() {
         </div>
     );
 
+    /** Meals 칸에 실제로 표시되는 끼니 수(묶음 첫 행만 값이 있음) */
+    const getDisplayedRowTotalMeals = (
+        sectionTitle: string,
+        sectionKey: string | undefined,
+        rows: TimesheetRow[],
+        row: TimesheetRow
+    ) => {
+        const isFirstRowForMealGroup =
+            getMealGroupRows(sectionTitle, sectionKey, rows, row)[0]?.rowId ===
+            row.rowId;
+        return isFirstRowForMealGroup
+            ? getSectionMealGroupData(sectionTitle, sectionKey, rows, row)
+                  .totalMeals
+            : 0;
+    };
+
+    /**
+     * Meals가 1 이상이고 (Time to − Time from) === totalHours 이면
+     * Time to +1h (24시면 Time from −1h).
+     */
+    const applyMealsClockBumpToTimeRange = (
+        timeFrom: string,
+        timeTo: string,
+        totalHours: number,
+        mealsCount: number
+    ): { timeFrom: string; timeTo: string } => {
+        const original = { timeFrom, timeTo };
+        if (mealsCount < 1) {
+            return original;
+        }
+        const fromHour = Number.parseInt((timeFrom ?? "").trim(), 10);
+        const toHour = Number.parseInt((timeTo ?? "").trim(), 10);
+        if (!Number.isFinite(fromHour) || !Number.isFinite(toHour)) {
+            return original;
+        }
+        if (Math.abs(toHour - fromHour - totalHours) > 0.01) {
+            return original;
+        }
+        const pad = (hour: number) => String(hour).padStart(2, "0");
+        if (toHour >= 24) {
+            if (fromHour <= 0) {
+                return original;
+            }
+            return { timeFrom: pad(fromHour - 1), timeTo };
+        }
+        return { timeFrom, timeTo: pad(toHour + 1) };
+    };
+
+    /**
+     * Meals가 있는 행은 Time to − Time from 이 Total Hours보다 커야 한다.
+     * 같으면 Time to +1h, Time to가 24시면 대신 Time from −1h.
+     */
+    const getTimesheetRowDisplayTimeRange = (
+        sectionTitle: string,
+        sectionKey: string | undefined,
+        rows: TimesheetRow[],
+        row: TimesheetRow
+    ): { timeFrom: string; timeTo: string } =>
+        applyMealsClockBumpToTimeRange(
+            row.timeFrom,
+            row.timeTo,
+            getTimesheetRowTotalHoursForGrid(row),
+            getDisplayedRowTotalMeals(sectionTitle, sectionKey, rows, row)
+        );
+
     const renderMealsCell = (
         sectionTitle: string,
         sectionKey: string | undefined,
@@ -10285,22 +10350,64 @@ export default function InvoiceCreatePage() {
                         (sourceEntry) => sourceEntry.id === entry.id
                     )
             );
+            /**
+             * 청구 구간: 타임시트에 보이는 Time from/to
+             * (청구창 + Meals 있을 때 +1h 보정 포함).
+             */
+            const mealSectionKey =
+                section.title === "R&D TIMESHEET" ? undefined : section.key;
+            const displayTimes = invoicedRow
+                ? getTimesheetRowDisplayTimeRange(
+                      section.title,
+                      mealSectionKey,
+                      section.rows,
+                      invoicedRow
+                  )
+                : null;
             const invoicedTimeFrom = formatCommentTime(
-                invoicedRow?.chargeWindowStart ??
+                displayTimes?.timeFrom ??
                     invoicedRow?.timeFrom ??
                     entry.timeFrom
             );
             const invoicedTimeTo = formatCommentTime(
-                invoicedRow?.chargeWindowEnd ??
-                    invoicedRow?.timeTo ??
-                    entry.timeTo
+                displayTimes?.timeTo ?? invoicedRow?.timeTo ?? entry.timeTo
             );
-            // 올림청구 전 타임시트에 보이던 구간(청구창 적용 전). 소스 엔트리 min/max(이동 포함)가 아님.
+            /**
+             * instead of 구간: 올림청구 전 타임시트에 보이던 시계 구간.
+             * baseTime(08–09)에 Meals +1 보정을 원래 청구시간(1h) 기준으로 적용하면
+             * 화면에 보이던 08–10과 같아진다.
+             */
+            const baseFrom =
+                invoicedRow?.baseTimeFrom ?? entry.timeFrom;
+            const baseTo = invoicedRow?.baseTimeTo ?? entry.timeTo;
+            const mealsCount = invoicedRow
+                ? getDisplayedRowTotalMeals(
+                      section.title,
+                      mealSectionKey,
+                      section.rows,
+                      invoicedRow
+                  )
+                : 0;
+            /** 올림청구 전 행 총시간 = 현재 행 총시간 − 올림 작업 + 원래 작업 (이동 등 유지) */
+            const originalRowTotalHours = invoicedRow
+                ? Math.round(
+                      (getTimesheetRowTotalHoursForGrid(invoicedRow) -
+                          invoicedH +
+                          originalH) *
+                          10
+                  ) / 10
+                : originalH;
+            const originalDisplayTimes = applyMealsClockBumpToTimeRange(
+                baseFrom,
+                baseTo,
+                originalRowTotalHours,
+                mealsCount
+            );
             const originalTimeFrom = formatCommentTime(
-                invoicedRow?.baseTimeFrom ?? entry.timeFrom
+                originalDisplayTimes.timeFrom
             );
             const originalTimeTo = formatCommentTime(
-                invoicedRow?.baseTimeTo ?? entry.timeTo
+                originalDisplayTimes.timeTo
             );
             const commentDate = formatDate(applyYmd ?? entry.dateFrom);
             lines.push(
@@ -13852,6 +13959,12 @@ export default function InvoiceCreatePage() {
                                 )[0]?.rowId === row.rowId;
                             return {
                                 ...row,
+                                ...getTimesheetRowDisplayTimeRange(
+                                    section.title,
+                                    section.key,
+                                    section.rows,
+                                    row
+                                ),
                                 description: row.description ?? "",
                                 totalMeals: isMealGroupLead
                                     ? getSectionMealGroupData(
@@ -13882,12 +13995,18 @@ export default function InvoiceCreatePage() {
                     const wkn = tc?.weekendNormal ?? row.weekendNormal;
                     const wka = tc?.weekendAfter ?? row.weekendAfter;
 
+                    const displayTimes = getTimesheetRowDisplayTimeRange(
+                        "R&D TIMESHEET",
+                        undefined,
+                        timesheetRows,
+                        row
+                    );
                     return {
                         date: row.date,
                         day: row.hideDayDate ? "" : row.day,
                         dateFormatted: row.hideDayDate ? "" : row.dateFormatted,
-                        timeFrom: row.timeFrom,
-                        timeTo: row.timeTo,
+                        timeFrom: displayTimes.timeFrom,
+                        timeTo: displayTimes.timeTo,
                         totalHours: getTimesheetRowTotalHoursForGrid(row),
                         totalMeals: getSectionMealGroupData(
                             "R&D TIMESHEET",
@@ -14750,10 +14869,10 @@ export default function InvoiceCreatePage() {
                                                                 {row.hideDayDate ? "" : row.dateFormatted}
                                                             </td>
                                                             <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
-                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeFrom, row.timeFrom)}>{row.timeFrom}</span>
+                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeFrom, row.timeFrom)}>{getTimesheetRowDisplayTimeRange("R&D TIMESHEET", undefined, timesheetRows, row).timeFrom}</span>
                                                             </td>
                                                             <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
-                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{row.timeTo}</span>
+                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{getTimesheetRowDisplayTimeRange("R&D TIMESHEET", undefined, timesheetRows, row).timeTo}</span>
                                                             </td>
                                                             <td rowSpan={2} className={`px-2 py-2 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass("R&D TIMESHEET", row)}`} {...getTimesheetInteractiveCellProps("R&D TIMESHEET", row)}>
                                                                 <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(getTimesheetRowTotalHoursForGrid(row)))}>{getTimesheetRowTotalHoursForGrid(row)}</span>
@@ -15262,10 +15381,10 @@ export default function InvoiceCreatePage() {
                                                                                 {row.hideDayDate ? "" : row.dateFormatted}
                                                                             </td>
                                                                             <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>
-                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeFrom, row.timeFrom)}>{row.timeFrom}</span>
+                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeFrom, row.timeFrom)}>{getTimesheetRowDisplayTimeRange(section.title, section.key, section.rows, row).timeFrom}</span>
                                                                             </td>
                                                                             <td className={`px-2 py-3 text-center border-r border-gray-300 cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>
-                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{row.timeTo}</span>
+                                                                                <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).timeTo, row.timeTo)}>{getTimesheetRowDisplayTimeRange(section.title, section.key, section.rows, row).timeTo}</span>
                                                                             </td>
                                                                             <td className={`px-2 py-3 text-center border-r border-gray-300 font-bold cursor-pointer ${getTimesheetRowStateClass(section.title, row)}`} {...getTimesheetInteractiveCellProps(section.title, row)}>
                                                                                 <span className={getTimesheetChangedValueTextClass(getTimesheetRowChangedFlags(row).totalHours, String(getTimesheetRowTotalHoursForGrid(row)))}>{getTimesheetRowTotalHoursForGrid(row)}</span>
