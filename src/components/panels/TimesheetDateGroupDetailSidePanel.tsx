@@ -191,7 +191,11 @@ interface TimesheetDateGroupDetailSidePanelProps {
         personName: string
     ) => boolean;
     getEntryInvoiceSkilledFitterDesignation?: (entryId: number) => string | undefined;
-    onSetEntryInvoiceSkilledFitter?: (entryId: number, person: string | null) => void;
+    onSetEntryInvoiceSkilledFitter?: (
+        entryId: number,
+        person: string,
+        enabled: boolean
+    ) => void;
 }
 
 type TravelChargeOverrideTarget = "home" | "lodging";
@@ -4310,43 +4314,48 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                                     (entry.persons ?? []).includes(
                                                                                         selectedRemarkPerson
                                                                                     ) &&
-                                                                                    getEntryInvoiceSkilledFitterDesignation &&
                                                                                     onSetEntryInvoiceSkilledFitter ? (
                                                                                         <button
                                                                                             type="button"
-                                                                                            aria-pressed={
-                                                                                                getEntryInvoiceSkilledFitterDesignation(
-                                                                                                    entry.id
-                                                                                                ) === selectedRemarkPerson
-                                                                                            }
+                                                                                            aria-pressed={Boolean(
+                                                                                                isInvoiceEffectiveSkilledFitter?.(
+                                                                                                    entry.id,
+                                                                                                    entry.dateFrom,
+                                                                                                    selectedRemarkPerson
+                                                                                                )
+                                                                                            )}
                                                                                             aria-label={
-                                                                                                getEntryInvoiceSkilledFitterDesignation(
-                                                                                                    entry.id
-                                                                                                ) === selectedRemarkPerson
+                                                                                                isInvoiceEffectiveSkilledFitter?.(
+                                                                                                    entry.id,
+                                                                                                    entry.dateFrom,
+                                                                                                    selectedRemarkPerson
+                                                                                                )
                                                                                                     ? "Skilled 끄기"
                                                                                                     : "Skilled 켜기"
                                                                                             }
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation();
-                                                                                                const designated =
-                                                                                                    getEntryInvoiceSkilledFitterDesignation(
-                                                                                                        entry.id
-                                                                                                    );
                                                                                                 const isEntrySkilledOn =
-                                                                                                    designated ===
-                                                                                                    selectedRemarkPerson;
+                                                                                                    Boolean(
+                                                                                                        isInvoiceEffectiveSkilledFitter?.(
+                                                                                                            entry.id,
+                                                                                                            entry.dateFrom,
+                                                                                                            selectedRemarkPerson
+                                                                                                        )
+                                                                                                    );
                                                                                                 onSetEntryInvoiceSkilledFitter(
                                                                                                     entry.id,
-                                                                                                    isEntrySkilledOn
-                                                                                                        ? null
-                                                                                                        : selectedRemarkPerson
+                                                                                                    selectedRemarkPerson,
+                                                                                                    !isEntrySkilledOn
                                                                                                 );
                                                                                             }}
                                                                                             className={[
                                                                                                 "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
-                                                                                                getEntryInvoiceSkilledFitterDesignation(
-                                                                                                    entry.id
-                                                                                                ) === selectedRemarkPerson
+                                                                                                isInvoiceEffectiveSkilledFitter?.(
+                                                                                                    entry.id,
+                                                                                                    entry.dateFrom,
+                                                                                                    selectedRemarkPerson
+                                                                                                )
                                                                                                     ? "border-blue-500 bg-blue-50 text-blue-900 hover:bg-blue-100"
                                                                                                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50",
                                                                                             ].join(" ")}
@@ -4354,16 +4363,20 @@ export default function TimesheetDateGroupDetailSidePanel({
                                                                                             <span>Skilled</span>
                                                                                             <span
                                                                                                 className={
-                                                                                                    getEntryInvoiceSkilledFitterDesignation(
-                                                                                                        entry.id
-                                                                                                    ) === selectedRemarkPerson
+                                                                                                    isInvoiceEffectiveSkilledFitter?.(
+                                                                                                        entry.id,
+                                                                                                        entry.dateFrom,
+                                                                                                        selectedRemarkPerson
+                                                                                                    )
                                                                                                         ? "text-blue-700"
                                                                                                         : "text-gray-500"
                                                                                                 }
                                                                                             >
-                                                                                                {getEntryInvoiceSkilledFitterDesignation(
-                                                                                                    entry.id
-                                                                                                ) === selectedRemarkPerson
+                                                                                                {isInvoiceEffectiveSkilledFitter?.(
+                                                                                                    entry.id,
+                                                                                                    entry.dateFrom,
+                                                                                                    selectedRemarkPerson
+                                                                                                )
                                                                                                     ? "On"
                                                                                                     : "Off"}
                                                                                             </span>

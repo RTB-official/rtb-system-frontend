@@ -42,9 +42,10 @@ export type InvoiceDraftPayloadV1 = {
     selectedTimesheetDateGroupKeys: string[];
     /**
      * 타임시트 행 단위 Skilled Fitter 지정(행 키: `YYYY-MM-DD::entryId,entryId,...`).
-     * 같은 날 다른 묶음 행에는 적용되지 않음.
+     * 한 행·같은 날에 여러 명을 수동으로 동시에 둘 수 있다(string[]).
+     * 구 드래프트는 string 한 명만 있을 수 있다.
      */
-    invoiceSkilledFitterByTimesheetRowKey?: Record<string, string>;
+    invoiceSkilledFitterByTimesheetRowKey?: Record<string, string | string[]>;
     /**
      * 타임시트 묶음 행에서 Skilled를 끈 인원(해당 행에는 수동 지정 삭제 후에도 알고리즘으로 복구하지 않음).
      * 키는 `invoiceSkilledFitterByTimesheetRowKey`와 동일(`YYYY-MM-DD::entryId,...`).
