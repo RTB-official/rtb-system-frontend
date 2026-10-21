@@ -1,5 +1,6 @@
 import React from "react";
 import CalendarTag from "../common/CalendarTag";
+import { IconExclamation } from "../icons/Icons";
 import { CalendarEvent } from "../../types";
 import { CELL_PADDING_LEFT, CELL_PADDING_RIGHT } from "../../utils/calendarConstants";
 import type { DateRangeRole } from "../../utils/calendarUtils";
@@ -14,6 +15,8 @@ interface WeekEventSegment {
 interface DayCellProps {
     date: Date;
     inMonth: boolean;
+    /** 2개월 뷰의 두 번째 달 — 밝은 회색 배경 */
+    isFollowingMonth?: boolean;
     dayIdx: number;
     dateKey: string;
     isToday: boolean;
@@ -49,6 +52,21 @@ interface DayCellProps {
     }[];
     scheduleCellHeight?: number;
     dayAvailability?: { leaders: number; members: number; names: string[] };
+    /** 개인 일정 — 날짜칸 상단 빨간 이름 + 호버 팝오버 */
+    personalEntries?: {
+        id: string;
+        start: string;
+        end: string;
+        names: string[];
+        reason: string;
+    }[];
+    onPersonalEntryClick?: (entry: {
+        id: string;
+        start: string;
+        end: string;
+        names: string[];
+        reason: string;
+    }) => void;
     onDayScheduleHover?: (info: DayScheduleHoverInfo) => void;
     onDayScheduleLeave?: () => void;
     allowOutsideMonthSelect?: boolean;
@@ -150,6 +168,7 @@ function stackedScheduleMarks(
 const DayCell: React.FC<DayCellProps> = ({
     date,
     inMonth,
+    isFollowingMonth = false,
     dayIdx,
     dateKey,
     isToday,
@@ -175,6 +194,8 @@ const DayCell: React.FC<DayCellProps> = ({
     scheduleMarks = [],
     scheduleCellHeight = 0,
     dayAvailability,
+    personalEntries = [],
+    onPersonalEntryClick,
     onDayScheduleHover,
     onDayScheduleLeave,
     allowOutsideMonthSelect = false,
@@ -265,6 +286,7 @@ const DayCell: React.FC<DayCellProps> = ({
             onMouseDown={onMouseDown}
             onMouseEnter={(event) => {
                 onMouseEnter();
+                // 공사 일정이 있는 날만 상세 팝오버 (빈 날·개인일정만 있는 날은 열지 않음)
                 if (scheduleMarks.length === 0) return;
                 onDayScheduleHover?.({
                     dateKey,
@@ -285,13 +307,16 @@ const DayCell: React.FC<DayCellProps> = ({
                 } ${canSelect ? "cursor-pointer" : "cursor-default"
                 } transition-colors select-none flex flex-col ${isInDragRange
                     ? "bg-blue-50"
-                    : inMonth
-                        ? "bg-white hover:bg-gray-50"
-                        : "bg-white text-gray-400"
+                    : isFollowingMonth
+                        ? "bg-gray-100 hover:bg-gray-200/70"
+                        : inMonth
+                            ? "bg-white hover:bg-gray-50"
+                            : "bg-white text-gray-400"
                 }`}
             style={{
-                overflowX: 'visible', // 가로 방향으로는 잘리지 않게 (연속된 태그의 텍스트를 위해)
-                overflowY: 'hidden', // 세로 방향으로는 잘리게
+                // visible 유지: 공휴일 별표 호버 펼침이 셀 밖으로 나갈 수 있게 함
+                // (overflow-y:hidden 이면 overflow-x도 브라우저가 clip으로 강제함)
+                overflow: "visible",
                 position: 'relative',
                 isolation: 'isolate',
             }}
@@ -326,8 +351,14 @@ const DayCell: React.FC<DayCellProps> = ({
                     SF{dayAvailability.leaders} / F{dayAvailability.members}
                 </div>
             ) : null}
-            <div className={`${columnPadding} relative z-20 flex items-start min-w-0`}>
-                <div className={`${isMobile ? "w-6 h-6" : "w-7.5 h-7.5"} flex flex-shrink-0 items-center justify-center relative`}>
+            <div
+                className={`${columnPadding} relative z-20 flex min-w-0 items-center gap-1`}
+            >
+                <div
+                    className={`${
+                        isMobile ? "h-6 w-6" : "h-7.5 w-7.5"
+                    } relative flex shrink-0 items-center justify-center`}
+                >
                     {(isToday || isRangeMarker) && (
                         <div
                             aria-hidden
@@ -368,6 +399,56 @@ const DayCell: React.FC<DayCellProps> = ({
                         {String(date.getDate())}
                     </span>
                 </div>
+                {/* 날짜 → 공휴일 별표 / 모바일 개인일정 느낌표 → 개인일정 이름 */}
+                {!isMobile
+                    ? holidaySegments.map((segment) => {
+                          const isStartInCell = segment.startOffset === dayIdx;
+                          const startDayDate = week[segment.startOffset]?.date;
+                          if (!startDayDate) return null;
+                          const isEventStart =
+                              segment.event.startDate ===
+                              getSafeDateKey(startDayDate);
+                          if (!(isEventStart && isStartInCell)) return null;
+                          return (
+                              <CalendarTag
+                                  key={`${segment.event.id}-${dayIdx}-holiday`}
+                                  title={segment.event.title}
+                                  color={segment.event.color}
+                                  variant="holiday"
+                                  isStart
+                                  isEnd
+                                  eventId={segment.event.id}
+                                  onClick={(e) => onEventClick(segment.event, e)}
+                              />
+                          );
+                      })
+                    : personalEntries.length > 0 ? (
+                          <span
+                              className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-red-100"
+                              title="개인 일정"
+                              aria-label="개인 일정"
+                          >
+                              <IconExclamation className="h-3 w-3 text-red-500" />
+                          </span>
+                      ) : null}
+                {personalEntries.length > 0 && !isMobile ? (
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-tight">
+                        {personalEntries.map((entry) => (
+                            <button
+                                key={entry.id}
+                                type="button"
+                                className="max-w-full truncate rounded px-0.5 font-medium text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
+                                title={entry.names.join(" ")}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onPersonalEntryClick?.(entry);
+                                }}
+                            >
+                                {entry.names.join(" ")}
+                            </button>
+                        ))}
+                    </div>
+                ) : null}
             </div>
 
             {/* 태그 영역 - 연속된 태그가 셀 경계를 넘어가도록 left: 0, right: 0 */}
@@ -383,69 +464,6 @@ const DayCell: React.FC<DayCellProps> = ({
                     zIndex: 10,
                 }}
             >
-                {/* 공휴일 태그 */}
-                {holidaySegments.map((segment) => {
-                    const isStartInCell = segment.startOffset === dayIdx;
-                    const isEndInCell = segment.startOffset + segment.duration - 1 === dayIdx;
-
-                    const startDayDate = week[segment.startOffset]?.date;
-                    const endDayDate = week[
-                        Math.min(6, segment.startOffset + segment.duration - 1)
-                    ]?.date;
-
-                    if (!startDayDate || !endDayDate) return null;
-
-                    const isEventStart =
-                        segment.event.startDate === getSafeDateKey(startDayDate);
-                    const isEventEnd =
-                        segment.event.endDate === getSafeDateKey(endDayDate);
-
-                    // 연속된 태그가 셀 경계를 넘어가도록 위치 조정
-                    let width = "100%";
-                    let left = "0px";
-                    if (isStartInCell && isEndInCell) {
-                        // 시작과 끝 모두 이 셀에 있으면 양쪽 패딩
-                        width = `calc(100% - ${CELL_PADDING_LEFT + CELL_PADDING_RIGHT}px)`;
-                        left = `${CELL_PADDING_LEFT}px`;
-                    } else if (isStartInCell) {
-                        // 시작만 이 셀에 있으면 왼쪽 패딩
-                        width = `calc(100% - ${CELL_PADDING_LEFT}px)`;
-                        left = `${CELL_PADDING_LEFT}px`;
-                    } else if (isEndInCell) {
-                        // 끝만 이 셀에 있으면 오른쪽 패딩
-                        width = `calc(100% - ${CELL_PADDING_RIGHT}px)`;
-                        left = "0px";
-                    } else {
-                        // 중간에 있는 태그는 패딩 없음 (연속된 태그)
-                        width = "100%";
-                        left = "0px";
-                    }
-                    ({ left, width } = placeBesideDate(left, width));
-
-                    // 공휴일도 rowIndex 기준으로 배치 (우선순위 낮춤)
-                    const top = segment.rowIndex * (tagHeight + tagSpacing);
-
-                    return (
-                        <CalendarTag
-                            key={`${segment.event.id}-${dayIdx}-holiday`}
-                            title={isEventStart && isStartInCell ? segment.event.title : ""}
-                            color={segment.event.color}
-                            variant="holiday"
-                            isStart={isEventStart && isStartInCell}
-                            isEnd={isEventEnd && isEndInCell}
-                            width={width}
-                            eventId={segment.event.id}
-                            style={{
-                                position: 'absolute',
-                                top: `${top}px`,
-                                left: left,
-                                maxWidth: '100%',
-                            }}
-                            onClick={(e) => onEventClick(segment.event, e)}
-                        />
-                    );
-                })}
-
                 {/* 일반 이벤트 태그 (공휴일이 있으면 그 아래에 배치) */}
                 {nonHolidaySegments.map((segment) => {
                     const isStartInCell = segment.startOffset === dayIdx;

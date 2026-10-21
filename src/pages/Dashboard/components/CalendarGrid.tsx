@@ -3,8 +3,17 @@ import WeekRow from "../../../components/calendar/WeekRow";
 import ActionMenu from "../../../components/common/ActionMenu";
 import Button from "../../../components/common/Button";
 import TextInput from "../../../components/ui/TextInput";
+import BaseModal from "../../../components/ui/BaseModal";
+import DatePicker from "../../../components/ui/DatePicker";
 import Chip from "../../../components/ui/Chip";
-import { IconCheck, IconClose } from "../../../components/icons/Icons";
+import { useToast } from "../../../components/ui/ToastProvider";
+import {
+    IconCheck,
+    IconClose,
+    IconEdit,
+    IconStar,
+    IconTrash,
+} from "../../../components/icons/Icons";
 import type { DayScheduleHoverInfo } from "../../../components/calendar/DayCell";
 import {
     VEHICLES,
@@ -32,9 +41,17 @@ import {
     SCHEDULE_TEAM_LEADERS,
     type ScheduleInsertValues,
 } from "../../../components/schedule/scheduleTableShared";
+import {
+    formatPersonalSchedulePeriod,
+    type PersonalScheduleEntry,
+} from "../../../components/schedule/PersonalScheduleModal";
 
 interface CalendarGridProps {
-    weeks: { date: Date; inMonth: boolean }[][];
+    weeks: {
+        date: Date;
+        inMonth: boolean;
+        isFollowingMonth?: boolean;
+    }[][];
     sortedEvents: CalendarEvent[];
     today: Date;
     isMobile?: boolean;
@@ -89,9 +106,17 @@ interface CalendarGridProps {
         string,
         { leaders: number; members: number; names: string[] }
     >;
+    /** 개인 일정 — 날짜칸 상단 빨간 이름 (일정표·막대에는 없음) */
+    personalEntriesByDay?: Record<string, PersonalScheduleEntry[]>;
+    onPersonalEntrySave?: (
+        entry: PersonalScheduleEntry
+    ) => void | Promise<void>;
+    onPersonalEntryDelete?: (entry: PersonalScheduleEntry) => void;
     /** 외부(예: 일정 메뉴)에서 해당 날짜 상세 팝오버를 연다. */
     dayDetailDateKey?: string | null;
     dayDetailPosition?: { x: number; y: number } | null;
+    /** 일정 추가/개인 일정 메뉴가 열리면 상세 팝오버를 닫는다. */
+    suppressDayDetail?: boolean;
     onDayDetailClose?: () => void;
 }
 
@@ -1882,14 +1907,41 @@ export default function CalendarGrid({
     rowHeight,
     scheduleBars = [],
     dayAvailability,
+    personalEntriesByDay,
+    onPersonalEntrySave,
+    onPersonalEntryDelete,
     dayDetailDateKey = null,
     dayDetailPosition = null,
+    suppressDayDetail = false,
     onDayDetailClose,
 }: CalendarGridProps) {
     const dayHoverStaffSortMeta = useStaffSortMeta();
     const [dayHover, setDayHover] = useState<DayScheduleHoverInfo | null>(null);
     const [dayScheduleIndex, setDayScheduleIndex] = useState(0);
     const dayHoverCloseTimer = useRef<number | null>(null);
+    const { showError } = useToast();
+    const [personalDetail, setPersonalDetail] =
+        useState<PersonalScheduleEntry | null>(null);
+    const [personalDetailEditing, setPersonalDetailEditing] = useState(false);
+    const [personalEditStart, setPersonalEditStart] = useState("");
+    const [personalEditEnd, setPersonalEditEnd] = useState("");
+    const [personalEditReason, setPersonalEditReason] = useState("");
+    const [personalSaving, setPersonalSaving] = useState(false);
+
+    const openPersonalDetail = (entry: PersonalScheduleEntry) => {
+        setPersonalDetail(entry);
+        setPersonalDetailEditing(false);
+        setPersonalEditStart(entry.start);
+        setPersonalEditEnd(entry.end);
+        setPersonalEditReason(entry.reason);
+        setPersonalSaving(false);
+    };
+
+    const closePersonalDetail = () => {
+        setPersonalDetail(null);
+        setPersonalDetailEditing(false);
+        setPersonalSaving(false);
+    };
 
     const clearDayHoverClose = () => {
         if (dayHoverCloseTimer.current != null) {
@@ -1907,9 +1959,17 @@ export default function CalendarGrid({
     const handleDayScheduleHover = (info: DayScheduleHoverInfo) => {
         // 모바일: 셀 호버/탭으로는 열지 않고, 일정 메뉴 → 상세정보로만 연다.
         if (isMobile) return;
+        // 일정 추가/개인 일정 메뉴가 떠 있으면 상세 팝오버를 열지 않음
+        if (suppressDayDetail) return;
         clearDayHoverClose();
         setDayHover(info);
     };
+
+    useEffect(() => {
+        if (!suppressDayDetail) return;
+        clearDayHoverClose();
+        setDayHover(null);
+    }, [suppressDayDetail]);
 
     const handleDayScheduleLeave = () => {
         if (isMobile) return;
@@ -1930,6 +1990,12 @@ export default function CalendarGrid({
                 teamMember: bar.teamMember,
                 color: bar.color,
             }));
+        // 공사 일정이 없으면 상세 팝오버를 열지 않음
+        if (schedules.length === 0) {
+            setDayHover(null);
+            onDayDetailClose?.();
+            return;
+        }
         const anchorEl = cellRefs.current[dayDetailDateKey] ?? null;
         setDayScheduleIndex(0);
         setDayHover({
@@ -1937,6 +2003,8 @@ export default function CalendarGrid({
             schedules,
             anchorEl: anchorEl as HTMLElement,
         });
+        // onDayDetailClose는 부모 인라인 콜백일 수 있어 deps 제외
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dayDetailDateKey, scheduleBars, cellRefs]);
 
     useEffect(() => {
@@ -1971,6 +2039,25 @@ export default function CalendarGrid({
               : dayHover.schedules;
     const dayHoverAvailableNames =
         dayHover != null ? (dayAvailability?.[dayHover.dateKey]?.names ?? []) : [];
+    const dayHoverPersonalEntries =
+        dayHover != null
+            ? (personalEntriesByDay?.[dayHover.dateKey] ?? [])
+            : [];
+    const dayHoverPersonalNames = sortPeopleByRoleAndJoinDate(
+        Array.from(
+            new Set(dayHoverPersonalEntries.flatMap((entry) => entry.names))
+        ),
+        dayHoverStaffSortMeta,
+        { priorityFirst: SCHEDULE_TEAM_LEADERS }
+    );
+    // 공사 일정이 있는 날만 팝오버 (빈 날·개인일정만 있는 날은 열지 않음)
+    const dayHoverHasContent = dayHoverScheduleCount > 0;
+    const dayHoverHoliday =
+        dayHover != null
+            ? getEventsForDate(dayHover.dateKey, sortedEvents).find(
+                  (event) => event.isHoliday
+              ) ?? null
+            : null;
 
     const scheduleBarBaseTop = isMobile ? 28 : 40;
     const scheduleBarAvailable = Math.max(
@@ -2126,6 +2213,8 @@ export default function CalendarGrid({
                         tagsBesideDate={tagsBesideDate}
                         scheduleBars={lanedScheduleBars}
                         dayAvailability={dayAvailability}
+                        personalEntriesByDay={personalEntriesByDay}
+                        onPersonalEntryClick={openPersonalDetail}
                         onDayScheduleHover={handleDayScheduleHover}
                         onDayScheduleLeave={handleDayScheduleLeave}
                         uniformColumns={uniformColumns}
@@ -2148,7 +2237,11 @@ export default function CalendarGrid({
                 );
             })}
             <ActionMenu
-                isOpen={dayHover != null && (dayHover.schedules.length > 0 || dayDetailDateKey != null)}
+                isOpen={
+                    dayHover != null &&
+                    dayHoverHasContent &&
+                    !suppressDayDetail
+                }
                 anchorEl={
                     // 모바일 상세: 셀 전체(주 높이) 대신 탭 좌표로 붙여 날짜와 가깝게
                     isMobile && dayDetailDateKey != null
@@ -2170,19 +2263,43 @@ export default function CalendarGrid({
                 estimatedHeight={
                     120 +
                     (dayHoverAvailableNames.length > 0 ? 72 : 0) +
-                    (isMobile ? 200 : Math.max(dayHoverScheduleCount, 1) * 120)
+                    (dayHoverPersonalEntries.length > 0 ? 72 : 0) +
+                    (isMobile
+                        ? 200
+                        : Math.max(dayHoverScheduleCount, 1) * 120)
                 }
             >
-                {dayHover && (dayHover.schedules.length > 0 || dayDetailDateKey != null) ? (
+                {dayHover && dayHoverHasContent ? (
                     <div
                         className="flex flex-col gap-2 px-1 py-0.5"
                         onMouseEnter={clearDayHoverClose}
                         onMouseLeave={handleDayScheduleLeave}
                     >
                         <div className="flex items-start justify-between gap-2 px-1">
-                            <p className="text-[12px] font-medium text-gray-500">
-                                {dayHover.dateKey.slice(5).replace("-", "/")} 일정
-                            </p>
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                <p
+                                    className={`text-[12px] font-medium ${
+                                        dayHoverHoliday
+                                            ? "text-red-500"
+                                            : "text-gray-500"
+                                    }`}
+                                >
+                                    {dayHover.dateKey
+                                        .slice(5)
+                                        .replace("-", "/")}{" "}
+                                    일정
+                                </p>
+                                {dayHoverHoliday ? (
+                                    <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-medium text-red-500">
+                                        <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-red-100">
+                                            <IconStar className="h-3.5 w-3.5 text-red-500" />
+                                        </span>
+                                        <span className="min-w-0 truncate">
+                                            {dayHoverHoliday.title || "공휴일"}
+                                        </span>
+                                    </span>
+                                ) : null}
+                            </div>
                             {isMobile ? (
                                 <Button
                                     type="button"
@@ -2209,6 +2326,34 @@ export default function CalendarGrid({
                                 </p>
                             ) : null}
                         </div>
+                        {dayHoverPersonalEntries.length > 0 ? (
+                            <div className="px-1">
+                                <p className="flex flex-wrap items-baseline gap-x-1.5 text-[12px] text-gray-500">
+                                    <span>개인 일정</span>
+                                    <span className="text-[14px] font-medium text-red-500">
+                                        {dayHoverPersonalNames.length}명
+                                    </span>
+                                </p>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                    {dayHoverPersonalEntries.map((entry) =>
+                                        entry.names.map((name) => (
+                                            <button
+                                                key={`${entry.id}-${name}`}
+                                                type="button"
+                                                className="inline-flex items-center rounded-[6px] bg-red-50 px-1.5 py-[3px] text-[11px] font-medium text-red-500 transition-colors hover:bg-red-100"
+                                                title={entry.reason || name}
+                                                onClick={() => {
+                                                    closeDayDetail();
+                                                    openPersonalDetail(entry);
+                                                }}
+                                            >
+                                                {name}
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        ) : null}
                         {isMobile && dayHoverScheduleCount > 0 ? (
                             <div className="flex flex-wrap gap-1.5 px-1">
                                 {dayHover.schedules.map((schedule, index) => {
@@ -2231,11 +2376,16 @@ export default function CalendarGrid({
                                                     : undefined
                                             }
                                         >
-                                            <span
-                                                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                                style={{ backgroundColor: schedule.color }}
-                                                aria-hidden
-                                            />
+                                            {/* 선택 시 칩 배경과 원이 같아 빈칸처럼 보이므로, 미선택일 때만 색 원 표시 */}
+                                            {!selected ? (
+                                                <span
+                                                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                                    style={{
+                                                        backgroundColor: schedule.color,
+                                                    }}
+                                                    aria-hidden
+                                                />
+                                            ) : null}
                                             <span className="min-w-0 truncate">
                                                 {schedule.shipName || "—"}
                                             </span>
@@ -2324,6 +2474,177 @@ export default function CalendarGrid({
                     </div>
                 ) : null}
             </ActionMenu>
+            <BaseModal
+                isOpen={personalDetail != null}
+                onClose={closePersonalDetail}
+                title={personalDetailEditing ? "개인 일정 수정" : "개인 일정"}
+                maxWidth="max-w-[400px]"
+                footer={
+                    personalDetail ? (
+                        personalDetailEditing ? (
+                            <div className="flex w-full gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="md"
+                                    className="flex-1"
+                                    disabled={personalSaving}
+                                    onClick={() => {
+                                        setPersonalDetailEditing(false);
+                                        setPersonalEditStart(personalDetail.start);
+                                        setPersonalEditEnd(personalDetail.end);
+                                        setPersonalEditReason(personalDetail.reason);
+                                    }}
+                                >
+                                    취소
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="primary"
+                                    size="md"
+                                    className="flex-1"
+                                    loading={personalSaving}
+                                    onClick={() => {
+                                        void (async () => {
+                                            if (!personalEditStart || !personalEditEnd) {
+                                                showError("기간을 선택해주세요.");
+                                                return;
+                                            }
+                                            if (!personalEditReason.trim()) {
+                                                showError("사유를 입력해주세요.");
+                                                return;
+                                            }
+                                            const start =
+                                                personalEditStart <= personalEditEnd
+                                                    ? personalEditStart
+                                                    : personalEditEnd;
+                                            const end =
+                                                personalEditStart <= personalEditEnd
+                                                    ? personalEditEnd
+                                                    : personalEditStart;
+                                            const next: PersonalScheduleEntry = {
+                                                ...personalDetail,
+                                                start,
+                                                end,
+                                                reason: personalEditReason.trim(),
+                                            };
+                                            setPersonalSaving(true);
+                                            try {
+                                                await Promise.resolve(
+                                                    onPersonalEntrySave?.(next)
+                                                );
+                                                setPersonalDetail(next);
+                                                setPersonalDetailEditing(false);
+                                            } catch {
+                                                // 부모에서 토스트 처리
+                                            } finally {
+                                                setPersonalSaving(false);
+                                            }
+                                        })();
+                                    }}
+                                >
+                                    저장
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="flex w-full gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="md"
+                                    className="flex-1"
+                                    icon={<IconEdit className="h-4 w-4" />}
+                                    onClick={() => {
+                                        setPersonalEditStart(personalDetail.start);
+                                        setPersonalEditEnd(personalDetail.end);
+                                        setPersonalEditReason(personalDetail.reason);
+                                        setPersonalDetailEditing(true);
+                                    }}
+                                >
+                                    수정
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="danger"
+                                    size="md"
+                                    className="flex-1"
+                                    icon={<IconTrash className="h-4 w-4" />}
+                                    onClick={() => {
+                                        const entry = personalDetail;
+                                        closePersonalDetail();
+                                        onPersonalEntryDelete?.(entry);
+                                    }}
+                                >
+                                    삭제
+                                </Button>
+                            </div>
+                        )
+                    ) : null
+                }
+            >
+                {personalDetail ? (
+                    <div className="flex flex-col gap-4">
+                        <div>
+                            <p className="mb-1 text-sm font-medium text-gray-500">
+                                인원
+                            </p>
+                            <p className="text-[15px] font-medium text-gray-900">
+                                {personalDetail.names.join(", ") || "—"}
+                            </p>
+                        </div>
+                        {personalDetailEditing ? (
+                            <>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <DatePicker
+                                        label="시작일"
+                                        value={personalEditStart}
+                                        onChange={setPersonalEditStart}
+                                        displayFormat="iso"
+                                        className="w-full"
+                                    />
+                                    <DatePicker
+                                        label="종료일"
+                                        value={personalEditEnd}
+                                        onChange={setPersonalEditEnd}
+                                        displayFormat="iso"
+                                        className="w-full"
+                                    />
+                                </div>
+                                <TextInput
+                                    label="사유"
+                                    required
+                                    value={personalEditReason}
+                                    onChange={setPersonalEditReason}
+                                    placeholder="사유를 입력하세요"
+                                    className="w-full"
+                                />
+                            </>
+                        ) : (
+                            <>
+                                <div>
+                                    <p className="mb-1 text-sm font-medium text-gray-500">
+                                        기간
+                                    </p>
+                                    <p className="text-[15px] font-medium text-gray-900">
+                                        {formatPersonalSchedulePeriod(
+                                            personalDetail.start,
+                                            personalDetail.end
+                                        )}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="mb-1 text-sm font-medium text-gray-500">
+                                        사유
+                                    </p>
+                                    <p className="break-words text-[15px] font-medium text-gray-900">
+                                        {personalDetail.reason || "—"}
+                                    </p>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                ) : null}
+            </BaseModal>
         </div>
     );
 }

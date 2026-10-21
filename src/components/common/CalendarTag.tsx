@@ -60,25 +60,62 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
     const tagHeight = isMobile ? 'h-5' : 'h-[22px]'; // 모바일 20px, 데스크톱 22px
     const textSize = isMobile ? 'text-[11px]' : 'text-[14px]';
 
-    // 모바일: 작은 사각형 태그, 아이콘 없이 색상만 유지 (공휴일=빨강, 일반=이벤트 color)
-    if (isMobile) {
-        const isRedTag = isHoliday;
-        const bgStyle = isRedTag
-            ? undefined
-            : { backgroundColor: `${color}20` };
-        const textClass = isRedTag
-            ? "text-red-700"
-            : "text-gray-800";
-
+    // 공휴일: 기본은 별표만, 마우스 호버 시 이름 펼침
+    if (isHoliday) {
+        const holidayLabel = title || "공휴일";
+        const expanded = isHovered;
+        const isAbsolute = style?.position === "absolute";
         return (
             <div
-                className={`absolute pointer-events-auto z-10 cursor-pointer flex items-center rounded-sm px-1.5 h-[20px] overflow-hidden ${isRedTag ? "bg-red-100" : ""}`}
+                className={`pointer-events-auto flex h-[22px] w-max shrink-0 cursor-pointer items-center overflow-hidden rounded-full p-[2px] transition-[max-width,background-color,box-shadow,padding] duration-200 ease-out ${
+                    isAbsolute ? "absolute" : "relative"
+                } ${
+                    expanded
+                        ? "z-40 max-w-[240px] bg-red-300 pr-2 shadow-sm"
+                        : "z-20 max-w-[22px] bg-red-200"
+                } ${isStart ? "" : "invisible"}`}
+                style={
+                    isAbsolute
+                        ? {
+                              top: style?.top,
+                              left: style?.left,
+                          }
+                        : undefined
+                }
+                title={holidayLabel}
+                onMouseEnter={() => {
+                    if (document.documentElement.classList.contains("no-hover")) return;
+                    setIsHovered(true);
+                }}
+                onMouseLeave={() => setIsHovered(false)}
+                onClick={(e) => {
+                    if (onClick) {
+                        e.stopPropagation();
+                        onClick(e);
+                    }
+                }}
+            >
+                <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-white leading-none">
+                    <IconStar className="block h-3.5 w-3.5 shrink-0 text-red-500" />
+                </div>
+                <span className="ml-1.5 whitespace-nowrap text-[12px] font-medium text-red-600 md:text-[13px]">
+                    {holidayLabel}
+                </span>
+            </div>
+        );
+    }
+
+    // 모바일: 작은 사각형 태그, 아이콘 없이 색상만 유지
+    if (isMobile) {
+        return (
+            <div
+                className="absolute pointer-events-auto z-10 cursor-pointer flex items-center rounded-sm px-1.5 h-[20px] overflow-hidden"
                 style={{
                     position: style?.position,
                     top: style?.top,
                     left: style?.left,
                     width: width,
-                    ...bgStyle,
+                    backgroundColor: `${color}20`,
                 }}
                 onClick={(e) => {
                     if (onClick) {
@@ -88,7 +125,7 @@ const CalendarTag: React.FC<CalendarTagProps> = ({
                 }}
                 title={title}
             >
-                <span className={`text-[11px] font-medium leading-tight truncate w-full block ${textClass}`}>
+                <span className="text-[11px] font-medium leading-tight truncate w-full block text-gray-800">
                     {title || "일정"}
                 </span>
             </div>
