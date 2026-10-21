@@ -15,7 +15,7 @@ import { useCellHeights } from "../../hooks/useCellHeights";
 import {
     applyScheduleDateClick,
     EMPTY_SCHEDULE_DATE_SELECTION,
-    generateMonthGrid,
+    generateTwoMonthGrid,
     splitIntoWeeks,
     type ScheduleDateSelection,
 } from "../../utils/calendarUtils";
@@ -23,6 +23,17 @@ import {
     SCHEDULE_TEAM_LEADERS,
     type ScheduleInsertValues,
 } from "./scheduleTableShared";
+import PersonalScheduleModal, {
+    type PersonalScheduleEntry,
+} from "./PersonalScheduleModal";
+import {
+    createSchedulePersonalEntry,
+    deleteSchedulePersonalEntry,
+    fetchSchedulePersonalEntriesInMonth,
+    updateSchedulePersonalEntry,
+} from "../../lib/scheduleApi";
+import { useToast } from "../ui/ToastProvider";
+import ConfirmDialog from "../ui/ConfirmDialog";
 import { useWorkReportStore, type StaffProfile } from "../../store/workReportStore";
 
 export type DayAvailability = {
@@ -36,17 +47,17 @@ function pad2(n: number) {
     return n < 10 ? `0${n}` : String(n);
 }
 
-/** 일정 막대 기간별 배정 인원 → 날짜별 이름 집합 */
+/** 일정 막대·개인 일정 기간별 배정 인원 → 날짜별 이름 집합 */
 function buildScheduledNamesByDay(
-    bars: { start: string; end: string; teamMember: string }[]
+    bars: { start: string; end: string; teamMember: string }[],
+    personalEntries: PersonalScheduleEntry[] = []
 ): Map<string, Set<string>> {
     const byDay = new Map<string, Set<string>>();
-    for (const bar of bars) {
-        const names = bar.teamMember.split(/\s+/).filter(Boolean);
-        if (names.length === 0) continue;
-        const start = new Date(`${bar.start}T00:00:00`);
-        const end = new Date(`${bar.end}T00:00:00`);
-        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+    const addRange = (startKey: string, endKey: string, names: string[]) => {
+        if (names.length === 0) return;
+        const start = new Date(`${startKey}T00:00:00`);
+        const end = new Date(`${endKey}T00:00:00`);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
             const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
             let set = byDay.get(key);
@@ -56,8 +67,41 @@ function buildScheduledNamesByDay(
             }
             for (const name of names) set.add(name);
         }
+    };
+    for (const bar of bars) {
+        addRange(
+            bar.start,
+            bar.end,
+            bar.teamMember.split(/\s+/).filter(Boolean)
+        );
+    }
+    for (const entry of personalEntries) {
+        addRange(entry.start, entry.end, entry.names);
     }
     return byDay;
+}
+
+/** 개인 일정 → 날짜별 항목 (같은 날 여러 건 유지) */
+function buildPersonalEntriesByDay(
+    entries: PersonalScheduleEntry[]
+): Record<string, PersonalScheduleEntry[]> {
+    const byDay = new Map<string, PersonalScheduleEntry[]>();
+    for (const entry of entries) {
+        const start = new Date(`${entry.start}T00:00:00`);
+        const end = new Date(`${entry.end}T00:00:00`);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+            const list = byDay.get(key) ?? [];
+            if (!list.some((item) => item.id === entry.id)) list.push(entry);
+            byDay.set(key, list);
+        }
+    }
+    const result: Record<string, PersonalScheduleEntry[]> = {};
+    byDay.forEach((list, key) => {
+        result[key] = list;
+    });
+    return result;
 }
 
 function buildDayAvailability(
@@ -232,12 +276,53 @@ export default function ScheduleDashboardCalendar({
     const [insertEditId, setInsertEditId] = useState<string | null>(null);
     const [insertInitialValues, setInsertInitialValues] =
         useState<ScheduleInsertValues | null>(null);
+    const [personalModalOpen, setPersonalModalOpen] = useState(false);
+    const [personalDeleteTarget, setPersonalDeleteTarget] =
+        useState<PersonalScheduleEntry | null>(null);
+    const [personalDeleting, setPersonalDeleting] = useState(false);
+    const [personalSchedules, setPersonalSchedules] = useState<
+        PersonalScheduleEntry[]
+    >([]);
+    const { showError, showSuccess } = useToast();
     const allStaff = useWorkReportStore((state) => state.allStaff);
     const fetchAllStaff = useWorkReportStore((state) => state.fetchAllStaff);
 
     useEffect(() => {
         void fetchAllStaff();
     }, [fetchAllStaff]);
+
+    const followingYear = month === 11 ? year + 1 : year;
+    const followingMonth = month === 11 ? 0 : month + 1;
+
+    // 개인 일정은 일정표 로드와 무관하게 DB에서 조회 (표시 구간: 이번 달 + 다음 달)
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const [current, following] = await Promise.all([
+                    fetchSchedulePersonalEntriesInMonth(year, month),
+                    fetchSchedulePersonalEntriesInMonth(
+                        followingYear,
+                        followingMonth
+                    ),
+                ]);
+                if (cancelled) return;
+                const byId = new Map<string, PersonalScheduleEntry>();
+                for (const entry of [...current, ...following]) {
+                    byId.set(entry.id, entry);
+                }
+                setPersonalSchedules(Array.from(byId.values()));
+            } catch (err) {
+                console.error(err);
+                if (!cancelled) {
+                    showError("개인 일정을 불러오지 못했습니다.");
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [year, month, followingYear, followingMonth, showError]);
 
     useEffect(() => {
         if (!editTarget) return;
@@ -272,16 +357,29 @@ export default function ScheduleDashboardCalendar({
         setInsertInitialValues(values);
     }, [editTarget]);
 
-    const holidays = useHolidays(year, month);
+    const holidaysCurrent = useHolidays(year, month);
+    const holidaysNext = useHolidays(followingYear, followingMonth);
+    const holidays = useMemo(
+        () => ({ ...holidaysCurrent, ...holidaysNext }),
+        [holidaysCurrent, holidaysNext]
+    );
     const { loading } = useDashboardEvents(year, month);
     const mergedHolidays = useMergedHolidays(holidays);
     const sortedEvents = useSortedEvents([], mergedHolidays);
 
-    const grid = useMemo(() => generateMonthGrid(year, month), [year, month]);
+    // 이번 달 + 다음 달 (총 2개월)
+    const grid = useMemo(
+        () => generateTwoMonthGrid(year, month),
+        [year, month]
+    );
     const weeks = useMemo(() => splitIntoWeeks(grid), [grid]);
     const scheduleBars = useMemo(
         () => scheduleBarsFromEntries(schedules, year, allStaff),
         [schedules, year, allStaff]
+    );
+    const personalEntriesByDay = useMemo(
+        () => buildPersonalEntriesByDay(personalSchedules),
+        [personalSchedules]
     );
     const dayAvailability = useMemo(() => {
         const dateKeys = grid.map((cell) => {
@@ -293,13 +391,14 @@ export default function ScheduleDashboardCalendar({
         return buildDayAvailability(
             dateKeys,
             allStaff,
-            buildScheduledNamesByDay(scheduleBars)
+            buildScheduledNamesByDay(scheduleBars, personalSchedules)
         );
-    }, [grid, allStaff, scheduleBars]);
+    }, [grid, allStaff, scheduleBars, personalSchedules]);
     const cellRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const headerRef = useRef<HTMLDivElement>(null);
     const { cellHeights, handleCellHeightChange } = useCellHeights(cellRefs, weeks);
-    const closedHeight = isMobile ? 640 : 760;
+    // 1개월 기준 높이를 유지해 주 높이를 맞추고, 2개월은 아래로 이어짐
+    const singleMonthClosedHeight = isMobile ? 640 : 760;
     const [headerHeight, setHeaderHeight] = useState(isMobile ? 41 : 57);
 
     useEffect(() => {
@@ -313,7 +412,9 @@ export default function ScheduleDashboardCalendar({
     }, [isMobile]);
 
     const rowHeight =
-        weeks.length > 0 ? (closedHeight - headerHeight) / weeks.length : undefined;
+        weeks.length > 0
+            ? (singleMonthClosedHeight - headerHeight) / 5
+            : undefined;
 
     const prevMonth = () => {
         setHoverDate(null);
@@ -360,6 +461,7 @@ export default function ScheduleDashboardCalendar({
                 onGoToday={goToday}
                 isMobile={isMobile}
                 compact
+                monthSpan={2}
             />
             <div className="flex flex-col overflow-hidden rounded-sm border border-gray-200 bg-white">
                 <div ref={headerRef} className="shrink-0">
@@ -368,7 +470,12 @@ export default function ScheduleDashboardCalendar({
                 {loading ? (
                     <div
                         className="flex items-center justify-center text-sm text-gray-500"
-                        style={{ height: Math.max(0, closedHeight - headerHeight) }}
+                        style={{
+                            height: Math.max(
+                                0,
+                                singleMonthClosedHeight - headerHeight
+                            ),
+                        }}
                     >
                         불러오는 중…
                     </div>
@@ -394,6 +501,8 @@ export default function ScheduleDashboardCalendar({
                             setSelection(next);
                             const completed = next.anchor == null && next.start != null;
                             if (completed) {
+                                setDayDetailDateKey(null);
+                                setDayDetailPosition(null);
                                 setMenuAnchorKey(dateKey);
                                 setMenuPos({ x: event.clientX, y: event.clientY });
                                 setMenuOpen(true);
@@ -413,7 +522,8 @@ export default function ScheduleDashboardCalendar({
                         onDragStart={() => {}}
                         onDragEnter={() => {}}
                         onHiddenCountClick={() => {}}
-                        tagLayerTop={isMobile ? 5 : 10}
+                        // 날짜·공휴일 별표·개인일정 이름 줄 아래로 막대/태그 배치
+                        tagLayerTop={isMobile ? 28 : 34}
                         tagsBesideDate
                         uniformColumns
                         insertAfterDate={insertAfterDate}
@@ -432,9 +542,45 @@ export default function ScheduleDashboardCalendar({
                         }}
                         scheduleBars={scheduleBars}
                         dayAvailability={dayAvailability}
+                        personalEntriesByDay={personalEntriesByDay}
+                        onPersonalEntrySave={async (entry) => {
+                            try {
+                                const saved = await updateSchedulePersonalEntry(
+                                    entry.id,
+                                    {
+                                        start: entry.start,
+                                        end: entry.end,
+                                        names: entry.names,
+                                        reason: entry.reason,
+                                    }
+                                );
+                                setPersonalSchedules((current) =>
+                                    current.map((item) =>
+                                        item.id === saved.id ? saved : item
+                                    )
+                                );
+                                showSuccess("개인 일정을 수정했습니다.");
+                            } catch (err) {
+                                console.error(err);
+                                showError(
+                                    err instanceof Error
+                                        ? err.message
+                                        : "개인 일정 수정에 실패했습니다."
+                                );
+                                throw err;
+                            }
+                        }}
+                        onPersonalEntryDelete={(entry) => {
+                            setPersonalDeleteTarget(entry);
+                        }}
                         rowHeight={rowHeight}
                         dayDetailDateKey={dayDetailDateKey}
                         dayDetailPosition={dayDetailPosition}
+                        suppressDayDetail={
+                            menuOpen ||
+                            insertAfterDate != null ||
+                            personalModalOpen
+                        }
                         onDayDetailClose={() => {
                             setDayDetailDateKey(null);
                             setDayDetailPosition(null);
@@ -477,6 +623,83 @@ export default function ScheduleDashboardCalendar({
                         setInsertAfterDate(selection.end);
                     }
                 }}
+                onPersonalSchedule={() => {
+                    if (!selection.start) return;
+                    setDayDetailDateKey(null);
+                    setDayDetailPosition(null);
+                    setPersonalModalOpen(true);
+                }}
+            />
+            <PersonalScheduleModal
+                isOpen={personalModalOpen}
+                onClose={() => setPersonalModalOpen(false)}
+                periodStart={selection.start}
+                periodEnd={selection.end}
+                onSubmit={async (entry) => {
+                    try {
+                        const saved = await createSchedulePersonalEntry({
+                            start: entry.start,
+                            end: entry.end,
+                            names: entry.names,
+                            reason: entry.reason,
+                        });
+                        setPersonalSchedules((current) => {
+                            if (current.some((item) => item.id === saved.id)) {
+                                return current;
+                            }
+                            return [...current, saved];
+                        });
+                        showSuccess("개인 일정을 등록했습니다.");
+                    } catch (err) {
+                        console.error(err);
+                        showError(
+                            err instanceof Error
+                                ? err.message
+                                : "개인 일정 등록에 실패했습니다."
+                        );
+                        throw err;
+                    }
+                }}
+            />
+            <ConfirmDialog
+                isOpen={personalDeleteTarget != null}
+                onClose={() => {
+                    if (personalDeleting) return;
+                    setPersonalDeleteTarget(null);
+                }}
+                onConfirm={() => {
+                    void (async () => {
+                        if (!personalDeleteTarget) return;
+                        setPersonalDeleting(true);
+                        try {
+                            await deleteSchedulePersonalEntry(
+                                personalDeleteTarget.id
+                            );
+                            setPersonalSchedules((current) =>
+                                current.filter(
+                                    (item) => item.id !== personalDeleteTarget.id
+                                )
+                            );
+                            showSuccess("개인 일정을 삭제했습니다.");
+                            setPersonalDeleteTarget(null);
+                        } catch (err) {
+                            console.error(err);
+                            showError(
+                                err instanceof Error
+                                    ? err.message
+                                    : "개인 일정 삭제에 실패했습니다."
+                            );
+                        } finally {
+                            setPersonalDeleting(false);
+                        }
+                    })();
+                }}
+                title="개인 일정 삭제"
+                message={`${personalDeleteTarget?.names.join(" ") ?? ""} 일정을 삭제할까요?`}
+                confirmText="삭제"
+                cancelText="취소"
+                confirmVariant="danger"
+                isLoading={personalDeleting}
             />
         </section>
     );

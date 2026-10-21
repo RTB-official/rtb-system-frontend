@@ -12,6 +12,8 @@ interface CalendarHeaderProps {
     isMobile?: boolean;
     /** Tighter title and padding for embedding under another page. */
     compact?: boolean;
+    /** 2면 시작 월·다음 월을 함께 표시 (예: 2026년 10월, 11월) */
+    monthSpan?: 1 | 2;
 }
 
 export default function CalendarHeader({
@@ -22,7 +24,17 @@ export default function CalendarHeader({
     onGoToday,
     isMobile = false,
     compact = false,
+    monthSpan = 1,
 }: CalendarHeaderProps) {
+    const followingYear = month === 11 ? year + 1 : year;
+    const followingMonth = month === 11 ? 0 : month + 1;
+    const title =
+        monthSpan === 2
+            ? followingYear === year
+                ? `${year}년 ${month + 1}월, ${followingMonth + 1}월`
+                : `${year}년 ${month + 1}월, ${followingYear}년 ${followingMonth + 1}월`
+            : `${year}년 ${month + 1}월`;
+
     return (
         <div
             className={
@@ -32,7 +44,7 @@ export default function CalendarHeader({
             }
         >
             <h2 className={compact ? "text-lg font-bold" : "text-xl font-bold md:text-3xl"}>
-                {year}년 {month + 1}월
+                {title}
             </h2>
             <div className="flex items-center gap-1">
                 <Button

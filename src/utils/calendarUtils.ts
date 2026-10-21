@@ -19,6 +19,49 @@ export function generateMonthGrid(year: number, month: number) {
     return grid;
 }
 
+export type CalendarGridCell = {
+    date: Date;
+    inMonth: boolean;
+    /** 2개월 뷰에서 두 번째 달(예: 11월) 셀 */
+    isFollowingMonth?: boolean;
+};
+
+/**
+ * 시작 월 + 다음 월을 이어서 보여주는 2개월 그리드 (주 단위, 중복 주 없음).
+ * inMonth: 두 달 중 하나에 속하면 true (그 외 패딩 날짜는 false).
+ * isFollowingMonth: 두 번째 달이면 true.
+ */
+export function generateTwoMonthGrid(year: number, month: number) {
+    const nextYear = month === 11 ? year + 1 : year;
+    const nextMonth = month === 11 ? 0 : month + 1;
+
+    const first = new Date(year, month, 1);
+    const start = new Date(year, month, 1 - first.getDay());
+
+    const lastOfNext = new Date(nextYear, nextMonth + 1, 0);
+    const endDay = lastOfNext.getDate() + (6 - lastOfNext.getDay());
+    const end = new Date(nextYear, nextMonth, endDay);
+
+    const grid: CalendarGridCell[] = [];
+    for (
+        let cursor = new Date(start);
+        cursor.getTime() <= end.getTime();
+        cursor.setDate(cursor.getDate() + 1)
+    ) {
+        const d = new Date(cursor);
+        const isPrimary =
+            d.getFullYear() === year && d.getMonth() === month;
+        const isFollowing =
+            d.getFullYear() === nextYear && d.getMonth() === nextMonth;
+        grid.push({
+            date: d,
+            inMonth: isPrimary || isFollowing,
+            isFollowingMonth: isFollowing,
+        });
+    }
+    return grid;
+}
+
 /**
  * 주 단위로 그리드 데이터 나누기
  */

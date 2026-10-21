@@ -13,7 +13,11 @@ interface WeekEventSegment {
 }
 
 interface WeekRowProps {
-    week: { date: Date; inMonth: boolean }[];
+    week: {
+        date: Date;
+        inMonth: boolean;
+        isFollowingMonth?: boolean;
+    }[];
     weekIdx: number;
     weekEventRows: WeekEventSegment[];
     today: Date;
@@ -63,6 +67,23 @@ interface WeekRowProps {
         string,
         { leaders: number; members: number; names: string[] }
     >;
+    personalEntriesByDay?: Record<
+        string,
+        {
+            id: string;
+            start: string;
+            end: string;
+            names: string[];
+            reason: string;
+        }[]
+    >;
+    onPersonalEntryClick?: (entry: {
+        id: string;
+        start: string;
+        end: string;
+        names: string[];
+        reason: string;
+    }) => void;
     onDayScheduleHover?: (info: DayScheduleHoverInfo) => void;
     onDayScheduleLeave?: () => void;
 }
@@ -112,6 +133,8 @@ const WeekRow: React.FC<WeekRowProps> = ({
     rowHeight,
     scheduleBars = [],
     dayAvailability,
+    personalEntriesByDay,
+    onPersonalEntryClick,
     onDayScheduleHover,
     onDayScheduleLeave,
 }) => {
@@ -226,18 +249,21 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         const lastCellPadding = CELL_PADDING_LEFT + TAG_INNER_PADDING_LEFT + 6;
 
                         const isHoliday = !!segment.event.isHoliday;
+                        // 공휴일은 CalendarTag에서 별표+호버 펼침으로 처리 (여기 텍스트 오버레이 제외)
+                        if (isHoliday) return null;
+
                         const isVacation = isVacationEvent(segment.event.title);
                         const isWorkLog = segment.event.id.startsWith("worklog-");
                         const isContinued = segment.event.endDate > weekEndKey;
                         const displayTitle = segment.event.title;
                         // 태그 타입별로 다른 간격 적용
                         // 텍스트 위치는 아이콘 너비 + 태그 타입별 간격을 사용
-                        const iconSize = isHoliday ? CALENDAR_TAG_ICON_SIZES.holiday
-                            : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SIZES.vacation
-                                : CALENDAR_TAG_ICON_SIZES.general;
-                        const iconSpacing = isHoliday ? CALENDAR_TAG_ICON_SPACING.holiday
-                            : (isVacation || isWorkLog) ? CALENDAR_TAG_ICON_SPACING.vacation
-                                : CALENDAR_TAG_ICON_SPACING.general;
+                        const iconSize = (isVacation || isWorkLog)
+                            ? CALENDAR_TAG_ICON_SIZES.vacation
+                            : CALENDAR_TAG_ICON_SIZES.general;
+                        const iconSpacing = (isVacation || isWorkLog)
+                            ? CALENDAR_TAG_ICON_SPACING.vacation
+                            : CALENDAR_TAG_ICON_SPACING.general;
                         const iconWidth = iconSize + iconSpacing;
 
                         const top = segment.rowIndex * (tagHeight + tagSpacing);
@@ -287,7 +313,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
             </div>
 
             {/* 날짜 셀 */}
-            {week.map(({ date, inMonth }, dayIdx) => {
+            {week.map(({ date, inMonth, isFollowingMonth }, dayIdx) => {
                 const dateKey = `${date.getFullYear()}-${pad(
                     date.getMonth() + 1
                 )}-${pad(date.getDate())}`;
@@ -327,6 +353,7 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         key={dayIdx}
                         date={date}
                         inMonth={inMonth}
+                        isFollowingMonth={isFollowingMonth}
                         dayIdx={dayIdx}
                         dateKey={dateKey}
                         isToday={isToday}
@@ -393,6 +420,8 @@ const WeekRow: React.FC<WeekRowProps> = ({
                         onCellHeightChange={onCellHeightChange}
                         scheduleCellHeight={rowHeight ?? cellHeight}
                         dayAvailability={dayAvailability?.[dateKey]}
+                        personalEntries={personalEntriesByDay?.[dateKey]}
+                        onPersonalEntryClick={onPersonalEntryClick}
                         onDayScheduleHover={onDayScheduleHover}
                         onDayScheduleLeave={onDayScheduleLeave}
                     />

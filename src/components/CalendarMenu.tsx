@@ -18,6 +18,7 @@ interface Props {
     /** Schedule registration shows only 일정 추가 and 개인 일정. */
     variant?: "dashboard" | "schedule";
     onAddSchedule?: () => void;
+    onPersonalSchedule?: () => void;
     /** 모바일 등: 일정 추가 위에 상세정보 항목 표시 */
     onDayDetail?: () => void;
 }
@@ -30,6 +31,7 @@ export default function CalendarMenu({
     selectedDate,
     variant = "dashboard",
     onAddSchedule,
+    onPersonalSchedule,
     onDayDetail,
 }: Props) {
     const navigate = useNavigate();
@@ -71,7 +73,14 @@ export default function CalendarMenu({
                     <IconCalendar className="w-6 h-6 text-gray-700" />
                     일정 추가
                 </button>
-                <button type="button" className={itemClass} onClick={onClose}>
+                <button
+                    type="button"
+                    className={itemClass}
+                    onClick={() => {
+                        onPersonalSchedule?.();
+                        onClose();
+                    }}
+                >
                     <IconPerson className="w-6 h-6 text-gray-700" />
                     개인 일정
                 </button>

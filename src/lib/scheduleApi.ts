@@ -382,3 +382,116 @@ export async function fetchScheduleVersionSheetsPage(
     };
 }
 
+/** 달력 개인 일정 (일정표와 독립) */
+export type SchedulePersonalEntry = {
+    id: string;
+    start: string;
+    end: string;
+    names: string[];
+    reason: string;
+};
+
+type DbPersonalEntry = {
+    id: string;
+    start_date: string;
+    end_date: string;
+    names: string[] | null;
+    reason: string | null;
+};
+
+function mapPersonalEntry(row: DbPersonalEntry): SchedulePersonalEntry {
+    return {
+        id: String(row.id),
+        start: String(row.start_date).slice(0, 10),
+        end: String(row.end_date).slice(0, 10),
+        names: Array.isArray(row.names)
+            ? row.names.map((name) => String(name).trim()).filter(Boolean)
+            : [],
+        reason: String(row.reason ?? "").trim(),
+    };
+}
+
+/** 표시 월과 겹치는 개인 일정 조회 */
+export async function fetchSchedulePersonalEntriesInMonth(
+    year: number,
+    month: number
+): Promise<SchedulePersonalEntry[]> {
+    const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+    const { data, error } = await supabase
+        .from("schedule_personal_entries")
+        .select("id, start_date, end_date, names, reason")
+        .lte("start_date", monthEnd)
+        .gte("end_date", monthStart)
+        .order("start_date", { ascending: true })
+        .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    return ((data ?? []) as DbPersonalEntry[]).map(mapPersonalEntry);
+}
+
+export async function createSchedulePersonalEntry(input: {
+    start: string;
+    end: string;
+    names: string[];
+    reason: string;
+}): Promise<SchedulePersonalEntry> {
+    const {
+        data: { user },
+        error: userError,
+    } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error("로그인이 필요합니다.");
+
+    const { data, error } = await supabase
+        .from("schedule_personal_entries")
+        .insert({
+            start_date: input.start,
+            end_date: input.end,
+            names: input.names,
+            reason: input.reason,
+            created_by: user.id,
+        })
+        .select("id, start_date, end_date, names, reason")
+        .single();
+
+    if (error) throw error;
+    return mapPersonalEntry(data as DbPersonalEntry);
+}
+
+export async function updateSchedulePersonalEntry(
+    id: string,
+    input: {
+        start: string;
+        end: string;
+        names: string[];
+        reason: string;
+    }
+): Promise<SchedulePersonalEntry> {
+    const { data, error } = await supabase
+        .from("schedule_personal_entries")
+        .update({
+            start_date: input.start,
+            end_date: input.end,
+            names: input.names,
+            reason: input.reason,
+        })
+        .eq("id", id)
+        .select("id, start_date, end_date, names, reason")
+        .single();
+
+    if (error) throw error;
+    return mapPersonalEntry(data as DbPersonalEntry);
+}
+
+export async function deleteSchedulePersonalEntry(id: string): Promise<void> {
+    const { error } = await supabase
+        .from("schedule_personal_entries")
+        .delete()
+        .eq("id", id);
+
+    if (error) throw error;
+}
+

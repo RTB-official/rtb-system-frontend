@@ -423,6 +423,18 @@ export const IconStar = (props: { className?: string }) => (
     </svg>
 );
 
+export const IconExclamation = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-4 h-4"}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden
+    >
+        <path d="M12 2a2 2 0 0 1 2 2v10a2 2 0 1 1-4 0V4a2 2 0 0 1 2-2zm0 16a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" />
+    </svg>
+);
+
 export const IconChevronLeft = (props: { className?: string }) => (
     <svg
         className={props.className || "w-4 h-4"}
