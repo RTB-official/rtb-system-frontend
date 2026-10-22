@@ -8,11 +8,13 @@ import PageSkeleton from "./components/common/PageSkeleton";
 
 /** 페이지 이동 시 sticky :hover / focus 잔여로 첫 탭이 씹히는 현상 완화 */
 function ClearTouchHoverOnNavigate() {
-  const location = useLocation();
+  const { pathname } = useLocation();
   useEffect(() => {
+    // pathname만 본다. search 변경 시 blur하면 검색창 포커스가 풀리고
+    // Backspace가 브라우저 뒤로가기로 동작한다.
     const active = document.activeElement;
     if (active instanceof HTMLElement) active.blur();
-  }, [location.pathname, location.search]);
+  }, [pathname]);
   return null;
 }
 
