@@ -31,6 +31,7 @@ import {
     buildConsecutiveWorkClusterIndices,
     distributeWorkManualToFourBuckets,
     getConsecutiveWorkClusterEntryIds,
+    getRoundedBillableApplyYmd,
     getWorkEntryAutoBillableFourBuckets,
     getWorkEntryAutoBillableTotalHours,
     isManualRoundedBillableFourOrEight,
@@ -864,8 +865,15 @@ export default function TimesheetDateGroupDetailSidePanel({
             return null;
         }
 
+        const applyYmd =
+            getRoundedBillableApplyYmd(
+                entry.dateFrom,
+                entry.dateTo,
+                isWeekendOrHolidayYmd
+            ) ?? entry.dateFrom;
         const afterBuckets = buildAfterRoundedBillableFourBuckets(
-            roundedBillableConfirm.hours
+            roundedBillableConfirm.hours,
+            { isWeekendOrHoliday: isWeekendOrHolidayYmd(applyYmd) }
         );
 
         const tier = getManpowerTierCountsForEntry(

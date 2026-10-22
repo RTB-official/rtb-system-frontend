@@ -98,13 +98,24 @@ export function sumManpowerSkilledFitterFromRows(rows: ManpowerMoneyDetailRow[])
 }
 
 /**
- * 올림 청구(4h/8h)는 실제 작업일과 관계없이 평일 Normal로 반영한다.
+ * 올림 청구(4h/8h) After 미리보기 버킷.
+ * 적용일이 주말·휴일이면 주말 N, 아니면 평일 N에 넣는다.
  */
 export function buildAfterRoundedBillableFourBuckets(
-    roundedHours: number
+    roundedHours: number,
+    options?: { isWeekendOrHoliday?: boolean }
 ): WorkEntryBillableFourBuckets {
+    const hours = roundHours(roundedHours);
+    if (options?.isWeekendOrHoliday) {
+        return {
+            weekdayN: 0,
+            weekdayA: 0,
+            weekendN: hours,
+            weekendA: 0,
+        };
+    }
     return {
-        weekdayN: roundHours(roundedHours),
+        weekdayN: hours,
         weekdayA: 0,
         weekendN: 0,
         weekendA: 0,

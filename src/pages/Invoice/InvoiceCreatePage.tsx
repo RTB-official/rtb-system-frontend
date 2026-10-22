@@ -7152,18 +7152,25 @@ export default function InvoiceCreatePage() {
                                                 : isWeekendDay
                                                   ? 0
                                                   : nonRoundedNormalHours) +
-                                                roundedManualWorkHours
+                                                (isWeekendDay
+                                                    ? 0
+                                                    : roundedManualWorkHours)
                                         ),
                                         weekdayAfter: manualWorkSplit
                                             ? manualWorkSplit.weekdayAfter
                                             : isWeekendDay
                                               ? 0
                                               : working.after,
-                                        weekendNormal: manualWorkSplit
-                                            ? manualWorkSplit.weekendNormal
-                                            : isWeekendDay
-                                              ? nonRoundedNormalHours
-                                              : 0,
+                                        weekendNormal: roundHours(
+                                            (manualWorkSplit
+                                                ? manualWorkSplit.weekendNormal
+                                                : isWeekendDay
+                                                  ? nonRoundedNormalHours
+                                                  : 0) +
+                                                (isWeekendDay
+                                                    ? roundedManualWorkHours
+                                                    : 0)
+                                        ),
                                         weekendAfter: manualWorkSplit
                                             ? manualWorkSplit.weekendAfter
                                             : isWeekendDay
