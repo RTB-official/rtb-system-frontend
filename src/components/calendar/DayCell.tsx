@@ -303,7 +303,9 @@ const DayCell: React.FC<DayCellProps> = ({
             onClick={onClick}
             aria-selected={rangeRole != null}
             data-range-role={rangeRole ?? undefined}
-            className={`p-1 md:p-2 relative min-w-0 ${dayIdx < 6 ? "border-r border-gray-200" : ""
+            className={`${
+                isMobile ? "px-0.5 pb-1 pt-0.5" : "p-1 md:p-2"
+            } relative min-w-0 ${dayIdx < 6 ? "border-r border-gray-200" : ""
                 } ${canSelect ? "cursor-pointer" : "cursor-default"
                 } transition-colors select-none flex flex-col ${isInDragRange
                     ? "bg-blue-50"
@@ -352,11 +354,14 @@ const DayCell: React.FC<DayCellProps> = ({
                 </div>
             ) : null}
             <div
-                className={`${columnPadding} relative z-20 flex min-w-0 items-center gap-1`}
+                className={`${
+                    isMobile ? "pl-0.5 pr-0.5" : columnPadding
+                } relative z-20 flex min-w-0 items-center gap-0.5`}
             >
+                {/* 날짜(좌측 상단) → 공휴일 별표 / 모바일 개인일정 느낌표 */}
                 <div
                     className={`${
-                        isMobile ? "h-6 w-6" : "h-7.5 w-7.5"
+                        isMobile ? "h-5 w-5" : "h-7.5 w-7.5"
                     } relative flex shrink-0 items-center justify-center`}
                 >
                     {(isToday || isRangeMarker) && (
@@ -381,7 +386,7 @@ const DayCell: React.FC<DayCellProps> = ({
                     <span
                         data-date-number
                         dir="ltr"
-                        className={`relative z-10 font-medium tabular-nums ${isMobile ? "text-[13px]" : "text-[17px]"} ${
+                        className={`relative z-10 font-medium tabular-nums ${isMobile ? "text-[12px]" : "text-[17px]"} ${
                             pointsRight ? "-translate-x-0.5" : pointsLeft ? "translate-x-0.5" : ""
                         } ${isRangeMarker
                             ? "text-gray-900"
@@ -399,7 +404,6 @@ const DayCell: React.FC<DayCellProps> = ({
                         {String(date.getDate())}
                     </span>
                 </div>
-                {/* 날짜 → 공휴일 별표 / 모바일 개인일정 느낌표 → 개인일정 이름 */}
                 {!isMobile
                     ? holidaySegments.map((segment) => {
                           const isStartInCell = segment.startOffset === dayIdx;
@@ -424,11 +428,11 @@ const DayCell: React.FC<DayCellProps> = ({
                       })
                     : personalEntries.length > 0 ? (
                           <span
-                              className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-red-100"
+                              className="inline-flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-full bg-red-100"
                               title="개인 일정"
                               aria-label="개인 일정"
                           >
-                              <IconExclamation className="h-3 w-3 text-red-500" />
+                              <IconExclamation className="h-2.5 w-2.5 text-red-500" />
                           </span>
                       ) : null}
                 {personalEntries.length > 0 && !isMobile ? (
