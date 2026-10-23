@@ -16,13 +16,13 @@ export function useSidebarMenuItems(
     isReportEditRoute: boolean,
     location: ReturnType<typeof useLocation>
 ) {
-    const scheduleSubMenuItems = useMemo<MenuItem[]>(
-        () => [
-            { label: "일정 목록", to: PATHS.scheduleList },
-            { label: "일정 등록", to: PATHS.scheduleCreate },
-        ],
-        []
-    );
+    const scheduleSubMenuItems = useMemo<MenuItem[]>(() => {
+        const items: MenuItem[] = [{ label: "일정 목록", to: PATHS.scheduleList }];
+        if (stablePermissions.isAdmin) {
+            items.push({ label: "일정 등록", to: PATHS.scheduleCreate });
+        }
+        return items;
+    }, [stablePermissions.isAdmin]);
 
     const reportSubMenuItems = useMemo<MenuItem[]>(
         () => [

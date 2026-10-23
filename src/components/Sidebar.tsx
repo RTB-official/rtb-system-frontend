@@ -218,9 +218,13 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
     const sidebarAccountId = (sidebarLoginId || currentUser?.email?.split("@")[0] || "").toLowerCase();
     const isRestrictedMenuAccount = ["mw.park", "brian.ko"].includes(sidebarAccountId);
     const canShowSchedule =
-        isRestrictedMenuAccount || stablePermissions.isAdmin || isAdmin;
-    const canShowMaterials =
-        isRestrictedMenuAccount || stablePermissions.isAdmin || isAdmin;
+        isRestrictedMenuAccount ||
+        stablePermissions.isAdmin ||
+        stablePermissions.isStaff ||
+        stablePermissions.isCEO ||
+        isAdmin;
+    // 자재 목록은 로그인 사용자 전원에게 노출
+    const canShowMaterials = true;
     const expenseActive = menuFocus === "EXPENSE" || (!menuFocus && !pendingActivePath && isExpenseRoute);
     const materialsActive = menuFocus === "MATERIALS" || (!menuFocus && !pendingActivePath && isMaterialsRoute);
     const settingsActive = isPathActive((p) => p.startsWith("/settings"));
@@ -238,7 +242,15 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         expenseSubMenuItems,
         materialsSubMenuItems,
         invoiceSubMenuItems,
-    } = useSidebarMenuItems(stablePermissions, isReportEditRoute, routeLocation);
+    } = useSidebarMenuItems(
+        {
+            ...stablePermissions,
+            // Sidebar의 profiles.role 조회 결과와 맞춤 (캐시 불일치로 등록 메뉴가 숨겨지는 것 방지)
+            isAdmin: stablePermissions.isAdmin || isAdmin,
+        },
+        isReportEditRoute,
+        routeLocation
+    );
 
     const [scheduleItemsForSubMenu, setScheduleItemsForSubMenu] = useState(scheduleSubMenuItems);
     const [reportItemsForSubMenu, setReportItemsForSubMenu] = useState(reportSubMenuItems);

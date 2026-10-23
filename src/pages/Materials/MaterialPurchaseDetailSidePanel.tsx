@@ -21,6 +21,7 @@ import {
     type MaterialPurchaseKind,
     type MaterialPurchaseReceiptDetail,
 } from "../../lib/materialPurchaseApi";
+import { useAuth } from "../../store/auth";
 import {
     EXPENSE_CURRENCY_OPTIONS,
     ORDER_PERSONS,
@@ -165,6 +166,7 @@ export default function MaterialPurchaseDetailSidePanel({
     onSaved,
 }: MaterialPurchaseDetailSidePanelProps) {
     const { showError, showSuccess, showInfo } = useToast();
+    const { user } = useAuth();
     const panelRef = useRef<HTMLElement>(null);
     const previewRef = useRef<MaterialPurchaseReceiptDetail | null>(null);
     const editingRef = useRef(false);
@@ -264,6 +266,8 @@ export default function MaterialPurchaseDetailSidePanel({
             "자동 승인";
     const showApprove = canApprove && view?.approvalStatus === "pending" && !autoApproved;
     const showRevoke = canApprove && view?.approvalStatus === "approved" && !autoApproved;
+    const isAuthor = !!view?.userId && !!user?.id && view.userId === user.id;
+    const canTogglePurchased = canApprove || isAuthor;
 
     const orderPersonOptions = useMemo(() => {
         if (!draft?.orderGroup || draft.orderGroup === "OTHER" || draft.orderGroup === "MITSUI") return [];
@@ -1011,7 +1015,7 @@ export default function MaterialPurchaseDetailSidePanel({
                             </Button>
                         </div>
                     ) : (
-                        canApprove && (showApprove || showRevoke || autoApproved) && (
+                        (showApprove || showRevoke || canTogglePurchased) && (
                             <div className="flex shrink-0 gap-2 border-t border-gray-200 bg-white px-4 py-4 sm:justify-end sm:px-6">
                                 {showApprove && (
                                     <Button variant="outline" size="lg" loading={approving} disabled={completing} onClick={onApprove} className="flex-1 sm:flex-none">
@@ -1023,16 +1027,18 @@ export default function MaterialPurchaseDetailSidePanel({
                                         승인 해제
                                     </Button>
                                 )}
-                                <Button
-                                    variant={view?.purchased ? "outline" : "primary"}
-                                    size="lg"
-                                    loading={completing}
-                                    disabled={approving || blockPurchaseComplete}
-                                    onClick={onTogglePurchased}
-                                    className="flex-1 sm:flex-none"
-                                >
-                                    {view?.purchased ? "구매 완료 해제" : "구매 완료"}
-                                </Button>
+                                {canTogglePurchased && (
+                                    <Button
+                                        variant={view?.purchased ? "outline" : "primary"}
+                                        size="lg"
+                                        loading={completing}
+                                        disabled={approving || blockPurchaseComplete}
+                                        onClick={onTogglePurchased}
+                                        className="flex-1 sm:flex-none"
+                                    >
+                                        {view?.purchased ? "구매 완료 해제" : "구매 완료"}
+                                    </Button>
+                                )}
                             </div>
                         )
                     )}

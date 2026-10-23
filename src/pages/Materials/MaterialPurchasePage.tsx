@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
@@ -25,6 +26,7 @@ import SchedulePickModal, { type SchedulePickItem } from "./SchedulePickModal";
 import { EXPENSE_CURRENCY_OPTIONS, ORDER_PERSONS, formatCurrency, parseCurrency, sanitizeDecimalAmountInput } from "../../store/workReportStore";
 import { supervisorsFromCustomer } from "../../utils/scheduleSupervisors";
 import { PURPOSE_AUTOCOMPLETE_OPTIONS } from "../../constants/purposeAutocompleteOptions";
+import { PATHS } from "../../utils/paths";
 
 type LineReceipt = {
     id: string;
@@ -257,6 +259,7 @@ const CURRENCY_MARK: Record<string, string> = {
 };
 
 export default function MaterialPurchasePage() {
+    const navigate = useNavigate();
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const { showError, showSuccess, showInfo } = useToast();
     const [purchaseKind, setPurchaseKind] = useState<"work" | "personal">("work");
@@ -634,6 +637,7 @@ export default function MaterialPurchasePage() {
                 })),
             });
             showSuccess("등록되었습니다.");
+            navigate(PATHS.materialsList);
         } catch (error) {
             showError(error instanceof Error ? error.message : "등록에 실패했습니다.");
         } finally {

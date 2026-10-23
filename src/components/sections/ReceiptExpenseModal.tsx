@@ -111,14 +111,6 @@ export default function ReceiptExpenseModal({
             return [{ value: "숙박", label: "숙박" }];
         }
 
-        if (category === "자재구매영수증") {
-            return [
-                { value: "자재 구입", label: "자재 구입" },
-                { value: "공구 구입", label: "공구 구입" },
-                { value: "소모품 구입", label: "소모품 구입" },
-            ];
-        }
-
         if (category === "식비및유대영수증") {
             return [
                 { value: "조식", label: "조식" },
@@ -806,8 +798,8 @@ export default function ReceiptExpenseModal({
                                         size="md"
                                         fullWidth
                                     />
-                                ) : currentReceipt?.category === "자재구매영수증" || currentReceipt?.category === "식비및유대영수증" ? (
-                                    <div className={`grid gap-2 ${currentReceipt.category === "자재구매영수증" ? "grid-cols-3" : "grid-cols-5"}`}>
+                                ) : currentReceipt?.category === "식비및유대영수증" ? (
+                                    <div className="grid grid-cols-5 gap-2">
                                         {getTypeOptions(currentReceipt?.category).map((option) => (
                                             <Button
                                                 key={option.value}
