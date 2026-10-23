@@ -8,6 +8,8 @@ import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import PageContainer from "../../components/common/PageContainer";
 import ActionMenu from "../../components/common/ActionMenu";
+import { useAuth } from "../../store/auth";
+import { PATHS } from "../../utils/paths";
 import {
     IconArrowBack,
     IconArrowDown,
@@ -38,7 +40,6 @@ import ScheduleDashboardCalendar, {
 } from "../../components/schedule/ScheduleDashboardCalendar";
 import { setNavigationGuard } from "../../lib/navigationGuard";
 import { fetchLatestScheduleSheet, fetchNextScheduleVersion, saveScheduleVersion } from "../../lib/scheduleApi";
-import { PATHS } from "../../utils/paths";
 import { parseScheduleExcelFile } from "../../utils/parseScheduleExcel";
 
 const COPY = {
@@ -283,10 +284,19 @@ export default function ScheduleCreatePage() {
     const navigate = useNavigate();
     const { showSuccess, showError } = useToast();
     const isMobile = useIsMobile();
+    const { profile, loadingProfile } = useAuth();
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     useEffect(() => {
         setSidebarOpen(false);
     }, [setSidebarOpen]);
+
+    // 일정 등록은 admin만 접근 가능 (RequireAuth가 로드한 프로필 기준)
+    useEffect(() => {
+        if (loadingProfile || !profile) return;
+        if (profile.role !== "admin") {
+            navigate(PATHS.scheduleList, { replace: true });
+        }
+    }, [loadingProfile, profile, navigate]);
     const [rows, setRows] = useState<ScheduleRow[]>(() =>
         [createEmptyRow()]
     );

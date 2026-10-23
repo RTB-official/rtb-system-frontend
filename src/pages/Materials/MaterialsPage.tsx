@@ -17,6 +17,7 @@ import ReportListSkeleton from "../../components/common/skeletons/ReportListSkel
 import SkeletonCard from "../../components/common/skeletons/SkeletonCard";
 import { IconMore, IconMoreVertical, IconPlus } from "../../components/icons/Icons";
 import { useToast } from "../../components/ui/ToastProvider";
+import { useAuth } from "../../store/auth";
 import { PATHS } from "../../utils/paths";
 import MaterialPurchaseDetailSidePanel from "./MaterialPurchaseDetailSidePanel";
 import {
@@ -53,8 +54,10 @@ function approvalStatusLabel(item: Pick<MaterialPurchaseListItem, "urgent" | "am
 export default function MaterialsPage({ title }: { title: string }) {
     const navigate = useNavigate();
     const isMobile = useIsMobile();
+    const { user } = useAuth();
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const { showError, showSuccess } = useToast();
+    const currentUserId = user?.id ?? null;
     const [search, setSearch] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [items, setItems] = useState<MaterialPurchaseListItem[]>([]);
@@ -72,6 +75,9 @@ export default function MaterialsPage({ title }: { title: string }) {
     const [approving, setApproving] = useState(false);
     const [completing, setCompleting] = useState(false);
     const hasLoadedOnceRef = useRef(false);
+    const isOwnItem = (row: MaterialPurchaseListItem) =>
+        !!currentUserId && row.userId === currentUserId;
+    const canShowRowMenu = (row: MaterialPurchaseListItem) => isAdmin || isOwnItem(row);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -310,24 +316,25 @@ export default function MaterialsPage({ title }: { title: string }) {
             width: "8%",
             align: "right",
             showEmptyIndicator: false,
-            render: (_, row) => (
-                <div className="relative inline-flex">
-                    <button
-                        type="button"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            toggleMenu(row.id, event.currentTarget);
-                        }}
-                        className="p-2 rounded hover:bg-gray-100 text-gray-600"
-                        aria-label="행 메뉴"
-                    >
-                        <IconMore className="w-[18px] h-[18px]" />
-                    </button>
-                    <div onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-                        {renderDeleteMenu(row)}
+            render: (_, row) =>
+                canShowRowMenu(row) ? (
+                    <div className="relative inline-flex">
+                        <button
+                            type="button"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                toggleMenu(row.id, event.currentTarget);
+                            }}
+                            className="p-2 rounded hover:bg-gray-100 text-gray-600"
+                            aria-label="행 메뉴"
+                        >
+                            <IconMore className="w-[18px] h-[18px]" />
+                        </button>
+                        <div onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+                            {renderDeleteMenu(row)}
+                        </div>
                     </div>
-                </div>
-            ),
+                ) : null,
         },
     ];
 
@@ -440,19 +447,21 @@ export default function MaterialsPage({ title }: { title: string }) {
                                                                     </Chip>
                                                                 </div>
                                                             </div>
-                                                            <button
-                                                                type="button"
-                                                                className="rounded-lg hover:bg-gray-100 text-gray-500 -mr-1 shrink-0"
-                                                                onClick={(event) => {
-                                                                    event.stopPropagation();
-                                                                    toggleMenu(row.id, event.currentTarget);
-                                                                }}
-                                                                aria-label="메뉴"
-                                                            >
-                                                                <IconMoreVertical className="w-6 h-6" />
-                                                            </button>
+                                                            {canShowRowMenu(row) && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="rounded-lg hover:bg-gray-100 text-gray-500 -mr-1 shrink-0"
+                                                                    onClick={(event) => {
+                                                                        event.stopPropagation();
+                                                                        toggleMenu(row.id, event.currentTarget);
+                                                                    }}
+                                                                    aria-label="메뉴"
+                                                                >
+                                                                    <IconMoreVertical className="w-6 h-6" />
+                                                                </button>
+                                                            )}
                                                         </div>
-                                                        {renderDeleteMenu(row)}
+                                                        {canShowRowMenu(row) && renderDeleteMenu(row)}
                                                     </li>
                                                 );
                                             })}

@@ -20,21 +20,6 @@ const IconBed = () => (
     </svg>
 );
 
-const IconTool = () => (
-    <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M22.7 19L13.6 9.9C14.5 7.6 14 4.9 12.1 3C10.1 1 7.1 0.6 4.7 1.7L9 6L6 9L1.6 4.7C0.4 7.1 0.9 10.1 2.9 12.1C4.8 14 7.5 14.5 9.8 13.6L18.9 22.7C19.3 23.1 19.9 23.1 20.3 22.7L22.6 20.4C23.1 20 23.1 19.3 22.7 19Z"
-            fill="currentColor"
-        />
-    </svg>
-);
-
 const IconRestaurant = () => (
     <svg
         width="20"
@@ -326,7 +311,7 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
     // 출장 보고서일 때만 표시할 영수증 카테고리
     const receiptCategories: FileCategory[] = useMemo(() => {
         if (reportType === "education") return [];
-        return ["숙박영수증", "자재구매영수증", "식비및유대영수증"];
+        return ["숙박영수증", "식비및유대영수증"];
     }, [reportType]);
 
     // 각 카테고리별 영수증 필터링
@@ -364,7 +349,7 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                 </div>
             </div>
 
-            {/* 4개 카드 그리드 */}
+            {/* 첨부파일 카드 그리드 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {reportType !== "education" && (
                     <>
@@ -372,13 +357,6 @@ export default function FileUploadSection({ workLogId }: FileUploadSectionProps)
                             icon={<IconBed />}
                             title="숙박 영수증"
                             category="숙박영수증"
-                            onPreview={openPreview}
-                            workLogId={workLogId}
-                        />
-                        <FileCard
-                            icon={<IconTool />}
-                            title="자재 영수증"
-                            category="자재구매영수증"
                             onPreview={openPreview}
                             workLogId={workLogId}
                         />

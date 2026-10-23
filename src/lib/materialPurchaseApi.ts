@@ -173,6 +173,7 @@ export interface MaterialPurchaseListItem {
     id: string;
     purchaseId: string;
     lineId: string | null;
+    userId: string;
     author: string;
     authorEmail: string | null;
     authorPosition: string | null;
@@ -285,6 +286,7 @@ export async function fetchMaterialPurchaseList(): Promise<MaterialPurchaseListI
             (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
         );
         const base = {
+            userId: purchase.user_id as string,
             author: profile?.name?.trim() || "(작성자 없음)",
             authorEmail: profile?.email ?? null,
             authorPosition: profile?.position ?? null,
@@ -404,6 +406,7 @@ export interface MaterialPurchaseLineDetail {
 
 export interface MaterialPurchaseDetail {
     id: string;
+    userId: string;
     author: string;
     authorEmail: string | null;
     authorPosition: string | null;
@@ -497,6 +500,7 @@ export async function fetchMaterialPurchaseDetail(
 
     return {
         id: data.id,
+        userId: data.user_id,
         author: profile?.name?.trim() || "(작성자 없음)",
         authorEmail: profile?.email ?? null,
         authorPosition: profile?.position ?? null,
@@ -571,7 +575,20 @@ export async function setMaterialPurchasePurchased(purchaseId: string, purchased
     if (!user) throw new Error("로그인 정보를 확인할 수 없습니다.");
 
     const isAdmin = await fetchCurrentUserIsAdmin();
-    if (!isAdmin) throw new Error("관리자만 구매 완료를 변경할 수 있습니다.");
+    const { data: existing, error: existingError } = await supabase
+        .from("material_purchases")
+        .select("id, user_id")
+        .eq("id", purchaseId)
+        .maybeSingle();
+
+    if (existingError || !existing) {
+        throw new Error(existingError?.message || "구매 정보를 찾을 수 없습니다.");
+    }
+
+    const isAuthor = existing.user_id === user.id;
+    if (!isAdmin && !isAuthor) {
+        throw new Error("작성자 또는 관리자만 구매 완료를 변경할 수 있습니다.");
+    }
 
     const { data, error } = await supabase
         .from("material_purchases")
