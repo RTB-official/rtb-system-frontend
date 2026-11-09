@@ -14,6 +14,7 @@ import {
     IconArrowBack,
     IconArrowDown,
     IconArrowUp,
+    IconCheck,
     IconCopy,
     IconEdit,
     IconExportDocuments,
@@ -22,14 +23,20 @@ import {
     IconSave,
     IconTrash,
 } from "../../components/icons/Icons";
+import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
     SCHEDULE_CELL_BORDER,
     SCHEDULE_COLUMNS,
+    SCHEDULE_EDITABLE_FIELDS,
     SCHEDULE_LABEL_BG,
     SCHEDULE_TITLE_BG,
+    areScheduleIndicesContiguous,
+    buildScheduleMergeLookup,
+    pruneScheduleFieldMerges,
     type ScheduleFieldKey,
+    type ScheduleFieldMerge,
     type ScheduleSheetRow,
     type ScheduleInsertValues,
 } from "../../components/schedule/scheduleTableShared";
@@ -57,6 +64,11 @@ const COPY = {
     moveDown: "\uD55C\uCE78\uC544\uB798\uB85C",
     copyRow: "\uBCF5\uC0AC",
     pasteRow: "\uBD99\uC5EC\uB123\uAE30",
+    selectRows: "\uC120\uD0DD",
+    mergeCells: "\uD569\uCE58\uAE30",
+    unmergeCells: "\uD569\uCE58\uAE30 \uD574\uC81C",
+    mergeNeedContiguous: "\uC5F0\uC18D\uB41C \uD589\uB9CC \uD569\uCE60 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+    mergeNone: "\uAC19\uC740 \uB0B4\uC6A9\uC758 \uCEEC\uB7FC\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.",
     editRow: "\uC218\uC815",
     excelLoaded: (n: number) =>
         `\uC5D1\uC140\uC5D0\uC11C ${n}\uAC74\uC744 \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.`,
@@ -87,20 +99,9 @@ const COLUMNS = SCHEDULE_COLUMNS;
 type FieldKey = ScheduleFieldKey;
 
 /** Editable column order (left → right), excluding No. */
-const EDITABLE_FIELDS: FieldKey[] = [
-    "customerCompany",
-    "customerContact",
-    "shipName",
-    "engineType",
-    "workLocation",
-    "period",
-    "workItem",
-    "manpower",
-    "teamMember",
-    "car",
-    "yardPic",
-    "remark",
-];
+const EDITABLE_FIELDS: FieldKey[] = SCHEDULE_EDITABLE_FIELDS;
+
+const UPPERCASE_FIELDS = new Set<FieldKey>(["shipName", "engineType"]);
 
 function createEmptyRow(): ScheduleRow {
     return {
@@ -170,6 +171,7 @@ function CellInput({
     uppercaseLettersOnly,
     focusKey,
     onArrowNavigate,
+    locked = false,
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -180,6 +182,8 @@ function CellInput({
         e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
         direction: "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
     ) => void;
+    /** When true (row multi-select mode), clicks pass through to the row. */
+    locked?: boolean;
 }) {
     const applyChange = (raw: string) => {
         onChange(uppercaseLettersOnly ? normalizeUppercaseField(raw) : raw);
@@ -196,6 +200,17 @@ function CellInput({
         el.style.height = `${el.scrollHeight}px`;
     }, [value]);
 
+    useEffect(() => {
+        if (!locked) return;
+        const active = document.activeElement;
+        if (
+            active === inputRef.current ||
+            active === textareaRef.current
+        ) {
+            (active as HTMLElement).blur();
+        }
+    }, [locked]);
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (
             e.key !== "ArrowUp" &&
@@ -211,13 +226,17 @@ function CellInput({
     };
 
     const focusField = () => {
+        if (locked) return;
         (multiline ? textareaRef.current : inputRef.current)?.focus();
     };
 
     return (
         <div
-            className="flex min-h-[72px] h-full w-full cursor-text items-center justify-center px-1 py-1"
+            className={`flex min-h-[72px] h-full w-full items-center justify-center px-1 py-1 ${
+                locked ? "pointer-events-none" : "cursor-text"
+            }`}
             onMouseDown={(e) => {
+                if (locked) return;
                 // Clicking empty top/bottom of the cell still focuses the field
                 if (e.target === e.currentTarget) {
                     e.preventDefault();
@@ -234,6 +253,8 @@ function CellInput({
                     onKeyDown={handleKeyDown}
                     rows={1}
                     spellCheck={false}
+                    readOnly={locked}
+                    tabIndex={locked ? -1 : undefined}
                     className={`${fieldClass} overflow-hidden whitespace-pre-wrap break-words`}
                 />
             ) : (
@@ -245,6 +266,8 @@ function CellInput({
                     onChange={(e) => applyChange(e.target.value)}
                     onKeyDown={handleKeyDown}
                     spellCheck={false}
+                    readOnly={locked}
+                    tabIndex={locked ? -1 : undefined}
                     className={fieldClass}
                 />
             )}
@@ -305,6 +328,11 @@ export default function ScheduleCreatePage() {
     const [importConfirmOpen, setImportConfirmOpen] = useState(false);
     const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
     const [rowMenuAnchor, setRowMenuAnchor] = useState<HTMLElement | null>(null);
+    const [multiSelectMode, setMultiSelectMode] = useState(false);
+    const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+    const [cellMerges, setCellMerges] = useState<ScheduleFieldMerge[]>([]);
+    const cellMergesRef = useRef(cellMerges);
+    cellMergesRef.current = cellMerges;
     const [copiedRow, setCopiedRow] = useState<Omit<ScheduleRow, "id"> | null>(null);
     const [calendarEditTarget, setCalendarEditTarget] =
         useState<ScheduleCalendarEditTarget | null>(null);
@@ -422,7 +450,10 @@ export default function ScheduleCreatePage() {
         if (saving) return;
         setSaving(true);
         try {
-            const saved = await saveScheduleVersion({ rows });
+            const saved = await saveScheduleVersion({
+                rows,
+                cellMerges,
+            });
             showSuccess(COPY.saveSuccess(saved.versionKey, saved.rowCount));
             await refreshVersionKey();
         } catch (err) {
@@ -439,9 +470,13 @@ export default function ScheduleCreatePage() {
     };
 
     const updateCell = (id: string, key: FieldKey, value: string) => {
+        const merge = cellMergesRef.current.find(
+            (item) => item.field === key && item.rowIds.includes(id)
+        );
+        const targetIds = new Set(merge?.rowIds ?? [id]);
         setRows((prev) =>
             prev.map((row) => {
-                if (row.id !== id) return row;
+                if (!targetIds.has(row.id)) return row;
                 const next = { ...row, [key]: value };
                 if (key === "period") delete next.periodFrom;
                 return next;
@@ -538,9 +573,89 @@ export default function ScheduleCreatePage() {
         setRowMenuAnchor(null);
     };
 
+    const exitMultiSelectMode = () => {
+        setMultiSelectMode(false);
+        setSelectedRowIds([]);
+    };
+
+    const startMultiSelect = () => {
+        closeRowMenu();
+        setMultiSelectMode(true);
+        setSelectedRowIds([]);
+    };
+
+    const toggleMultiSelectRow = (id: string) => {
+        setSelectedRowIds((prev) =>
+            prev.includes(id) ? prev.filter((rowId) => rowId !== id) : [...prev, id]
+        );
+    };
+
+    const mergeSelectedRows = () => {
+        if (selectedRowIds.length < 2) return;
+
+        const indices = selectedRowIds
+            .map((id) => rows.findIndex((row) => row.id === id))
+            .filter((index) => index >= 0)
+            .sort((a, b) => a - b);
+
+        if (indices.length < 2) return;
+        if (!areScheduleIndicesContiguous(indices)) {
+            showError(COPY.mergeNeedContiguous);
+            return;
+        }
+
+        const ids = indices.map((index) => rows[index]!.id);
+        const selectedRows = indices.map((index) => rows[index]!);
+        const added: ScheduleFieldMerge[] = [];
+
+        for (const field of EDITABLE_FIELDS) {
+            const firstValue = selectedRows[0]![field];
+            if (selectedRows.every((row) => row[field] === firstValue)) {
+                added.push({ field, rowIds: ids });
+            }
+        }
+
+        if (added.length === 0) {
+            showError(COPY.mergeNone);
+            return;
+        }
+
+        const idSet = new Set(ids);
+        setCellMerges((prev) => {
+            const kept = pruneScheduleFieldMerges(prev, rows).filter(
+                (merge) =>
+                    !added.some(
+                        (item) =>
+                            item.field === merge.field &&
+                            merge.rowIds.some((rowId) => idSet.has(rowId))
+                    )
+            );
+            return [...kept, ...added];
+        });
+    };
+
+    const unmergeSelectedRows = () => {
+        if (selectedRowIds.length === 0) return;
+        const idSet = new Set(selectedRowIds);
+        setCellMerges((prev) =>
+            pruneScheduleFieldMerges(prev, rows).filter(
+                (merge) => !merge.rowIds.some((rowId) => idSet.has(rowId))
+            )
+        );
+    };
+
     const deleteRow = (id: string) => {
         setRows((prev) => prev.filter((row) => row.id !== id));
         setSelectedRowId((prev) => (prev === id ? null : prev));
+        setSelectedRowIds((prev) => prev.filter((rowId) => rowId !== id));
+        setCellMerges((prev) =>
+            prev
+                .map((merge) => ({
+                    ...merge,
+                    rowIds: merge.rowIds.filter((rowId) => rowId !== id),
+                }))
+                .filter((merge) => merge.rowIds.length >= 2)
+        );
         setRowMenuAnchor(null);
     };
 
@@ -592,22 +707,34 @@ export default function ScheduleCreatePage() {
         return () => document.removeEventListener("pointerdown", handlePointerDown);
     }, [selectedRowId]);
 
+    useEffect(() => {
+        if (!multiSelectMode) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                exitMultiSelectMode();
+            }
+        };
+
+        document.addEventListener("keydown", handleKeyDown);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [multiSelectMode]);
+
     const handleImportLatest = async () => {
         if (importingLatest || saving || excelImporting) return;
         setImportingLatest(true);
         setSelectedRowId(null);
+        setCellMerges([]);
+        exitMultiSelectMode();
         try {
             const sheet = await fetchLatestScheduleSheet();
             if (!sheet || sheet.rows.length === 0) {
                 showError(COPY.importLatestEmpty);
                 return;
             }
-            setRows(
-                sheet.rows.map((row) => ({
-                    ...row,
-                    id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                }))
-            );
+            setRows(sheet.rows.map((row) => ({ ...row })));
+            setCellMerges(sheet.cellMerges);
             showSuccess(COPY.importLatestSuccess(sheet.versionKey, sheet.rows.length));
         } catch (err) {
             showError(err instanceof Error ? err.message : COPY.importLatestFailed);
@@ -632,6 +759,9 @@ export default function ScheduleCreatePage() {
         flushSync(() => {
             setExcelImporting(true);
             setSelectedRowId(null);
+            setMultiSelectMode(false);
+            setSelectedRowIds([]);
+            setCellMerges([]);
         });
         await new Promise<void>((resolve) => {
             requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -747,8 +877,49 @@ export default function ScheduleCreatePage() {
 
                 <div className="flex-1 overflow-auto pt-4 pb-24">
                     <PageContainer className="pt-2 flex flex-col gap-4">
-                        <div className="text-sm md:text-base font-semibold tracking-tight text-gray-900">
-                            {versionKey ?? "…"}
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm md:text-base font-semibold tracking-tight text-gray-900">
+                                {versionKey ?? "…"}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {selectedRowIds.some((id) =>
+                                    cellMerges.some((merge) => merge.rowIds.includes(id))
+                                ) ? (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={unmergeSelectedRows}
+                                        disabled={excelImporting}
+                                    >
+                                        {COPY.unmergeCells}
+                                    </Button>
+                                ) : null}
+                                {selectedRowIds.length >= 2 ? (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={mergeSelectedRows}
+                                        disabled={excelImporting}
+                                    >
+                                        {COPY.mergeCells}
+                                    </Button>
+                                ) : null}
+                                <Button
+                                    type="button"
+                                    variant={multiSelectMode ? "primary" : "outline"}
+                                    size="sm"
+                                    icon={<IconCheck className="h-4 w-4" />}
+                                    aria-pressed={multiSelectMode}
+                                    onClick={
+                                        multiSelectMode ? exitMultiSelectMode : startMultiSelect
+                                    }
+                                    disabled={excelImporting}
+                                >
+                                    {COPY.selectRows}
+                                </Button>
+                            </div>
                         </div>
                         <div ref={tableAreaRef} className="relative w-full">
                             {excelImporting ? (
@@ -758,7 +929,11 @@ export default function ScheduleCreatePage() {
                             ) : (
                                 <>
                             <ActionMenu
-                                isOpen={selectedRowId != null && rowMenuAnchor != null}
+                                isOpen={
+                                    !multiSelectMode &&
+                                    selectedRowId != null &&
+                                    rowMenuAnchor != null
+                                }
                                 anchorEl={rowMenuAnchor}
                                 onClose={closeRowMenu}
                                 placement="right"
@@ -855,9 +1030,23 @@ export default function ScheduleCreatePage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map((row, index) => {
-                                        const isSelected = selectedRowId === row.id;
-                                        const selectedBg = isSelected ? "bg-gray-100" : "bg-white";
+                                    {(() => {
+                                        const mergeLookup = buildScheduleMergeLookup(
+                                            cellMerges,
+                                            rows
+                                        );
+                                        return rows.map((row, index) => {
+                                        const isMenuSelected =
+                                            !multiSelectMode && selectedRowId === row.id;
+                                        const isMultiSelected =
+                                            multiSelectMode && selectedRowIds.includes(row.id);
+                                        const selectedBg = isMultiSelected
+                                            ? "bg-blue-50"
+                                            : isMenuSelected
+                                              ? "bg-gray-100"
+                                              : multiSelectMode
+                                                ? "bg-white group-hover:bg-blue-50"
+                                                : "bg-white";
                                         const cellNav = (fieldKey: FieldKey) => ({
                                             focusKey: `${row.id}__${fieldKey}`,
                                             onArrowNavigate: (
@@ -875,14 +1064,28 @@ export default function ScheduleCreatePage() {
                                         <tr
                                             key={row.id}
                                             data-schedule-row-id={row.id}
-                                            className={selectedBg}
+                                            className={`transition-colors ${
+                                                multiSelectMode ? "group cursor-pointer" : ""
+                                            }`}
+                                            onClick={
+                                                multiSelectMode
+                                                    ? () => toggleMultiSelectRow(row.id)
+                                                    : undefined
+                                            }
                                         >
                                             <td
                                                 className={`${CELL_BORDER} min-h-[72px] p-0 text-center align-middle text-[11px] md:text-[12px] text-gray-900 font-medium transition-colors cursor-pointer ${
-                                                    isSelected ? "bg-gray-100" : "hover:bg-blue-50"
+                                                    isMultiSelected
+                                                        ? "bg-blue-100 text-blue-800 group-hover:bg-blue-100"
+                                                        : isMenuSelected
+                                                          ? "bg-gray-100"
+                                                          : multiSelectMode
+                                                            ? "bg-white group-hover:bg-blue-50"
+                                                            : "hover:bg-blue-50"
                                                 }`}
                                                 onClick={(event) => {
-                                                    if (isSelected) {
+                                                    if (multiSelectMode) return;
+                                                    if (isMenuSelected) {
                                                         closeRowMenu();
                                                         return;
                                                     }
@@ -890,119 +1093,47 @@ export default function ScheduleCreatePage() {
                                                     setRowMenuAnchor(event.currentTarget);
                                                 }}
                                             >
-                                                <div className="flex min-h-[72px] w-full items-center justify-center px-1">
+                                                <div className="flex min-h-[72px] w-full items-center justify-center gap-0.5 px-1">
+                                                    {isMultiSelected ? (
+                                                        <IconCheck className="h-3.5 w-3.5 shrink-0 text-blue-700" />
+                                                    ) : null}
                                                     <span>{index + 1}</span>
                                                 </div>
                                             </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.customerCompany}
-                                                    onChange={(v) =>
-                                                        updateCell(row.id, "customerCompany", v)
-                                                    }
-                                                    multiline
-                                                    {...cellNav("customerCompany")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.customerContact}
-                                                    onChange={(v) =>
-                                                        updateCell(row.id, "customerContact", v)
-                                                    }
-                                                    multiline
-                                                    {...cellNav("customerContact")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.shipName}
-                                                    onChange={(v) => updateCell(row.id, "shipName", v)}
-                                                    multiline
-                                                    uppercaseLettersOnly
-                                                    {...cellNav("shipName")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.engineType}
-                                                    onChange={(v) => updateCell(row.id, "engineType", v)}
-                                                    multiline
-                                                    uppercaseLettersOnly
-                                                    {...cellNav("engineType")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.workLocation}
-                                                    onChange={(v) =>
-                                                        updateCell(row.id, "workLocation", v)
-                                                    }
-                                                    multiline
-                                                    {...cellNav("workLocation")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.period}
-                                                    onChange={(v) => updateCell(row.id, "period", v)}
-                                                    multiline
-                                                    {...cellNav("period")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.workItem}
-                                                    onChange={(v) => updateCell(row.id, "workItem", v)}
-                                                    multiline
-                                                    {...cellNav("workItem")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.manpower}
-                                                    onChange={(v) => updateCell(row.id, "manpower", v)}
-                                                    multiline
-                                                    {...cellNav("manpower")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.teamMember}
-                                                    onChange={(v) =>
-                                                        updateCell(row.id, "teamMember", v)
-                                                    }
-                                                    multiline
-                                                    {...cellNav("teamMember")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.car}
-                                                    onChange={(v) => updateCell(row.id, "car", v)}
-                                                    multiline
-                                                    {...cellNav("car")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.yardPic}
-                                                    onChange={(v) => updateCell(row.id, "yardPic", v)}
-                                                    multiline
-                                                    {...cellNav("yardPic")}
-                                                />
-                                            </td>
-                                            <td className={`${CELL_BORDER} min-h-[72px] p-0 align-middle ${selectedBg}`}>
-                                                <CellInput
-                                                    value={row.remark}
-                                                    onChange={(v) => updateCell(row.id, "remark", v)}
-                                                    multiline
-                                                    {...cellNav("remark")}
-                                                />
-                                            </td>
+                                            {EDITABLE_FIELDS.map((field) => {
+                                                const mergeInfo = mergeLookup.get(
+                                                    `${row.id}__${field}`
+                                                );
+                                                if (mergeInfo === "skip") return null;
+                                                const rowspan =
+                                                    typeof mergeInfo === "object"
+                                                        ? mergeInfo.rowspan
+                                                        : undefined;
+                                                return (
+                                                    <td
+                                                        key={field}
+                                                        rowSpan={rowspan}
+                                                        className={`${CELL_BORDER} min-h-[72px] p-0 align-middle transition-colors ${selectedBg}`}
+                                                    >
+                                                        <CellInput
+                                                            value={row[field]}
+                                                            onChange={(v) =>
+                                                                updateCell(row.id, field, v)
+                                                            }
+                                                            multiline
+                                                            uppercaseLettersOnly={UPPERCASE_FIELDS.has(
+                                                                field
+                                                            )}
+                                                            locked={multiSelectMode}
+                                                            {...cellNav(field)}
+                                                        />
+                                                    </td>
+                                                );
+                                            })}
                                         </tr>
                                         );
-                                    })}
+                                        });
+                                    })()}
                                 </tbody>
                             </table>
                             </ScheduleTableZoom>

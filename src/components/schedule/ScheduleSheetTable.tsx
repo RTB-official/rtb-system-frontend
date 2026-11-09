@@ -2,8 +2,12 @@ import type { HTMLAttributes, ReactNode, Ref } from "react";
 import {
     SCHEDULE_CELL_BORDER,
     SCHEDULE_COLUMNS,
+    SCHEDULE_EDITABLE_FIELDS,
     SCHEDULE_LABEL_BG,
     SCHEDULE_TITLE_BG,
+    buildScheduleMergeLookup,
+    type ScheduleFieldKey,
+    type ScheduleFieldMerge,
     type ScheduleSheetRow,
 } from "./scheduleTableShared";
 import ScheduleTableZoom from "./ScheduleTableZoom";
@@ -63,6 +67,8 @@ function CellText({
 
 type ScheduleSheetTableProps = {
     rows: ScheduleSheetRow[];
+    /** Visual cell merges (same content across contiguous rows). */
+    cellMerges?: ScheduleFieldMerge[];
     /** Highlight matching substrings in cell text (yellow mark). */
     highlightQuery?: string;
     /** Scroll wrapper around the table (used to capture the full sheet). */
@@ -81,20 +87,7 @@ type ScheduleSheetTableProps = {
     ) => HTMLAttributes<HTMLTableRowElement>;
 };
 
-const MULTILINE_FIELDS = new Set([
-    "customerCompany",
-    "customerContact",
-    "shipName",
-    "engineType",
-    "workLocation",
-    "period",
-    "workItem",
-    "manpower",
-    "teamMember",
-    "car",
-    "yardPic",
-    "remark",
-]);
+const MULTILINE_FIELDS = new Set<ScheduleFieldKey>(SCHEDULE_EDITABLE_FIELDS);
 
 /**
  * Schedule sheet table chrome shared by create (editable cells via renderCell)
@@ -102,6 +95,7 @@ const MULTILINE_FIELDS = new Set([
  */
 export default function ScheduleSheetTable({
     rows,
+    cellMerges = [],
     highlightQuery,
     rootRef,
     renderNoCell,
@@ -109,6 +103,8 @@ export default function ScheduleSheetTable({
     getRowClassName,
     getRowProps,
 }: ScheduleSheetTableProps) {
+    const mergeLookup = buildScheduleMergeLookup(cellMerges, rows);
+
     const defaultCell = (
         row: ScheduleSheetRow,
         field: Exclude<keyof ScheduleSheetRow, "id">
@@ -186,66 +182,23 @@ export default function ScheduleSheetTable({
                                         </div>
                                     )}
                                 </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("customerCompany")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("customerContact")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("shipName")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("engineType")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("workLocation")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("period")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("workItem")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("manpower")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("teamMember")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("car")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("yardPic")}
-                                </td>
-                                <td
-                                    className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
-                                >
-                                    {cell("remark")}
-                                </td>
+                                {SCHEDULE_EDITABLE_FIELDS.map((field) => {
+                                    const mergeInfo = mergeLookup.get(`${row.id}__${field}`);
+                                    if (mergeInfo === "skip") return null;
+                                    const rowspan =
+                                        typeof mergeInfo === "object"
+                                            ? mergeInfo.rowspan
+                                            : undefined;
+                                    return (
+                                        <td
+                                            key={field}
+                                            rowSpan={rowspan}
+                                            className={`${SCHEDULE_CELL_BORDER} min-h-[72px] p-0 align-middle ${rowClass}`}
+                                        >
+                                            {cell(field)}
+                                        </td>
+                                    );
+                                })}
                             </tr>
                         );
                     })}

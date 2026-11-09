@@ -37,12 +37,14 @@ export function useSidebarSubMenuState(
     isTbmRoute: boolean,
     isExpenseRoute: boolean,
     isMaterialsRoute: boolean,
+    isMaterialsStatusRoute: boolean,
     isInvoiceRoute: boolean,
     prevScheduleRouteRef: React.RefObject<boolean>,
     prevReportRouteRef: React.RefObject<boolean>,
     prevTbmRouteRef: React.RefObject<boolean>,
     prevExpenseRouteRef: React.RefObject<boolean>,
     prevMaterialsRouteRef: React.RefObject<boolean>,
+    prevMaterialsStatusRouteRef: React.RefObject<boolean>,
     prevInvoiceRouteRef: React.RefObject<boolean>
 ) {
     const [scheduleOpen, setScheduleOpen, scheduleOpenRef] = useSubMenuState(
@@ -54,6 +56,10 @@ export function useSidebarSubMenuState(
     const [expenseOpen, setExpenseOpen, expenseOpenRef] = useSubMenuState("sidebarExpenseOpen", false);
     const [materialsOpen, setMaterialsOpen, materialsOpenRef] = useSubMenuState(
         "sidebarMaterialsOpen",
+        false
+    );
+    const [materialsStatusOpen, setMaterialsStatusOpen, materialsStatusOpenRef] = useSubMenuState(
+        "sidebarMaterialsStatusOpen",
         false
     );
     const [invoiceOpen, setInvoiceOpen, invoiceOpenRef] = useSubMenuState("sidebarInvoiceOpen", false);
@@ -83,6 +89,12 @@ export function useSidebarSubMenuState(
         materialsOpenRef,
         prevMaterialsRouteRef
     );
+    const stableMaterialsStatusOpen = useStableSubMenuOpen(
+        materialsStatusOpen,
+        isMaterialsStatusRoute,
+        materialsStatusOpenRef,
+        prevMaterialsStatusRouteRef
+    );
     const stableInvoiceOpen = useStableSubMenuOpen(
         invoiceOpen,
         isInvoiceRoute,
@@ -106,6 +118,9 @@ export function useSidebarSubMenuState(
         materialsOpen,
         setMaterialsOpen,
         materialsOpenRef,
+        materialsStatusOpen,
+        setMaterialsStatusOpen,
+        materialsStatusOpenRef,
         invoiceOpen,
         setInvoiceOpen,
         invoiceOpenRef,
@@ -114,6 +129,7 @@ export function useSidebarSubMenuState(
         stableTbmOpen,
         stableExpenseOpen,
         stableMaterialsOpen,
+        stableMaterialsStatusOpen,
         stableInvoiceOpen,
     };
 }

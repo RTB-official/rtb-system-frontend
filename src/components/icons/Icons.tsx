@@ -173,6 +173,51 @@ export const IconMaterials = (props: { className?: string }) => (
     </svg>
 );
 
+/** 공구·자재현황 — 렌치(공구) 아이콘 */
+export const IconTools = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-6 h-6"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"
+            fill="currentColor"
+        />
+    </svg>
+);
+
+/** 카테고리(분류) 아이콘 */
+export const IconCategory = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M12 2 6.5 11h11L12 2Zm0 3.84L13.93 9h-3.86L12 5.84ZM17.5 13c-2.49 0-4.5 2.01-4.5 4.5s2.01 4.5 4.5 4.5 4.5-2.01 4.5-4.5-2.01-4.5-4.5-4.5Zm0 7a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5ZM3 21.5h8v-8H3v8Zm2-6h4v4H5v-4Z"
+            fill="currentColor"
+        />
+    </svg>
+);
+
+/** 보관 위치(핀) 아이콘 */
+export const IconLocation = (props: { className?: string }) => (
+    <svg
+        className={props.className || "w-5 h-5"}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <path
+            d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7Zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5Z"
+            fill="currentColor"
+        />
+    </svg>
+);
+
 export const IconCar = (props: { className?: string }) => (
     <svg
         className={props.className || "w-6 h-6"}

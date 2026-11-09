@@ -1,7 +1,15 @@
 import { NavLink } from "react-router-dom";
 import { markSubMenuSkipEnter } from "./subMenuEnterAnimation";
 
-type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE" | null;
+type MenuFocus =
+  | "SCHEDULE"
+  | "REPORT"
+  | "TBM"
+  | "EXPENSE"
+  | "MATERIALS"
+  | "MATERIALS_STATUS"
+  | "INVOICE"
+  | null;
 
 interface SubLinkProps {
   to: string;

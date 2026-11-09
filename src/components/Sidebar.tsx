@@ -20,6 +20,7 @@ import {
     IconVacation,
     IconMembers,
     IconMaterials,
+    IconTools,
     IconCar,
     IconNotifications,
     IconCalendar,
@@ -48,7 +49,15 @@ interface SidebarProps {
     showCloseOnDesktop?: boolean;
 }
 
-type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE" | null;
+type MenuFocus =
+    | "SCHEDULE"
+    | "REPORT"
+    | "TBM"
+    | "EXPENSE"
+    | "MATERIALS"
+    | "MATERIALS_STATUS"
+    | "INVOICE"
+    | null;
 
 
 
@@ -157,6 +166,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         isTbmRoute,
         isExpenseRoute,
         isMaterialsRoute,
+        isMaterialsStatusRoute,
         isInvoiceRoute,
         isReportEditRoute,
         location: routeLocation,
@@ -167,6 +177,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
     const prevTbmRouteRef = useRef<boolean>(isTbmRoute);
     const prevExpenseRouteRef = useRef<boolean>(isExpenseRoute);
     const prevMaterialsRouteRef = useRef<boolean>(isMaterialsRoute);
+    const prevMaterialsStatusRouteRef = useRef<boolean>(isMaterialsStatusRoute);
     const prevInvoiceRouteRef = useRef<boolean>(isInvoiceRoute);
 
     const {
@@ -180,6 +191,8 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         expenseOpenRef,
         setMaterialsOpen,
         materialsOpenRef,
+        setMaterialsStatusOpen,
+        materialsStatusOpenRef,
         setInvoiceOpen,
         invoiceOpenRef,
         stableScheduleOpen,
@@ -187,6 +200,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         stableTbmOpen,
         stableExpenseOpen,
         stableMaterialsOpen,
+        stableMaterialsStatusOpen,
         stableInvoiceOpen,
     } = useSidebarSubMenuState(
         isScheduleRoute,
@@ -194,12 +208,14 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         isTbmRoute,
         isExpenseRoute,
         isMaterialsRoute,
+        isMaterialsStatusRoute,
         isInvoiceRoute,
         prevScheduleRouteRef,
         prevReportRouteRef,
         prevTbmRouteRef,
         prevExpenseRouteRef,
         prevMaterialsRouteRef,
+        prevMaterialsStatusRouteRef,
         prevInvoiceRouteRef
     );
 
@@ -225,8 +241,13 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         isAdmin;
     // 자재 목록은 로그인 사용자 전원에게 노출
     const canShowMaterials = true;
+    // 공구·자재현황은 고두형(brian.ko), 박민욱(mw.park)만 노출
+    const canShowMaterialsStatus = isRestrictedMenuAccount;
     const expenseActive = menuFocus === "EXPENSE" || (!menuFocus && !pendingActivePath && isExpenseRoute);
     const materialsActive = menuFocus === "MATERIALS" || (!menuFocus && !pendingActivePath && isMaterialsRoute);
+    const materialsStatusActive =
+        menuFocus === "MATERIALS_STATUS" ||
+        (!menuFocus && !pendingActivePath && isMaterialsStatusRoute);
     const settingsActive = isPathActive((p) => p.startsWith("/settings"));
     const boardActive = isPathActive((p) => p.startsWith("/board"));
     const homeActive = isPathActive((p) => p === PATHS.dashboard);
@@ -241,6 +262,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         tbmSubMenuItems,
         expenseSubMenuItems,
         materialsSubMenuItems,
+        materialsStatusSubMenuItems,
         invoiceSubMenuItems,
     } = useSidebarMenuItems(
         {
@@ -281,6 +303,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         isTbmRoute,
         isExpenseRoute,
         isMaterialsRoute,
+        isMaterialsStatusRoute,
         isInvoiceRoute,
         expenseSubMenuItems,
         prevScheduleRouteRef,
@@ -288,18 +311,21 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         prevTbmRouteRef,
         prevExpenseRouteRef,
         prevMaterialsRouteRef,
+        prevMaterialsStatusRouteRef,
         prevInvoiceRouteRef,
         scheduleOpenRef,
         reportOpenRef,
         tbmOpenRef,
         expenseOpenRef,
         materialsOpenRef,
+        materialsStatusOpenRef,
         invoiceOpenRef,
         setScheduleOpen,
         setReportOpen,
         setTbmOpen,
         setExpenseOpen,
         setMaterialsOpen,
+        setMaterialsStatusOpen,
         setInvoiceOpen,
         setMenuFocus,
         setShowNotifications,
@@ -322,6 +348,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         if (focus === "INVOICE") setInvoiceOpen(true);
         if (focus === "EXPENSE" && expenseSubMenuItems.length > 1) setExpenseOpen(true);
         if (focus === "MATERIALS") setMaterialsOpen(true);
+        if (focus === "MATERIALS_STATUS") setMaterialsStatusOpen(true);
     };
 
     const handleMenuClick = (focus: MenuFocus | null) => {
@@ -336,6 +363,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
             setTbmOpen(false);
             setExpenseOpen(false);
             setMaterialsOpen(false);
+            setMaterialsStatusOpen(false);
             setInvoiceOpen(false);
         }
         setShowNotifications(false);
@@ -347,6 +375,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         if (focus !== "TBM") setTbmOpen(false);
         if (focus !== "EXPENSE") setExpenseOpen(false);
         if (focus !== "MATERIALS") setMaterialsOpen(false);
+        if (focus !== "MATERIALS_STATUS") setMaterialsStatusOpen(false);
         if (focus !== "INVOICE") setInvoiceOpen(false);
     };
 
@@ -356,6 +385,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
         if (focus === "TBM") return !!tbmOpenRef.current;
         if (focus === "EXPENSE") return !!expenseOpenRef.current;
         if (focus === "MATERIALS") return !!materialsOpenRef.current;
+        if (focus === "MATERIALS_STATUS") return !!materialsStatusOpenRef.current;
         if (focus === "INVOICE") return !!invoiceOpenRef.current;
         return false;
     };
@@ -369,6 +399,7 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
             (!!tbmOpenRef.current && focus !== "TBM") ||
             (!!expenseOpenRef.current && focus !== "EXPENSE") ||
             (!!materialsOpenRef.current && focus !== "MATERIALS") ||
+            (!!materialsStatusOpenRef.current && focus !== "MATERIALS_STATUS") ||
             (!!invoiceOpenRef.current && focus !== "INVOICE");
 
         if (submenuCloseTimerRef.current) {
@@ -631,7 +662,12 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                 isActive={scheduleActive}
                                 onClick={() => {
                                     setUserMenuOpen(false);
-                                    go(PATHS.scheduleList, "SCHEDULE");
+                                    go(
+                                        stablePermissions.isAdmin || isAdmin
+                                            ? PATHS.scheduleCreate
+                                            : PATHS.scheduleList,
+                                        "SCHEDULE"
+                                    );
                                 }}
                             />
                             <SubMenu
@@ -781,6 +817,24 @@ export default function Sidebar({ onClose, showCloseOnDesktop = false }: Sidebar
                                     isOpen={stableMaterialsOpen}
                                     items={materialsSubMenuItems}
                                     focus="MATERIALS"
+                                    onMenuClick={handleMenuClick}
+                                />
+                            </div>
+                        )}
+                        {canShowMaterialsStatus && (
+                            <div className="-pb-1">
+                                <MenuButton
+                                    icon={<IconTools className="w-5 h-5 md:w-6 md:h-6" />}
+                                    label="공구·자재현황"
+                                    isActive={materialsStatusActive}
+                                    onClick={() =>
+                                        go(PATHS.materialsStatusFactory, "MATERIALS_STATUS")
+                                    }
+                                />
+                                <SubMenu
+                                    isOpen={stableMaterialsStatusOpen}
+                                    items={materialsStatusSubMenuItems}
+                                    focus="MATERIALS_STATUS"
                                     onMenuClick={handleMenuClick}
                                 />
                             </div>

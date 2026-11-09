@@ -3,7 +3,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import SubLink from "./SubLink";
 import { shouldSkipSubMenuEnter } from "./subMenuEnterAnimation";
 
-type MenuFocus = "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE" | null;
+type MenuFocus =
+  | "SCHEDULE"
+  | "REPORT"
+  | "TBM"
+  | "EXPENSE"
+  | "MATERIALS"
+  | "MATERIALS_STATUS"
+  | "INVOICE"
+  | null;
 
 interface SubMenuProps {
   isOpen: boolean;

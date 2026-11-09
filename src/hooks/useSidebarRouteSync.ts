@@ -1,6 +1,16 @@
 //useSidebarRouteSync.ts
 import { useEffect, useRef } from "react";
 
+type MenuFocus =
+    | "SCHEDULE"
+    | "REPORT"
+    | "TBM"
+    | "EXPENSE"
+    | "MATERIALS"
+    | "MATERIALS_STATUS"
+    | "INVOICE"
+    | null;
+
 interface UseSidebarRouteSyncParams {
     pathname: string;
     isScheduleRoute: boolean;
@@ -8,6 +18,7 @@ interface UseSidebarRouteSyncParams {
     isTbmRoute: boolean;
     isExpenseRoute: boolean;
     isMaterialsRoute: boolean;
+    isMaterialsStatusRoute: boolean;
     isInvoiceRoute: boolean;
     expenseSubMenuItems: Array<{ label: string; to: string }>;
     prevScheduleRouteRef: React.MutableRefObject<boolean>;
@@ -15,22 +26,23 @@ interface UseSidebarRouteSyncParams {
     prevTbmRouteRef: React.MutableRefObject<boolean>;
     prevExpenseRouteRef: React.MutableRefObject<boolean>;
     prevMaterialsRouteRef: React.MutableRefObject<boolean>;
+    prevMaterialsStatusRouteRef: React.MutableRefObject<boolean>;
     prevInvoiceRouteRef: React.MutableRefObject<boolean>;
     scheduleOpenRef: React.RefObject<boolean>;
     reportOpenRef: React.RefObject<boolean>;
     tbmOpenRef: React.RefObject<boolean>;
     expenseOpenRef: React.RefObject<boolean>;
     materialsOpenRef: React.RefObject<boolean>;
+    materialsStatusOpenRef: React.RefObject<boolean>;
     invoiceOpenRef: React.RefObject<boolean>;
     setScheduleOpen: (value: boolean) => void;
     setReportOpen: (value: boolean) => void;
     setTbmOpen: (value: boolean) => void;
     setExpenseOpen: (value: boolean) => void;
     setMaterialsOpen: (value: boolean) => void;
+    setMaterialsStatusOpen: (value: boolean) => void;
     setInvoiceOpen: (value: boolean) => void;
-    setMenuFocus: (
-        focus: "SCHEDULE" | "REPORT" | "TBM" | "EXPENSE" | "MATERIALS" | "INVOICE" | null
-    ) => void;
+    setMenuFocus: (focus: MenuFocus) => void;
     setShowNotifications: (value: boolean) => void;
 }
 
@@ -45,6 +57,7 @@ export function useSidebarRouteSync({
     isTbmRoute,
     isExpenseRoute,
     isMaterialsRoute,
+    isMaterialsStatusRoute,
     isInvoiceRoute,
     expenseSubMenuItems,
     prevScheduleRouteRef,
@@ -52,18 +65,21 @@ export function useSidebarRouteSync({
     prevTbmRouteRef,
     prevExpenseRouteRef,
     prevMaterialsRouteRef,
+    prevMaterialsStatusRouteRef,
     prevInvoiceRouteRef,
     scheduleOpenRef,
     reportOpenRef,
     tbmOpenRef,
     expenseOpenRef,
     materialsOpenRef,
+    materialsStatusOpenRef,
     invoiceOpenRef,
     setScheduleOpen,
     setReportOpen,
     setTbmOpen,
     setExpenseOpen,
     setMaterialsOpen,
+    setMaterialsStatusOpen,
     setInvoiceOpen,
     setMenuFocus,
     setShowNotifications,
@@ -75,12 +91,14 @@ export function useSidebarRouteSync({
         const prevIsTbmRoute = prevTbmRouteRef.current;
         const prevIsExpenseRoute = prevExpenseRouteRef.current;
         const prevIsMaterialsRoute = prevMaterialsRouteRef.current;
+        const prevIsMaterialsStatusRoute = prevMaterialsStatusRouteRef.current;
         const prevIsInvoiceRoute = prevInvoiceRouteRef.current;
         const currentScheduleOpen = scheduleOpenRef.current;
         const currentReportOpen = reportOpenRef.current;
         const currentTbmOpen = tbmOpenRef.current;
         const currentExpenseOpen = expenseOpenRef.current;
         const currentMaterialsOpen = materialsOpenRef.current;
+        const currentMaterialsStatusOpen = materialsStatusOpenRef.current;
         const currentInvoiceOpen = invoiceOpenRef.current;
 
         // 일정 라우트 처리
@@ -193,6 +211,27 @@ export function useSidebarRouteSync({
             prevMaterialsRouteRef.current = false;
         }
 
+        if (isMaterialsStatusRoute) {
+            const isSameSubmenuNavigation =
+                prevIsMaterialsStatusRoute && currentMaterialsStatusOpen;
+            if (isSameSubmenuNavigation) {
+                prevMaterialsStatusRouteRef.current = true;
+            } else if (currentScheduleOpen) {
+                prevMaterialsStatusRouteRef.current = true;
+            } else {
+                setMenuFocus("MATERIALS_STATUS");
+                if (!currentMaterialsStatusOpen) {
+                    setMaterialsStatusOpen(true);
+                }
+                prevMaterialsStatusRouteRef.current = true;
+            }
+        } else {
+            if (currentMaterialsStatusOpen) {
+                setMaterialsStatusOpen(false);
+            }
+            prevMaterialsStatusRouteRef.current = false;
+        }
+
         if (isInvoiceRoute) {
             const isSameSubmenuNavigation = prevIsInvoiceRoute && currentInvoiceOpen;
             if (isSameSubmenuNavigation) {
@@ -225,6 +264,7 @@ export function useSidebarRouteSync({
         isTbmRoute,
         isExpenseRoute,
         isMaterialsRoute,
+        isMaterialsStatusRoute,
         isInvoiceRoute,
         expenseSubMenuItems.length,
         setShowNotifications,
@@ -233,18 +273,21 @@ export function useSidebarRouteSync({
         prevTbmRouteRef,
         prevExpenseRouteRef,
         prevMaterialsRouteRef,
+        prevMaterialsStatusRouteRef,
         prevInvoiceRouteRef,
         scheduleOpenRef,
         reportOpenRef,
         tbmOpenRef,
         expenseOpenRef,
         materialsOpenRef,
+        materialsStatusOpenRef,
         invoiceOpenRef,
         setScheduleOpen,
         setReportOpen,
         setTbmOpen,
         setExpenseOpen,
         setMaterialsOpen,
+        setMaterialsStatusOpen,
         setInvoiceOpen,
         setMenuFocus,
     ]);
