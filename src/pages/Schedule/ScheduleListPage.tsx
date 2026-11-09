@@ -772,6 +772,7 @@ export default function ScheduleListPage() {
                                                     }
                                                 }}
                                                 rows={sheet.rows}
+                                                cellMerges={sheet.cellMerges}
                                                 highlightQuery={searchQuery}
                                             />
                                         </section>

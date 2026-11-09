@@ -1,3 +1,9 @@
+import {
+    fromStoredScheduleCellMerges,
+    toStoredScheduleCellMerges,
+    type ScheduleFieldMerge,
+    type ScheduleStoredCellMerge,
+} from "../components/schedule/scheduleTableShared";
 import { supabase } from "./supabase";
 
 /** Local calendar date as YYYY-MM-DD (not UTC). */
@@ -94,11 +100,16 @@ function isBlankScheduleRow(row: ScheduleRowInput): boolean {
  */
 export async function saveScheduleVersion(params: {
     scheduleDate?: string;
-    rows: ScheduleRowInput[];
+    rows: Array<ScheduleRowInput & { id?: string }>;
+    cellMerges?: ScheduleFieldMerge[];
     sourceFilename?: string | null;
 }): Promise<SaveScheduleVersionResult> {
     const scheduleDate = params.scheduleDate ?? getLocalScheduleDate();
-    const payload = params.rows
+    const rowsWithIds = params.rows.map((row, index) => ({
+        ...row,
+        id: row.id ?? `save-row-${index}`,
+    }));
+    const payload = rowsWithIds
         .filter((row) => !isBlankScheduleRow(row))
         .map((row) => ({
             customer_company: row.customerCompany,
@@ -119,10 +130,16 @@ export async function saveScheduleVersion(params: {
         throw new Error("저장할 일정 행이 없습니다.");
     }
 
+    const cellMerges = toStoredScheduleCellMerges(
+        params.cellMerges ?? [],
+        rowsWithIds
+    );
+
     const { data, error } = await supabase.rpc("save_schedule_version", {
         p_schedule_date: scheduleDate,
         p_rows: payload,
         p_source_filename: params.sourceFilename ?? null,
+        p_cell_merges: cellMerges,
     });
 
     if (error) throw error;
@@ -180,6 +197,7 @@ export type ScheduleVersionSheet = {
     versionKey: string;
     createdAt: string;
     rows: Array<ScheduleRowInput & { id: string }>;
+    cellMerges: ScheduleFieldMerge[];
 };
 
 type DbScheduleRow = {
@@ -221,6 +239,7 @@ type DbScheduleVersion = {
     schedule_date: string;
     version_label: string;
     created_at: string;
+    cell_merges?: ScheduleStoredCellMerge[] | null;
     schedule_version_rows?: Array<{
         position: number;
         schedule_rows: DbScheduleRow | DbScheduleRow[] | null;
@@ -243,13 +262,20 @@ function mapVersionSheet(version: DbScheduleVersion): ScheduleVersionSheet {
         })
         .filter((row): row is ScheduleRowInput & { id: string } => row != null);
 
+    // Content-addressed rows can share UUIDs; give each sheet position a stable id for merges.
+    const rowsForSheet = rows.map((row, index) => ({
+        ...row,
+        id: `${version.id}:${index + 1}:${row.id}`,
+    }));
+
     return {
         id: version.id,
         scheduleDate,
         versionLabel,
         versionKey: `${scheduleDate}${versionLabel}`,
         createdAt: String(version.created_at),
-        rows,
+        rows: rowsForSheet,
+        cellMerges: fromStoredScheduleCellMerges(version.cell_merges, rowsForSheet),
     };
 }
 
@@ -258,6 +284,7 @@ const VERSION_SELECT = `
     schedule_date,
     version_label,
     created_at,
+    cell_merges,
     schedule_version_rows (
         position,
         schedule_rows (

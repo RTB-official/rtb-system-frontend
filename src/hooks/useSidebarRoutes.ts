@@ -28,8 +28,11 @@ export function useSidebarRoutes() {
         isMatch(PATHS.tbmCreate) ||
         !!matchPath({ path: "/tbm/:id", end: false }, location.pathname);
     const isExpenseRoute = isMatch(PATHS.expenseTeam) || isMatch(PATHS.expensePersonal);
+    const isMaterialsStatusRoute = isMatch(PATHS.materialsStatus);
     const isMaterialsRoute =
-        isMatch(PATHS.materialsList) || isMatch(PATHS.materialsCreate);
+        (!!matchPath({ path: PATHS.materialsList, end: true }, location.pathname) ||
+            isMatch(PATHS.materialsCreate)) &&
+        !isMaterialsStatusRoute;
 
     const isInvoiceRoute = isMatch(PATHS.invoice);
 
@@ -39,6 +42,7 @@ export function useSidebarRoutes() {
         isTbmRoute,
         isExpenseRoute,
         isMaterialsRoute,
+        isMaterialsStatusRoute,
         isInvoiceRoute,
         isReportEditRoute,
         location,

@@ -65,6 +65,14 @@ export function useSidebarMenuItems(
         []
     );
 
+    const materialsStatusSubMenuItems = useMemo<MenuItem[]>(
+        () => [
+            { label: "공장", to: PATHS.materialsStatusFactory },
+            { label: "울산", to: PATHS.materialsStatusUlsan },
+        ],
+        []
+    );
+
     const invoiceSubMenuItems = useMemo<MenuItem[]>(
         () => [
             { label: "보고서", to: PATHS.invoice },
@@ -79,6 +87,7 @@ export function useSidebarMenuItems(
         tbmSubMenuItems,
         expenseSubMenuItems,
         materialsSubMenuItems,
+        materialsStatusSubMenuItems,
         invoiceSubMenuItems,
     };
 }
