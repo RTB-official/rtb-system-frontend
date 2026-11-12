@@ -38,7 +38,7 @@ import {
     SKILLED_FITTER_KOREAN_NAMES,
     SKILLED_FITTER_NAME_SET,
 } from "../../constants/skilledFitter";
-import { INVOICE_MANPOWER_UNIT_PRICE_KRW } from "../../constants/invoiceManpowerUnitPriceKrw";
+import { INVOICE_MANPOWER_UNIT_PRICE_EUR } from "../../constants/invoiceManpowerUnitPriceKrw";
 import {
     getRoundedBillableApplyYmd,
     getWorkEntryAutoBillableTotalHours,
@@ -10010,7 +10010,7 @@ export default function InvoiceCreatePage() {
         "JOB_DESCRIPTION",
         allTimesheetPeople
     );
-    const DAILY_ALLOWANCE_MEAL_UNIT_PRICE_KRW = 15000;
+    const DAILY_ALLOWANCE_MEAL_UNIT_PRICE_EUR = 9;
     /** 인보이스 Daily Allowance — R&D 타임시트 Total 행 Meals 합과 동일 */
     const invoiceMealsTotal = getSectionMealsTotal(
         "R&D TIMESHEET",
@@ -10027,8 +10027,8 @@ export default function InvoiceCreatePage() {
         dailyAllowanceFitterCount === 1 ? "fitter" : "fitters";
     const invoiceDailyAllowanceDescription = `: ${dailyAllowanceSkilledCount} ${dailyAllowanceSkilledLabel} and ${dailyAllowanceFitterCount} ${dailyAllowanceFitterLabel}`;
     const invoiceDailyAllowanceLineTotal =
-        invoiceMealsTotal * DAILY_ALLOWANCE_MEAL_UNIT_PRICE_KRW;
-    const formatKrwWithCommas = (value: number) =>
+        invoiceMealsTotal * DAILY_ALLOWANCE_MEAL_UNIT_PRICE_EUR;
+    const formatEurWithCommas = (value: number) =>
         Math.round(value).toLocaleString("en-US");
     const resolveRequiredSkilledFittersForSectionTitle = (
         sectionTitle: string
@@ -14094,7 +14094,7 @@ export default function InvoiceCreatePage() {
                     ),
                     dailyAllowanceDescription: invoiceDailyAllowanceDescription,
                     dailyAllowanceMealsQty: invoiceMealsTotal,
-                    dailyAllowanceUnitPrice: DAILY_ALLOWANCE_MEAL_UNIT_PRICE_KRW,
+                    dailyAllowanceUnitPrice: DAILY_ALLOWANCE_MEAL_UNIT_PRICE_EUR,
                     dailyAllowanceLineTotal: invoiceDailyAllowanceLineTotal,
                 };
             };
@@ -15814,14 +15814,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekdayNormal
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 skilledFitterInvoiceSummary.weekdayNormal,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekdayNormal
                                                             )}
                                                         </td>
@@ -15840,14 +15840,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekdayAfter
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 skilledFitterInvoiceSummary.weekdayAfter,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekdayAfter
                                                             )}
                                                         </td>
@@ -15866,14 +15866,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekendNormal
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 skilledFitterInvoiceSummary.weekendNormal,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekendNormal
                                                             )}
                                                         </td>
@@ -15892,14 +15892,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekendAfter
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 skilledFitterInvoiceSummary.weekendAfter,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .weekendAfter
                                                             )}
                                                         </td>
@@ -15918,14 +15918,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .travelWeekday
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 skilledFitterInvoiceSummary.travelWeekday,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .travelWeekday
                                                             )}
                                                         </td>
@@ -15944,14 +15944,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .travelWeekend
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 skilledFitterInvoiceSummary.travelWeekend,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.skilled
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.skilled
                                                                     .travelWeekend
                                                             )}
                                                         </td>
@@ -16004,14 +16004,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekdayNormal
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 fitterInvoiceSummary.weekdayNormal,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekdayNormal
                                                             )}
                                                         </td>
@@ -16030,14 +16030,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekdayAfter
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 fitterInvoiceSummary.weekdayAfter,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekdayAfter
                                                             )}
                                                         </td>
@@ -16056,14 +16056,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekendNormal
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 fitterInvoiceSummary.weekendNormal,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekendNormal
                                                             )}
                                                         </td>
@@ -16082,14 +16082,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekendAfter
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 fitterInvoiceSummary.weekendAfter,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .weekendAfter
                                                             )}
                                                         </td>
@@ -16108,14 +16108,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .travelWeekday
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 fitterInvoiceSummary.travelWeekday,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .travelWeekday
                                                             )}
                                                         </td>
@@ -16134,14 +16134,14 @@ export default function InvoiceCreatePage() {
                                                         <td className="px-4 py-2 text-center border-b border-gray-300 border-l border-gray-300">hours</td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerKrwWithCommas(
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .travelWeekend
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300 tabular-nums">
                                                             {formatInvoiceManpowerLineTotalKrw(
                                                                 fitterInvoiceSummary.travelWeekend,
-                                                                INVOICE_MANPOWER_UNIT_PRICE_KRW.fitter
+                                                                INVOICE_MANPOWER_UNIT_PRICE_EUR.fitter
                                                                     .travelWeekend
                                                             )}
                                                         </td>
@@ -16167,12 +16167,12 @@ export default function InvoiceCreatePage() {
                                                             Meals
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">
-                                                            {formatKrwWithCommas(
-                                                                DAILY_ALLOWANCE_MEAL_UNIT_PRICE_KRW
+                                                            {formatEurWithCommas(
+                                                                DAILY_ALLOWANCE_MEAL_UNIT_PRICE_EUR
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-2 text-right border-b border-gray-300 border-l border-gray-300">
-                                                            {formatKrwWithCommas(
+                                                            {formatEurWithCommas(
                                                                 invoiceDailyAllowanceLineTotal
                                                             )}
                                                         </td>

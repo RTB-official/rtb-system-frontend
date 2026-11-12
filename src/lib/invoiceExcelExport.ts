@@ -12,7 +12,7 @@ import {
     resolvePrimaryWorkLogOrderGroup,
 } from "../utils/invoiceOrderGroupDisplay";
 import type { InvoiceExcelFieldMappings } from "./invoiceExcelTemplateApi";
-import { INVOICE_MANPOWER_UNIT_PRICE_KRW } from "../constants/invoiceManpowerUnitPriceKrw";
+import { INVOICE_MANPOWER_UNIT_PRICE_EUR } from "../constants/invoiceManpowerUnitPriceKrw";
 
 export type InvoiceExcelTimesheetRowInput = {
     date: string;
@@ -1065,6 +1065,7 @@ export function fillInvoiceSheet(
 
     applyInvoiceSheetServiceMaterialLayout(ws);
     applyInvoiceSheetFooterSectionLayout(ws, _variant);
+    removeInvoiceSheetEurGrandTotalRow(ws);
     const addressRow = findInvoiceSheetRowByDescriptionText(
         ws,
         /Jedoro\s*767-16/i,
@@ -1082,7 +1083,7 @@ export function buildInvoiceExcelManpowerGroupInput(
     summary: InvoiceExcelManpowerHourSummary,
     role: "skilled" | "fitter"
 ): InvoiceExcelManpowerGroupInput {
-    const unitPrices = INVOICE_MANPOWER_UNIT_PRICE_KRW[role];
+    const unitPrices = INVOICE_MANPOWER_UNIT_PRICE_EUR[role];
     const unitLabel: InvoiceExcelManpowerGroupInput["unitLabel"] =
         peopleCount > 1 ? "MEN" : peopleCount === 1 ? "MAN" : "";
 
@@ -1330,6 +1331,66 @@ function applyInvoiceSheetServiceMaterialLayout(ws: ExcelJS.Worksheet) {
     }
 }
 
+const INVOICE_TRANSPORTATION_UNIT_PRICE_KRW = 500;
+const INVOICE_TRANSPORTATION_UNIT_PRICE_EUR = 0.3;
+
+function replaceTransportationRateText(text: string): string {
+    return text.replace(/KRW\s*500\s*\/\s*km/gi, "EUR 0.3/km");
+}
+
+/** 4. Transportation: 양식의 km당 단가(KRW 500)를 EUR 단가로 바꾼다 */
+function applyInvoiceSheetTransportationEurUnitPrice(
+    ws: ExcelJS.Worksheet,
+    searchStart: number
+) {
+    const cols = INVOICE_SHEET_COLS;
+    const headerRow = findInvoiceSheetRowByDescriptionText(
+        ws,
+        /^\s*4\.\s*Transportation/i,
+        searchStart,
+        searchStart + 20
+    );
+    if (!headerRow) return;
+
+    for (const col of INVOICE_SHEET_DESCRIPTION_CLEAR_COLS) {
+        const cell = ws.getCell(`${col}${headerRow}`);
+        const value = cell.value;
+        if (typeof value === "string") {
+            const next = replaceTransportationRateText(value);
+            if (next !== value) cell.value = next;
+        } else if (
+            value &&
+            typeof value === "object" &&
+            "richText" in value &&
+            Array.isArray((value as ExcelJS.CellRichTextValue).richText)
+        ) {
+            const rich = value as ExcelJS.CellRichTextValue;
+            let changed = false;
+            const richText = rich.richText.map((part) => {
+                const next = replaceTransportationRateText(part.text);
+                if (next === part.text) return part;
+                changed = true;
+                return { ...part, text: next };
+            });
+            if (changed) cell.value = { richText };
+        }
+    }
+
+    const accommodationHeaderRow = findInvoiceSheetRowByDescriptionText(
+        ws,
+        /^\s*5\.\s*Accomodation/i,
+        headerRow + 1,
+        headerRow + 10
+    );
+    const endRow = (accommodationHeaderRow ?? headerRow + 6) - 1;
+    for (let row = headerRow + 1; row <= endRow; row += 1) {
+        const cell = ws.getCell(`${cols.unitPrice}${row}`);
+        if (Number(cell.value) === INVOICE_TRANSPORTATION_UNIT_PRICE_KRW) {
+            cell.value = INVOICE_TRANSPORTATION_UNIT_PRICE_EUR;
+        }
+    }
+}
+
 /** Transportation mileage 안내 행 제거, Accommodation 단위/합계를 상세 행으로 이동 */
 function applyInvoiceSheetFooterSectionLayout(
     ws: ExcelJS.Worksheet,
@@ -1355,6 +1416,8 @@ function applyInvoiceSheetFooterSectionLayout(
         searchStart + 20
     );
     if (hotelMileageRow) hideInvoiceSheetRow(ws, hotelMileageRow);
+
+    applyInvoiceSheetTransportationEurUnitPrice(ws, searchStart);
 
     const accommodationHeaderRow = findInvoiceSheetRowByDescriptionText(
         ws,
@@ -1431,6 +1494,39 @@ function findInvoiceSheetGrandTotalRow(
         if (row) return row;
     }
     return undefined;
+}
+
+/**
+ * 양식은 Grand Total이 KRW·EUR 두 줄인데, 단가가 EUR이라 첫 줄만 EUR로 남기고
+ * 둘째 줄(EUR 환산)은 비우고 숨긴다. 첫 줄 금액 서식은 후처리
+ * (`alignNormalInvoiceGrandTotalFontSizes`)에서 EUR 줄 서식으로 바꾼다.
+ */
+function removeInvoiceSheetEurGrandTotalRow(ws: ExcelJS.Worksheet) {
+    const searchStart = INVOICE_SHEET_MANPOWER_ROWS.dailyAllowanceDetail;
+    const totalRow = findInvoiceSheetGrandTotalRow(
+        ws,
+        searchStart,
+        searchStart + 40
+    );
+    if (!totalRow) return;
+    const eurRow = findInvoiceSheetGrandTotalRow(ws, totalRow + 1, totalRow + 1);
+    if (!eurRow) return;
+
+    for (const col of INVOICE_SHEET_DATA_CLEAR_COLS) {
+        const cell = ws.getCell(`${col}${totalRow}`);
+        const bundle = readFormulaCellBundle(cell);
+        if (bundle?.formula && /KRW/.test(bundle.formula)) {
+            setFormulaCellValue(
+                cell,
+                bundle.formula.replace(/KRW/g, "EUR"),
+                bundle.result
+            );
+        } else if (typeof cell.value === "string" && /KRW/.test(cell.value)) {
+            cell.value = cell.value.replace(/KRW/g, "EUR");
+        }
+    }
+
+    hideInvoiceSheetRow(ws, eurRow);
 }
 
 /**
@@ -3363,7 +3459,7 @@ function replaceXmlBlockItems(
     );
     return stylesXml.replace(
         blockMatch[0],
-        `${open}${items.join("")}${blockMatch[3]}`
+        () => `${open}${items.join("")}${blockMatch[3]}`
     );
 }
 
@@ -3426,10 +3522,139 @@ function appendClonedFontWithSize(
     };
 }
 
+/** styles.xml 에 사용자 숫자 서식을 추가(이미 있으면 재사용)하고 numFmtId 를 반환 */
+function ensureCustomNumFmt(
+    stylesXml: string,
+    formatCode: string
+): { stylesXml: string; numFmtId: number } {
+    const escaped = formatCode.replace(/"/g, "&quot;");
+    // formatCode 안에 '>' 가 올 수 있어(예: [>=100]) 태그 경계를 [^>] 로 자르지 않는다
+    if (/<numFmts\b[^>]*\/>/.test(stylesXml)) {
+        stylesXml = stylesXml.replace(/<numFmts\b[^>]*\/>/, () => "");
+    }
+    const blockMatch = stylesXml.match(/<numFmts\b([^>]*)>([\s\S]*?)<\/numFmts>/);
+    const block = blockMatch?.[2] ?? "";
+    const existingIds = [...block.matchAll(/\bnumFmtId="(\d+)"/g)].map((match) =>
+        Number.parseInt(match[1], 10)
+    );
+    const found = block.match(
+        new RegExp(
+            `\\bnumFmtId="(\\d+)"\\s+formatCode="${escaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`
+        )
+    );
+    if (found) {
+        return { stylesXml, numFmtId: Number.parseInt(found[1], 10) };
+    }
+
+    const numFmtId = Math.max(163, ...existingIds) + 1;
+    const item = `<numFmt numFmtId="${numFmtId}" formatCode="${escaped}"/>`;
+
+    if (blockMatch) {
+        const openTag = `<numFmts${blockMatch[1]}>`;
+        const nextOpenTag = /\bcount="\d+"/.test(openTag)
+            ? openTag.replace(/\bcount="\d+"/, `count="${existingIds.length + 1}"`)
+            : openTag.replace("<numFmts", `<numFmts count="${existingIds.length + 1}"`);
+        return {
+            stylesXml: stylesXml.replace(
+                blockMatch[0],
+                () => `${nextOpenTag}${block}${item}</numFmts>`
+            ),
+            numFmtId,
+        };
+    }
+    return {
+        stylesXml: stylesXml.replace(
+            /(<styleSheet\b[^>]*>)/,
+            (open) => `${open}<numFmts count="1">${item}</numFmts>`
+        ),
+        numFmtId,
+    };
+}
+
+/** sourceStyle 을 복제하고 숫자 서식만 바꿔 새 cellXf 를 추가한다. */
+function appendClonedCellXfWithNumFmt(
+    stylesXml: string,
+    sourceStyleId: number,
+    numFmtId: number
+): { stylesXml: string; styleId: number } {
+    const block = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1];
+    if (!block) return { stylesXml, styleId: sourceStyleId };
+    const items = listXmlBlockItems(block, "xf");
+    const source = items[sourceStyleId];
+    if (!source) return { stylesXml, styleId: sourceStyleId };
+
+    let cloned = source.includes("numFmtId=")
+        ? source.replace(/\bnumFmtId="\d+"/, `numFmtId="${numFmtId}"`)
+        : source.replace(/<xf\b/, `<xf numFmtId="${numFmtId}"`);
+    cloned = cloned.includes("applyNumberFormat=")
+        ? cloned.replace(/\bapplyNumberFormat="[^"]*"/, 'applyNumberFormat="1"')
+        : cloned.replace(/<xf\b/, '<xf applyNumberFormat="1"');
+    items.push(cloned);
+
+    return {
+        stylesXml: replaceXmlBlockItems(stylesXml, "cellXfs", items),
+        styleId: items.length - 1,
+    };
+}
+
+/** 4. Transportation EUR 단가(0.3)가 정수 서식 때문에 0으로 보이지 않게 소수 서식을 입힌다 */
+function applyInvoiceTransportationUnitPriceDecimalFormat(
+    stylesXml: string,
+    styles: Map<string, string>,
+    outputXml: string,
+    outputSharedStrings: string[]
+): string {
+    const headerRow = firstRowContainingText(
+        outputXml,
+        outputSharedStrings,
+        /^\s*4\.\s*Transportation/i
+    );
+    if (!headerRow) return stylesXml;
+
+    const col = INVOICE_SHEET_COLS.unitPrice;
+    let nextXml = stylesXml;
+    let numFmtId: number | null = null;
+    const clonedByStyleId = new Map<number, number>();
+
+    for (let row = headerRow + 1; row <= headerRow + 6; row += 1) {
+        const address = `${col}${row}`;
+        const cellXml = outputXml.match(
+            new RegExp(`<c\\b[^>]*\\br="${address}"[^>/]*>([\\s\\S]*?)</c>`)
+        )?.[1];
+        const value = cellXml?.match(/<v>([^<]*)<\/v>/)?.[1];
+        if (Number(value) !== INVOICE_TRANSPORTATION_UNIT_PRICE_EUR) continue;
+
+        const styleId = Number.parseInt(styles.get(address) ?? "", 10);
+        if (!Number.isFinite(styleId)) continue;
+
+        let clonedId = clonedByStyleId.get(styleId);
+        if (clonedId === undefined) {
+            if (numFmtId === null) {
+                const ensured = ensureCustomNumFmt(nextXml, "#,##0.0#");
+                nextXml = ensured.stylesXml;
+                numFmtId = ensured.numFmtId;
+            }
+            const cloned = appendClonedCellXfWithNumFmt(nextXml, styleId, numFmtId);
+            nextXml = cloned.stylesXml;
+            clonedId = cloned.styleId;
+            clonedByStyleId.set(styleId, clonedId);
+        }
+        styles.set(address, String(clonedId));
+    }
+
+    return nextXml;
+}
+
+function isOutputRowHidden(xml: string, rowNumber: number): boolean {
+    const rowTag = xml.match(new RegExp(`<row\\b[^>]*\\br="${rowNumber}"[^>]*>`));
+    return Boolean(rowTag && /\bhidden="(1|true)"/.test(rowTag[0]));
+}
+
 /**
  * Normal Invoice Grand Total:
  * - 윗줄(원화): 라벨·금액 모두 16
  * - 아랫줄(유로): 라벨·금액 모두 18
+ * - 아랫줄을 숨긴 경우(EUR 단가): 윗줄 금액을 EUR 서식 + 16으로
  * 템플릿은 라벨 16 / 금액 18 이라 행 삽입 후에도 좌우가 어긋나 있어 맞춘다.
  */
 function alignNormalInvoiceGrandTotalFontSizes(
@@ -3443,11 +3668,22 @@ function alignNormalInvoiceGrandTotalFontSizes(
         outputSharedStrings,
         /Grand\s*Total/i
     );
-    if (gtRows.length < 2) return stylesXml;
+    if (gtRows.length === 0) return stylesXml;
 
-    const [krwRow, eurRow] = gtRows;
+    const krwRow = gtRows[0];
+    const eurRowRemoved =
+        gtRows.length === 1 && isOutputRowHidden(outputXml, krwRow + 1);
+    if (gtRows.length < 2 && !eurRowRemoved) return stylesXml;
+    const eurRow = eurRowRemoved ? krwRow + 1 : gtRows[1];
+
+    // EUR 줄을 숨긴 경우: 남은 줄 금액은 EUR 줄 서식(통화 표시 EUR)을 쓴다
     const krwValueStyleId = Number.parseInt(
-        styles.get(`I${krwRow}`) ?? styles.get(`J${krwRow}`) ?? "",
+        (eurRowRemoved
+            ? styles.get(`I${eurRow}`) ?? styles.get(`J${eurRow}`)
+            : undefined) ??
+            styles.get(`I${krwRow}`) ??
+            styles.get(`J${krwRow}`) ??
+            "",
         10
     );
     const eurLabelStyleId = Number.parseInt(
@@ -3479,6 +3715,8 @@ function alignNormalInvoiceGrandTotalFontSizes(
             styles.set(`J${krwRow}`, String(clonedXf.styleId));
         }
     }
+
+    if (eurRowRemoved) return nextXml;
 
     // 유로 라벨: 금액과 같은 18 크기, 밑줄 없는 폰트로 새 스타일
     if (Number.isFinite(eurLabelStyleId) && Number.isFinite(eurValueStyleId)) {
@@ -3656,6 +3894,12 @@ async function buildTemplateStyleMaps(
             byOutputPath.has(outputSheet.path)
         ) {
             stylesXml = alignNormalInvoiceGrandTotalFontSizes(
+                stylesXml,
+                byOutputPath.get(outputSheet.path)!,
+                outputXml,
+                outputSharedStrings
+            );
+            stylesXml = applyInvoiceTransportationUnitPriceDecimalFormat(
                 stylesXml,
                 byOutputPath.get(outputSheet.path)!,
                 outputXml,
