@@ -41,16 +41,8 @@ export default function InventoryStatsCards({ stats, loading }: InventoryStatsCa
     return (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
             <StatCard label="전체 자재" value={stats.totalItems} />
-            <StatCard
-                label="재고 부족 자재"
-                value={stats.lowStockItems}
-                valueClassName="text-red-500"
-            />
-            <StatCard
-                label="위치 미지정"
-                value={stats.unlocatedItems}
-                valueClassName="text-orange-500"
-            />
+            <StatCard label="재고 부족 자재" value={stats.lowStockItems} />
+            <StatCard label="위치 미지정" value={stats.unlocatedItems} />
             <StatCard label="카테고리 수" value={stats.categoryCount} />
         </div>
     );
