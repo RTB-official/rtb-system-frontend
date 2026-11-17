@@ -10,6 +10,7 @@ import Input from "../../components/common/Input";
 import YearMonthSelector from "../../components/common/YearMonthSelector";
 import Button from "../../components/common/Button";
 import ActionMenu from "../../components/common/ActionMenu";
+import Pagination from "../../components/common/Pagination";
 import Chip from "../../components/ui/Chip";
 import ReportListSkeleton from "../../components/common/skeletons/ReportListSkeleton";
 import { IconMore, IconMoreVertical, IconPlus, IconReport } from "../../components/icons/Icons";
@@ -441,136 +442,146 @@ export default function ReportListPage() {
                                     )}
                                 </div>
                             ) : (
-                                <ul className="flex flex-col gap-3 pb-2">
-                                    {reports.map((row) => {
-                                        const statusConfig: Record<ReportListStatus, { color: string; label: string }> = {
-                                            submitted: { color: "blue-500", label: "제출 완료" },
-                                            pending: { color: "green-600", label: "임시저장" },
-                                            not_submitted: { color: "gray-400", label: "미제출" },
-                                        };
-                                        const { color, label } = statusConfig[row.status];
-                                        const canManageRow = canEditRow(row);
-                                        return (
-                                            <li key={row.id}>
-                                                <div
-                                                    className="rounded-xl border border-gray-200 bg-white p-4 active:bg-gray-50 transition-colors flex items-start gap-3"
-                                                    role="button"
-                                                    tabIndex={0}
-                                                    onClick={() => navigateToReportView(row)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter" || e.key === " ") {
-                                                            e.preventDefault();
-                                                            navigateToReportView(row);
-                                                        }
-                                                    }}
-                                                >
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            <span className="text-[13px] md:text-[16px] font-semibold text-gray-900 line-clamp-2 break-words">
-                                                                {row.title || "—"}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 mt-1.5 text-[13px] text-gray-500">
-                                                            <span>{row.date}</span>
-                                                            {row.place?.trim() && (
-                                                                <>
-                                                                    <span aria-hidden>·</span>
-                                                                    <span className="truncate">{row.place}</span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                                            <Avatar
-                                                                email={row.ownerEmail ?? null}
-                                                                position={row.ownerPosition ?? null}
-                                                                size={20}
-                                                            />
-                                                            <span className="text-[13px] text-gray-600">
-                                                                {row.owner}
-                                                                {(editorCountByReportId.get(row.id) ?? 0) > 0
-                                                                    ? ` 외${editorCountByReportId.get(row.id)}명`
-                                                                    : ""}
-                                                            </span>
-                                                            <Chip color={color} variant="solid" size="sm">
-                                                                {label}
-                                                            </Chip>
-                                                            {grantedEditIds.has(row.id) ? (
-                                                                <Chip color="green-500" variant="solid" size="sm">
-                                                                    수정 가능
+                                <>
+                                    <ul className="flex flex-col gap-3 pb-2">
+                                        {reports.map((row) => {
+                                            const statusConfig: Record<ReportListStatus, { color: string; label: string }> = {
+                                                submitted: { color: "blue-500", label: "제출 완료" },
+                                                pending: { color: "green-600", label: "임시저장" },
+                                                not_submitted: { color: "gray-400", label: "미제출" },
+                                            };
+                                            const { color, label } = statusConfig[row.status];
+                                            const canManageRow = canEditRow(row);
+                                            return (
+                                                <li key={row.id}>
+                                                    <div
+                                                        className="rounded-xl border border-gray-200 bg-white p-4 active:bg-gray-50 transition-colors flex items-start gap-3"
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onClick={() => navigateToReportView(row)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" || e.key === " ") {
+                                                                e.preventDefault();
+                                                                navigateToReportView(row);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="text-[13px] md:text-[16px] font-semibold text-gray-900 line-clamp-2 break-words">
+                                                                    {row.title || "—"}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-1.5 text-[13px] text-gray-500">
+                                                                <span>{row.date}</span>
+                                                                {row.place?.trim() && (
+                                                                    <>
+                                                                        <span aria-hidden>·</span>
+                                                                        <span className="truncate">{row.place}</span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                                                <Avatar
+                                                                    email={row.ownerEmail ?? null}
+                                                                    position={row.ownerPosition ?? null}
+                                                                    size={20}
+                                                                />
+                                                                <span className="text-[13px] text-gray-600">
+                                                                    {row.owner}
+                                                                    {(editorCountByReportId.get(row.id) ?? 0) > 0
+                                                                        ? ` 외${editorCountByReportId.get(row.id)}명`
+                                                                        : ""}
+                                                                </span>
+                                                                <Chip color={color} variant="solid" size="sm">
+                                                                    {label}
                                                                 </Chip>
-                                                            ) : null}
+                                                                {grantedEditIds.has(row.id) ? (
+                                                                    <Chip color="green-500" variant="solid" size="sm">
+                                                                        수정 가능
+                                                                    </Chip>
+                                                                ) : null}
+                                                            </div>
                                                         </div>
+                                                        {canManageRow && (
+
+                                                        <button
+                                                            type="button"
+                                                            className="rounded-lg hover:bg-gray-100 text-gray-500 -mr-1 shrink-0"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setOpenMenuId(openMenuId === row.id ? null : row.id);
+                                                                setMenuAnchor(openMenuId === row.id ? null : e.currentTarget);
+                                                            }}
+                                                            aria-label="메뉴"
+                                                        >
+                                                            <IconMoreVertical className="w-6 h-6" />
+                                                        </button>
+
+                                                        )}
                                                     </div>
                                                     {canManageRow && (
 
-                                                    <button
-                                                        type="button"
-                                                        className="rounded-lg hover:bg-gray-100 text-gray-500 -mr-1 shrink-0"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setOpenMenuId(openMenuId === row.id ? null : row.id);
-                                                            setMenuAnchor(openMenuId === row.id ? null : e.currentTarget);
+                                                <ActionMenu
+                                                        isOpen={openMenuId === row.id}
+                                                        anchorEl={menuAnchor}
+                                                        onClose={() => {
+                                                            setOpenMenuId(null);
+                                                            setMenuAnchor(null);
                                                         }}
-                                                        aria-label="메뉴"
-                                                    >
-                                                        <IconMoreVertical className="w-6 h-6" />
-                                                    </button>
-
-                                                    )}
-                                                </div>
-                                                {canManageRow && (
-
-                                            <ActionMenu
-                                                    isOpen={openMenuId === row.id}
-                                                    anchorEl={menuAnchor}
-                                                    onClose={() => {
-                                                        setOpenMenuId(null);
-                                                        setMenuAnchor(null);
-                                                    }}
-                                                    onEdit={() => navigate(`/report/${row.id}/edit`)}
-                                                    showDelete={canDeleteRow(row)}
-                                                    onDelete={() => {
-                                                        setDeleteTargetId(row.id);
-                                                        setDeleteConfirmOpen(true);
-                                                    }}
-                                                    onDownload={() => {
-                                                        const url = `/report/pdf?id=${row.id}&autoPrint=1`;
-                                                        window.open(url, "report_pdf_window", [
-                                                            "width=980",
-                                                            "height=820",
-                                                            "left=120",
-                                                            "top=60",
-                                                            "scrollbars=yes",
-                                                            "resizable=yes",
-                                                            "toolbar=yes",
-                                                            "menubar=yes",
-                                                            "location=yes",
-                                                            "status=no",
-                                                            "noopener=yes",
-                                                            "noreferrer=yes",
-                                                        ].join(","));
-                                                    }}
-                                                    width="w-44"
-                                                >
-                                                    <button
-                                                        className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            navigateToReportView(row);
+                                                        onEdit={() => navigate(`/report/${row.id}/edit`)}
+                                                        showDelete={canDeleteRow(row)}
+                                                        onDelete={() => {
+                                                            setDeleteTargetId(row.id);
+                                                            setDeleteConfirmOpen(true);
                                                         }}
+                                                        onDownload={() => {
+                                                            const url = `/report/pdf?id=${row.id}&autoPrint=1`;
+                                                            window.open(url, "report_pdf_window", [
+                                                                "width=980",
+                                                                "height=820",
+                                                                "left=120",
+                                                                "top=60",
+                                                                "scrollbars=yes",
+                                                                "resizable=yes",
+                                                                "toolbar=yes",
+                                                                "menubar=yes",
+                                                                "location=yes",
+                                                                "status=no",
+                                                                "noopener=yes",
+                                                                "noreferrer=yes",
+                                                            ].join(","));
+                                                        }}
+                                                        width="w-44"
                                                     >
-                                                        <div className="w-5 flex justify-center text-gray-500">
-                                                            <IconReport />
-                                                        </div>
-                                                        보고서 보기
-                                                    </button>
-                                                </ActionMenu>
+                                                        <button
+                                                            className="w-full px-3 py-2.5 text-left text-[15px] hover:bg-gray-50 active:bg-gray-100 text-gray-800 flex items-center gap-3 rounded-lg transition-colors cursor-pointer"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigateToReportView(row);
+                                                            }}
+                                                        >
+                                                            <div className="w-5 flex justify-center text-gray-500">
+                                                                <IconReport />
+                                                            </div>
+                                                            보고서 보기
+                                                        </button>
+                                                    </ActionMenu>
 
-                                            )}
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
+                                                )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                    {totalPages > 1 && (
+                                        <Pagination
+                                            currentPage={currentPage}
+                                            totalPages={totalPages}
+                                            onPageChange={setCurrentPage}
+                                            className="py-4"
+                                        />
+                                    )}
+                                </>
                             )}
                         </div>
                     ) : (
