@@ -14,6 +14,7 @@ import {
     saveCanvasAsMultiPagePdf,
 } from "../../lib/reportPdfCanvasToPdf";
 import { formatReportPdfFilename } from "../../utils/reportPdfFilename";
+import { isSupportReport, SUPPORT_REPORT_LABEL } from "../../utils/supportReport";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
 import { useWorkReportStore } from "../../store/workReportStore";
 import {
@@ -1167,7 +1168,11 @@ export default function ReportPdfPage() {
                                                 </td>
                                                 <td className="title-cell">
                                                      <div className="doc-title">
-                                                         {log?.subject?.includes("[교육]") ? "교육 보고서" : "출장 보고서"}
+                                                         {isSupportReport(log)
+                                                             ? SUPPORT_REPORT_LABEL
+                                                             : log?.subject?.includes("[교육]")
+                                                               ? "교육 보고서"
+                                                               : "출장 보고서"}
                                                      </div>
                                                  </td>
                                             </tr>
@@ -1190,7 +1195,9 @@ export default function ReportPdfPage() {
                             </colgroup>
                             <tbody>
                                 {(() => {
-                                    const isEducation = log?.subject?.includes("[교육]");
+                                    // 서포트 보고서는 제목에 [교육]이 있어도 출장 보고서 양식
+                                    const isEducation =
+                                        !isSupportReport(log) && log?.subject?.includes("[교육]");
                                     if (isEducation) {
                                         return (
                                             <>

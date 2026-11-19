@@ -1,6 +1,6 @@
 import { useSidebarOpen } from "../../hooks/useSidebarOpen";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import Header from "../../components/common/Header";
 import Tabs from "../../components/common/Tabs";
@@ -14,6 +14,11 @@ import { supabase, formatSupabaseErrorMessage, withSupabaseRetry } from "../../l
 import { useAuth } from "../../store/auth";
 import { IconArrowBack } from "../../components/icons/Icons";
 import useIsMobile from "../../hooks/useIsMobile";
+import {
+    canSeeSupportReports,
+    SUPPORT_REPORT_LABEL,
+    SUPPORT_REPORT_TYPE,
+} from "../../utils/supportReport";
 
 // Sections (Existing & New)
 import BasicInfoSection from "../../components/sections/BasicInfoSection";
@@ -57,12 +62,29 @@ function mapReceiptCategory(input: string): ReceiptCategoryEnum {
   return "기타";
 }
 
+/** 작성 화면 탭. support(공무팀 서포트)는 출장 보고서와 같은 입력 화면을 쓴다 */
+type ReportCreateTab = "work" | "education" | "support";
+
+/** 입력 섹션 구성(store reportType)은 출장/교육 두 가지뿐 */
+function toFormReportType(tab: ReportCreateTab): "work" | "education" {
+    return tab === "education" ? "education" : "work";
+}
+
+/** 목록에서 넘어온 `?type=` (없거나 모르는 값이면 출장) */
+function parseReportCreateTab(value: string | null): ReportCreateTab {
+    return value === "education" || value === "support" ? value : "work";
+}
+
 
 export default function ReportCreatePage() {
     const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const initialTabRef = useRef<ReportCreateTab>(parseReportCreateTab(searchParams.get("type")));
     const isMobile = useIsMobile();
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
+    // 공무팀 서포트 탭은 공무팀에게만 (공사팀은 admin 이어도 안 보임. 실제 차단은 DB RLS)
+    const showSupportTab = canSeeSupportReports(profile);
     const { showError, showSuccess } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -150,8 +172,8 @@ export default function ReportCreatePage() {
     // Initial Load
     useEffect(() => {
         resetForm();
-        setReportType("work");
-        setActiveTab("work");
+        setReportType(toFormReportType(initialTabRef.current));
+        setActiveTab(initialTabRef.current);
         fetchAllStaff();
 
         return () => resetForm();
@@ -174,7 +196,13 @@ export default function ReportCreatePage() {
     }, [makeSnapshot]);
 
     // Tab State
-    const [activeTab, setActiveTab] = useState<"work" | "education">("work");
+    const [activeTab, setActiveTab] = useState<ReportCreateTab>(initialTabRef.current);
+    // 볼 수 없는 사람이 ?type=support 로 들어오면 출장 탭으로 (입력 화면이 같아 내용은 유지)
+    useEffect(() => {
+        if (profile && !showSupportTab && activeTab === "support") {
+            setActiveTab("work");
+        }
+    }, [profile, showSupportTab, activeTab]);
     const mainRef = useRef<HTMLElement>(null);
     /** 모바일: 본문이 맨 위일 때만 보고서 종류 탭을 펼침 */
     const [reportTabsOpen, setReportTabsOpen] = useState(true);
@@ -199,7 +227,7 @@ export default function ReportCreatePage() {
     // Warning Modal State
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState<"switch_tab" | "go_back" | null>(null);
-    const [pendingTab, setPendingTab] = useState<"work" | "education" | null>(null);
+    const [pendingTab, setPendingTab] = useState<ReportCreateTab | null>(null);
     /** 브라우저 뒤로가기로 열린 확인인지 (취소 시 history 가드 복구용) */
     const backConfirmFromPopStateRef = useRef(false);
     const isDirtyRef = useRef(isDirty);
@@ -233,8 +261,14 @@ export default function ReportCreatePage() {
 
     // Handle Tab Change Request
     const handleTabChange = (value: string) => {
-        const targetTab = value as "work" | "education";
+        const targetTab = value as ReportCreateTab;
         if (targetTab === activeTab) return;
+
+        // 출장 ↔ 공무팀 서포트: 입력 화면이 같으므로 작성 중인 내용을 그대로 둔다
+        if (toFormReportType(targetTab) === toFormReportType(activeTab)) {
+            setActiveTab(targetTab);
+            return;
+        }
 
         // Only warn if there are changes
         if (isDirty) {
@@ -243,7 +277,7 @@ export default function ReportCreatePage() {
             setConfirmOpen(true);
         } else {
             // Switch immediately
-            setReportType(targetTab);
+            setReportType(toFormReportType(targetTab));
             setActiveTab(targetTab);
             // After clean switch, we should not mark as dirty. 
             // The isDirty effect will trigger, but current should match initial if switched without edits.
@@ -260,7 +294,7 @@ export default function ReportCreatePage() {
     const handleConfirmAction = () => {
         if (pendingAction === "switch_tab" && pendingTab) {
             resetForm();
-            setReportType(pendingTab);
+            setReportType(toFormReportType(pendingTab));
             setActiveTab(pendingTab);
             setInitialAuthor();
         } else if (pendingAction === "go_back") {
@@ -339,7 +373,8 @@ export default function ReportCreatePage() {
                 materials: materials,
                 receipts: [],
                 is_draft: isDraft,
-                created_by: user.id
+                created_by: user.id,
+                ...(activeTab === "support" ? { report_type: SUPPORT_REPORT_TYPE } : {}),
             }));
 
             const editorIds = useWorkReportStore.getState().editPermissionUserIds;
@@ -459,6 +494,9 @@ export default function ReportCreatePage() {
                                         items={[
                                             { value: "work", label: "출장 보고서" },
                                             { value: "education", label: "교육 보고서" },
+                                            ...(showSupportTab
+                                                ? [{ value: "support", label: SUPPORT_REPORT_LABEL }]
+                                                : []),
                                         ]}
                                         value={activeTab}
                                         onChange={handleTabChange}
@@ -503,7 +541,7 @@ export default function ReportCreatePage() {
                     <div className="max-w-[800px] mx-auto flex flex-col gap-5">
 
                         {/* Sections based on Report Type */}
-                        {activeTab === "work" ? (
+                        {toFormReportType(activeTab) === "work" ? (
                             <>
                                 <BasicInfoSection previousWorkLimit={30} schedulePicker />
                                 <WorkerSection title="투입 인원" />

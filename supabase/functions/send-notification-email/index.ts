@@ -8,6 +8,7 @@ import { INVOICE_EMAILS, normalize, fetchUserName } from "./lib/shared.ts";
 import { getRecipients } from "./lib/recipients.ts";
 import {
   getWorkLogIsDraft,
+  getWorkLogIsSupport,
   buildWorkLogContent,
   buildBatchedReportEmail,
   fetchWorkLogEntryRow,
@@ -340,6 +341,18 @@ if (await getWorkLogIsDraft(workLogId)) {
 }
 
 if (!admin) {
+  return SKIP_200();
+}
+
+// ✅ 공무팀 서포트 보고서(work_logs.report_type = 'support')는 메일을 보내지 않는다.
+//    쌓인 미발송 이벤트는 처리됨으로 표시해 다음 변경 때 다시 모이지 않게 한다.
+if (await getWorkLogIsSupport(admin, workLogId)) {
+  await admin
+    .from("email_events")
+    .update({ sent_at: new Date().toISOString() })
+    .eq("work_log_id", workLogId)
+    .is("sent_at", null);
+  console.log("skip_reason", "support_report_no_email", { workLogId });
   return SKIP_200();
 }
 

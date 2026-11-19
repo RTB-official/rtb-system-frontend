@@ -50,6 +50,17 @@ export async function getWorkLogIsDraft(workLogId?: number): Promise<boolean> {
   return data?.is_draft === true;
 }
 
+/** 공무팀 서포트 보고서 여부 (work_logs.report_type = 'support') */
+export async function getWorkLogIsSupport(
+  admin: ReturnType<typeof createClient>,
+  workLogId: number
+): Promise<boolean> {
+  const { data, error } = await admin.from("work_logs").select("report_type").eq("id", workLogId).maybeSingle();
+  // 컬럼이 없는 DB(마이그레이션 전)에는 서포트 보고서도 없다 → 기존대로 진행
+  if (error) return false;
+  return data?.report_type === "support";
+}
+
 const roleOrder: Record<string, number> = {
   대표: 1,
   감사: 2,

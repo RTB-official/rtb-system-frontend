@@ -5,7 +5,8 @@ import {
     formatMultiLineBadgeFromNotes,
 } from "../utils/otherLineWorkNote";
 
-export type ReportListTab = "work" | "education";
+/** support = 공무팀 서포트 보고서 (work_logs.report_type) */
+export type ReportListTab = "work" | "education" | "support";
 
 export type ReportListStatus = "submitted" | "pending" | "not_submitted";
 
@@ -33,7 +34,7 @@ export type ReportListQuery = {
     search?: string;
     year?: number | null;
     month?: number | null;
-    /** 미지정 시 출장·교육 모두 포함 */
+    /** 미지정 시 출장·교육·공무팀 서포트 모두 포함 */
     tab?: ReportListTab;
 };
 

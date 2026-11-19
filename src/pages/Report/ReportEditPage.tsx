@@ -25,6 +25,7 @@ import {
     deleteWorkLogReceipt,
 } from "../../lib/workLogApi";
 import { fetchWorkLogEditorIds } from "../../lib/workLogEditorsApi";
+import { isSupportReport } from "../../utils/supportReport";
 import { useAuth } from "../../store/auth";
 import { supabase, formatSupabaseErrorMessage, withSupabaseRetry } from "../../lib/supabase";
 import { useToast } from "../../components/ui/ToastProvider";
@@ -77,6 +78,8 @@ export default function ReportEditPage() {
     const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
     const [navigateConfirmOpen, setNavigateConfirmOpen] = useState(false);
     const [reportType, setReportType] = useState<"work" | "education">("work");
+    /** 공무팀 서포트 보고서: 출장 보고서와 같은 화면. 종류는 수정에서 바꾸지 않는다 */
+    const isSupportRef = useRef(false);
 
 
     // ✅ 최초 작성자 유지용
@@ -207,7 +210,7 @@ export default function ReportEditPage() {
         }
 
         const s = useWorkReportStore.getState();
-        const isEducation = !!s.subject?.includes("[교육]");
+        const isEducation = !isSupportRef.current && !!s.subject?.includes("[교육]");
 
         if (isEducation) {
             const instructor = s.instructor?.trim();
@@ -308,7 +311,10 @@ export default function ReportEditPage() {
                     setVehicles(vehicleList);
                 }
                 // 리포트 타입 판별
-                const isEducation = data.workLog.subject?.includes("[교육]");
+                isSupportRef.current = isSupportReport(data.workLog);
+                // 서포트 보고서는 제목에 [교육]이 있어도 출장 보고서 화면
+                const isEducation =
+                    !isSupportRef.current && data.workLog.subject?.includes("[교육]");
                 setReportType(isEducation ? "education" : "work");
                 setReportTypeInStore(isEducation ? "education" : "work");
 

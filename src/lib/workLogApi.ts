@@ -5,6 +5,7 @@ import {
     getGongmuTeamUserIds,
     createNotificationsForUsers,
 } from "./notificationApi";
+import { isSupportReport, type WorkLogReportType } from "../utils/supportReport";
 
 const workLogCache = new Map<number, WorkLogFullData>();
 const workLogInFlight = new Map<number, Promise<WorkLogFullData | null>>();
@@ -163,6 +164,8 @@ export interface WorkLog {
     is_draft: boolean;
     created_by: string | null;
     created_at: string;
+    /** null=기존(제목으로 출장/교육 구분), 'support'=공무팀 서포트. 마이그레이션 전 DB에는 없음 */
+    report_type?: WorkLogReportType | null;
 }
 
 export interface WorkLogEntry {
@@ -269,6 +272,8 @@ export interface CreateWorkLogInput {
     }>;
     is_draft?: boolean;
     created_by?: string;
+    /** 생성할 때만 쓴다. 수정(updateWorkLog)은 종류를 바꾸지 않는다 */
+    report_type?: WorkLogReportType;
 }
 
 export interface WorkLogFullData {
@@ -492,6 +497,8 @@ export async function createWorkLog(
                 subject: data.subject || null,
                 is_draft: data.is_draft ?? false,
                 created_by: data.created_by || null,
+                // 값이 있을 때만 보낸다: 마이그레이션 전 DB에서도 출장·교육 저장은 되도록
+                ...(data.report_type ? { report_type: data.report_type } : {}),
             },
         ])
         .select()
@@ -663,7 +670,8 @@ export async function createWorkLog(
         }
 
         // 7. 보고서 제출 시 공무팀에 알림 생성 (임시저장이 아닐 때만, 본인 제외)
-        if (!data.is_draft) {
+        //    공무팀 서포트 보고서는 알림을 보내지 않는다
+        if (!data.is_draft && !isSupportReport(data)) {
             try {
                 const gongmuUserIds = await getGongmuTeamUserIds();
                 
@@ -1440,8 +1448,8 @@ for (const r of curRows ?? []) {
     await syncExpenses();
     await syncMaterials();
   
-    // ✅ 제출 순간 알림(기존 로직 유지)
-    if (!data.is_draft && wasDraft) {
+    // ✅ 제출 순간 알림(기존 로직 유지). 공무팀 서포트 보고서는 보내지 않는다
+    if (!data.is_draft && wasDraft && !isSupportReport(workLog)) {
       try {
         const gongmuUserIds = await getGongmuTeamUserIds();
         const creatorId = prevCreatedBy || data.created_by || null;
