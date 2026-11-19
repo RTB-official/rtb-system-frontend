@@ -12,6 +12,7 @@ import { IconArrowBack, IconDownload, IconEdit, IconSend } from "../../component
 import { getWorkLogById, getWorkLogReceipts, updateWorkLog } from "../../lib/workLogApi";
 import { supabase } from "../../lib/supabase";
 import { fetchWorkLogEditorNames } from "../../lib/workLogEditorsApi";
+import { isSupportReport, SUPPORT_REPORT_LABEL } from "../../utils/supportReport";
 import { useToast } from "../../components/ui/ToastProvider";
 import { useUser } from "../../hooks/useUser";
 import TimelineSummarySection from "../../components/sections/TimelineSummarySection";
@@ -382,6 +383,8 @@ export default function ReportViewPage() {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<ViewData | null>(null);
     const [reportType, setReportType] = useState<"work" | "education">("work");
+    /** 공무팀 서포트 보고서 (화면은 출장 보고서와 같고 이름만 다름) */
+    const [isSupport, setIsSupport] = useState(false);
     const [draftStatusHint, setDraftStatusHint] = useState<boolean | null>(initialDraftHint);
 
     const [receipts, setReceipts] = useState<ReceiptItem[]>([]);
@@ -452,7 +455,10 @@ export default function ReportViewPage() {
                 setDraftStatusHint(!!res.workLog.is_draft);
                 writeDraftHint(String(id), !!res.workLog.is_draft);
 
-                const isEducation = res.workLog.subject?.includes("[교육]");
+                const isSupport = isSupportReport(res.workLog);
+                setIsSupport(isSupport);
+                // 서포트 보고서는 제목에 [교육]이 있어도 출장 보고서 화면
+                const isEducation = !isSupport && res.workLog.subject?.includes("[교육]");
                 setReportType(isEducation ? "education" : "work");
 
                 try {
@@ -740,7 +746,13 @@ export default function ReportViewPage() {
             {/* Main */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden w-full">
                 <Header
-                    title={reportType === "work" ? "출장 보고서 보기" : "교육 보고서 보기"}
+                    title={
+                        isSupport
+                            ? `${SUPPORT_REPORT_LABEL} 보기`
+                            : reportType === "work"
+                              ? "출장 보고서 보기"
+                              : "교육 보고서 보기"
+                    }
                     onMenuClick={() => setSidebarOpen(true)}
                     leftContent={
                         <div className="flex items-center gap-3">

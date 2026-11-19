@@ -1,5 +1,6 @@
 //workloadApi.ts
 import { supabase } from "./supabase";
+import { isSupportReport } from "../utils/supportReport";
 
 type ProfileDeptRow = {
     name: string | null;
@@ -333,6 +334,19 @@ async function fetchWorkloadEntryRows(
     return all;
 }
 
+const WORK_LOG_COLS = "id, vessel, subject, is_draft";
+const WORK_LOG_COLS_WITH_TYPE = `${WORK_LOG_COLS}, report_type`;
+/** 원격 DB에 `work_logs.report_type` 컬럼이 없음을 확인했는지 */
+let reportTypeColumnMissing = false;
+
+type WorkLogRowForWorkload = {
+    id: number;
+    vessel: string | null;
+    subject: string | null;
+    is_draft: boolean | null;
+    report_type?: string | null;
+};
+
 async function fetchWorkLogsByIds(
     ids: number[],
     includeDrafts?: boolean
@@ -345,23 +359,34 @@ async function fetchWorkLogsByIds(
     >();
     const uniqueIds = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
 
-    for (const idChunk of chunkArray(uniqueIds, IN_QUERY_CHUNK_SIZE)) {
-        let q = supabase
-            .from("work_logs")
-            .select("id, vessel, subject, is_draft")
-            .in("id", idChunk);
-
+    const fetchChunk = (selectCols: string, idChunk: number[]) => {
+        let q = supabase.from("work_logs").select(selectCols).in("id", idChunk);
         if (!includeDrafts) {
             q = q.eq("is_draft", false);
         }
+        return q;
+    };
 
-        const { data, error } = await q;
+    for (const idChunk of chunkArray(uniqueIds, IN_QUERY_CHUNK_SIZE)) {
+        let { data, error } = await fetchChunk(
+            reportTypeColumnMissing ? WORK_LOG_COLS : WORK_LOG_COLS_WITH_TYPE,
+            idChunk
+        );
+
+        // report_type 마이그레이션 전 DB: 컬럼 없이 다시 조회 (서포트 보고서도 아직 없음)
+        if (error && !reportTypeColumnMissing && /report_type/i.test(error.message)) {
+            reportTypeColumnMissing = true;
+            ({ data, error } = await fetchChunk(WORK_LOG_COLS, idChunk));
+        }
+
         if (error) {
             console.error("Error fetching work logs:", error);
             throw new Error(`출장 보고서 조회 실패: ${error.message}`);
         }
 
-        for (const log of data ?? []) {
+        for (const log of (data ?? []) as unknown as WorkLogRowForWorkload[]) {
+            // 공무팀 서포트 보고서는 워크로드에 집계하지 않는다
+            if (isSupportReport(log)) continue;
             map.set(log.id, {
                 vessel: log.vessel,
                 subject: log.subject,

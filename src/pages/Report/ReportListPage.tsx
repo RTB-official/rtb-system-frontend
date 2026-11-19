@@ -22,7 +22,10 @@ import {
     parseReportListYear,
     type ReportListItem,
     type ReportListStatus,
+    type ReportListTab,
 } from "../../lib/reportListApi";
+import { canSeeSupportReports, SUPPORT_REPORT_LABEL } from "../../utils/supportReport";
+import { useAuth } from "../../store/auth";
 import { useToast } from "../../components/ui/ToastProvider";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import Avatar from "../../components/common/Avatar";
@@ -34,9 +37,18 @@ type ReportItem = ReportListItem;
 
 const DEFAULT_YEAR = "년도 전체";
 const DEFAULT_MONTH = "월 전체";
-const DEFAULT_TAB = "work";
+const DEFAULT_TAB: ReportListTab = "work";
 const ITEMS_PER_PAGE = 10;
 const SEARCH_DEBOUNCE_MS = 300;
+
+function parseReportListTab(value: string | null): ReportListTab {
+    return value === "education" || value === "support" ? value : DEFAULT_TAB;
+}
+
+/** 새 보고서 작성: 보고 있던 탭의 종류로 작성 화면을 연다 */
+function reportCreatePath(tab: ReportListTab): string {
+    return tab === DEFAULT_TAB ? "/reportcreate" : `/reportcreate?type=${tab}`;
+}
 
 const parsePage = (value: string | null) => {
     const page = Number.parseInt(value || "", 10);
@@ -69,10 +81,19 @@ export default function ReportListPage() {
     const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
     const [loading, setLoading] = useState(true);
-    // ✅ 탭 상태 추가 ("work" | "education")
-    const [activeTab, setActiveTab] = useState<"work" | "education">(
-        () => (searchParams.get("tab") === "education" ? "education" : "work")
+    // ✅ 탭 상태 ("work" | "education" | "support")
+    const [activeTab, setActiveTab] = useState<ReportListTab>(
+        () => parseReportListTab(searchParams.get("tab"))
     );
+    // 공무팀 서포트 탭은 공무팀에게만 (공사팀은 admin 이어도 안 보임. 실제 차단은 DB RLS)
+    const { profile } = useAuth();
+    const showSupportTab = canSeeSupportReports(profile);
+    useEffect(() => {
+        if (profile && !showSupportTab && activeTab === "support") {
+            setActiveTab(DEFAULT_TAB);
+            setCurrentPage(1);
+        }
+    }, [profile, showSupportTab, activeTab]);
 
     const { showSuccess, showError } = useToast();
     const safetyToastOnceRef = useRef(false);
@@ -262,7 +283,7 @@ export default function ReportListPage() {
 
     const isFilterActive = year !== DEFAULT_YEAR || month !== DEFAULT_MONTH;
     const hasActiveQuery =
-        isFilterActive || debouncedSearch.trim() !== "" || activeTab === "education";
+        isFilterActive || debouncedSearch.trim() !== "" || activeTab !== DEFAULT_TAB;
     const totalPages = Math.ceil(totalCount / itemsPerPage);
 
     const handleResetFilter = () => {
@@ -329,10 +350,13 @@ export default function ReportListPage() {
                                 items={[
                                     { value: "work", label: "출장 보고서" },
                                     { value: "education", label: "교육 보고서" },
+                                    ...(showSupportTab
+                                        ? [{ value: "support", label: SUPPORT_REPORT_LABEL }]
+                                        : []),
                                 ]}
                                 value={activeTab}
                                 onChange={(value) => {
-                                    setActiveTab(value as "work" | "education");
+                                    setActiveTab(value as ReportListTab);
                                     setCurrentPage(1);
                                 }}
                             />
@@ -343,7 +367,7 @@ export default function ReportListPage() {
                             <Button
                                 variant="primary"
                                 size="lg"
-                                onClick={() => navigate("/reportcreate")}
+                                onClick={() => navigate(reportCreatePath(activeTab))}
                                 icon={<IconPlus />}
                             >
                                 새 보고서 작성
@@ -907,7 +931,7 @@ export default function ReportListPage() {
                     <Button
                         variant="primary"
                         size="lg"
-                        onClick={() => navigate("/reportcreate")}
+                        onClick={() => navigate(reportCreatePath(activeTab))}
                         icon={<IconPlus />}
                         className="shadow-lg rounded-full h-14 px-5"
                     >
