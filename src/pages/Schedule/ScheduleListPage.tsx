@@ -251,6 +251,8 @@ function sheetMatchesSearch(
             row.car,
             row.yardPic,
             row.remark,
+            row.entryApplication,
+            row.materialPrep,
         ].some((v) => v.toLowerCase().includes(q))
     );
 }

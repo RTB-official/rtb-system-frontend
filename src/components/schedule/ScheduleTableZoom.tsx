@@ -7,9 +7,13 @@ import {
     type Ref,
 } from "react";
 import useIsMobile from "../../hooks/useIsMobile";
+import {
+    SCHEDULE_BASE_MIN_WIDTH,
+    SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH,
+} from "./scheduleTableShared";
 
-/** Desktop sheet width the mobile view is scaled from, so the fitted table keeps the wide PC proportions. */
-const SHEET_WIDTH = 1840;
+/** Desktop sheet width the mobile view is scaled from (Remark까지 기본 뷰). */
+const BASE_SHEET_WIDTH = 1840;
 /** Max zoom relative to the natural (100%) sheet size. */
 const MAX_SCALE = 2;
 const LOCKED_VIEWPORT =
@@ -86,6 +90,11 @@ type ScheduleTableZoomProps = {
     children: ReactNode;
     /** Frame element that image capture reads the table from (list page). */
     scrollerRef?: Ref<HTMLDivElement>;
+    /**
+     * When false (default), Remark까지 기본 뷰로 가로 스크롤을 잠근다.
+     * true면 출입신청/자재준비까지 가로 스크롤·팬을 허용한다.
+     */
+    revealExtraColumns?: boolean;
 };
 
 /**
@@ -97,11 +106,14 @@ type ScheduleTableZoomProps = {
 export default function ScheduleTableZoom({
     children,
     scrollerRef,
+    revealExtraColumns = false,
 }: ScheduleTableZoomProps) {
     const isMobile = useIsMobile();
     const frameRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef({ scale: 0, fit: 0, x: 0, y: 0 });
+    const revealRef = useRef(revealExtraColumns);
+    revealRef.current = revealExtraColumns;
 
     const setFrameNode = useCallback(
         (node: HTMLDivElement | null) => {
@@ -118,16 +130,38 @@ export default function ScheduleTableZoom({
         return lockPageZoom();
     }, [isMobile]);
 
+    // Desktop: 더보기 토글 시 가로 스크롤 위치 맞추기
+    useEffect(() => {
+        if (isMobile) return;
+        const frame = frameRef.current;
+        if (!frame) return;
+        if (revealExtraColumns) {
+            frame.scrollTo({
+                left: Math.max(0, frame.scrollWidth - frame.clientWidth),
+                behavior: "smooth",
+            });
+        } else {
+            frame.scrollTo({ left: 0, behavior: "smooth" });
+        }
+    }, [isMobile, revealExtraColumns]);
+
     useLayoutEffect(() => {
         const frame = frameRef.current;
         const content = contentRef.current;
         if (!isMobile || !frame || !content) return;
 
         const view = viewRef.current;
+        const sheetWidth =
+            BASE_SHEET_WIDTH +
+            Math.round(
+                (SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH / SCHEDULE_BASE_MIN_WIDTH) *
+                    BASE_SHEET_WIDTH
+            );
+        const fitWidth = BASE_SHEET_WIDTH;
         const isZoomed = () => view.scale > view.fit + 0.001;
 
         const render = () => {
-            const minX = Math.min(0, frame.clientWidth - SHEET_WIDTH * view.scale);
+            const minX = Math.min(0, frame.clientWidth - sheetWidth * view.scale);
             const minY = Math.min(
                 0,
                 frame.clientHeight - content.offsetHeight * view.scale
@@ -135,19 +169,30 @@ export default function ScheduleTableZoom({
             view.x = Math.min(0, Math.max(minX, view.x));
             view.y = Math.min(0, Math.max(minY, view.y));
             content.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
-            frame.style.touchAction = isZoomed() ? "none" : "pan-y";
+            frame.style.touchAction =
+                isZoomed() || revealRef.current ? "none" : "pan-y";
         };
 
         const layout = () => {
             const table = content.querySelector("table");
             if (!table || frame.clientWidth === 0) return;
             const wasFitted = !isZoomed();
-            view.fit = Math.min(1, frame.clientWidth / SHEET_WIDTH);
+            view.fit = Math.min(1, frame.clientWidth / fitWidth);
             if (wasFitted || view.scale < view.fit) view.scale = view.fit;
-            // Table layout height ignores the scale transform, so the frame must
-            // be the fitted height. Otherwise a tall blank gap pushes the + button
-            // and the next sheet far below the visible table.
             frame.style.height = `${Math.ceil(table.offsetHeight * view.fit)}px`;
+            if (!revealRef.current && !isZoomed()) {
+                view.x = 0;
+            }
+            render();
+        };
+
+        const panToReveal = (reveal: boolean) => {
+            if (reveal) {
+                const minX = Math.min(0, frame.clientWidth - sheetWidth * view.scale);
+                view.x = minX;
+            } else if (!isZoomed()) {
+                view.x = 0;
+            }
             render();
         };
 
@@ -222,13 +267,15 @@ export default function ScheduleTableZoom({
             }
         };
 
+        const canPan = () => isZoomed() || revealRef.current;
+
         const onTouchStart = (event: TouchEvent) => {
             const touches = event.touches;
             if (touches.length === 2) {
                 if (!Array.from(touches).some((t) => isInFrame(t.target))) return;
                 event.preventDefault();
                 startPinch(touches);
-            } else if (touches.length === 1 && isZoomed() && isInFrame(touches[0].target)) {
+            } else if (touches.length === 1 && canPan() && isInFrame(touches[0].target)) {
                 startPan(touches[0]);
             }
         };
@@ -242,7 +289,7 @@ export default function ScheduleTableZoom({
 
         const onTouchEnd = (event: TouchEvent) => {
             if (!gesture) return;
-            if (event.touches.length === 1 && isZoomed()) startPan(event.touches[0]);
+            if (event.touches.length === 1 && canPan()) startPan(event.touches[0]);
             else if (event.touches.length === 0) gesture = null;
         };
 
@@ -258,7 +305,7 @@ export default function ScheduleTableZoom({
                     event.clientX,
                     event.clientY
                 );
-            } else if (isZoomed()) {
+            } else if (canPan()) {
                 event.preventDefault();
                 view.x -= event.deltaX;
                 view.y -= event.deltaY;
@@ -275,7 +322,9 @@ export default function ScheduleTableZoom({
         view.fit = 0;
         view.x = 0;
         view.y = 0;
+        content.style.width = `${sheetWidth}px`;
         layout();
+        panToReveal(revealRef.current);
 
         const table = content.querySelector("table");
         const observer = new ResizeObserver(layout);
@@ -297,11 +346,10 @@ export default function ScheduleTableZoom({
             document.removeEventListener("touchend", onTouchEnd);
             document.removeEventListener("touchcancel", onTouchEnd);
             document.removeEventListener("wheel", onWheel);
-            // Height and pan/zoom are written straight to the DOM. Clear them
-            // when leaving mobile, or the desktop table stays at the shrunk size.
             frame.style.height = "";
             frame.style.touchAction = "";
             content.style.transform = "";
+            content.style.width = "";
             view.scale = 0;
             view.fit = 0;
             view.x = 0;
@@ -309,11 +357,37 @@ export default function ScheduleTableZoom({
         };
     }, [isMobile]);
 
+    // Mobile: 더보기 토글 시 팬 위치만 갱신
+    useEffect(() => {
+        if (!isMobile) return;
+        const frame = frameRef.current;
+        const content = contentRef.current;
+        if (!frame || !content) return;
+        const view = viewRef.current;
+        const sheetWidth =
+            BASE_SHEET_WIDTH +
+            Math.round(
+                (SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH / SCHEDULE_BASE_MIN_WIDTH) *
+                    BASE_SHEET_WIDTH
+            );
+        if (revealExtraColumns) {
+            const minX = Math.min(0, frame.clientWidth - sheetWidth * view.scale);
+            view.x = minX;
+        } else if (view.scale <= view.fit + 0.001) {
+            view.x = 0;
+        }
+        content.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+        frame.style.touchAction =
+            view.scale > view.fit + 0.001 || revealExtraColumns ? "none" : "pan-y";
+    }, [isMobile, revealExtraColumns]);
+
     if (!isMobile) {
         return (
             <div
                 ref={setFrameNode}
-                className="w-full overflow-x-auto rounded-sm bg-white shadow-sm"
+                className={`w-full rounded-sm bg-white shadow-sm ${
+                    revealExtraColumns ? "overflow-x-auto" : "overflow-x-hidden"
+                }`}
             >
                 {children}
             </div>
@@ -329,7 +403,7 @@ export default function ScheduleTableZoom({
                 ref={contentRef}
                 data-schedule-zoom=""
                 className="absolute left-0 top-0 origin-top-left"
-                style={{ width: SHEET_WIDTH }}
+                style={{ width: BASE_SHEET_WIDTH }}
             >
                 {children}
             </div>

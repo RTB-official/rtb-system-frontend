@@ -37,10 +37,18 @@ import {
     type PersonSortMeta,
 } from "../../../utils/sortPeopleByRoleAndJoinDate";
 import {
-    SCHEDULE_COLUMNS,
+    SCHEDULE_BASE_COLUMNS,
     SCHEDULE_TEAM_LEADERS,
     type ScheduleInsertValues,
 } from "../../../components/schedule/scheduleTableShared";
+import ScheduleStatusBadge from "../../../components/schedule/ScheduleStatusBadge";
+import {
+    ENTRY_APPLICATION_OPTIONS,
+    MATERIAL_PREP_OPTIONS,
+    formatScheduleStatusCellValue,
+    parseScheduleStatusCellValue,
+    resolveScheduleStatusOption,
+} from "../../../components/schedule/scheduleStatusOptions";
 import {
     formatPersonalSchedulePeriod,
     type PersonalScheduleEntry,
@@ -215,7 +223,7 @@ const TAB_TITLE: Record<(typeof SCHEDULE_FORM_TABS)[number], string> = {
     "Work Item": "Work Item",
     "Team member": "Team member",
     Car: "Car / Yard PIC",
-    Remark: "Remark",
+    Remark: "Remark / 출입신청 / 자재준비",
 };
 
 const FORM_GROUP_COLORS = {
@@ -240,6 +248,8 @@ const COLUMN_TAB: Record<string, (typeof SCHEDULE_FORM_TABS)[number]> = {
     car: "Car",
     yardPic: "Car",
     remark: "Remark",
+    entryApplication: "Remark",
+    materialPrep: "Remark",
 };
 
 const COLUMN_GROUP_COLOR: Record<string, string> = {
@@ -255,6 +265,8 @@ const COLUMN_GROUP_COLOR: Record<string, string> = {
     car: FORM_GROUP_COLORS.car,
     yardPic: FORM_GROUP_COLORS.car,
     remark: FORM_GROUP_COLORS.remark,
+    entryApplication: FORM_GROUP_COLORS.remark,
+    materialPrep: FORM_GROUP_COLORS.remark,
 };
 
 const TAB_GROUP_COLOR: Record<(typeof SCHEDULE_FORM_TABS)[number], string> = {
@@ -1015,7 +1027,7 @@ function CarCardFields({
     );
 }
 
-const FORM_TABLE_COLUMNS = SCHEDULE_COLUMNS.filter((column) => column.key !== "no");
+const FORM_TABLE_COLUMNS = SCHEDULE_BASE_COLUMNS.filter((column) => column.key !== "no");
 const FORM_TABLE_HEADER_COLUMNS = FORM_TABLE_COLUMNS.filter(
     (column) => column.key !== "customerCompany" && column.key !== "customerContact"
 );
@@ -1143,6 +1155,8 @@ function draftsFromScheduleValues(values: ScheduleInsertValues) {
         cars: carDraftFromValue(values.car),
         yardPic: values.yardPic,
         remark: values.remark,
+        entryApplication: values.entryApplication,
+        materialPrep: values.materialPrep,
     };
 }
 
@@ -1224,6 +1238,10 @@ function WeekInsertSlot({
     const [cars, setCars] = useState<CarDraft>(() => seeded?.cars ?? EMPTY_CAR_DRAFT);
     const [yardPic, setYardPic] = useState(() => seeded?.yardPic ?? "");
     const [remark, setRemark] = useState(() => seeded?.remark ?? "");
+    const [entryApplication, setEntryApplication] = useState(
+        () => seeded?.entryApplication ?? ""
+    );
+    const [materialPrep, setMaterialPrep] = useState(() => seeded?.materialPrep ?? "");
     const workItemCardRef = useRef<HTMLTextAreaElement>(null);
     const workItemTableRef = useRef<HTMLTextAreaElement>(null);
     const workItemCaretRef = useRef({ start: 0, end: 0 });
@@ -1239,6 +1257,8 @@ function WeekInsertSlot({
         car: carTableValue(cars),
         yardPic,
         remark,
+        entryApplication,
+        materialPrep,
     };
 
     const rememberWorkItemCaret = (element: HTMLTextAreaElement) => {
@@ -1853,12 +1873,144 @@ function WeekInsertSlot({
                                 />
                             ) : null}
                             {label === "Remark" ? (
-                                <ToneTextarea
-                                    value={remark}
-                                    onChange={(event) => setRemark(event.target.value)}
-                                    placeholder="Remark"
-                                    className="mt-3 min-h-0 w-full flex-1 resize-none rounded-xl border p-3 text-[16px] leading-relaxed text-[#101828] outline-none placeholder:text-[#99a1af]"
-                                />
+                                <div className="mt-3 flex min-h-0 w-full flex-1 flex-col gap-3">
+                                    <ToneTextarea
+                                        value={remark}
+                                        onChange={(event) => setRemark(event.target.value)}
+                                        placeholder="Remark"
+                                        className="min-h-[88px] w-full flex-1 resize-none rounded-xl border p-3 text-[16px] leading-relaxed text-[#101828] outline-none placeholder:text-[#99a1af]"
+                                    />
+                                    <div className="flex flex-col gap-2">
+                                        <p className="text-left text-sm font-medium text-gray-800">
+                                            출입신청
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {ENTRY_APPLICATION_OPTIONS.map((option) => {
+                                                const current = resolveScheduleStatusOption(
+                                                    "entryApplication",
+                                                    entryApplication
+                                                );
+                                                const selected =
+                                                    !!current &&
+                                                    option.value === current.value &&
+                                                    option.tone === current.tone;
+                                                return (
+                                                    <button
+                                                        key={`entry-${option.tone}-${option.value}`}
+                                                        type="button"
+                                                        className={`rounded-full transition-shadow ${
+                                                            selected
+                                                                ? "ring-2 ring-sky-300 ring-offset-1"
+                                                                : "opacity-80 hover:opacity-100"
+                                                        }`}
+                                                        onClick={() => {
+                                                            const parsed =
+                                                                parseScheduleStatusCellValue(
+                                                                    "entryApplication",
+                                                                    entryApplication
+                                                                );
+                                                            setEntryApplication(
+                                                                formatScheduleStatusCellValue(
+                                                                    option.value,
+                                                                    parsed.detail
+                                                                )
+                                                            );
+                                                        }}
+                                                    >
+                                                        <ScheduleStatusBadge option={option} />
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <ToneTextarea
+                                            value={
+                                                parseScheduleStatusCellValue(
+                                                    "entryApplication",
+                                                    entryApplication
+                                                ).detail
+                                            }
+                                            onChange={(event) => {
+                                                const parsed = parseScheduleStatusCellValue(
+                                                    "entryApplication",
+                                                    entryApplication
+                                                );
+                                                setEntryApplication(
+                                                    formatScheduleStatusCellValue(
+                                                        parsed.status,
+                                                        event.target.value
+                                                    )
+                                                );
+                                            }}
+                                            placeholder="출입신청 상세 내용"
+                                            className="min-h-[64px] w-full resize-none rounded-xl border p-3 text-[14px] leading-relaxed text-[#101828] outline-none placeholder:text-[#99a1af]"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <p className="text-left text-sm font-medium text-gray-800">
+                                            자재준비
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {MATERIAL_PREP_OPTIONS.map((option) => {
+                                                const current = resolveScheduleStatusOption(
+                                                    "materialPrep",
+                                                    materialPrep
+                                                );
+                                                const selected =
+                                                    !!current &&
+                                                    option.value === current.value &&
+                                                    option.tone === current.tone;
+                                                return (
+                                                    <button
+                                                        key={`material-${option.tone}-${option.value || "empty"}`}
+                                                        type="button"
+                                                        className={`rounded-full transition-shadow ${
+                                                            selected
+                                                                ? "ring-2 ring-sky-300 ring-offset-1"
+                                                                : "opacity-80 hover:opacity-100"
+                                                        }`}
+                                                        onClick={() => {
+                                                            const parsed =
+                                                                parseScheduleStatusCellValue(
+                                                                    "materialPrep",
+                                                                    materialPrep
+                                                                );
+                                                            setMaterialPrep(
+                                                                formatScheduleStatusCellValue(
+                                                                    option.value,
+                                                                    parsed.detail
+                                                                )
+                                                            );
+                                                        }}
+                                                    >
+                                                        <ScheduleStatusBadge option={option} />
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <ToneTextarea
+                                            value={
+                                                parseScheduleStatusCellValue(
+                                                    "materialPrep",
+                                                    materialPrep
+                                                ).detail
+                                            }
+                                            onChange={(event) => {
+                                                const parsed = parseScheduleStatusCellValue(
+                                                    "materialPrep",
+                                                    materialPrep
+                                                );
+                                                setMaterialPrep(
+                                                    formatScheduleStatusCellValue(
+                                                        parsed.status,
+                                                        event.target.value
+                                                    )
+                                                );
+                                            }}
+                                            placeholder="자재준비 상세 내용"
+                                            className="min-h-[64px] w-full resize-none rounded-xl border p-3 text-[14px] leading-relaxed text-[#101828] outline-none placeholder:text-[#99a1af]"
+                                        />
+                                    </div>
+                                </div>
                             ) : null}
                         </div>
                         </FormToneContext.Provider>

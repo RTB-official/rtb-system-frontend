@@ -27,21 +27,30 @@ import Button from "../../components/common/Button";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import { useToast } from "../../components/ui/ToastProvider";
 import {
+    SCHEDULE_BASE_MIN_WIDTH,
     SCHEDULE_CELL_BORDER,
-    SCHEDULE_COLUMNS,
     SCHEDULE_EDITABLE_FIELDS,
+    SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH,
     SCHEDULE_LABEL_BG,
+    SCHEDULE_TABLE_MIN_WIDTH,
     SCHEDULE_TITLE_BG,
     areScheduleIndicesContiguous,
     buildScheduleMergeLookup,
+    getScheduleColumns,
     pruneScheduleFieldMerges,
     type ScheduleFieldKey,
     type ScheduleFieldMerge,
     type ScheduleSheetRow,
     type ScheduleInsertValues,
 } from "../../components/schedule/scheduleTableShared";
+import ScheduleExtraColumnsToggle from "../../components/schedule/ScheduleExtraColumnsToggle";
 import ScheduleSheetSkeleton from "../../components/schedule/ScheduleSheetSkeleton";
+import ScheduleStatusCell from "../../components/schedule/ScheduleStatusCell";
 import ScheduleTableZoom from "../../components/schedule/ScheduleTableZoom";
+import {
+    isScheduleStatusField,
+    SCHEDULE_STATUS_HEADER_BG,
+} from "../../components/schedule/scheduleStatusOptions";
 import ScheduleDashboardCalendar, {
     type ScheduleCalendarEditTarget,
 } from "../../components/schedule/ScheduleDashboardCalendar";
@@ -93,9 +102,6 @@ function periodSortKey(row: ScheduleRow): string {
     return `${year}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
 }
 
-/** Column widths (sum 100%) — shared with list page */
-const COLUMNS = SCHEDULE_COLUMNS;
-
 type FieldKey = ScheduleFieldKey;
 
 /** Editable column order (left → right), excluding No. */
@@ -118,6 +124,8 @@ function createEmptyRow(): ScheduleRow {
         car: "",
         yardPic: "",
         remark: "",
+        entryApplication: "",
+        materialPrep: "",
     };
 }
 
@@ -342,9 +350,29 @@ export default function ScheduleCreatePage() {
     const [pendingPath, setPendingPath] = useState<string | null>(null);
     const excelFileInputRef = useRef<HTMLInputElement>(null);
     const tableAreaRef = useRef<HTMLDivElement>(null);
+    const tableMeasureRef = useRef<HTMLDivElement>(null);
+    const [revealExtraColumns, setRevealExtraColumns] = useState(false);
+    const [sheetBaseWidth, setSheetBaseWidth] = useState(SCHEDULE_BASE_MIN_WIDTH);
     const backConfirmFromPopStateRef = useRef(false);
     const isDirty = hasAnyTableInput(rows);
     const isDirtyRef = useRef(isDirty);
+    const scheduleColumns = getScheduleColumns(sheetBaseWidth);
+    const scheduleTableWidth = Math.max(
+        SCHEDULE_TABLE_MIN_WIDTH,
+        sheetBaseWidth + SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH
+    );
+
+    useLayoutEffect(() => {
+        const el = tableMeasureRef.current;
+        if (!el) return;
+        const update = () => {
+            setSheetBaseWidth(Math.max(SCHEDULE_BASE_MIN_WIDTH, el.clientWidth));
+        };
+        update();
+        const observer = new ResizeObserver(update);
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         isDirtyRef.current = isDirty;
@@ -982,17 +1010,24 @@ export default function ScheduleCreatePage() {
                                     />
                                 </div>
                             </ActionMenu>
-                            <ScheduleTableZoom>
-                            <table className="w-full border-collapse min-w-[1280px] table-fixed">
+                            <div ref={tableMeasureRef} className="relative w-full">
+                            <ScheduleTableZoom revealExtraColumns={revealExtraColumns}>
+                            <table
+                                className="border-collapse table-fixed"
+                                style={{
+                                    width: scheduleTableWidth,
+                                    minWidth: scheduleTableWidth,
+                                }}
+                            >
                                 <colgroup>
-                                    {COLUMNS.map((col) => (
+                                    {scheduleColumns.map((col) => (
                                         <col key={col.key} style={{ width: col.width }} />
                                     ))}
                                 </colgroup>
                                 <thead>
                                     <tr>
                                         <th
-                                            colSpan={COLUMNS.length}
+                                            colSpan={scheduleColumns.length}
                                             className={`${CELL_BORDER} py-2.5 px-2 text-center text-[14px] md:text-[15px] font-bold text-gray-900`}
                                             style={{ backgroundColor: TITLE_BG }}
                                         >
@@ -1013,16 +1048,24 @@ export default function ScheduleCreatePage() {
                                         >
                                             Customer
                                         </th>
-                                        {COLUMNS.filter(
-                                            (col) =>
-                                                col.key !== "no" &&
-                                                col.key !== "customerCompany" &&
-                                                col.key !== "customerContact"
-                                        ).map((col) => (
+                                        {scheduleColumns
+                                            .filter(
+                                                (col) =>
+                                                    col.key !== "no" &&
+                                                    col.key !== "customerCompany" &&
+                                                    col.key !== "customerContact"
+                                            )
+                                            .map((col) => (
                                             <th
                                                 key={col.key}
-                                                className={`${CELL_BORDER} py-2 px-1 text-center text-[11px] md:text-[12px] font-bold text-gray-900 whitespace-pre-line leading-tight`}
-                                                style={{ backgroundColor: LABEL_BG }}
+                                                className={`${CELL_BORDER} py-2 px-1 text-center text-[11px] md:text-[12px] font-bold whitespace-pre-line leading-tight ${
+                                                    col.extra ? "text-white" : "text-gray-900"
+                                                }`}
+                                                style={{
+                                                    backgroundColor: col.extra
+                                                        ? SCHEDULE_STATUS_HEADER_BG
+                                                        : LABEL_BG,
+                                                }}
                                             >
                                                 {col.label}
                                             </th>
@@ -1113,20 +1156,35 @@ export default function ScheduleCreatePage() {
                                                     <td
                                                         key={field}
                                                         rowSpan={rowspan}
-                                                        className={`${CELL_BORDER} min-h-[72px] p-0 align-middle transition-colors ${selectedBg}`}
+                                                        className={`${CELL_BORDER} min-h-[72px] p-0 transition-colors ${selectedBg} ${
+                                                            isScheduleStatusField(field)
+                                                                ? "align-top"
+                                                                : "align-middle"
+                                                        }`}
                                                     >
-                                                        <CellInput
-                                                            value={row[field]}
-                                                            onChange={(v) =>
-                                                                updateCell(row.id, field, v)
-                                                            }
-                                                            multiline
-                                                            uppercaseLettersOnly={UPPERCASE_FIELDS.has(
-                                                                field
-                                                            )}
-                                                            locked={multiSelectMode}
-                                                            {...cellNav(field)}
-                                                        />
+                                                        {isScheduleStatusField(field) ? (
+                                                            <ScheduleStatusCell
+                                                                field={field}
+                                                                value={row[field]}
+                                                                onChange={(v) =>
+                                                                    updateCell(row.id, field, v)
+                                                                }
+                                                                locked={multiSelectMode}
+                                                            />
+                                                        ) : (
+                                                            <CellInput
+                                                                value={row[field]}
+                                                                onChange={(v) =>
+                                                                    updateCell(row.id, field, v)
+                                                                }
+                                                                multiline
+                                                                uppercaseLettersOnly={UPPERCASE_FIELDS.has(
+                                                                    field
+                                                                )}
+                                                                locked={multiSelectMode}
+                                                                {...cellNav(field)}
+                                                            />
+                                                        )}
                                                     </td>
                                                 );
                                             })}
@@ -1137,6 +1195,17 @@ export default function ScheduleCreatePage() {
                                 </tbody>
                             </table>
                             </ScheduleTableZoom>
+                            <div className="pointer-events-none absolute right-2 top-[6px] z-10 md:right-3 md:top-[7px]">
+                                <div className="pointer-events-auto">
+                                    <ScheduleExtraColumnsToggle
+                                        open={revealExtraColumns}
+                                        onToggle={() =>
+                                            setRevealExtraColumns((prev) => !prev)
+                                        }
+                                    />
+                                </div>
+                            </div>
+                            </div>
                                 </>
                             )}
                         </div>

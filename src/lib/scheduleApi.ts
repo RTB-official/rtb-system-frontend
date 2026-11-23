@@ -67,6 +67,8 @@ export type ScheduleRowInput = {
     car: string;
     yardPic: string;
     remark: string;
+    entryApplication: string;
+    materialPrep: string;
 };
 
 export type SaveScheduleVersionResult = {
@@ -90,7 +92,9 @@ function isBlankScheduleRow(row: ScheduleRowInput): boolean {
         !row.teamMember.trim() &&
         !row.car.trim() &&
         !row.yardPic.trim() &&
-        !row.remark.trim()
+        !row.remark.trim() &&
+        !row.entryApplication.trim() &&
+        !row.materialPrep.trim()
     );
 }
 
@@ -124,6 +128,8 @@ export async function saveScheduleVersion(params: {
             car: row.car,
             yard_pic: row.yardPic,
             remark: row.remark,
+            entry_application: row.entryApplication,
+            material_prep: row.materialPrep,
         }));
 
     if (payload.length === 0) {
@@ -214,6 +220,8 @@ type DbScheduleRow = {
     car: string;
     yard_pic: string;
     remark: string;
+    entry_application?: string | null;
+    material_prep?: string | null;
 };
 
 function mapDbRow(row: DbScheduleRow): ScheduleRowInput & { id: string } {
@@ -231,6 +239,8 @@ function mapDbRow(row: DbScheduleRow): ScheduleRowInput & { id: string } {
         car: row.car ?? "",
         yardPic: row.yard_pic ?? "",
         remark: row.remark ?? "",
+        entryApplication: row.entry_application ?? "",
+        materialPrep: row.material_prep ?? "",
     };
 }
 
@@ -300,7 +310,9 @@ const VERSION_SELECT = `
             team_member,
             car,
             yard_pic,
-            remark
+            remark,
+            entry_application,
+            material_prep
         )
     )
 `;
