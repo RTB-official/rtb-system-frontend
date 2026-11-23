@@ -14,6 +14,8 @@ export type ScheduleSheetRow = {
     car: string;
     yardPic: string;
     remark: string;
+    entryApplication: string;
+    materialPrep: string;
 };
 
 /** Values written from the calendar insert form into the sheet. */
@@ -22,24 +24,125 @@ export type ScheduleInsertValues = Omit<ScheduleSheetRow, "id"> & {
     periodFrom: string;
 };
 
-/** Column widths (sum 100%) — keep in sync across create/list */
-export const SCHEDULE_COLUMNS = [
-    { key: "no", label: "No.", width: "2%", center: true },
-    { key: "customerCompany", label: "Customer", width: "5.4%", center: false },
-    { key: "customerContact", label: "", width: "3.6%", center: false },
-    { key: "shipName", label: "Ship name", width: "5.5%", center: false },
-    { key: "engineType", label: "Engine type", width: "9%", center: false },
-    { key: "workLocation", label: "Work location", width: "5.5%", center: false },
-    { key: "period", label: "Period", width: "5%", center: true },
-    { key: "workItem", label: "Work Item", width: "24%", center: false },
-    { key: "manpower", label: "Man\nPower", width: "2.8%", center: true },
-    { key: "teamMember", label: "Team member", width: "14%", center: false },
-    { key: "car", label: "Car", width: "5%", center: true },
-    { key: "yardPic", label: "Yard\nPIC", width: "2.8%", center: false },
-    { key: "remark", label: "Remark", width: "15.4%", center: false },
-] as const;
+/** Base sheet width used for “Remark까지” 기본 뷰. */
+export const SCHEDULE_BASE_MIN_WIDTH = 1280;
 
-export type ScheduleFieldKey = Exclude<(typeof SCHEDULE_COLUMNS)[number]["key"], "no">;
+/** Extra columns after Remark (출입신청 / 자재준비). 배지 폭에 맞춤. */
+export const SCHEDULE_EXTRA_COL_WIDTH_PX = 102;
+
+type ScheduleColumnDef = {
+    key: string;
+    label: string;
+    /** Weight within the base sheet (sums to 100). Extra cols omit this. */
+    baseWeight?: number;
+    widthPx?: number;
+    center: boolean;
+    extra?: boolean;
+};
+
+const SCHEDULE_BASE_COLUMN_DEFS: ScheduleColumnDef[] = [
+    { key: "no", label: "No.", baseWeight: 2, center: true },
+    { key: "customerCompany", label: "Customer", baseWeight: 5.4, center: false },
+    { key: "customerContact", label: "", baseWeight: 3.6, center: false },
+    { key: "shipName", label: "Ship name", baseWeight: 5.5, center: false },
+    { key: "engineType", label: "Engine type", baseWeight: 9, center: false },
+    { key: "workLocation", label: "Work location", baseWeight: 5.5, center: false },
+    { key: "period", label: "Period", baseWeight: 5, center: true },
+    { key: "workItem", label: "Work Item", baseWeight: 24, center: false },
+    { key: "manpower", label: "Man\nPower", baseWeight: 2.8, center: true },
+    { key: "teamMember", label: "Team member", baseWeight: 14, center: false },
+    { key: "car", label: "Car", baseWeight: 5, center: true },
+    { key: "yardPic", label: "Yard\nPIC", baseWeight: 2.8, center: false },
+    { key: "remark", label: "Remark", baseWeight: 15.4, center: false },
+];
+
+const SCHEDULE_EXTRA_COLUMN_DEFS: ScheduleColumnDef[] = [
+    {
+        key: "entryApplication",
+        label: "출입신청",
+        widthPx: SCHEDULE_EXTRA_COL_WIDTH_PX,
+        center: false,
+        extra: true,
+    },
+    {
+        key: "materialPrep",
+        label: "자재준비",
+        widthPx: SCHEDULE_EXTRA_COL_WIDTH_PX,
+        center: false,
+        extra: true,
+    },
+];
+
+export const SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH = SCHEDULE_EXTRA_COLUMN_DEFS.reduce(
+    (sum, col) => sum + (col.widthPx ?? 0),
+    0
+);
+
+export const SCHEDULE_TABLE_MIN_WIDTH =
+    SCHEDULE_BASE_MIN_WIDTH + SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH;
+
+export type ScheduleColumn = {
+    key: string;
+    label: string;
+    width: string;
+    center: boolean;
+    extra?: boolean;
+};
+
+/** Resolve column pixel widths for a measured base (Remark까지) width. */
+export function getScheduleColumns(
+    baseWidth: number = SCHEDULE_BASE_MIN_WIDTH,
+    options?: { includeExtra?: boolean }
+): ScheduleColumn[] {
+    const includeExtra = options?.includeExtra !== false;
+    const safeBase = Math.max(SCHEDULE_BASE_MIN_WIDTH, baseWidth);
+    const extraTotal = includeExtra ? SCHEDULE_EXTRA_COLUMNS_TOTAL_WIDTH : 0;
+    const total = safeBase + extraTotal;
+
+    const baseColumns = SCHEDULE_BASE_COLUMN_DEFS.map((col) => {
+        const widthPx = ((col.baseWeight ?? 0) / 100) * safeBase;
+        return {
+            key: col.key,
+            label: col.label,
+            center: col.center,
+            width: `${(widthPx / total) * 100}%`,
+        };
+    });
+
+    if (!includeExtra) return baseColumns;
+
+    return [
+        ...baseColumns,
+        ...SCHEDULE_EXTRA_COLUMN_DEFS.map((col) => ({
+            key: col.key,
+            label: col.label,
+            center: col.center,
+            extra: true as const,
+            width: `${((col.widthPx ?? 0) / total) * 100}%`,
+        })),
+    ];
+}
+
+/** Static columns (min layout) — keep in sync across create/list */
+export const SCHEDULE_COLUMNS = getScheduleColumns(SCHEDULE_BASE_MIN_WIDTH);
+
+export const SCHEDULE_BASE_COLUMNS = SCHEDULE_COLUMNS.filter((col) => !col.extra);
+
+export type ScheduleFieldKey =
+    | "customerCompany"
+    | "customerContact"
+    | "shipName"
+    | "engineType"
+    | "workLocation"
+    | "period"
+    | "workItem"
+    | "manpower"
+    | "teamMember"
+    | "car"
+    | "yardPic"
+    | "remark"
+    | "entryApplication"
+    | "materialPrep";
 
 export const SCHEDULE_EDITABLE_FIELDS: ScheduleFieldKey[] = [
     "customerCompany",
@@ -54,6 +157,13 @@ export const SCHEDULE_EDITABLE_FIELDS: ScheduleFieldKey[] = [
     "car",
     "yardPic",
     "remark",
+    "entryApplication",
+    "materialPrep",
+];
+
+export const SCHEDULE_EXTRA_FIELD_KEYS: ScheduleFieldKey[] = [
+    "entryApplication",
+    "materialPrep",
 ];
 
 export const SCHEDULE_TITLE_BG = "#A8D0F0";

@@ -1,9 +1,12 @@
 import {
     SCHEDULE_CELL_BORDER,
     SCHEDULE_COLUMNS,
+    SCHEDULE_EDITABLE_FIELDS,
     SCHEDULE_LABEL_BG,
+    SCHEDULE_TABLE_MIN_WIDTH,
     SCHEDULE_TITLE_BG,
 } from "./scheduleTableShared";
+import { SCHEDULE_STATUS_HEADER_BG } from "./scheduleStatusOptions";
 
 function SkeletonBar({ className = "" }: { className?: string }) {
     return (
@@ -38,11 +41,17 @@ export default function ScheduleSheetSkeleton({
 
     return (
         <div
-            className="w-full overflow-x-auto rounded-sm bg-white shadow-sm"
+            className="w-full overflow-x-hidden rounded-sm bg-white shadow-sm"
             aria-busy="true"
             aria-label="일정 불러오는 중"
         >
-            <table className="w-full border-collapse min-w-[1280px] table-fixed">
+            <table
+                className="border-collapse table-fixed"
+                style={{
+                    width: SCHEDULE_TABLE_MIN_WIDTH,
+                    minWidth: SCHEDULE_TABLE_MIN_WIDTH,
+                }}
+            >
                 <colgroup>
                     {SCHEDULE_COLUMNS.map((col) => (
                         <col key={col.key} style={{ width: col.width }} />
@@ -80,8 +89,14 @@ export default function ScheduleSheetSkeleton({
                         ).map((col) => (
                             <th
                                 key={col.key}
-                                className={`${SCHEDULE_CELL_BORDER} py-2 px-1 text-center text-[11px] md:text-[12px] font-bold text-gray-900 whitespace-pre-line leading-tight`}
-                                style={{ backgroundColor: SCHEDULE_LABEL_BG }}
+                                className={`${SCHEDULE_CELL_BORDER} py-2 px-1 text-center text-[11px] md:text-[12px] font-bold whitespace-pre-line leading-tight ${
+                                    col.extra ? "text-white" : "text-gray-900"
+                                }`}
+                                style={{
+                                    backgroundColor: col.extra
+                                        ? SCHEDULE_STATUS_HEADER_BG
+                                        : SCHEDULE_LABEL_BG,
+                                }}
                             >
                                 {col.label}
                             </th>
@@ -98,18 +113,17 @@ export default function ScheduleSheetSkeleton({
                                     <SkeletonBar className="h-3 w-4" />
                                 </div>
                             </td>
-                            <SkeletonCell />
-                            <SkeletonCell />
-                            <SkeletonCell />
-                            <SkeletonCell wide />
-                            <SkeletonCell />
-                            <SkeletonCell />
-                            <SkeletonCell wide />
-                            <SkeletonCell />
-                            <SkeletonCell wide />
-                            <SkeletonCell />
-                            <SkeletonCell />
-                            <SkeletonCell wide />
+                            {SCHEDULE_EDITABLE_FIELDS.map((field) => (
+                                <SkeletonCell
+                                    key={field}
+                                    wide={
+                                        field === "workItem" ||
+                                        field === "teamMember" ||
+                                        field === "remark" ||
+                                        field === "engineType"
+                                    }
+                                />
+                            ))}
                         </tr>
                     ))}
                 </tbody>

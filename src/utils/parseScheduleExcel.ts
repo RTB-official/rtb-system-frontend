@@ -14,10 +14,12 @@ export type ParsedScheduleRow = {
     car: string;
     yardPic: string;
     remark: string;
+    entryApplication: string;
+    materialPrep: string;
 };
 
 const START_ROW = 5;
-/** A5:M… — A=No(무시), B~M=웹 표 데이터 12컬럼 */
+/** A5:O… — A=No(무시), B~M=기존 12컬럼, N=출입신청, O=자재준비(없으면 빈 값) */
 const COL = {
     no: 1, // A
     customerCompany: 2, // B
@@ -32,6 +34,8 @@ const COL = {
     car: 11, // K
     yardPic: 12, // L
     remark: 13, // M
+    entryApplication: 14, // N
+    materialPrep: 15, // O
 } as const;
 
 function cellToText(cell: ExcelJS.Cell): string {
@@ -76,15 +80,15 @@ function normalizeUppercaseField(value: string): string {
 }
 
 function isBlankRow(ws: ExcelJS.Worksheet, rowNumber: number): boolean {
-    for (let col = COL.no; col <= COL.remark; col += 1) {
+    for (let col = COL.no; col <= COL.materialPrep; col += 1) {
         if (cellToText(ws.getCell(rowNumber, col)).trim()) return false;
     }
     return true;
 }
 
 /**
- * 일정 엑셀에서 A5:M… 데이터 행을 읽어 ScheduleRow[]로 변환.
- * A=No(무시), B~M=Customer(회사/담당)·Ship·…·Remark
+ * 일정 엑셀에서 A5:O… 데이터 행을 읽어 ScheduleRow[]로 변환.
+ * A=No(무시), B~M=Customer(회사/담당)·Ship·…·Remark, N=출입신청, O=자재준비
  */
 export async function parseScheduleExcelFile(file: File): Promise<ParsedScheduleRow[]> {
     const buffer = await file.arrayBuffer();
@@ -125,11 +129,15 @@ export async function parseScheduleExcelFile(file: File): Promise<ParsedSchedule
             car: cellToText(worksheet.getCell(rowNumber, COL.car)).trim(),
             yardPic: cellToText(worksheet.getCell(rowNumber, COL.yardPic)).trim(),
             remark: cellToText(worksheet.getCell(rowNumber, COL.remark)).trim(),
+            entryApplication: cellToText(
+                worksheet.getCell(rowNumber, COL.entryApplication)
+            ).trim(),
+            materialPrep: cellToText(worksheet.getCell(rowNumber, COL.materialPrep)).trim(),
         });
     }
 
     if (rows.length === 0) {
-        throw new Error("불러올 일정 데이터가 없습니다. (A5:M 영역을 확인해 주세요)");
+        throw new Error("불러올 일정 데이터가 없습니다. (A5:O 영역을 확인해 주세요)");
     }
 
     return rows;
